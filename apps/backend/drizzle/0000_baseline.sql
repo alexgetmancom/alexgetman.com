@@ -12,20 +12,6 @@ CREATE TABLE `analytics_rollups` (
 	`updated_at` text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `content_memory` (
-	`post_key` text PRIMARY KEY NOT NULL,
-	`message_id` integer,
-	`lang` text DEFAULT 'mixed' NOT NULL,
-	`title` text,
-	`summary` text,
-	`topics_json` text,
-	`entities_json` text,
-	`source_urls_json` text,
-	`performance_json` text,
-	`created_at` text NOT NULL,
-	`updated_at` text NOT NULL
-);
---> statement-breakpoint
 CREATE TABLE `credential_checks` (
 	`target` text PRIMARY KEY NOT NULL,
 	`status` text NOT NULL,
@@ -74,28 +60,6 @@ CREATE TABLE `maintenance_locks` (
 	`owner` text NOT NULL,
 	`expires_at` text NOT NULL,
 	`created_at` text NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE `media_assets` (
-	`asset_key` text PRIMARY KEY NOT NULL,
-	`post_key` text,
-	`draft_id` integer,
-	`locale` text DEFAULT 'ru' NOT NULL,
-	`role` text DEFAULT 'original' NOT NULL,
-	`media_type` text,
-	`file_id` text,
-	`source_path` text,
-	`public_url` text,
-	`sha256` text,
-	`size_bytes` integer,
-	`width` integer,
-	`height` integer,
-	`duration_seconds` real,
-	`variant_of` text,
-	`status` text DEFAULT 'known' NOT NULL,
-	`details_json` text,
-	`created_at` text NOT NULL,
-	`updated_at` text NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `media_test_cases` (
@@ -167,16 +131,6 @@ CREATE TABLE `platform_capabilities` (
 	`evidence_test_id` text,
 	`evidence_message_id` integer,
 	`evidence_url` text,
-	`notes` text,
-	`updated_at` text NOT NULL,
-	PRIMARY KEY(`target`, `format_key`)
-);
---> statement-breakpoint
-CREATE TABLE `platform_rules` (
-	`target` text NOT NULL,
-	`format_key` text NOT NULL,
-	`support_status` text DEFAULT 'unknown' NOT NULL,
-	`max_items` integer,
 	`notes` text,
 	`updated_at` text NOT NULL,
 	PRIMARY KEY(`target`, `format_key`)
@@ -311,13 +265,6 @@ CREATE TABLE `publish_jobs` (
 	`created_at` text NOT NULL,
 	`updated_at` text NOT NULL
 , `current_phase` text, `reconcile_attempt_count` integer DEFAULT 0 NOT NULL);
---> statement-breakpoint
-CREATE TABLE `publish_plans` (
-	`message_id` integer PRIMARY KEY NOT NULL,
-	`plan_json` text NOT NULL,
-	`created_at` text NOT NULL,
-	`updated_at` text NOT NULL
-);
 --> statement-breakpoint
 CREATE TABLE `site_jobs` (
 	`job_id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -461,13 +408,6 @@ CREATE TABLE `bot_ui_settings` (
 	`locale` text NOT NULL DEFAULT 'en',
 	`updated_at` text NOT NULL
 , `timezone` text);
---> statement-breakpoint
-CREATE TABLE `post_control_cards` (
-	`draft_id` integer PRIMARY KEY NOT NULL,
-	`chat_id` integer NOT NULL,
-	`message_id` integer NOT NULL,
-	`updated_at` text NOT NULL
-);
 --> statement-breakpoint
 CREATE TABLE `studio_media_assets` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,

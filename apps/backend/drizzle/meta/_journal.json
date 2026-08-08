@@ -8,6 +8,13 @@
       "when": 1783727704995,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786185032082,
+      "tag": "0001_drop_dead_tables",
+      "breakpoints": true
     }
   ]
 }
