@@ -18,6 +18,11 @@
       "!apps/backend/drizzle"
     ]
   },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
   "formatter": {
     "indentStyle": "space",
     "indentWidth": 2,
