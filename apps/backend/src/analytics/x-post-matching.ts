@@ -13,9 +13,10 @@ export function comparableText(value: string | undefined): string {
 }
 
 /** The prefix the linker is allowed to act on. Uniqueness carries most of the
- * weight; the length keeps one-word posts from claiming a longer one. Shorter
- * prefixes are surfaced by the analytics report, never linked automatically. */
-const LINK_PREFIX_LENGTH = 40;
+ * weight — two posts sharing an opening never match either — and the length
+ * keeps a one-word post from claiming a longer one. Shorter prefixes are
+ * surfaced by the analytics report, never linked automatically. */
+const LINK_PREFIX_LENGTH = 30;
 
 export function editorialTexts(backendDb: BackendDb): EditorialText[] {
   return unsafeDb(backendDb)

@@ -146,7 +146,7 @@ describe("X Activity", () => {
       // Long enough for the linker to act on, and one that only clears the
       // report's lower bar: the second is the near miss the report exists for.
       const linked = "A long enough Studio post about the newest frontier model and what it changes for everyone";
-      const short = "A shorter post about pricing";
+      const short = "Shorter post about pricing";
       backendDb.sqlite
         .prepare(
           "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,?,'active',?,?),('post:2',2,'test',2,?,?,'active',?,?)",

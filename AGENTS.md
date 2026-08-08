@@ -99,7 +99,7 @@ rule changes, because a byte-identical CSV is a no-op and will not re-link anyth
 
 `x-analytics` is the read-only account of the result: per-import row counts, linked vs unlinked
 activity, editorial X targets no export covers, and `linkCandidates` — unlinked items whose text
-matches exactly one editorial post but is shorter than the linker's 40-character bar. Candidates are
+matches exactly one editorial post but is shorter than the linker's 30-character bar. Candidates are
 reported, never linked: the bar lives in `x-post-matching.ts` and is the only place to change it.
 X caps an export's rows, so a three-month window returns *fewer* posts than a two-week one. Long
 windows extend history; they do not replace the dense recent export.
