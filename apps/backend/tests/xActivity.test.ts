@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { importXAnalyticsCsv } from "../src/analytics/import-x-csv.js";
+import { attachXActivityToPosts } from "../src/analytics/x-activity-linking.js";
 import { xAnalyticsReport } from "../src/analytics/x-activity-report.js";
 import { xActivityItems, xActivityMetricSnapshots } from "../src/db/schema.js";
 import { type CombinedSectionInput, renderCombinedSection, xChartPost } from "../src/interfaces/web/dashboard/combined-section.js";
@@ -84,7 +85,7 @@ describe("X Activity", () => {
 
       const result = importXAnalyticsCsv(backendDb, file, now);
 
-      expect(result).toMatchObject({ matchedPosts: 1, activityItems: 2, activitySamples: 26 });
+      expect(result).toMatchObject({ linkedByExternalId: 1, linkedByText: 0, activityItems: 2, activitySamples: 26, insertedSamples: 13 });
       expect(backendDb.db.select().from(xActivityItems).all()).toMatchObject([
         { xPostId: "100", kind: "standalone", linkedPostKey: "post:1" },
         { xPostId: "101", kind: "reply", linkedPostKey: null },
@@ -100,14 +101,52 @@ describe("X Activity", () => {
     }
   });
 
+  it("links imported activity to a post that only exists afterwards, and projects its metrics", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = "2026-07-29T11:49:00.000Z";
+      const text = "A Studio post written well after the export was imported";
+      const directory = mkdtempSync(join(tmpdir(), "x-activity-relink-"));
+      const file = join(directory, "account_analytics_content_2026-07-23_2026-07-29.csv");
+      writeFileSync(
+        file,
+        [
+          HEADERS.join(","),
+          ["100", '"Wed, Jul 29, 2026"', `"${text}"`, "https://x.com/test/status/100", 50, 2, 4, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0].join(","),
+        ].join("\n"),
+      );
+      expect(importXAnalyticsCsv(backendDb, file, now)).toMatchObject({ linkedByText: 0, insertedSamples: 0 });
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,?,'active',?,?)",
+        )
+        .run(now, text, now, now);
+
+      expect(attachXActivityToPosts(backendDb, false)).toMatchObject({
+        links: [{ xPostId: "100", postKey: "post:1", matchedBy: "direct_text" }],
+        insertedSamples: 0,
+      });
+      // The plan wrote nothing: the same call is still available to apply.
+      expect(attachXActivityToPosts(backendDb, true)).toMatchObject({ insertedSamples: 13, updatedMetrics: 13 });
+      expect(attachXActivityToPosts(backendDb, true)).toMatchObject({ links: [], insertedSamples: 0, updatedMetrics: 0 });
+
+      const samples = backendDb.sqlite
+        .prepare("SELECT metric_name AS metric, value FROM metric_samples WHERE post_key='post:1' AND metric_name='views'")
+        .all();
+      expect(samples).toMatchObject([{ metric: "views", value: 50 }]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("reports coverage and the near-miss links an import declined to make", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = "2026-07-29T11:49:00.000Z";
-      // Long enough for the import to link on, and one that only clears the
+      // Long enough for the linker to act on, and one that only clears the
       // report's lower bar: the second is the near miss the report exists for.
       const linked = "A long enough Studio post about the newest frontier model and what it changes for everyone";
-      const short = "A shorter Studio post about pricing changes";
+      const short = "A shorter post about pricing";
       backendDb.sqlite
         .prepare(
           "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,?,'active',?,?),('post:2',2,'test',2,?,?,'active',?,?)",

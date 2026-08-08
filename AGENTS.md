@@ -92,9 +92,14 @@ path is the right argument. `--sampled-at` is the export's own timestamp — the
 `now` — because it stamps the metric history. Re-importing a byte-identical file is a no-op by
 SHA-256, so a repeat costs nothing; a re-export of the same period is a new file and a new sample.
 
+An import stores rows as account-wide activity and then runs the linker over the whole table, so a
+post written after an earlier export still picks up its history. `x-relink` is that same pass on its
+own — it reports its plan and writes only with `--apply` — and it is what to run after the matching
+rule changes, because a byte-identical CSV is a no-op and will not re-link anything.
+
 `x-analytics` is the read-only account of the result: per-import row counts, linked vs unlinked
 activity, editorial X targets no export covers, and `linkCandidates` — unlinked items whose text
-matches exactly one editorial post below the import's 80-character linking bar. Candidates are
+matches exactly one editorial post but is shorter than the linker's 40-character bar. Candidates are
 reported, never linked: the bar lives in `x-post-matching.ts` and is the only place to change it.
 X caps an export's rows, so a three-month window returns *fewer* posts than a two-week one. Long
 windows extend history; they do not replace the dense recent export.

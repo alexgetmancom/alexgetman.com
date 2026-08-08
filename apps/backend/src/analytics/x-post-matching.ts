@@ -12,9 +12,10 @@ export function comparableText(value: string | undefined): string {
     .toLocaleLowerCase();
 }
 
-/** The prefix an import is allowed to act on. Shorter prefixes are reported by
- * the analytics report as candidates, never linked automatically. */
-const LINK_PREFIX_LENGTH = 80;
+/** The prefix the linker is allowed to act on. Uniqueness carries most of the
+ * weight; the length keeps one-word posts from claiming a longer one. Shorter
+ * prefixes are surfaced by the analytics report, never linked automatically. */
+const LINK_PREFIX_LENGTH = 40;
 
 export function editorialTexts(backendDb: BackendDb): EditorialText[] {
   return unsafeDb(backendDb)

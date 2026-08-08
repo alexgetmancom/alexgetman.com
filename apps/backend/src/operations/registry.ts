@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { importManualAnalytics } from "../analytics/import-manual-analytics.js";
 import { importXAnalyticsCsv } from "../analytics/import-x-csv.js";
+import { attachXActivityToPosts } from "../analytics/x-activity-linking.js";
 import { xAnalyticsReport } from "../analytics/x-activity-report.js";
 import { type BackendDb, migrationStatus, unsafeDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -194,6 +195,14 @@ const operationDefs = {
     agent: true,
     note: "run after every import-x-analytics",
     handler: (context, input) => xAnalyticsReport(context.db(), input.limit),
+  }),
+  "x-relink": operation({
+    summary: "Attach already-imported X activity to editorial posts and project its metrics.",
+    schema: z.object({ apply: applyOption }),
+    mutates: true,
+    agent: true,
+    note: "an import runs this itself; use it after the matching rule changes",
+    handler: (context, input) => attachXActivityToPosts(context.db(), input.apply),
   }),
   "media-status": operation({
     summary: "Reachability and queue depth of the media processor.",

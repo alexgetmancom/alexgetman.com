@@ -1,9 +1,9 @@
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { comparableText, editorialTexts, matchEditorialPost } from "./x-post-matching.js";
 
-/** A prefix this short is too weak to link on during an import, but long enough
- * to be worth a human's eye in the report. */
-const CANDIDATE_PREFIX_LENGTH = 40;
+/** A prefix this short is too weak for the linker to act on, but long enough to
+ * be worth a human's eye in the report. */
+const CANDIDATE_PREFIX_LENGTH = 25;
 
 export type XAnalyticsReport = {
   imports: Array<{
