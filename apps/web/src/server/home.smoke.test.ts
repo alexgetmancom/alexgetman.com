@@ -61,7 +61,7 @@ async function waitUntilReady(deadlineMs: number): Promise<void> {
 /** Real `<h1>` tags only — Svelte's dev-mode inline `<style>` blocks keep
  * source comments verbatim, and this file's own comments mention `<h1>`. */
 function countRealTags(html: string, tag: string): number {
-  const withoutStyles = html.replace(/<style[\s\S]*?<\/style>/g, "");
+  const withoutStyles = html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
   return (withoutStyles.match(new RegExp(`<${tag}[ >]`, "g")) ?? []).length;
 }
 

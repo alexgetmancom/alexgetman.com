@@ -294,6 +294,14 @@ describe("Astro endpoint controller", () => {
       expect(
         (backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM site_jobs WHERE post_id=?").get(postId) as { count: number }).count,
       ).toBe(3);
+
+      const failed = await app.request("/api/command-center/action", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "unknown", ref: `post:${postId}`, token: "secret" }),
+      });
+      expect(failed.status).toBe(400);
+      expect(await failed.json()).toEqual({ detail: "Action failed" });
     } finally {
       backendDb.close();
     }

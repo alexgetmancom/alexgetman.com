@@ -1,10 +1,10 @@
 /** Dependency vulnerability gate.
  *
  * `bun audit` on its own is not usable as a CI check here: the tree carries
- * four advisories that no compatible update can clear (verified — `bun update`
+ * three advisories that no compatible update can clear (verified — `bun update`
  * moves none of them), because the vulnerable versions are pinned inside
  * astro's and drizzle-kit's own ranges. A check that is red on arrival gets
- * ignored, so the known four are listed below with the reason they are
+ * ignored, so the known three are listed below with the reason they are
  * tolerable, and anything *new* at high or above fails the build.
  *
  * This list is a debt register, not a suppression file. When astro or

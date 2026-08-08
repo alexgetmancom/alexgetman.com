@@ -67,7 +67,8 @@ export const studioRoutes: RouteModule = (app, { config, backendDb, engagement, 
       }
       return json({ asset_id: asset.id, kind: asset.kind, filename: asset.filename, byte_size: asset.byteSize });
     } catch (error) {
-      return json({ error: error instanceof Error ? error.message : String(error) }, isMediaUploadTooLarge(error) ? 413 : 400);
+      const tooLarge = isMediaUploadTooLarge(error);
+      return json({ error: tooLarge ? "Media upload is too large" : "Media upload failed" }, tooLarge ? 413 : 400);
     } finally {
       activeMediaUploads -= 1;
     }

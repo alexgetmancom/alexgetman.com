@@ -23,7 +23,7 @@ describe("creator analytics collection", () => {
               items: [{ snippet: { title: "Marux_play" }, statistics: { subscriberCount: "125", viewCount: "190783", videoCount: "119" } }],
             }),
           );
-        if (url.includes("youtubeanalytics.googleapis.com"))
+        if (new URL(url).hostname === "youtubeanalytics.googleapis.com")
           return new Response(JSON.stringify({ error: { message: "service disabled" } }), { status: 403 });
         throw new Error(`Unexpected request: ${url}`);
       }) as typeof fetch;
@@ -212,7 +212,7 @@ describe("creator analytics collection", () => {
           );
         if (url.includes("youtube/v3/commentThreads"))
           return new Response(JSON.stringify({ error: { message: "Request had insufficient authentication scopes." } }), { status: 403 });
-        if (url.includes("youtubeanalytics.googleapis.com"))
+        if (new URL(url).hostname === "youtubeanalytics.googleapis.com")
           return new Response(
             JSON.stringify({
               columnHeaders: [

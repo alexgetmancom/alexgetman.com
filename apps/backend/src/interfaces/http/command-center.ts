@@ -185,8 +185,8 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
       const result = await trackUsageAsync(backendDb, "command_center.action.execute", () => operations.command(body));
       invalidateDashboardRenderCache(backendDb);
       return json(result);
-    } catch (error) {
-      return json({ detail: error instanceof Error ? error.message : String(error) }, 400);
+    } catch {
+      return json({ detail: "Action failed" }, 400);
     }
   });
 };

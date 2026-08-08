@@ -3,6 +3,11 @@ import { escapeMarkdown } from "../src/foundation/markdown.js";
 import { truncateUnicode } from "../src/foundation/text.js";
 
 describe("foundation/text", () => {
+  it("escapes Markdown control characters and literal backslashes", () => {
+    const value = String.raw`path\to\file_*[]`;
+    expect(escapeMarkdown(value)).toBe(String.raw`path\\to\\file\_\*\[\]`);
+  });
+
   it("does not split a Unicode code point at the limit", () => {
     expect(truncateUnicode("123😀", 4)).toBe("123😀");
     expect(truncateUnicode("123😀", 3)).toBe("123");
