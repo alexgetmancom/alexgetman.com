@@ -87,16 +87,19 @@ export function loadDashboardReadModel(
   const offsetDays = weekOffset * periodDays;
   const pipelineHistory = timed("pipelineMs", () => service.dashboardPipelineHistory(historyDays, offsetDays));
   const pipeline = {
-    current: pipelineForDates(pipelineHistory, start, end),
-    comparison: pipelineForDates(pipelineHistory, previousStart, previousEnd),
-    dayComparison: periodDays === 1 ? pipelineForDates(pipelineHistory, yesterdayStart, yesterdayEnd) : null,
-    median: pipelineForDates(pipelineHistory, medianStart, medianEnd),
+    current: pipelineForDates(pipelineHistory, start, end, config.TIMEZONE),
+    comparison: pipelineForDates(pipelineHistory, previousStart, previousEnd, config.TIMEZONE),
+    dayComparison: periodDays === 1 ? pipelineForDates(pipelineHistory, yesterdayStart, yesterdayEnd, config.TIMEZONE) : null,
+    median: pipelineForDates(pipelineHistory, medianStart, medianEnd, config.TIMEZONE),
   };
-  const xHistory = timed("xActivityMs", () => xActivityDashboardRange(backendDb, historyStart.toISOString(), historyEnd.toISOString()));
+  const [historyStartBound, historyEndBound] = periodBounds(historyStart, historyEnd, config.TIMEZONE);
+  const xHistory = timed("xActivityMs", () =>
+    xActivityDashboardRange(backendDb, historyStartBound.toISOString(), historyEndBound.toISOString()),
+  );
   const xActivity = {
-    current: xActivityForDates(xHistory, start, end),
-    comparison: xActivityForDates(xHistory, previousStart, previousEnd),
-    median: xActivityForDates(xHistory, medianStart, medianEnd),
+    current: xActivityForDates(xHistory, start, end, config.TIMEZONE),
+    comparison: xActivityForDates(xHistory, previousStart, previousEnd, config.TIMEZONE),
+    median: xActivityForDates(xHistory, medianStart, medianEnd, config.TIMEZONE),
   };
   const videoHistoryStart = new Date(Math.min(start.getTime(), previousStart.getTime(), medianStart.getTime(), yesterdayStart.getTime()));
   const videoHistoryEnd = new Date(
@@ -146,9 +149,10 @@ export function loadDashboardReadModel(
   };
 }
 
-function pipelineForDates(data: PipelineData, start: Date, end: Date): PipelineData {
-  const startIso = start.toISOString();
-  const endIso = end.toISOString();
+function pipelineForDates(data: PipelineData, start: Date, end: Date, timeZone: string): PipelineData {
+  const [startBound, endBound] = periodBounds(start, end, timeZone);
+  const startIso = startBound.toISOString();
+  const endIso = endBound.toISOString();
   return {
     ...data,
     posts: (data.posts ?? [])
@@ -160,10 +164,17 @@ function pipelineForDates(data: PipelineData, start: Date, end: Date): PipelineD
   };
 }
 
-function xActivityForDates(items: XActivityDashboardItem[], start: Date, end: Date): XActivityDashboardItem[] {
-  const startIso = start.toISOString();
-  const endIso = end.toISOString();
+function xActivityForDates(items: XActivityDashboardItem[], start: Date, end: Date, timeZone: string): XActivityDashboardItem[] {
+  const [startBound, endBound] = periodBounds(start, end, timeZone);
+  const startIso = startBound.toISOString();
+  const endIso = endBound.toISOString();
   return items.filter((item) => item.publishedAt >= startIso && item.publishedAt <= endIso);
+}
+
+function periodBounds(start: Date, end: Date, timeZone: string): [Date, Date] {
+  const startBound = zonedSlot(start.getUTCFullYear(), start.getUTCMonth() + 1, start.getUTCDate(), "00:00", timeZone);
+  const endNextDay = zonedSlot(end.getUTCFullYear(), end.getUTCMonth() + 1, end.getUTCDate() + 1, "00:00", timeZone);
+  return [startBound, new Date(endNextDay.getTime() - 1)];
 }
 
 export function buildOverviewData(

@@ -27,7 +27,7 @@
       "idx": 3,
       "version": "6",
       "when": 1786299462283,
-      "tag": "0003_index_video_metric_sample_time",
+      "tag": "0003_index_metric_sample_times",
       "breakpoints": true
     }
   ]

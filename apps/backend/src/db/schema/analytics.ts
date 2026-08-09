@@ -93,6 +93,7 @@ export const creatorProfileSnapshots = sqliteTable(
   (table) => [
     uniqueIndex("idx_creator_profile_snapshots_daily").on(table.platform, table.account, table.sampledOn),
     index("idx_creator_profile_snapshots_history").on(table.platform, table.account, table.sampledAt),
+    index("idx_creator_profile_snapshots_sampled_at").on(table.sampledAt),
   ],
 );
 
@@ -132,5 +133,6 @@ export const xActivityMetricSnapshots = sqliteTable(
   (table) => [
     uniqueIndex("idx_x_activity_metric_snapshot").on(table.xPostId, table.metricName, table.sampledAt),
     index("idx_x_activity_metric_history").on(table.xPostId, table.sampledAt),
+    index("idx_x_activity_metric_sampled_at").on(table.sampledAt),
   ],
 );
