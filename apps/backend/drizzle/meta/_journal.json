@@ -50,6 +50,13 @@
       "when": 1786303000000,
       "tag": "0006_remove_legacy_publication_paths",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1786304000000,
+      "tag": "0007_persist_site_media_paths",
+      "breakpoints": true
     }
   ]
 }

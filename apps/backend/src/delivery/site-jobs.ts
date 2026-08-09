@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import { and, asc, count, desc, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
-import { postEvents, postMetrics, postTargets, publicationSources, siteJobs } from "../db/schema.js";
+import { postEvents, postLocales, postMetrics, postTargets, publicationSources, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { withJobHeartbeat } from "../foundation/runtime/job-heartbeat.js";
@@ -159,6 +159,7 @@ export async function renderFeedFiles(
     const ordered = items
       .filter((value): value is Record<string, unknown> => value != null)
       .sort((a, b) => String(b.date ?? b.created_at ?? "").localeCompare(String(a.date ?? a.created_at ?? "")));
+    persistMaterializedSiteMedia(backendDb, ordered);
     outputCount = ordered.length;
     decorateMs = Date.now() - phaseStartedAt;
 
@@ -200,6 +201,27 @@ export async function renderFeedFiles(
       ...(failure === undefined ? {} : { error: failure instanceof Error ? failure.message : String(failure) }),
     });
   }
+}
+
+function persistMaterializedSiteMedia(backendDb: BackendDb, items: Record<string, unknown>[]): void {
+  const now = new Date().toISOString();
+  unsafeDb(backendDb).db.transaction((tx) => {
+    for (const item of items) {
+      const postId = Number(item.post_id ?? 0);
+      if (!Number.isSafeInteger(postId) || postId <= 0) continue;
+      for (const [locale, key, enabled] of [
+        ["ru", "media", item.has_ru],
+        ["en", "media_en", item.has_en],
+      ] as const) {
+        const media = item[key];
+        if (!enabled || !Array.isArray(media)) continue;
+        tx.update(postLocales)
+          .set({ mediaJson: media, updatedAt: now })
+          .where(and(eq(postLocales.postId, postId), eq(postLocales.locale, locale)))
+          .run();
+      }
+    }
+  });
 }
 
 function claimSiteJobs(backendDb: BackendDb): SiteJob[] {
