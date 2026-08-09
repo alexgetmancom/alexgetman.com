@@ -1,5 +1,5 @@
 import type { BackendDb } from "../../../db/client.js";
-import { calendarDays, latestAtOrBefore } from "./daily-reach.js";
+import { calendarDays, emptyDailyReach, latestAtOrBefore } from "./daily-reach.js";
 import { emptyMetrics, periodMetrics, periodSubscriberDelta } from "./video-overview-calendar.js";
 import {
   aggregateDailyMetrics,
@@ -57,8 +57,8 @@ export function videoOverview(
   const rows = reachRows.filter((row) => Boolean(row.publishedAt && row.publishedAt >= startIso && row.publishedAt <= endIso));
   const snapshots = new Map(reachRows.map((row) => [row.id, bundle.snapshots.get(row.id) ?? []]));
   const periodDays = calendarDays(start, end, timeZone);
-  const summary = videoSummaryMetrics(backendDb, reachRows, snapshots, periodDays, end, timeZone, cache);
   const reachViews = new Map(reachRows.map((row) => [row.id, periodMetrics(snapshots.get(row.id) ?? [], periodDays).totals]));
+  const summary = videoSummaryMetrics(backendDb, reachRows, snapshots, reachViews, periodDays, end, timeZone, cache);
   // One row per clip, not per destination: the same clip on Shorts and on Reels
   // is one publication that went to two places, which is how the text side has
   // always read a post that went to Telegram and to Threads.
@@ -69,7 +69,7 @@ export function videoOverview(
       const destinations = draftRows
         .map((row) => {
           const destination = destinationFor(bundle.catalogue, row);
-          const period = periodMetrics(snapshots.get(row.id) ?? [], periodDays).totals;
+          const period = reachViews.get(row.id) ?? emptyDailyReach();
           return {
             target: row.target,
             label: destination?.label ?? videoLabel(row.target),
@@ -85,7 +85,7 @@ export function videoOverview(
       const totals = draftRows.reduce(
         (all, row) => {
           const history = snapshots.get(row.id) ?? [];
-          const period = periodMetrics(history, periodDays).totals;
+          const period = reachViews.get(row.id) ?? emptyDailyReach();
           const periodEnd = latestAtOrBefore(history, end)?.metrics ?? emptyMetrics();
           const lifetime = history.at(-1)?.metrics ?? emptyMetrics();
           const subscribers = periodSubscriberDelta(history, periodDays);

@@ -64,6 +64,12 @@ export function pipelineOverviewPayload(
   return { posts: pipelinePosts(backendDb, config, weekOffset, periodDays, comparisonOffset, offsetDays, readModelOptions) };
 }
 
+/** One bounded history holding two adjacent dashboard periods, each capped at the public read model's 100 posts. */
+export function dashboardPipelineHistoryPayload(config: BackendConfig, backendDb: BackendDb, periodDays: number, offsetDays: number) {
+  const options = resolvePipelineReadModelOptions({ includeSamples: false, contentLimit: 4, compact: true });
+  return { posts: pipelinePosts(backendDb, config, 0, periodDays, 0, offsetDays, options, 200) };
+}
+
 /** Operations read model over publication, delivery and worker state. */
 export function pipelineStatusPayload(
   config: BackendConfig,
@@ -206,10 +212,11 @@ function pipelinePosts(
   comparisonOffset: number,
   offsetDays?: number,
   options: ResolvedPipelineReadModelOptions = resolvePipelineReadModelOptions({}),
+  rowLimit = 100,
 ): Record<string, unknown>[] {
   const periodOffsetDays = offsetDays ?? (weekOffset + comparisonOffset) * periodDays;
   const [start, end] = zonedRollingPeriodBounds(periodOffsetDays / periodDays, periodDays, config.TIMEZONE);
-  const rows = fetchPostRows(backendDb, start, end, options.includeContent, options.contentLimit);
+  const rows = fetchPostRows(backendDb, start, end, options.includeContent, options.contentLimit, rowLimit);
   const postKeys = rows.map((row) => String(row.post_key ?? "")).filter(Boolean);
   const targetRows = (
     postKeys.length
@@ -294,6 +301,7 @@ function fetchPostRows(
   end: string,
   includeContent: boolean,
   contentLimit: number | null = null,
+  rowLimit = 100,
 ): PipelinePostRow[] {
   const ru = alias(postLocales, "pipeline_ru");
   const en = alias(postLocales, "pipeline_en");
@@ -320,7 +328,7 @@ function fetchPostRows(
           .leftJoin(en, and(eq(en.postId, publications.postId), eq(en.locale, "en")))
           .where(and(gte(publications.createdAt, start), lte(publications.createdAt, end)))
           .orderBy(desc(publications.createdAt))
-          .limit(100)
+          .limit(rowLimit)
           .all()
       : boundedContent
         ? unsafeDb(backendDb)
@@ -339,7 +347,7 @@ function fetchPostRows(
             .leftJoin(en, and(eq(en.postId, publications.postId), eq(en.locale, "en")))
             .where(and(gte(publications.createdAt, start), lte(publications.createdAt, end)))
             .orderBy(desc(publications.createdAt))
-            .limit(100)
+            .limit(rowLimit)
             .all()
         : unsafeDb(backendDb)
             .db.select({
@@ -351,11 +359,13 @@ function fetchPostRows(
             .from(publications)
             .where(and(gte(publications.createdAt, start), lte(publications.createdAt, end)))
             .orderBy(desc(publications.createdAt))
-            .limit(100)
+            .limit(rowLimit)
             .all()
   ) as PublicationQueryRow[];
   if (boundedContent) {
-    const contentPostIds = publicationRows.slice(0, Math.max(0, Math.min(100, Math.floor(contentLimit ?? 0)))).map((row) => row.postId);
+    const contentPostIds = publicationRows
+      .slice(0, Math.max(0, Math.min(rowLimit, Math.floor(contentLimit ?? 0))))
+      .map((row) => row.postId);
     if (contentPostIds.length) {
       const contentRows = unsafeDb(backendDb)
         .db.select({ postId: postLocales.postId, locale: postLocales.locale, text: postLocales.text, mediaJson: postLocales.mediaJson })

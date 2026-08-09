@@ -16,18 +16,5 @@ export type DeliveryAdapter = {
   verify: (job: ClaimedPublishJob, result: PublishResult) => Promise<PublishResult>;
 };
 
-type DeliveryAdapterHooks = Pick<DeliveryAdapter, "validate" | "verify"> & Partial<Pick<DeliveryAdapter, "prepare">>;
-
-/** Build one explicit adapter; validation and verification are never implicit no-ops. */
-export function deliveryAdapter(publish: DeliveryPublisher, hooks: DeliveryAdapterHooks): DeliveryAdapter {
-  const prepare = hooks.prepare ?? (async (job: ClaimedPublishJob) => job);
-  return {
-    publish,
-    prepare,
-    validate: hooks.validate,
-    verify: hooks.verify,
-  };
-}
-
 /** The workflow selects an adapter only by the durable publication target. */
 export type DeliveryPorts = Record<string, DeliveryAdapter>;

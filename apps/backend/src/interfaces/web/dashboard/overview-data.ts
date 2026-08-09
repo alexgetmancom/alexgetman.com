@@ -1,8 +1,9 @@
 import type { XActivityDashboardItem } from "../../../analytics/x-activity-dashboard.js";
-import { xActivityDashboard } from "../../../analytics/x-activity-dashboard.js";
+import { xActivityDashboardRange } from "../../../analytics/x-activity-dashboard.js";
 import type { AudienceView } from "../../../botTargets.js";
 import type { BackendDb } from "../../../db/client.js";
 import type { BackendConfig } from "../../../foundation/config.js";
+import { log } from "../../../foundation/logger.js";
 import { zonedSlot } from "../../../foundation/time.js";
 import type { createOperationsService } from "../../../operations/service.js";
 import type { CombinedSectionInput, PlatformMetric } from "./combined-section.js";
@@ -62,20 +63,14 @@ export function loadDashboardReadModel(
   periodDays: number,
   videoView?: string,
 ): DashboardReadModel {
+  const timings: Record<string, number> = {};
+  const timed = <T>(phase: string, load: () => T): T => {
+    const startedAt = Date.now();
+    const value = load();
+    timings[phase] = Date.now() - startedAt;
+    return value;
+  };
   const [start, end] = rollingPeriodDates(weekOffset, periodDays, config.TIMEZONE);
-  const comparisonPipeline =
-    periodDays === 1
-      ? service.pipelineOverview(0, 30, 0, weekOffset + 1, { includeSamples: false, includeContent: false, compact: true })
-      : service.pipelineOverview(weekOffset + 1, periodDays, 0, undefined, {
-          includeSamples: false,
-          includeContent: false,
-          compact: true,
-        });
-  const comparisonX =
-    periodDays === 1
-      ? xActivityDashboard(backendDb, (weekOffset + 1) / 30, 30, config.TIMEZONE)
-      : xActivityDashboard(backendDb, weekOffset + 1, periodDays, config.TIMEZONE);
-
   const [yesterdayStart, yesterdayEnd] = rollingPeriodDates(weekOffset + 1, 1, config.TIMEZONE);
   const previousEnd = periodDays === 1 ? yesterdayEnd : rollingPeriodDates(weekOffset + 1, periodDays, config.TIMEZONE)[1];
   const previousStart =
@@ -86,65 +81,89 @@ export function loadDashboardReadModel(
   const medianOffsetDays = weekOffset * periodDays + periodDays;
   const medianPeriodOffset = medianOffsetDays / 30;
   const [medianStart, medianEnd] = rollingPeriodDates(medianPeriodOffset, 30, config.TIMEZONE);
+  const historyStart = new Date(Math.min(start.getTime(), previousStart.getTime(), medianStart.getTime(), yesterdayStart.getTime()));
+  const historyEnd = new Date(Math.max(end.getTime(), previousEnd.getTime(), medianEnd.getTime(), yesterdayEnd.getTime()));
+  const historyDays = Math.max(1, Math.round((historyEnd.getTime() - historyStart.getTime() + 1) / 86_400_000));
+  const offsetDays = weekOffset * periodDays;
+  const pipelineHistory = timed("pipelineMs", () => service.dashboardPipelineHistory(historyDays, offsetDays));
+  const pipeline = {
+    current: pipelineForDates(pipelineHistory, start, end),
+    comparison: pipelineForDates(pipelineHistory, previousStart, previousEnd),
+    dayComparison: periodDays === 1 ? pipelineForDates(pipelineHistory, yesterdayStart, yesterdayEnd) : null,
+    median: pipelineForDates(pipelineHistory, medianStart, medianEnd),
+  };
+  const xHistory = timed("xActivityMs", () => xActivityDashboardRange(backendDb, historyStart.toISOString(), historyEnd.toISOString()));
+  const xActivity = {
+    current: xActivityForDates(xHistory, start, end),
+    comparison: xActivityForDates(xHistory, previousStart, previousEnd),
+    median: xActivityForDates(xHistory, medianStart, medianEnd),
+  };
   const videoHistoryStart = new Date(Math.min(start.getTime(), previousStart.getTime(), medianStart.getTime(), yesterdayStart.getTime()));
   const videoHistoryEnd = new Date(
     Math.max(end.getTime(), previousEnd.getTime(), medianEnd.getTime(), yesterdayEnd.getTime()) + 86_400_000 - 1,
   );
   setVideoOverviewCacheRange(videoCache, videoHistoryStart, videoHistoryEnd, periodDays <= 7 ? 60 * 60 : 24 * 60 * 60);
+  const video = timed("videoMs", () => ({
+    current: videoEnabled ? videoForDates(backendDb, config.TIMEZONE, videoCache, start, end, true, videoView) : emptyVideoOverview(),
+    history: videoEnabled
+      ? videoForDates(backendDb, config.TIMEZONE, videoCache, videoHistoryStart, end, true, videoView)
+      : emptyVideoOverview(),
+    comparison: videoEnabled
+      ? videoForDates(backendDb, config.TIMEZONE, videoCache, previousStart, previousEnd, true, videoView)
+      : emptyVideoOverview(),
+    dayComparison:
+      videoEnabled && periodDays === 1
+        ? videoForDates(backendDb, config.TIMEZONE, videoCache, yesterdayStart, yesterdayEnd, true, videoView)
+        : null,
+    median: videoEnabled
+      ? videoForDates(backendDb, config.TIMEZONE, videoCache, medianStart, medianEnd, true, videoView)
+      : emptyVideoOverview(),
+  }));
+  const text = timed("textMs", () => textOverview(backendDb, service, weekOffset, periodDays, config.TIMEZONE));
+  const followers = timed("followersMs", () => audiencePlatformFollowers(backendDb));
+  log("info", "dashboard read model timing", {
+    periodDays,
+    weekOffset,
+    ...timings,
+    pipelinePosts: pipelineHistory.posts?.length ?? 0,
+    xActivityItems: xHistory.length,
+    videoItems: video.history.items.length,
+  });
 
   return {
-    pipeline: {
-      current: service.pipelineOverview(weekOffset, periodDays, 0, undefined, {
-        includeSamples: false,
-        contentLimit: 4,
-        compact: true,
-      }),
-      comparison: comparisonPipeline,
-      dayComparison:
-        periodDays === 1
-          ? service.pipelineOverview(0, 1, 0, weekOffset + 1, {
-              includeSamples: false,
-              includeContent: false,
-              compact: true,
-            })
-          : null,
-      median: service.pipelineOverview(0, 30, 0, medianOffsetDays, {
-        includeSamples: false,
-        includeContent: false,
-        compact: true,
-      }),
-    },
-    xActivity: {
-      current: xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE),
-      comparison: comparisonX,
-      median: xActivityDashboard(backendDb, medianPeriodOffset, 30, config.TIMEZONE),
-    },
-    video: {
-      current: videoEnabled ? videoForDates(backendDb, config.TIMEZONE, videoCache, start, end, true, videoView) : emptyVideoOverview(),
-      history: videoEnabled
-        ? videoForDates(backendDb, config.TIMEZONE, videoCache, videoHistoryStart, end, true, videoView)
-        : emptyVideoOverview(),
-      comparison: videoEnabled
-        ? videoForDates(backendDb, config.TIMEZONE, videoCache, previousStart, previousEnd, true, videoView)
-        : emptyVideoOverview(),
-      dayComparison:
-        videoEnabled && periodDays === 1
-          ? videoForDates(backendDb, config.TIMEZONE, videoCache, yesterdayStart, yesterdayEnd, true, videoView)
-          : null,
-      median: videoEnabled
-        ? videoForDates(backendDb, config.TIMEZONE, videoCache, medianStart, medianEnd, true, videoView)
-        : emptyVideoOverview(),
-    },
-    text: textOverview(backendDb, service, weekOffset, periodDays, config.TIMEZONE),
+    pipeline,
+    xActivity,
+    video,
+    text,
     videoEnabled,
     videoView: videoView ?? null,
-    followers: audiencePlatformFollowers(backendDb),
+    followers,
     rangeStart: start,
     rangeEnd: end,
     periodDays,
     weekOffset,
     timeZone: config.TIMEZONE,
   };
+}
+
+function pipelineForDates(data: PipelineData, start: Date, end: Date): PipelineData {
+  const startIso = start.toISOString();
+  const endIso = end.toISOString();
+  return {
+    ...data,
+    posts: (data.posts ?? [])
+      .filter((post) => {
+        const publishedAt = post.date;
+        return typeof publishedAt === "string" && publishedAt >= startIso && publishedAt <= endIso;
+      })
+      .slice(0, 100),
+  };
+}
+
+function xActivityForDates(items: XActivityDashboardItem[], start: Date, end: Date): XActivityDashboardItem[] {
+  const startIso = start.toISOString();
+  const endIso = end.toISOString();
+  return items.filter((item) => item.publishedAt >= startIso && item.publishedAt <= endIso);
 }
 
 export function buildOverviewData(

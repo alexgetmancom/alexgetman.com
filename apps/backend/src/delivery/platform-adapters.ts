@@ -5,7 +5,7 @@ import type { PublishResult } from "../publishing/errors.js";
 import { platformProfile } from "../publishing/platform-profiles.js";
 import type { ClaimedPublishJob } from "../publishing/queue.js";
 import { platformTargetConfigs } from "./platform-routing.js";
-import { type DeliveryPorts, type DeliveryPublisher, deliveryAdapter } from "./ports.js";
+import type { DeliveryPorts, DeliveryPublisher } from "./ports.js";
 import { publishInstagramStory, verifyInstagramPublication } from "./social/instagram.js";
 import { publishToTelegram } from "./social/telegram.js";
 import { publishToThreads, verifyThreadsPost } from "./social/threads.js";
@@ -37,11 +37,12 @@ export function createPlatformAdapters(config: BackendConfig, fetchImpl: typeof 
   return Object.fromEntries(
     Object.entries(publishers).map(([target, publish]) => [
       target,
-      deliveryAdapter(publish, {
+      {
+        publish,
         validate: async () => validatePlatformTarget(target, targetConfigs[target] ?? config),
         prepare: async (job) => (target === "telegram" ? job : prepare(job, targetConfigs[target] ?? config)),
         verify: async (_job, result) => verifyPlatformPublication(target, result, targetConfigs[target] ?? config, fetchImpl),
-      }),
+      },
     ]),
   ) as DeliveryPorts;
 }

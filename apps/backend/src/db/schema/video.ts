@@ -95,6 +95,7 @@ export const videoMetricSnapshots = sqliteTable(
   },
   (table) => [
     index("idx_video_metric_snapshots_target_sampled").on(table.videoTargetId, table.sampledAt),
+    index("idx_video_metric_snapshots_sampled_at").on(table.sampledAt),
     uniqueIndex("idx_video_metric_snapshots_checkpoint")
       .on(table.videoTargetId, table.checkpointIndex)
       .where(sql`${table.checkpointIndex} IS NOT NULL`),

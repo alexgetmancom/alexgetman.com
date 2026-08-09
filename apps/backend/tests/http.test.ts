@@ -103,6 +103,7 @@ describe("Astro endpoint controller", () => {
         latestJobUpdatedAt: null,
         latestEventAt: null,
         videoRevision: null,
+        analyticsRevision: null,
       });
       expect(second).toEqual(first);
       expect(JSON.stringify(first).length).toBeLessThan(200);

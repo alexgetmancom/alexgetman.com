@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { targetLocale } from "../src/botTargets.js";
 import { type BackendDb, unsafeDb } from "../src/db/client.js";
 import { publishJobs, siteJobs } from "../src/db/schema.js";
-import { type DeliveryPorts, deliveryAdapter } from "../src/delivery/ports.js";
+import type { DeliveryPorts } from "../src/delivery/ports.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { runPublishCycle } from "../src/runtime/workers.js";
 import { postService } from "../src/studio/services/posts.js";
@@ -137,13 +137,15 @@ describe("partial locale scheduling", () => {
     const publishers: DeliveryPorts = Object.fromEntries(
       ["telegram", "threads_ru", "threads_en"].map((target) => [
         target,
-        deliveryAdapter(
-          async (job) => {
+        {
+          publish: async (job) => {
             calls.push(job.target);
             return { ok: true, id: `${job.target}-published` };
           },
-          { validate: async () => undefined, verify: async (_job, result) => result },
-        ),
+          prepare: async (job) => job,
+          validate: async () => undefined,
+          verify: async (_job, result) => result,
+        },
       ]),
     );
     await Bun.sleep(100);

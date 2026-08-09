@@ -143,27 +143,23 @@ export type CommandCenterAttention = {
 
 /** Small overview-only projection. Full queue and diagnostic rows stay behind their panels. */
 export function commandCenterAttention(config: BackendConfig, backendDb: BackendDb): CommandCenterAttention {
-  const failedJob = unsafeDb(backendDb)
-    .db.select({ status: publishJobs.status })
-    .from(publishJobs)
-    .orderBy(desc(publishJobs.updatedAt), desc(publishJobs.jobId))
-    .limit(100)
-    .all()
-    .some((job) => job.status === "failed");
+  const sqlite = unsafeDb(backendDb).sqlite;
+  const failedJob = Boolean(sqlite.prepare("SELECT 1 FROM publish_jobs WHERE status = 'failed' LIMIT 1").get());
   const activeCapabilityTargets = new Set(capabilityReport(config, backendDb).map((capability) => capability.target));
-  const credentialIssue = unsafeDb(backendDb)
-    .db.select({ target: credentialChecks.target, status: credentialChecks.status })
-    .from(credentialChecks)
-    .orderBy(desc(credentialChecks.lastCheckedAt))
-    .all()
-    .some((credential) => activeCapabilityTargets.has(credential.target) && credential.status !== "ok" && credential.status !== "ready");
-  const metricIssue = unsafeDb(backendDb)
-    .db.select({ error: postMetrics.error })
-    .from(postMetrics)
-    .orderBy(desc(postMetrics.sampledAt))
-    .limit(100)
-    .all()
-    .some((metric) => Boolean(metric.error));
+  const targets = [...activeCapabilityTargets];
+  const credentialIssue = targets.length
+    ? Boolean(
+        sqlite
+          .prepare(
+            `SELECT 1 FROM credential_checks
+              WHERE target IN (${targets.map(() => "?").join(",")})
+                AND status NOT IN ('ok', 'ready')
+              LIMIT 1`,
+          )
+          .get(...targets),
+      )
+    : false;
+  const metricIssue = Boolean(sqlite.prepare("SELECT 1 FROM post_metrics WHERE error IS NOT NULL AND error <> '' LIMIT 1").get());
   return { hasFailedJob: failedJob, hasCredentialIssue: credentialIssue, hasMetricIssue: metricIssue };
 }
 
@@ -172,6 +168,7 @@ type CommandCenterFingerprint = {
   latestJobUpdatedAt: string | null;
   latestEventAt: string | null;
   videoRevision: string | null;
+  analyticsRevision: string | null;
 };
 
 export function commandCenterFingerprint(backendDb: BackendDb): CommandCenterFingerprint {
@@ -185,8 +182,19 @@ export function commandCenterFingerprint(backendDb: BackendDb): CommandCenterFin
            UNION ALL SELECT MAX(sampled_at) FROM video_metric_snapshots
          )) AS videoRevision`,
     )
-    .get() as Omit<CommandCenterFingerprint, "pipelineUpdatedAt">;
-  return { pipelineUpdatedAt: pipelineUpdatedAt(backendDb), ...revisions };
+    .get() as Omit<CommandCenterFingerprint, "pipelineUpdatedAt" | "analyticsRevision">;
+  const analytics = unsafeDb(backendDb)
+    .sqlite.prepare(
+      `SELECT MAX(value) AS analyticsRevision FROM (
+         SELECT MAX(last_seen_at) AS value FROM x_activity_items
+         UNION ALL SELECT MAX(sampled_at) FROM x_activity_metric_snapshots
+         UNION ALL SELECT MAX(sampled_at) FROM creator_profile_snapshots
+         UNION ALL SELECT MAX(updated_at) FROM creator_profiles
+         UNION ALL SELECT MAX(last_checked_at) FROM credential_checks
+       )`,
+    )
+    .get() as { analyticsRevision: string | null };
+  return { pipelineUpdatedAt: pipelineUpdatedAt(backendDb), ...revisions, analyticsRevision: analytics.analyticsRevision ?? null };
 }
 
 export function postDebugPayload(backendDb: BackendDb, ref: string) {

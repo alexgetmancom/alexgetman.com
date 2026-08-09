@@ -6,6 +6,7 @@ import type { BackendConfig } from "../../foundation/config.js";
 import { escapeHtml } from "../../foundation/html.js";
 import { t } from "../../foundation/i18n/index.js";
 import { DEFAULT_STUDIO_LOCALE, parseStudioLocale, type StudioLocale } from "../../foundation/locale.js";
+import { log } from "../../foundation/logger.js";
 import type { CommandCenterAttention } from "../../operations/command-center.js";
 import { createOperationsService } from "../../operations/service.js";
 import { type PlatformMetric, renderCombinedSection } from "./dashboard/combined-section.js";
@@ -22,9 +23,8 @@ import { renderStudioSection } from "./studio.js";
 
 type DashboardTab = "posts" | "studio";
 type DashboardPanel = "overview" | "queue" | "health" | "repair";
-const DASHBOARD_CACHE_TTL_MS = 10_000;
 const MAX_DASHBOARD_CACHE_ENTRIES = 5;
-type DashboardCacheEntry = { expiresAt: number; html: string };
+type DashboardCacheEntry = { html: string };
 const dashboardCaches = new WeakMap<BackendDb, Map<string, DashboardCacheEntry>>();
 
 function dashboardCacheFor(backendDb: BackendDb): Map<string, DashboardCacheEntry> {
@@ -47,6 +47,7 @@ function dashboardCacheKey(
   requestedView: string | undefined,
   requestedMetric: string | undefined,
   requestedVideoView: string | undefined,
+  revision: string,
 ): string {
   return JSON.stringify({
     timezone: config.TIMEZONE,
@@ -64,13 +65,14 @@ function dashboardCacheKey(
       requestedView ?? null,
       requestedMetric ?? null,
       requestedVideoView ?? null,
+      revision,
     ],
   });
 }
 
-function rememberDashboard(cache: Map<string, DashboardCacheEntry>, key: string, html: string, now: number): void {
+function rememberDashboard(cache: Map<string, DashboardCacheEntry>, key: string, html: string): void {
   cache.delete(key);
-  cache.set(key, { expiresAt: now + DASHBOARD_CACHE_TTL_MS, html });
+  cache.set(key, { html });
   while (cache.size > MAX_DASHBOARD_CACHE_ENTRIES) {
     const oldest = cache.keys().next().value;
     if (typeof oldest !== "string") break;
@@ -98,6 +100,11 @@ export function renderDashboard(
   requestedMetric?: string,
   requestedVideoView?: string,
 ): string {
+  const renderStartedAt = Date.now();
+  const service = createOperationsService(backendDb, config);
+  const fingerprintStartedAt = Date.now();
+  const revision = JSON.stringify(service.fingerprint());
+  const fingerprintMs = Date.now() - fingerprintStartedAt;
   const cache = dashboardCacheFor(backendDb);
   const cacheKey = dashboardCacheKey(
     config,
@@ -111,18 +118,20 @@ export function renderDashboard(
     requestedView,
     requestedMetric,
     requestedVideoView,
+    revision,
   );
-  const now = Date.now();
   const cached = cache.get(cacheKey);
   if (cached) {
-    if (cached.expiresAt > now) {
-      cache.delete(cacheKey);
-      cache.set(cacheKey, cached);
-      return cached.html;
-    }
     cache.delete(cacheKey);
+    cache.set(cacheKey, cached);
+    log("info", "dashboard render timing", {
+      cacheHit: true,
+      fingerprintMs,
+      totalMs: Date.now() - renderStartedAt,
+      htmlBytes: Buffer.byteLength(cached.html),
+    });
+    return cached.html;
   }
-  const service = createOperationsService(backendDb, config);
   const videoCache = createVideoOverviewCache();
   const studioActorId = config.MCP_STUDIO_ACTOR_ID;
   // The unified overview is the landing screen of every Studio, whichever
@@ -134,8 +143,10 @@ export function renderDashboard(
   const locale = parseStudioLocale(requestedLocale);
   const panel: DashboardPanel =
     requestedPanel === "queue" || requestedPanel === "health" || requestedPanel === "repair" ? requestedPanel : "overview";
+  const attentionStartedAt = Date.now();
   const ops = panel === "queue" || panel === "health" ? service.dashboard() : null;
   const hasAttention = ops ? opsNeedsAttention(ops) : commandCenterAttentionState(service.attention());
+  const attentionMs = Date.now() - attentionStartedAt;
   const periodDays = [1, 7, 30, 90, 365].includes(Number(requestedPeriod)) ? Number(requestedPeriod) : 1;
   const activeView =
     showPosts && config.studio.modules.text_posting && AUDIENCE_VIEWS.includes(requestedView as AudienceView)
@@ -163,7 +174,9 @@ export function renderDashboard(
     panel === "overview" && showPosts
       ? renderPeriodControls(locale, weekOffset, periodDays, config.TIMEZONE, activeView, overviewFilterQuery)
       : "";
+  const contentStartedAt = Date.now();
   const content = renderPanel();
+  const contentMs = Date.now() - contentStartedAt;
 
   function renderPanel(): string {
     switch (panel) {
@@ -226,8 +239,19 @@ export function renderDashboard(
   const body = `
     <nav class="dashboard-tabs"><span class="dashboard-tabs__start">${overviewTab}${menu}</span><span class="dashboard-tabs__end">${overviewControls}${localeSwitcher}${dashboardThemeToggleHtml(t(locale, "cc.theme.toggle"))}</span></nav>
     <section id="overview" class="overview">${content}</section>`;
+  const shellStartedAt = Date.now();
   const html = renderDashboardShell(body, locale);
-  rememberDashboard(cache, cacheKey, html, now);
+  const shellMs = Date.now() - shellStartedAt;
+  rememberDashboard(cache, cacheKey, html);
+  log("info", "dashboard render timing", {
+    cacheHit: false,
+    fingerprintMs,
+    attentionMs,
+    contentMs,
+    shellMs,
+    totalMs: Date.now() - renderStartedAt,
+    htmlBytes: Buffer.byteLength(html),
+  });
   return html;
 }
 

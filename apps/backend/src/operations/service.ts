@@ -3,7 +3,12 @@ import type { BackendConfig } from "../foundation/config.js";
 import { commandCenterAttention, commandCenterFingerprint, commandCenterPayload, postDebugPayload } from "./command-center.js";
 import { type CommandAction, runOperationCommand } from "./commands.js";
 
-import { type PipelineReadModelOptions, pipelineOverviewPayload, pipelineStatusPayload } from "./read-model.js";
+import {
+  dashboardPipelineHistoryPayload,
+  type PipelineReadModelOptions,
+  pipelineOverviewPayload,
+  pipelineStatusPayload,
+} from "./read-model.js";
 
 function buildOperationsService(backendDb: BackendDb, config: BackendConfig) {
   return {
@@ -14,6 +19,8 @@ function buildOperationsService(backendDb: BackendDb, config: BackendConfig) {
       pipelineStatusPayload(config, backendDb, weekOffset, periodDays, comparisonOffset, offsetDays, options),
     pipelineOverview: (weekOffset = 0, periodDays = 7, comparisonOffset = 0, offsetDays?: number, options: PipelineReadModelOptions = {}) =>
       pipelineOverviewPayload(config, backendDb, weekOffset, periodDays, comparisonOffset, offsetDays, options),
+    dashboardPipelineHistory: (periodDays: number, offsetDays: number) =>
+      dashboardPipelineHistoryPayload(config, backendDb, periodDays, offsetDays),
     postDebug: (ref: string) => postDebugPayload(backendDb, ref),
     command: (input: CommandAction, fetchImpl?: typeof fetch) => runOperationCommand(backendDb, input, config, fetchImpl),
   };

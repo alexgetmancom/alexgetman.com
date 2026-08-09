@@ -67,7 +67,7 @@ function stubSendBeacon(window: Window): string[] {
   return calls;
 }
 
-describe("story player browser behavior", () => {
+describe("story player DOM behavior", () => {
   it("does not advance a buffering video until playback resumes", async () => {
     const window = installDom();
     const video = window.document.createElement("video") as unknown as HTMLVideoElement;

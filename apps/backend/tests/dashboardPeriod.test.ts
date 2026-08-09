@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setSystemTime } from "bun:test";
 import { renderPeriodControls, rollingPeriodDates } from "../src/interfaces/web/dashboard/period-controls.js";
 
 describe("command center period controls", () => {
@@ -11,9 +11,23 @@ describe("command center period controls", () => {
     expect(html).toContain(">30д<");
   });
 
-  it("returns UTC calendar dates for the configured timezone", () => {
-    const [start, end] = rollingPeriodDates(0, 1, "Europe/Moscow");
-
-    expect(start.toISOString().slice(0, 10)).toBe(end.toISOString().slice(0, 10));
+  it("derives the calendar range from the configured timezone", () => {
+    setSystemTime(new Date("2026-08-09T22:30:00.000Z"));
+    try {
+      expect(rollingPeriodDates(0, 1, "Europe/Moscow").map((date) => date.toISOString())).toEqual([
+        "2026-08-10T00:00:00.000Z",
+        "2026-08-10T00:00:00.000Z",
+      ]);
+      expect(rollingPeriodDates(0, 1, "America/Los_Angeles").map((date) => date.toISOString())).toEqual([
+        "2026-08-09T00:00:00.000Z",
+        "2026-08-09T00:00:00.000Z",
+      ]);
+      expect(rollingPeriodDates(1, 7, "Europe/Moscow").map((date) => date.toISOString())).toEqual([
+        "2026-07-28T00:00:00.000Z",
+        "2026-08-03T00:00:00.000Z",
+      ]);
+    } finally {
+      setSystemTime();
+    }
   });
 });

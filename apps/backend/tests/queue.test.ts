@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { type JsonObject, postEvents, postTargets, publishJobs } from "../src/db/schema.js";
 import { AmbiguousPublicationError } from "../src/delivery/ambiguous-publication.js";
-import { type DeliveryAdapter, type DeliveryPorts, type DeliveryPublisher, deliveryAdapter } from "../src/delivery/ports.js";
+import type { DeliveryAdapter, DeliveryPorts, DeliveryPublisher } from "../src/delivery/ports.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
 import {
@@ -30,11 +30,12 @@ function enqueuePublishJob(
 }
 
 function testAdapter(publish: DeliveryPublisher, hooks: Partial<Pick<DeliveryAdapter, "prepare">> = {}): DeliveryAdapter {
-  return deliveryAdapter(publish, {
+  return {
+    publish,
+    prepare: hooks.prepare ?? (async (job) => job),
     validate: async () => undefined,
     verify: async (_job, result) => result,
-    ...hooks,
-  });
+  };
 }
 
 function testPorts(entries: Record<string, DeliveryPublisher | DeliveryAdapter>): DeliveryPorts {

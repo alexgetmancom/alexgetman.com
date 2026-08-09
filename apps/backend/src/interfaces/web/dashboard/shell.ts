@@ -572,6 +572,7 @@ ${DASHBOARD_THEME_TOGGLE_SCRIPT}
           payload.latestJobUpdatedAt,
           payload.latestEventAt,
           payload.videoRevision,
+          payload.analyticsRevision,
         ]);
         const editingForm = document.activeElement instanceof Element && document.activeElement.closest('form');
         if (editingForm) return;

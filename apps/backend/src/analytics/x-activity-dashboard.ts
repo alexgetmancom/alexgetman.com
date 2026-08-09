@@ -21,6 +21,11 @@ export function xActivityDashboard(
   timeZone: string,
 ): XActivityDashboardItem[] {
   const [start, end] = zonedRollingPeriodBounds(weekOffset, periodDays, timeZone);
+  return xActivityDashboardRange(backendDb, start, end);
+}
+
+/** Loads one bounded X activity history for every dashboard comparison. */
+export function xActivityDashboardRange(backendDb: BackendDb, start: string, end: string): XActivityDashboardItem[] {
   const rows = unsafeDb(backendDb)
     .sqlite.prepare(
       `SELECT x_post_id AS xPostId,kind,published_at AS publishedAt,text,url,linked_post_key AS linkedPostKey

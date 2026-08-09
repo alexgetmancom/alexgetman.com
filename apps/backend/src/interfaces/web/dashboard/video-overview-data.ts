@@ -12,7 +12,7 @@ import {
   videoTargetLabel,
 } from "../../../publishing/video-types.js";
 import { type DailyReach, dailyReach, emptyDailyReach, latestAtOrBefore, type PeriodDay } from "./daily-reach.js";
-import { periodMetrics, type VideoSnapshot, videoReachSeries } from "./video-overview-calendar.js";
+import { type VideoSnapshot, videoReachSeries } from "./video-overview-calendar.js";
 
 /**
  * Read model behind the video half of the unified overview.
@@ -541,6 +541,7 @@ export function videoSummaryMetrics(
   backendDb: BackendDb,
   rows: TargetRow[],
   snapshots: Map<number, VideoSnapshot[]>,
+  periodTotals: ReadonlyMap<number, DailyReach>,
   periodDays: PeriodDay[],
   end: Date,
   timeZone: string,
@@ -555,7 +556,7 @@ export function videoSummaryMetrics(
     const history = snapshots.get(row.id) ?? [];
     const latest = latestAtOrBefore(history, end)?.metrics;
     if (!latest) continue;
-    const weight = Math.max(1, periodMetrics(history, periodDays).totals.views || latest.views);
+    const weight = Math.max(1, periodTotals.get(row.id)?.views || latest.views);
     if (latest.averageWatchTimeMs !== null && latest.averageWatchTimeMs > 0)
       watchSamples.push({ value: latest.averageWatchTimeMs, weight });
     if (latest.completionRate !== null && latest.completionRate >= 0) completionSamples.push({ value: latest.completionRate, weight });
