@@ -289,7 +289,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          digest=$(docker buildx imagetools inspect "$IMAGE" 2>/dev/null | awk '$1 == "Digest:" { print $2; exit }')
+          digest=$(docker buildx imagetools inspect "$IMAGE" 2>/dev/null | awk '$1 == "Digest:" { print $2; exit }' || true)
           if [[ "$digest" =~ ^sha256:[0-9a-fA-F]{64}$ ]]; then
             echo "digest=$digest" >> "$GITHUB_OUTPUT"
             echo "Reusing published backend image $IMAGE@$digest"
