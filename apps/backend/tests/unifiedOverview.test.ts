@@ -526,6 +526,23 @@ describe("text daily reach", () => {
     expect(daily["2026-07-31"]?.freshViews).toBe(0);
   });
 
+  it("credits a publication first read a day later to the day it went out", () => {
+    // The X export is sent when the operator sends it, so a post that went out
+    // on the 30th can be read for the first time on the 31st. That reading is
+    // its lifetime, not the 31st's earnings — and it used to count on neither.
+    const overview = textOverviewOf(
+      [sampled([["2026-07-31T20:00:00.000Z", 1_500_000]])],
+      [],
+      calendarDays(new Date("2026-07-30T00:00:00.000Z"), new Date("2026-07-31T23:59:59.999Z"), "UTC"),
+      "UTC",
+    );
+    const daily = textDailyReach(overview, ["telegram"]);
+
+    expect(daily["2026-07-30"]?.views).toBe(1_500_000);
+    expect(daily["2026-07-30"]?.freshViews).toBe(1_500_000);
+    expect(daily["2026-07-31"]?.views).toBe(0);
+  });
+
   it("keeps an unsampled publication on its own day instead of dropping it", () => {
     const overview = textOverviewOf(
       [

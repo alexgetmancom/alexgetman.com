@@ -78,7 +78,8 @@ export function calendarKey(value: Date, timeZone: string): string {
 export function dailyReach(series: readonly ReachSeries[], days: readonly PeriodDay[], timeZone: string): Record<string, DailyReach> {
   const result: Record<string, DailyReach> = {};
   for (const day of days) result[day.key] = emptyDailyReach();
-  for (const entry of series) {
+  for (const raw of series) {
+    const entry = rebaseFirstReading(raw);
     const publishedKey = publicationDayKey(entry, timeZone);
     for (const day of days) {
       const before = baselineAt(entry, day.start);
@@ -111,6 +112,26 @@ function baselineAt(entry: ReachSeries, dayStart: Date): ReachSample | undefined
   // lands exactly on the day boundary.
   if (published && !Number.isNaN(published.getTime()) && published >= dayStart) return undefined;
   return latestAtOrBefore(entry.samples, dayStart) ?? entry.samples[0];
+}
+
+/**
+ * A publication's first reading is what it had earned by the time we first
+ * looked, and that belongs to the day it went out.
+ *
+ * Sampling is irregular — an X export arrives when the operator sends it — so a
+ * post that went viral hours after publication is first read a day or two
+ * later. Left at the timestamp of that reading, the figure fell through both
+ * ends of `baselineAt`: on the day of publication there was nothing to read
+ * yet, and on the day of the reading the same reading became the day's own
+ * baseline, so a week's best post counted on no bar at all. Only the growth
+ * measured between two readings is evidence about when views arrived; the first
+ * reading is evidence only about the publication.
+ */
+function rebaseFirstReading(entry: ReachSeries): ReachSeries {
+  const published = entry.publishedAt ? new Date(entry.publishedAt) : null;
+  const first = entry.samples[0];
+  if (!first || !published || Number.isNaN(published.getTime()) || first.at <= published) return entry;
+  return { ...entry, samples: [{ ...first, at: published }, ...entry.samples.slice(1)] };
 }
 
 function publicationDayKey(entry: ReachSeries, timeZone: string): string | null {
