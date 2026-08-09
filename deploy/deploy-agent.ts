@@ -268,7 +268,7 @@ function shouldRetryRemoteDeploy(error: unknown): boolean {
   return isTransientDeploymentError(error);
 }
 
-async function activate(deploymentTarget: DeploymentTarget, image: string, release: string): Promise<void> {
+async function activate(deploymentTarget: DeploymentTarget, image: string, release: string, validateConfig = false): Promise<void> {
   if (deploymentTarget.kind === "remote") {
     await retryDeployment(
       `remote deploy ${deploymentTarget.name}`,
@@ -296,6 +296,19 @@ async function activate(deploymentTarget: DeploymentTarget, image: string, relea
   await retryDeployment(`image pull ${deploymentTarget.name}`, () =>
     command(composeArgs(deploymentTarget, "pull", deploymentTarget.service)),
   );
+  if (validateConfig)
+    await command(
+      composeArgs(
+        deploymentTarget,
+        "run",
+        "--rm",
+        "--no-deps",
+        "--entrypoint",
+        "bun",
+        deploymentTarget.service,
+        "/app/entrypoint/config-check.js",
+      ),
+    );
   await command(composeArgs(deploymentTarget, "up", "-d", "--no-deps", "--force-recreate", deploymentTarget.service));
   await waitForHealthy(deploymentTarget);
 }
@@ -387,7 +400,7 @@ async function deploy(deploymentTarget: DeploymentTarget, image: string, release
     let legacyContainer: string | undefined;
     try {
       if (!previous) legacyContainer = await parkLegacyContainer(deploymentTarget);
-      await activate(deploymentTarget, image, release);
+      await activate(deploymentTarget, image, release, true);
       const next = {
         current: {
           image,

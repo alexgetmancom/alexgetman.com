@@ -29,6 +29,7 @@ jobs:
       dependencies_changed: ${{ steps.filter.outputs.dependencies }}
       backend_image_changed: ${{ steps.filter.outputs.backend_image }}
       runtime_config_changed: ${{ steps.filter.outputs.runtime_config }}
+      deploy_agent_changed: ${{ steps.filter.outputs.deploy_agent }}
       nginx_config_changed: ${{ steps.filter.outputs.nginx_config }}
       deployment_required: ${{ steps.filter.outputs.deployment }}
     steps:
@@ -54,6 +55,7 @@ jobs:
           dependencies=false
           backend_image=false
           runtime_config=false
+          deploy_agent=false
           nginx_config=false
           deployment=false
 
@@ -76,6 +78,10 @@ jobs:
                 runtime_config=true
                 deployment=true
                 ;;
+              deploy/deploy-agent.ts | deploy/retry.ts)
+                deploy_agent=true
+                deployment=true
+                ;;
               deploy/nginx/production/*)
                 nginx_config=true
                 deployment=true
@@ -92,6 +98,7 @@ jobs:
             echo "dependencies=$dependencies"
             echo "backend_image=$backend_image"
             echo "runtime_config=$runtime_config"
+            echo "deploy_agent=$deploy_agent"
             echo "nginx_config=$nginx_config"
             echo "deployment=$deployment"
           } >> "$GITHUB_OUTPUT"
@@ -188,7 +195,9 @@ jobs:
           bun build apps/web/server.ts --outdir runtime --target bun
           bun build apps/backend/src/cli.ts --outdir ops --target bun
           bun build apps/backend/src/runtime/docker-entrypoint.ts --outdir entrypoint --target bun
+          bun build apps/backend/src/runtime/config-check.ts --outdir entrypoint --target bun
           test -f entrypoint/docker-entrypoint.js
+          test -f entrypoint/config-check.js
           grep -q '"/app/entrypoint/docker-entrypoint.js"' apps/backend/Dockerfile
           grep -q '"/app/entrypoint/docker-entrypoint.js"' apps/backend/Dockerfile.release
           bun build apps/backend/src/story-cards/renderer-process.ts --outdir story-renderer --target bun
@@ -205,7 +214,9 @@ jobs:
           bun build apps/web/server.ts --outdir runtime --target bun --splitting --minify --sourcemap=external
           bun build apps/backend/src/cli.ts --outdir ops --target bun --minify --sourcemap=external
           bun build apps/backend/src/runtime/docker-entrypoint.ts --outdir entrypoint --target bun --minify --sourcemap=external
+          bun build apps/backend/src/runtime/config-check.ts --outdir entrypoint --target bun --minify --sourcemap=external
           test -f entrypoint/docker-entrypoint.js
+          test -f entrypoint/config-check.js
           grep -q '"/app/entrypoint/docker-entrypoint.js"' apps/backend/Dockerfile
           grep -q '"/app/entrypoint/docker-entrypoint.js"' apps/backend/Dockerfile.release
           bun build apps/backend/src/story-cards/renderer-process.ts --outdir story-renderer --target bun --minify --sourcemap=external
@@ -447,6 +458,7 @@ jobs:
           RELEASE: ${{ github.sha }}
           MARU_DEPLOY_ENABLED: ${{ vars.MARU_DEPLOY_ENABLED }}
           RUNTIME_CONFIG_CHANGED: ${{ needs.scope.outputs.runtime_config_changed }}
+          DEPLOY_AGENT_CHANGED: ${{ needs.scope.outputs.deploy_agent_changed }}
           NGINX_CONFIG_CHANGED: ${{ needs.scope.outputs.nginx_config_changed }}
         run: |
           phase_started=$SECONDS
@@ -469,6 +481,9 @@ jobs:
           if [ "$RUNTIME_CONFIG_CHANGED" = "true" ]; then
             release_paths+=(apps/backend/compose.yaml deploy/maru.compose.yaml)
           fi
+          if [ "$DEPLOY_AGENT_CHANGED" = "true" ]; then
+            release_paths+=(deploy/deploy-agent.ts deploy/retry.ts)
+          fi
           if [ "$NGINX_CONFIG_CHANGED" = "true" ]; then
             release_paths+=(deploy/nginx/production/*.conf)
           fi
@@ -477,6 +492,9 @@ jobs:
           fi
           if [ "$RUNTIME_CONFIG_CHANGED" = "true" ]; then
             ssh "${ssh_opts[@]}" "$remote" "set -e; cp '$release_files/apps/backend/compose.yaml' $runtime/compose.yaml.next; docker compose --env-file $runtime/deploy-image.env -f $runtime/compose.yaml.next config --quiet; mv $runtime/compose.yaml.next $runtime/compose.yaml"
+          fi
+          if [ "$DEPLOY_AGENT_CHANGED" = "true" ]; then
+            ssh "${ssh_opts[@]}" "$remote" "set -e; install -m 0644 '$release_files/deploy/deploy-agent.ts' /home/deploy/repos/alexgetman.com/deploy/deploy-agent.ts; install -m 0644 '$release_files/deploy/retry.ts' /home/deploy/repos/alexgetman.com/deploy/retry.ts; sudo systemctl restart alexgetman-deploy-agent; for attempt in 1 2 3 4 5; do curl --fail --silent http://127.0.0.1:9899/healthz && exit 0; sleep 1; done; exit 1"
           fi
           ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$runtime; image=\$(bun -e 'const state=JSON.parse(await Bun.file(\"/var/lib/alexgetman-deploy/state.json\").text()); process.stdout.write(state.current?.image ?? \"\")'); printf '%s\\n' \"\$image\" | grep -Eq '^ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' || exit 1; if ! grep -Eq '^BACKEND_IMAGE=ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' \"\$runtime/deploy-image.env\"; then tmp=\"\$runtime/deploy-image.env.next\"; { grep -v '^BACKEND_IMAGE=' \"\$runtime/deploy-image.env\" || true; printf 'BACKEND_IMAGE=%s\\n' \"\$image\"; } > \"\$tmp\"; mv \"\$tmp\" \"\$runtime/deploy-image.env\"; fi"
           if [ "$MARU_DEPLOY_ENABLED" = "true" ]; then

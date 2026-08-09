@@ -16,7 +16,7 @@
       "ignoreDependencies": ["svelte-check"]
     },
     "apps/backend": {
-      "entry": ["tests/**/*.test.ts", "src/story-cards/renderer-process.ts", "src/studio/services/index.ts"],
+      "entry": ["tests/**/*.test.ts", "src/runtime/config-check.ts", "src/story-cards/renderer-process.ts", "src/studio/services/index.ts"],
       "project": ["src/**/*.ts", "tests/**/*.ts"]
     }
   }

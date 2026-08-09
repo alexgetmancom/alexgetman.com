@@ -45,6 +45,7 @@ RUN DATA_DIR=/data bun run build
 RUN bun build apps/web/server.ts --outdir runtime --target bun --splitting --minify --sourcemap=external
 RUN bun build apps/backend/src/cli.ts --outdir ops --target bun --minify --sourcemap=external
 RUN bun build apps/backend/src/runtime/docker-entrypoint.ts --outdir entrypoint --target bun --minify --sourcemap=external
+RUN bun build apps/backend/src/runtime/config-check.ts --outdir entrypoint --target bun --minify --sourcemap=external
 RUN bun build apps/backend/src/story-cards/renderer-process.ts --outdir story-renderer --target bun --minify --sourcemap=external
 
 # --- СТАДИЯ КОПИРОВАНИЯ ГОТОВОГО БИЛДА С ХОСТА (для сборки в GitHub Actions) ---

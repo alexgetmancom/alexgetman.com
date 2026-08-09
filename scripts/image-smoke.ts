@@ -75,6 +75,22 @@ try {
     }
   }
 
+  const configCheck = await run([
+    "docker",
+    "run",
+    "--rm",
+    "--entrypoint",
+    "bun",
+    "-v",
+    `${path.resolve("studio.yaml")}:/app/studio.yaml:ro`,
+    "-e",
+    "STUDIO_CONFIG=/app/studio.yaml",
+    image,
+    "/app/entrypoint/config-check.js",
+  ]);
+  check(configCheck.code === 0, "production config preflight", configCheck.out.trim());
+  if (configCheck.code !== 0) throw new Error("production config preflight failed");
+
   /**
    * The fixture goes into a docker volume rather than a bind mount, and the
    * container is created, filled and only then started.

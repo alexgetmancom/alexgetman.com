@@ -54,6 +54,12 @@ describe("loadConfig", () => {
     ).toBe(42);
   });
 
+  it("rejects the removed ADMIN_IDS name when an MCP owner needs the roster", () => {
+    expect(() => loadConfig({ ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" })).toThrow(
+      "MCP_STUDIO_ACTOR_ID must belong to STUDIO_ACTOR_IDS",
+    );
+  });
+
   it("accepts a Studio actor that is not a Telegram admin", () => {
     // The point of the roster: an MCP-only deployment has an owner without
     // granting anyone bot access.
