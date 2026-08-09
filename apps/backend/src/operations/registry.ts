@@ -87,6 +87,20 @@ function splitList(value: string | undefined): string[] | undefined {
 
 const METRIC_BACKFILL_TARGETS = "telegram,threads_ru,threads_en,instagram_stories,instagram_stories_ru,telegram_stories";
 
+/** The repair commands differ only in what they do to the scope they share, so
+ * they share its shape too: which publication, which targets, and whether the
+ * caller has seen that scope and wants it acted on. */
+const repairSchema = <S extends z.ZodRawShape>(extra: S) =>
+  z.object({ ref: refOption, target: targetOption, locale: localeOption, apply: applyOption, ...extra });
+
+function runRepair(context: OperationContext, action: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const { ref, ...rest } = input as { ref: string } & Record<string, unknown>;
+  return createOperationsService(context.db(), context.config()).command(
+    { action, ref, actor_type: context.actorType, ...rest },
+    context.fetchImpl,
+  );
+}
+
 // --- The catalog ----------------------------------------------------------------
 
 const operationDefs = {
@@ -231,20 +245,42 @@ const operationDefs = {
   }),
   retry: operation({
     summary: "Queue a publication again for a target that never went out or failed.",
-    schema: z.object({ ref: refOption, target: targetOption, locale: localeOption }),
+    schema: repairSchema({}),
     mutates: true,
     agent: true,
-    handler: (context, input) =>
-      createOperationsService(context.db(), context.config()).command(
-        {
-          action: "republish",
-          ref: input.ref,
-          actor_type: context.actorType,
-          ...(input.target ? { target: input.target } : {}),
-          ...(input.locale ? { locale: input.locale } : {}),
-        },
-        context.fetchImpl,
-      ),
+    note: "reports the targets in scope; add --apply to queue them",
+    handler: (context, input) => runRepair(context, "retry", input),
+  }),
+  edit: operation({
+    summary: "Rewrite one locale's text, push it to the targets that can be edited and replace those that cannot.",
+    schema: repairSchema({ text: example(z.string().min(1), '"new text"').describe("the replacement text") }),
+    mutates: true,
+    agent: true,
+    note: "reports the targets in scope; add --apply to rewrite them",
+    handler: (context, input) => runRepair(context, "edit", input),
+  }),
+  "use-other-media": operation({
+    summary: "Drop one locale's own media so it falls back to the other locale's, then publish it again.",
+    schema: repairSchema({}),
+    mutates: true,
+    agent: true,
+    note: "reports the targets in scope; add --apply to republish them",
+    handler: (context, input) => runRepair(context, "use_other_media", input),
+  }),
+  delete: operation({
+    summary: "Take a publication down from the targets that support remote deletion.",
+    schema: repairSchema({ republish: z.boolean().default(false).describe("publish it again after taking it down") }),
+    mutates: true,
+    agent: true,
+    note: "reports the targets in scope; add --apply to delete them",
+    handler: (context, input) => runRepair(context, "delete", input),
+  }),
+  "refresh-site": operation({
+    summary: "Re-render one locale's public page without touching social targets.",
+    schema: z.object({ ref: refOption, locale: localeOption }),
+    mutates: true,
+    agent: true,
+    handler: (context, input) => runRepair(context, "refresh_site", { ...input, apply: true }),
   }),
   "replace-media": operation({
     summary: "Swap the media of a published post on one target and re-render the site.",
@@ -253,10 +289,11 @@ const operationDefs = {
       locale: z.enum(["ru", "en"]).describe("which language's media to replace"),
       file: example(z.string().min(1), "PATH").describe("image or MP4 path on this host"),
       target: example(z.string().min(1), "threads_en").describe("the delivery target to take down and publish again"),
+      apply: applyOption,
     }),
     mutates: true,
     agent: false,
-    note: "deletes the published post on that target before republishing it",
+    note: "reports the target in scope; add --apply to replace it",
     handler: (context, input) => replacePublishedMedia(context.db(), context.config(), input, context.fetchImpl, context.actorType),
   }),
   reschedule: operation({

@@ -52,6 +52,7 @@ describe("command center actions", () => {
         backendDb.db.update(publishJobs).set({ status: "failed" }).where(eq(publishJobs.jobId, id)).run();
         await runOperationCommand(backendDb, {
           action: "retry",
+          apply: true,
           ref: "post:52",
           target,
         });
@@ -118,6 +119,7 @@ describe("command center actions", () => {
         .run();
       const result = await runOperationCommand(backendDb, {
         action: "retry",
+        apply: true,
         ref: "777",
         target: "threads_en",
       });
@@ -167,7 +169,7 @@ describe("command center actions", () => {
 
       const result = await runOperationCommand(
         backendDb,
-        { action: "edit_en", ref: "post:8", text_en: "Updated EN" },
+        { action: "edit", ref: "post:8", locale: "en", text: "Updated EN", apply: true },
         loadConfig({}),
         fetchImpl,
       );
@@ -221,13 +223,92 @@ describe("command center actions", () => {
       }) as typeof fetch;
       const result = await runOperationCommand(
         backendDb,
-        { action: "delete_republish", ref: "post:9", locale: "en" },
+        { action: "delete", ref: "post:9", locale: "en", republish: true, apply: true },
         loadConfig({ THREADS_EN_ACCESS_TOKEN: "token" }),
         fetchImpl,
       );
       expect(requests).toEqual([{ url: "https://graph.threads.net/v1.0/page_post?access_token=token", method: "DELETE" }]);
       expect(result.removed).toEqual([{ target: "threads_en", ok: true, deleted: 1 }]);
       expect(backendDb.db.select().from(postTargets).where(eq(postTargets.target, "threads_en")).get()?.status).toBe("queued");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("reports the scope and touches nothing until the caller applies it", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      const source = { text_ru: "RU", text_en: "EN", media: [], media_en: [] };
+      backendDb.db.insert(publications).values({ postId: 9, status: "published", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(posts)
+        .values({
+          postKey: "post:9",
+          postId: 9,
+          channel: "studio",
+          messageId: 9,
+          text: "RU",
+          textEn: "EN",
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db.insert(publicationSources).values({ postId: 9, itemJson: source, createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(postTargets)
+        .values([
+          { postKey: "post:9", target: "threads_en", status: "published", externalId: "page_post", url: "https://t/1", updatedAt: now },
+          { postKey: "post:9", target: "threads_ru", status: "published", externalId: "ru_post", updatedAt: now },
+        ])
+        .run();
+      const requests: string[] = [];
+      const fetchImpl = (async (input: string | URL | Request) => {
+        requests.push(String(input));
+        return new Response("{}", { status: 200 });
+      }) as typeof fetch;
+
+      const plan = await runOperationCommand(
+        backendDb,
+        { action: "delete", ref: "post:9", locale: "en", republish: true },
+        loadConfig({ THREADS_EN_ACCESS_TOKEN: "token" }),
+        fetchImpl,
+      );
+
+      expect(plan.applied).toBe(false);
+      expect(plan.targets).toEqual([{ target: "threads_en", status: "published", url: "https://t/1", published: true }]);
+      expect(requests).toEqual([]);
+      expect(backendDb.db.select().from(postTargets).where(eq(postTargets.target, "threads_en")).get()?.status).toBe("published");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  /** A string is what an HTML form and a JSON body both send, and "false" read
+   * as truthy would arm the gate the caller spelled out to keep shut. */
+  it("does not read the string false as an armed apply", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db.insert(publications).values({ postId: 9, status: "published", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(posts)
+        .values({
+          postKey: "post:9",
+          postId: 9,
+          channel: "studio",
+          messageId: 9,
+          text: "RU",
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+
+      const plan = await runOperationCommand(backendDb, { action: "retry", ref: "post:9", apply: "false" });
+
+      expect(plan.applied).toBe(false);
     } finally {
       backendDb.close();
     }
@@ -295,7 +376,7 @@ describe("command center actions", () => {
         .where(eq(publishJobs.jobId, jobId))
         .run();
 
-      const result = await runOperationCommand(backendDb, { action: "retry", ref: "post:61", target: "threads_en" });
+      const result = await runOperationCommand(backendDb, { action: "retry", ref: "post:61", target: "threads_en", apply: true });
 
       expect(result).toMatchObject({ ok: false, results: [{ target: "threads_en", outcome: "publishing" }] });
       // Untouched: stealing the lock would make the worker discard a publication
@@ -329,7 +410,7 @@ describe("command center actions", () => {
         .where(eq(publishJobs.jobId, jobId))
         .run();
 
-      await runOperationCommand(backendDb, { action: "retry", ref: "post:62", target: "threads_en" });
+      await runOperationCommand(backendDb, { action: "retry", ref: "post:62", target: "threads_en", apply: true });
 
       // A leftover phase would make recoverStalePublishJobs treat the next lost
       // lock as "the provider may already have run" and demand manual verification.
@@ -366,7 +447,7 @@ describe("command center actions", () => {
         .values({ postKey: "post:90", target: "site_ru", status: "failed", error: "render boom", skipped: 0, updatedAt: now })
         .run();
 
-      const result = await runOperationCommand(backendDb, { action: "retry", ref: "post:90", target: "site_ru" });
+      const result = await runOperationCommand(backendDb, { action: "retry", ref: "post:90", target: "site_ru", apply: true });
 
       expect(result).toMatchObject({ ok: true, results: [{ target: "site_ru", outcome: "requeued" }] });
       expect(backendDb.db.select().from(siteJobs).get()).toMatchObject({ status: "queued", attemptCount: 0, lastError: null });
@@ -394,7 +475,7 @@ describe("command center actions", () => {
       for (const target of ["telegram", "site_ru"])
         backendDb.db.insert(postTargets).values({ postKey: "post:91", target, status: "published", skipped: 0, updatedAt: now }).run();
 
-      await runOperationCommand(backendDb, { action: "retry", ref: "post:91", locale: "ru" });
+      await runOperationCommand(backendDb, { action: "retry", ref: "post:91", locale: "ru", apply: true });
 
       expect(
         backendDb.db

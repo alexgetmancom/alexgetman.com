@@ -67,7 +67,9 @@ Production is `ssh tw-nl`, containers `alexgetman-backend` and `maru-backend`, a
 needs `docker exec -u bun <container> bun /app/ops/cli.js <command>` because the entrypoint starts as
 root. For a missing publication start with `audit`; it covers both the text and video pipelines. When the
 complaint is "post X did not go to Y", `recent` is the whole diagnosis: it names the last posts by
-headline, their targets, and the targets each one is missing — then `retry --ref <ref> --target <y>`.
+headline, their targets, and the targets each one is missing — then `retry --ref <ref> --target <y>`,
+which reports the targets in scope and needs `--apply` to queue them. Every command that reaches an
+audience works this way: `retry`, `edit`, `replace-media`, `use-other-media`, `delete`.
 `find --query "text"` resolves a ref when the post is older. Never open the production database by hand.
 Get CLI output before reading source for production state.
 

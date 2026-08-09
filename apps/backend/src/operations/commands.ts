@@ -12,9 +12,21 @@ import { createStudioServices } from "../studio/services/index.js";
 import { recordOperationAction } from "./action-audit.js";
 import { editLocaleContent, parseLocaleMedia, refreshLocaleSite, replaceLocaleMedia } from "./commands/content-repair.js";
 import { replaceTextFallbackTargets, requeueAfterRemoval, requeuePublicationScope } from "./commands/requeue.js";
+import { publicationScope, scopePlan } from "./commands/scope-plan.js";
 import { resolvePublicationRef } from "./publication-ref.js";
 
-/** Explicit maintenance command accepted by the Operations boundary. */
+/** A boolean an HTML form, a JSON body or a CLI flag can all express. Not
+ * `z.coerce.boolean()`: that reads the string "false" as true, which on `apply`
+ * would arm the very gate the caller wrote out to keep shut. */
+const commandFlag = z
+  .preprocess((value) => (typeof value === "string" ? !["", "0", "false", "off", "no"].includes(value.toLowerCase()) : value), z.boolean())
+  .default(false);
+
+/** Explicit maintenance command accepted by the Operations boundary.
+ *
+ * One name per action and one field per value: the locale is an argument, so
+ * `edit_en`, `replace_en_media`, `text_en` and `media_en_json` were the English
+ * case spelled twice, and every dispatch below had to test for both. */
 export const commandActionSchema = z.object({
   action: z.string().default(""),
   ref: z.string().optional(),
@@ -23,23 +35,32 @@ export const commandActionSchema = z.object({
   locale: z.preprocess((value) => (value === "" ? undefined : value), z.enum(["ru", "en"]).optional()),
   text: z.string().optional(),
   media_json: z.string().optional(),
-  text_en: z.string().optional(),
-  media_en_json: z.string().optional(),
   at: z.string().optional(),
   schedule_locale: z.enum(["ru", "en", "both"]).optional(),
+  /** Publish the scope again after taking it down; `delete` alone leaves it down. */
+  republish: commandFlag,
+  /** Commands that reach a live audience report their scope unless this is set. */
+  apply: commandFlag,
   token: z.string().optional(),
   actor_type: z.string().optional(),
 });
 
-export type CommandAction = z.infer<typeof commandActionSchema>;
+/** What a caller writes; defaults are filled in by the dispatcher's own parse. */
+export type CommandAction = z.input<typeof commandActionSchema>;
+
+/** Actions whose effect is visible outside this system. */
+const AUDIENCE_ACTIONS = new Set(["retry", "edit", "replace_media", "use_other_media", "delete"]);
 
 /** Dispatches authorised Operations commands; persistence lives in command modules. */
 export async function runOperationCommand(
   backendDb: BackendDb,
-  input: CommandAction,
+  raw: CommandAction,
   config?: BackendConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Record<string, unknown>> {
+  // Parsed here rather than at each caller so `apply` and `republish` cannot
+  // reach the dispatch as undefined: an unarmed gate must fail closed.
+  const input = commandActionSchema.parse(raw);
   const ref = input.ref || (input.message_id == null ? "" : String(input.message_id));
   if (!ref) throw new Error("missing publication ref");
   const publicationRef = resolvePublicationRef(backendDb, ref);
@@ -50,18 +71,24 @@ export async function runOperationCommand(
   // this is. An unknown target used to reach a worker as a durable job for a
   // target no publisher serves, failing hours later instead of at the keystroke.
   if (input.target && !isKnownTarget(input.target)) throw new Error(`unknown target: ${input.target}`);
+  // Every command below this line either sends something to an audience or
+  // takes something away from one, so each reports its scope until told to act.
+  // `reschedule` and `refresh_site` move nothing public and are not gated.
+  if (!input.apply && AUDIENCE_ACTIONS.has(input.action))
+    return scopePlan(input.action, publicationRef, publicationScope(backendDb, publicationRef, input.target, input.locale), {
+      ...(input.action === "delete" ? { republish: input.republish } : {}),
+    });
   let result: Record<string, unknown>;
-  if (input.action === "retry" || input.action === "republish")
-    result = requeuePublicationScope(backendDb, publicationRef, input.target, input.locale);
+  if (input.action === "retry") result = requeuePublicationScope(backendDb, publicationRef, input.target, input.locale);
   else if (input.action === "reschedule") {
     if (!config) throw new Error("reschedule requires runtime config");
     result = reschedulePost(backendDb, publicationRef, config, input.schedule_locale, input.at);
   } else if (input.action === "refresh_site") {
     const locale = input.locale ?? "en";
     result = refreshLocaleSite(backendDb, publicationRef, locale);
-  } else if (input.action === "edit" || input.action === "edit_en") {
+  } else if (input.action === "edit") {
     const locale = input.locale ?? "en";
-    const text = input.text ?? input.text_en ?? "";
+    const text = input.text ?? "";
     result = editLocaleContent(backendDb, publicationRef, locale, text);
     if (config) {
       result.external = await editPublishedTargets(
@@ -78,9 +105,9 @@ export async function runOperationCommand(
       );
       result.replaced = await replaceTextFallbackTargets(backendDb, publicationRef, config, input.target, locale, fetchImpl);
     }
-  } else if (input.action === "replace_media" || input.action === "replace_en_media") {
+  } else if (input.action === "replace_media") {
     const locale = input.locale ?? "en";
-    result = replaceLocaleMedia(backendDb, publicationRef, locale, parseLocaleMedia(input.media_json ?? input.media_en_json));
+    result = replaceLocaleMedia(backendDb, publicationRef, locale, parseLocaleMedia(input.media_json));
     if (config) {
       result.removed = await removePublishedTargets(
         backendDb,
@@ -90,11 +117,11 @@ export async function runOperationCommand(
       );
       result.republish = requeueAfterRemoval(backendDb, publicationRef, result.removed as Array<Record<string, unknown>>, input.target);
     } else result.republish = requeuePublicationScope(backendDb, publicationRef, input.target, locale);
-  } else if (input.action === "use_other_media" || input.action === "use_ru_media_for_en") {
+  } else if (input.action === "use_other_media") {
     const locale = input.locale ?? "en";
     result = replaceLocaleMedia(backendDb, publicationRef, locale, null);
     result.republish = requeuePublicationScope(backendDb, publicationRef, input.target, locale);
-  } else if (input.action === "delete" || input.action === "delete_republish") {
+  } else if (input.action === "delete") {
     if (!config) throw new Error("external removal requires runtime config");
     result = {
       ok: true,
@@ -109,9 +136,10 @@ export async function runOperationCommand(
         fetchImpl,
       ),
     };
-    if (input.action === "delete_republish")
+    if (input.republish)
       result.republish = requeueAfterRemoval(backendDb, publicationRef, result.removed as Array<Record<string, unknown>>, input.target);
   } else throw new Error(`unknown action: ${input.action}`);
+  result.applied = true;
   recordOperationAction(backendDb, input.action, publicationRef, input.target ?? null, result, input.actor_type ?? "operations");
   return result;
 }

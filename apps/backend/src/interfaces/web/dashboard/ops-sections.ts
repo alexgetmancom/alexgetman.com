@@ -50,13 +50,12 @@ function activeAudiencePlatforms(backendDb: BackendDb): AudiencePlatform[] {
 }
 
 const REPAIR_ACTIONS: [value: string, key: MessageKey][] = [
-  ["republish", "cc.repair.republish"],
+  ["retry", "cc.repair.retry"],
   ["refresh_site", "cc.repair.refresh-site"],
   ["edit", "cc.repair.edit"],
   ["replace_media", "cc.repair.replace-media"],
   ["use_other_media", "cc.repair.use-other-media"],
   ["delete", "cc.repair.delete"],
-  ["delete_republish", "cc.repair.delete-republish"],
 ];
 
 /** The form authenticates through the HttpOnly `command_token` cookie; the
@@ -78,6 +77,10 @@ export function renderRepairSection(ref: string, messageId: string, locale: Stud
     `<select name="target"><option value="">${t(locale, "cc.repair.all-targets")}</option>${options}</select>`,
     `<textarea name="text" placeholder="${t(locale, "cc.repair.text-placeholder")}"></textarea>`,
     `<textarea name="media_json" placeholder='${t(locale, "cc.repair.media-placeholder")}'></textarea>`,
+    `<label><input type="checkbox" name="republish" value="1"> ${escapeHtml(t(locale, "cc.repair.republish-after-delete"))}</label>`,
+    // The form is the deliberate surface: choosing an action and pressing Apply
+    // is the confirmation the CLI and MCP spell as --apply.
+    '<input type="hidden" name="apply" value="1">',
     `<button type="submit">${t(locale, "cc.repair.apply")}</button>`,
     "</form></section>",
   ].join("");

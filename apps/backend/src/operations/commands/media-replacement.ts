@@ -25,7 +25,7 @@ const IMAGE_TYPES: Record<string, string> = {
 export async function replacePublishedMedia(
   backendDb: BackendDb,
   config: BackendConfig,
-  input: { ref: string; locale: "ru" | "en"; file: string; target: string },
+  input: { ref: string; locale: "ru" | "en"; file: string; target: string; apply: boolean },
   fetchImpl: typeof fetch,
   actorType: string,
 ): Promise<Record<string, unknown>> {
@@ -34,6 +34,13 @@ export async function replacePublishedMedia(
   if (ref.postId == null) throw new Error(`media replacement requires a Studio post ref: ${input.ref}`);
   const draft = unsafeDb(backendDb).db.select({ actorId: drafts.actorId }).from(drafts).where(eq(drafts.postId, ref.postId)).get();
   if (!draft) throw new Error(`draft not found for publication: ${ref.postKey}`);
+  // The scope report comes before the file is imported: a plan should not leave
+  // an asset behind for a replacement the caller may never ask for.
+  if (!input.apply)
+    return createOperationsService(backendDb, config).command(
+      { action: "replace_media", ref: input.ref, locale: input.locale, target: input.target },
+      fetchImpl,
+    );
   const filename = path.basename(input.file);
   const asset = await createStudioServices(backendDb, config).media.importFile(draft.actorId, {
     filename,
@@ -47,6 +54,7 @@ export async function replacePublishedMedia(
       ref: input.ref,
       locale: input.locale,
       target: input.target,
+      apply: true,
       media_json: JSON.stringify(mediaItemsFromAssets([asset])),
       actor_type: actorType,
     },
