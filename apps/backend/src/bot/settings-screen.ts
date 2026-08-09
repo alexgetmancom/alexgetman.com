@@ -1,10 +1,14 @@
+import fs from "node:fs";
 import { Menu, type MenuFlavor } from "@grammyjs/menu";
 import type { Context } from "grammy";
+import { importManualAnalytics, manualThreadsFollowers } from "../analytics/import-manual-analytics.js";
+import { importXAnalyticsCsv } from "../analytics/import-x-csv.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
 import { STUDIO_LOCALE_NAMES, STUDIO_LOCALES, type StudioLocale } from "../foundation/locale.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
+import { downloadTelegramFile } from "../interfaces/telegram/file-download.js";
 import type { StudioZernioAccount } from "../studio/services/channels.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { botLocale } from "./i18n.js";
@@ -12,15 +16,23 @@ import { persistentKeyboard } from "./menu-render.js";
 import { NOTIFICATIONS_MENU_ID, notificationsInboxText } from "./notifications-screen.js";
 
 export const SETTINGS_MENU_ID = "settings-menu";
+const PUBLISHING_MENU_ID = "settings-publishing";
+const NOTIFICATIONS_CATEGORY_MENU_ID = "settings-notifications-category";
+const ANALYTICS_MENU_ID = "settings-analytics";
+const GENERAL_MENU_ID = "settings-general";
 const NOTIFICATION_SETTINGS_MENU_ID = "settings-notifications";
 const WEEKLY_DIGEST_MENU_ID = "settings-weekly-digest";
 const YOUTUBE_SIGNATURE_MENU_ID = "settings-youtube";
 const LANGUAGE_MENU_ID = "settings-language";
 const CHANNELS_MENU_ID = "settings-channels";
 const TIMEZONE_MENU_ID = "settings-timezone";
+const THREADS_FOLLOWERS_MENU_ID = "settings-threads-followers";
+const X_IMPORT_MENU_ID = "settings-x-import";
 type ZernioAccount = StudioZernioAccount;
 const discoveredAccounts = new Map<number, { locale: "ru" | "en"; accounts: ZernioAccount[] }>();
 const pendingTimezones = new Set<number>();
+const pendingThreadsFollowers = new Map<number, "ru" | "en">();
+const pendingXImports = new Set<number>();
 
 const TIMEZONE_OPTIONS = [
   ["UTC", "UTC"],
@@ -61,6 +73,8 @@ export async function handleSettingsMessage(
 ): Promise<boolean> {
   const actorId = Number(ctx.from?.id);
   const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
+  if (await collectXAnalyticsCsv(ctx, backendDb, config, actorId, settingsMenu)) return true;
+  if (await collectThreadsFollowers(ctx, backendDb, actorId, text, settingsMenu)) return true;
   if (await collectTimezone(ctx, backendDb, config, actorId, text, settingsMenu)) return true;
   if (await collectChannelCredential(ctx, backendDb, config, actorId, text)) return true;
   if (!createStudioServices(backendDb, config).settings.saveYoutubeSignature(actorId, text)) return false;
@@ -118,10 +132,10 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
         .text(`➕ ${channelPlatformLabel(platform)} · EN`, (ctx) => startNativeConnection(ctx, actorId, platform, "en", locale))
         .row();
     }
-    range.back(t(locale, "settings.back-to-settings"), async (ctx) => {
+    range.back(t(locale, "settings.back-to-publishing"), async (ctx) => {
       discoveredAccounts.delete(actorId);
       await ctx.answerCallbackQuery();
-      await ctx.editMessageText(t(locale, "settings.title"));
+      await ctx.editMessageText(t(locale, "settings.category-publishing-body"));
     });
   });
 
@@ -148,9 +162,9 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
         await ctx.editMessageText(notificationSettingsText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
       });
     }
-    range.row().back(t(locale, "settings.back-to-settings"), async (ctx) => {
+    range.row().back(t(locale, "settings.back-to-notifications"), async (ctx) => {
       await ctx.answerCallbackQuery();
-      await ctx.editMessageText(t(locale, "settings.title"));
+      await ctx.editMessageText(t(locale, "settings.category-notifications-body"));
     });
   });
 
@@ -173,9 +187,9 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
       });
       if (weekday === 4) range.row();
     }
-    range.row().back(t(locale, "settings.back-to-settings"), async (ctx) => {
+    range.row().back(t(locale, "settings.back-to-notifications"), async (ctx) => {
       await ctx.answerCallbackQuery();
-      await ctx.editMessageText(t(locale, "settings.title"));
+      await ctx.editMessageText(t(locale, "settings.category-notifications-body"));
     });
   });
 
@@ -194,18 +208,18 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
         await ctx.editMessageText(youtubeSignatureText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
       })
       .row()
-      .back(t(locale, "settings.back-to-settings"), async (ctx) => {
+      .back(t(locale, "settings.back-to-publishing"), async (ctx) => {
         await ctx.answerCallbackQuery();
-        await ctx.editMessageText(t(locale, "settings.title"));
+        await ctx.editMessageText(t(locale, "settings.category-publishing-body"));
       });
   });
 
   const language = new Menu<Context>(LANGUAGE_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const locale = botLocale(backendDb, Number(ctx.from?.id));
     for (const target of STUDIO_LOCALES) range.text(STUDIO_LOCALE_NAMES[target], (ctx) => switchLanguage(ctx, target));
-    range.row().back(t(locale, "common.back"), async (ctx) => {
+    range.row().back(t(locale, "settings.back-to-general"), async (ctx) => {
       await ctx.answerCallbackQuery();
-      await ctx.editMessageText(t(locale, "settings.title"));
+      await ctx.editMessageText(t(locale, "settings.category-general-body"));
     });
   });
 
@@ -229,16 +243,54 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
       await ctx.answerCallbackQuery();
       await ctx.reply(t(locale, "settings.timezone-input-prompt"));
     });
-    range.row().back(t(locale, "settings.back-to-settings"), async (ctx) => {
+    range.row().back(t(locale, "settings.back-to-general"), async (ctx) => {
       await ctx.answerCallbackQuery();
-      await ctx.editMessageText(t(locale, "settings.title"));
+      await ctx.editMessageText(t(locale, "settings.category-general-body"));
     });
   });
 
-  const settings = new Menu<Context>(SETTINGS_MENU_ID, { autoAnswer: false });
-  settings.dynamic((ctx, range) => {
+  const threadsFollowers = new Menu<Context>(THREADS_FOLLOWERS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
     const locale = botLocale(backendDb, actorId);
+    for (const account of ["ru", "en"] as const)
+      range.text(t(locale, "settings.threads-edit", { account: account.toUpperCase() }), async (ctx) => {
+        pendingThreadsFollowers.set(actorId, account);
+        await ctx.answerCallbackQuery();
+        await ctx.reply(t(locale, "settings.threads-ask", { account: account.toUpperCase() }));
+      });
+    range.row().back(t(locale, "settings.back-to-analytics"), async (ctx) => {
+      pendingThreadsFollowers.delete(actorId);
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(analyticsText(backendDb, locale), { parse_mode: "Markdown" });
+    });
+  });
+
+  const xImport = new Menu<Context>(X_IMPORT_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const actorId = Number(ctx.from?.id);
+    const locale = botLocale(backendDb, actorId);
+    range
+      .text(t(locale, "settings.x-import-start"), async (ctx) => {
+        pendingXImports.add(actorId);
+        await ctx.answerCallbackQuery();
+        await ctx.reply(t(locale, "settings.x-import-ask"));
+      })
+      .row()
+      .back(t(locale, "settings.back-to-analytics"), async (ctx) => {
+        pendingXImports.delete(actorId);
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(analyticsText(backendDb, locale), { parse_mode: "Markdown" });
+      });
+  });
+
+  const publishing = new Menu<Context>(PUBLISHING_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const actorId = Number(ctx.from?.id);
+    const locale = botLocale(backendDb, actorId);
+    range
+      .submenu(t(locale, "settings.channels"), CHANNELS_MENU_ID, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(channelsText(backendDb, config, locale));
+      })
+      .row();
     if (config.studio.modules.youtube)
       range
         .submenu(t(locale, "settings.youtube-signature"), YOUTUBE_SIGNATURE_MENU_ID, async (ctx) => {
@@ -246,13 +298,14 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
           await ctx.editMessageText(youtubeSignatureText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
         })
         .row();
+    range.back(t(locale, "settings.back-to-settings"), backToSettings(backendDb));
+  });
+
+  const notificationsCategory = new Menu<Context>(NOTIFICATIONS_CATEGORY_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const actorId = Number(ctx.from?.id);
+    const locale = botLocale(backendDb, actorId);
     range
-      .submenu(t(locale, "settings.channels"), CHANNELS_MENU_ID, async (ctx) => {
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(channelsText(backendDb, config, locale));
-      })
-      .row()
-      .submenu(t(locale, "settings.notifications"), NOTIFICATIONS_MENU_ID, async (ctx) => {
+      .submenu(t(locale, "settings.notifications-inbox"), NOTIFICATIONS_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();
         await ctx.editMessageText(notificationsInboxText(backendDb, config, actorId, locale));
       })
@@ -267,6 +320,29 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
         await ctx.editMessageText(weeklyDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
       })
       .row()
+      .back(t(locale, "settings.back-to-settings"), backToSettings(backendDb));
+  });
+
+  const analytics = new Menu<Context>(ANALYTICS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const locale = botLocale(backendDb, Number(ctx.from?.id));
+    range
+      .submenu(t(locale, "settings.threads-followers"), THREADS_FOLLOWERS_MENU_ID, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(threadsFollowersText(backendDb, locale), { parse_mode: "Markdown" });
+      })
+      .row()
+      .submenu(t(locale, "settings.x-import"), X_IMPORT_MENU_ID, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(t(locale, "settings.x-import-body"), { parse_mode: "Markdown" });
+      })
+      .row()
+      .back(t(locale, "settings.back-to-settings"), backToSettings(backendDb));
+  });
+
+  const general = new Menu<Context>(GENERAL_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const actorId = Number(ctx.from?.id);
+    const locale = botLocale(backendDb, actorId);
+    range
       .submenu(t(locale, "settings.timezone"), TIMEZONE_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();
         await ctx.editMessageText(timezoneText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
@@ -277,17 +353,56 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
         await ctx.editMessageText(t(locale, "settings.language-title"));
       })
       .row()
+      .back(t(locale, "settings.back-to-settings"), backToSettings(backendDb));
+  });
+
+  // One screen per concern, and the root only names the concerns: the flat list
+  // it replaced put an inbox, a digest schedule and a language picker on one
+  // keyboard, where every entry had to be read to find any of them.
+  const settings = new Menu<Context>(SETTINGS_MENU_ID, { autoAnswer: false });
+  settings.dynamic((ctx, range) => {
+    const locale = botLocale(backendDb, Number(ctx.from?.id));
+    range
+      .submenu(t(locale, "settings.category-publishing"), PUBLISHING_MENU_ID, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(t(locale, "settings.category-publishing-body"));
+      })
+      .row()
+      .submenu(t(locale, "settings.category-notifications"), NOTIFICATIONS_CATEGORY_MENU_ID, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(t(locale, "settings.category-notifications-body"));
+      })
+      .row();
+    if (config.studio.modules.analytics)
+      range
+        .submenu(t(locale, "settings.category-analytics"), ANALYTICS_MENU_ID, async (ctx) => {
+          await ctx.answerCallbackQuery();
+          await ctx.editMessageText(analyticsText(backendDb, locale), { parse_mode: "Markdown" });
+        })
+        .row();
+    range
+      .submenu(t(locale, "settings.category-general"), GENERAL_MENU_ID, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(t(locale, "settings.category-general-body"));
+      })
+      .row()
       .back(t(locale, "common.menu"), async (ctx) => {
         await ctx.answerCallbackQuery();
         await ctx.editMessageText(t(locale, "menu.control-panel"));
       });
   });
-  settings.register(notificationSettings);
-  settings.register(weeklyDigest);
-  settings.register(youtubeSignature);
-  settings.register(language);
-  settings.register(channels);
-  settings.register(timezone);
+  publishing.register(channels);
+  publishing.register(youtubeSignature);
+  notificationsCategory.register(notificationSettings);
+  notificationsCategory.register(weeklyDigest);
+  analytics.register(threadsFollowers);
+  analytics.register(xImport);
+  general.register(language);
+  general.register(timezone);
+  settings.register(publishing);
+  settings.register(notificationsCategory);
+  settings.register(analytics);
+  settings.register(general);
   return settings;
 
   async function startNativeConnection(
@@ -343,6 +458,132 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
     await ctx.editMessageText(t(locale, "settings.title"));
     await ctx.reply(t(locale, "settings.keyboard-updated"), { reply_markup: persistentKeyboard(locale) });
   }
+}
+
+/** Every category returns to the same root screen, and a `.back()` that leaves
+ * the previous screen's body text on the message reads as a failed tap. */
+function backToSettings(backendDb: BackendDb) {
+  return async (ctx: Context): Promise<void> => {
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText(t(botLocale(backendDb, Number(ctx.from?.id)), "settings.title"));
+  };
+}
+
+function analyticsText(backendDb: BackendDb, locale: ReturnType<typeof botLocale>): string {
+  const followers = manualThreadsFollowers(backendDb);
+  const value = (count: number | null) => (count == null ? t(locale, "settings.threads-unknown") : String(count));
+  return t(locale, "settings.category-analytics-body", { ru: value(followers.ru), en: value(followers.en) });
+}
+
+function threadsFollowersText(backendDb: BackendDb, locale: ReturnType<typeof botLocale>): string {
+  const followers = manualThreadsFollowers(backendDb);
+  const value = (count: number | null) => (count == null ? t(locale, "settings.threads-unknown") : String(count));
+  return t(locale, "settings.threads-body", {
+    ru: value(followers.ru),
+    en: value(followers.en),
+    updated: followers.updatedAt?.slice(0, 16).replace("T", " ") ?? t(locale, "settings.threads-unknown"),
+  });
+}
+
+/**
+ * Stores one hand-counted Threads audience number.
+ *
+ * Threads has no API here, so this screen is the only place the number can come
+ * from, and the moment it is typed is the sample's timestamp.
+ */
+async function collectThreadsFollowers(
+  ctx: Context,
+  backendDb: BackendDb,
+  actorId: number,
+  text: string,
+  settingsMenu: Menu<Context>,
+): Promise<boolean> {
+  const account = pendingThreadsFollowers.get(actorId);
+  if (!account) return false;
+  pendingThreadsFollowers.delete(actorId);
+  if (isNavigationMessage(text)) return false;
+  const locale = botLocale(backendDb, actorId);
+  const count = Number(text.replace(/[\s,]/gu, ""));
+  if (!Number.isSafeInteger(count) || count < 0) {
+    await ctx.reply(t(locale, "err.threads-followers-invalid"));
+    return true;
+  }
+  importManualAnalytics(backendDb, {
+    sampledAt: messageSampledAt(ctx),
+    ...(account === "ru" ? { threadsRuFollowers: count } : { threadsEnFollowers: count }),
+  });
+  await ctx.reply(t(locale, "settings.threads-saved", { account: account.toUpperCase(), count }));
+  await ctx.reply(threadsFollowersText(backendDb, locale), {
+    parse_mode: "Markdown",
+    reply_markup: settingsMenu.at(THREADS_FOLLOWERS_MENU_ID),
+  });
+  return true;
+}
+
+/**
+ * Imports an X Analytics export that arrived as a Telegram document.
+ *
+ * The export carries no timestamp of its own, so the message's own time stands
+ * in for it — handing the file over is the closest observable moment to taking
+ * it. Re-sending the same file is a no-op by checksum, which is why this can
+ * stay a single button.
+ */
+async function collectXAnalyticsCsv(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  settingsMenu: Menu<Context>,
+): Promise<boolean> {
+  if (!pendingXImports.has(actorId)) return false;
+  const locale = botLocale(backendDb, actorId);
+  const document = ctx.message && "document" in ctx.message ? ctx.message.document : undefined;
+  if (!document) {
+    const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
+    if (isNavigationMessage(text)) {
+      pendingXImports.delete(actorId);
+      return false;
+    }
+    await ctx.reply(t(locale, "settings.x-import-expects-file"));
+    return true;
+  }
+  pendingXImports.delete(actorId);
+  if (!/\.csv$/iu.test(document.file_name ?? "")) {
+    await ctx.reply(t(locale, "settings.x-import-expects-file"));
+    return true;
+  }
+  const apiFile = await ctx.api.getFile(document.file_id);
+  if (!apiFile.file_path) {
+    await ctx.reply(t(locale, "settings.x-import-failed", { error: "no file path" }));
+    return true;
+  }
+  const downloaded = await downloadTelegramFile(config, apiFile.file_path, ".csv");
+  try {
+    const result = importXAnalyticsCsv(backendDb, downloaded.path, messageSampledAt(ctx));
+    await ctx.reply(
+      result.duplicateImport
+        ? t(locale, "settings.x-import-duplicate")
+        : t(locale, "settings.x-import-done", {
+            rows: result.rows,
+            items: result.activityItems,
+            linked: result.linkedByExternalId + result.linkedByText,
+            samples: result.insertedSamples,
+          }),
+      { parse_mode: "Markdown", reply_markup: settingsMenu.at(X_IMPORT_MENU_ID) },
+    );
+  } catch (error) {
+    await ctx.reply(t(locale, "settings.x-import-failed", { error: error instanceof Error ? error.message : String(error) }));
+  } finally {
+    if (downloaded.temporary) await fs.promises.rm(downloaded.path, { force: true });
+  }
+  return true;
+}
+
+/** The message is the observation: both manual imports are stamped with when
+ * the operator handed the numbers over, never with when the row was written. */
+function messageSampledAt(ctx: Context): string {
+  const seconds = ctx.message?.date;
+  return new Date(seconds ? seconds * 1000 : Date.now()).toISOString();
 }
 
 function weekdayLabel(locale: ReturnType<typeof botLocale>, weekday: number): string {

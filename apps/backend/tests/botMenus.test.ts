@@ -35,8 +35,9 @@ async function mainMenuLabels(config: ReturnType<typeof loadConfig>, db: Backend
   return renderLabels(mainMenu);
 }
 
-async function settingsMenuLabels(config: ReturnType<typeof loadConfig>, db: BackendDb): Promise<string[]> {
-  return renderLabels(buildSettingsMenu(config, db));
+async function settingsMenuLabels(config: ReturnType<typeof loadConfig>, db: BackendDb, submenu?: string): Promise<string[]> {
+  const settings = buildSettingsMenu(config, db);
+  return renderLabels(submenu ? settings.at(submenu) : settings);
 }
 
 describe("isAdmin", () => {
@@ -93,12 +94,40 @@ describe("buildMainMenu", () => {
 });
 
 describe("buildSettingsMenu", () => {
-  it("shows the YouTube signature entry when the module is enabled", async () => {
+  it("groups every setting under a category instead of one flat list", async () => {
+    backendDb = openBackendDb(":memory:");
+    const config = loadConfig({});
+    config.studio.modules.analytics = true;
+
+    const labels = await settingsMenuLabels(config, backendDb);
+    expect(labels).toEqual(["📡 Publishing", "🔔 Notifications", "📊 Analytics", "⚙️ General", "← Menu"]);
+  });
+
+  it("hides the analytics category when the module is disabled", async () => {
+    backendDb = openBackendDb(":memory:");
+    const config = loadConfig({});
+    config.studio.modules.analytics = false;
+
+    const labels = await settingsMenuLabels(config, backendDb);
+    expect(labels.some((text) => /analytics/i.test(text))).toBe(false);
+  });
+
+  it("offers the manual analytics inputs no platform API provides", async () => {
+    backendDb = openBackendDb(":memory:");
+    const config = loadConfig({});
+    config.studio.modules.analytics = true;
+
+    const labels = await settingsMenuLabels(config, backendDb, "settings-analytics");
+    expect(labels.some((text) => /threads followers/i.test(text))).toBe(true);
+    expect(labels.some((text) => /import x csv/i.test(text))).toBe(true);
+  });
+
+  it("shows the YouTube signature entry under publishing when the module is enabled", async () => {
     backendDb = openBackendDb(":memory:");
     const config = loadConfig({});
     config.studio.modules.youtube = true;
 
-    const labels = await settingsMenuLabels(config, backendDb);
+    const labels = await settingsMenuLabels(config, backendDb, "settings-publishing");
     expect(labels.some((text) => /youtube/i.test(text))).toBe(true);
   });
 
@@ -107,7 +136,7 @@ describe("buildSettingsMenu", () => {
     const config = loadConfig({});
     config.studio.modules.youtube = false;
 
-    const labels = await settingsMenuLabels(config, backendDb);
+    const labels = await settingsMenuLabels(config, backendDb, "settings-publishing");
     expect(labels.some((text) => /youtube/i.test(text))).toBe(false);
   });
 });
