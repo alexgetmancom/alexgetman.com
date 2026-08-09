@@ -120,6 +120,14 @@ UPDATE `drafts` SET `targets_json` = replace(replace(replace(replace(
   `targets_json`, '"threads":', '"threads_ru":'), '"twitter":', '"x":'),
   '"instagram_story":', '"instagram_stories_ru":'), '"telegram_story":', '"telegram_stories":');
 --> statement-breakpoint
+UPDATE `publish_jobs` SET `post_id` = CASE
+  WHEN `post_key` GLOB 'post:[0-9]*' AND substr(`post_key`, 6) NOT GLOB '*[^0-9]*'
+  THEN CAST(substr(`post_key`, 6) AS INTEGER)
+END
+WHERE `post_id` IS NULL;
+--> statement-breakpoint
+DELETE FROM `publish_jobs` WHERE `post_id` IS NULL;
+--> statement-breakpoint
 CREATE TABLE `__new_publish_jobs` (
   `job_id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
   `post_id` integer NOT NULL,

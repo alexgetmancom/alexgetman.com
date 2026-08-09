@@ -61,6 +61,7 @@ it("canonicalizes durable targets, resolves collisions, and makes publish job id
         (7, 'post:7', 7, 'x', 'failed', '{}', 'now', 'now'),
         (7, NULL, 7, 'twitter', 'failed', '{"telegram_story_local_path":"/tmp/story.mp4"}', 'now', 'now'),
         (9, NULL, 9, 'twitter', 'published', '{"telegram_story_local_path":"/tmp/story.mp4"}', 'now', 'now'),
+        (NULL, 'post:10', 10, 'x', 'failed', '{}', 'now', 'now'),
         (NULL, NULL, 8, 'x', 'failed', '{}', 'now', 'now');
     `);
 
@@ -87,7 +88,9 @@ it("canonicalizes durable targets, resolves collisions, and makes publish job id
       { post_key: "post:1", target: "threads_ru", payload_json: "{}" },
       { post_key: "post:7", target: "x", payload_json: "{}" },
       { post_key: "post:9", target: "x", payload_json: '{"telegramStoryLocalPath":"/tmp/story.mp4"}' },
+      { post_key: "post:10", target: "x", payload_json: "{}" },
     ]);
+    expect(db.query("SELECT post_id FROM publish_jobs WHERE post_key = 'post:10'").get()).toEqual({ post_id: 10 });
     expect(db.query("PRAGMA table_info(publish_jobs)").all()).toContainEqual(expect.objectContaining({ name: "post_key", notnull: 1 }));
     expect(db.query("PRAGMA table_info(publish_jobs)").all()).toContainEqual(expect.objectContaining({ name: "post_id", notnull: 1 }));
     expect(db.query("SELECT source FROM channel_connections").get()).toEqual({ source: "registry" });
