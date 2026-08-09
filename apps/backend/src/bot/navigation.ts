@@ -4,8 +4,8 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
 import { createStudioServices } from "../studio/services/index.js";
+import { settingsService } from "../studio/services/settings.js";
 import { defaultAnalyticsSection, showAnalyticsDashboard } from "./analytics-screen.js";
-import { botLocale } from "./i18n.js";
 import { openPostScreen } from "./post-screen.js";
 import { showQueue } from "./queue.js";
 import { SETTINGS_MENU_ID } from "./settings-screen.js";
@@ -26,20 +26,20 @@ export function buildMainMenu(
   if (config.studio.modules.text_posting)
     menu
       .text(
-        (ctx) => t(botLocale(backendDb, Number(ctx.from?.id)), "menu.new-post"),
+        (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.new-post"),
         (ctx) => openPostScreen(ctx, backendDb),
       )
       .row();
   if (config.studio.modules.video_posting)
     menu
       .text(
-        (ctx) => t(botLocale(backendDb, Number(ctx.from?.id)), "menu.new-video"),
+        (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.new-video"),
         (ctx) => startVideoConversation(ctx, backendDb),
       )
       .row();
   menu.text(
     (ctx) => {
-      const locale = botLocale(backendDb, Number(ctx.from?.id));
+      const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
       const queue = createStudioServices(backendDb, config).queue.snapshot(Number(ctx.from?.id));
       const pending = queue.upcoming.length + queue.drafts.length;
       return pending ? t(locale, "menu.work-queue-count", { count: pending }) : t(locale, "menu.work-queue");
@@ -48,18 +48,18 @@ export function buildMainMenu(
   );
   if (config.studio.modules.analytics)
     menu.text(
-      (ctx) => t(botLocale(backendDb, Number(ctx.from?.id)), "menu.analytics"),
+      (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.analytics"),
       (ctx) => showAnalyticsDashboard(ctx, backendDb, config, defaultAnalyticsSection(config), 1),
     );
   menu.submenu(
     (ctx) => {
-      const locale = botLocale(backendDb, Number(ctx.from?.id));
+      const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
       const unread = createStudioServices(backendDb, config).notifications.inbox(Number(ctx.from?.id), 100).length;
       return unread ? t(locale, "menu.settings-unread", { count: unread }) : t(locale, "settings.title");
     },
     SETTINGS_MENU_ID,
     async (ctx) => {
-      await ctx.editMessageText(t(botLocale(backendDb, Number(ctx.from?.id)), "settings.title"));
+      await ctx.editMessageText(t(settingsService(backendDb).locale(Number(ctx.from?.id)), "settings.title"));
     },
   );
   menu.register(settingsMenu);

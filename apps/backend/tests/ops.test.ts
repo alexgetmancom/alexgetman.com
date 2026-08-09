@@ -35,7 +35,7 @@ describe("TypeScript operations tooling", () => {
         .run(now);
       backendDb.sqlite
         .query(
-          "INSERT INTO post_events(post_key,event_type,severity,target,message,details_json,created_at) VALUES ('post:106','publish.job.phase','info','telegram','done','{\"phase\":\"provider.publish\",\"duration_ms\":25}',?)",
+          "INSERT INTO post_events(post_key,event_type,severity,target,message,details_json,created_at) VALUES ('publication:post:106','publish.job.phase','info','telegram','done','{\"phase\":\"provider.publish\",\"duration_ms\":25}',?)",
         )
         .run(now);
       const timeline = publicationTimeline(backendDb, "post:106");

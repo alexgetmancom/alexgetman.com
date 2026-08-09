@@ -4,12 +4,12 @@ import { createDraftFromMessage } from "../src/content/drafts.js";
 import { postEvents, studioNotificationJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { cancelScheduledNotifications, runNotificationCycle, scheduleReminder } from "../src/notifications/jobs.js";
-import { createVideoDraft } from "../src/publishing/video-service.js";
 import { notificationService } from "../src/studio/services/notifications.js";
 import { postService } from "../src/studio/services/posts.js";
 import { settingsService } from "../src/studio/services/settings.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { createTestVideoDraft } from "./helpers/video.js";
 
 function openNotificationDb() {
   const memory = ":memory:";
@@ -23,9 +23,9 @@ describe("Studio notifications", () => {
     const backendDb = openNotificationDb();
     try {
       const notifications = notificationService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42,7" }));
-      const videoId = createVideoDraft(backendDb, 42, "shared-video", 24);
+      const videoId = createTestVideoDraft(backendDb, 42, "shared-video", 24);
       notifications.record({
-        ref: `video:${videoId}`,
+        ref: `publication:video:${videoId}`,
         type: "delivery.video.completed",
         severity: "info",
         message: "Shared completion",
@@ -43,10 +43,10 @@ describe("Studio notifications", () => {
     const backendDb = openNotificationDb();
     try {
       const notifications = notificationService(backendDb);
-      const ownedVideo = createVideoDraft(backendDb, 42, "owner-video", 24);
-      const otherVideo = createVideoDraft(backendDb, 7, "other-video", 24);
+      const ownedVideo = createTestVideoDraft(backendDb, 42, "owner-video", 24);
+      const otherVideo = createTestVideoDraft(backendDb, 7, "other-video", 24);
       notifications.record({
-        ref: `video:${ownedVideo}`,
+        ref: `publication:video:${ownedVideo}`,
         type: "studio.notification.reminder.due",
         severity: "info",
         target: "youtube",
@@ -54,7 +54,7 @@ describe("Studio notifications", () => {
         cooldownSeconds: 3600,
       });
       notifications.record({
-        ref: `video:${ownedVideo}`,
+        ref: `publication:video:${ownedVideo}`,
         type: "studio.notification.reminder.due",
         severity: "info",
         target: "youtube",
@@ -62,7 +62,7 @@ describe("Studio notifications", () => {
         cooldownSeconds: 3600,
       });
       notifications.record({
-        ref: `video:${otherVideo}`,
+        ref: `publication:video:${otherVideo}`,
         type: "studio.notification.reminder.due",
         severity: "info",
         target: "youtube",
@@ -105,7 +105,7 @@ describe("Studio notifications", () => {
     const backendDb = openNotificationDb();
     try {
       const notifications = notificationService(backendDb);
-      notifications.record({ ref: "post:abc", type: "delivery.post.completed", severity: "info", message: "Broken ref" });
+      notifications.record({ ref: "publication:post:abc", type: "delivery.post.completed", severity: "info", message: "Broken ref" });
       expect(notifications.inbox(42)).toHaveLength(0);
       expect(notifications.inbox(7)).toHaveLength(0);
     } finally {
@@ -116,10 +116,10 @@ describe("Studio notifications", () => {
   it("creates durable interface-neutral reminders and honours cancellation", () => {
     const backendDb = openNotificationDb();
     try {
-      const videoId = createVideoDraft(backendDb, 42, "owner-video", 24);
+      const videoId = createTestVideoDraft(backendDb, 42, "owner-video", 24);
       scheduleReminder(backendDb, {
         actorId: 42,
-        ref: `video:${videoId}`,
+        ref: `publication:video:${videoId}`,
         kind: "video.youtube_shorts",
         publishAt: new Date(Date.now() + 30_000),
         title: "Launch",
@@ -135,7 +135,7 @@ describe("Studio notifications", () => {
 
       scheduleReminder(backendDb, {
         actorId: 42,
-        ref: `video:${videoId}`,
+        ref: `publication:video:${videoId}`,
         kind: "video.instagram_reels",
         publishAt: new Date(Date.now() + 60 * 60_000),
         title: "Launch",
@@ -190,10 +190,10 @@ describe("Studio notifications", () => {
   it("cancels queued reminders when the owner disables reminders", () => {
     const backendDb = openNotificationDb();
     try {
-      const videoId = createVideoDraft(backendDb, 42, "owner-video", 24);
+      const videoId = createTestVideoDraft(backendDb, 42, "owner-video", 24);
       scheduleReminder(backendDb, {
         actorId: 42,
-        ref: `video:${videoId}`,
+        ref: `publication:video:${videoId}`,
         kind: "video.youtube_shorts",
         publishAt: new Date(Date.now() + 60 * 60_000),
         title: "Launch",

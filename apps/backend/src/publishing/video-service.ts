@@ -19,7 +19,7 @@ import { VIDEO_TARGETS } from "./video-types.js";
 export function createVideoDraft(
   backendDb: BackendDb,
   actorId: number,
-  source: string | { studioMediaAssetId: number },
+  studioMediaAssetId: number,
   retentionHours: number,
   locale: VideoLocale = "ru",
 ): number {
@@ -30,8 +30,8 @@ export function createVideoDraft(
     .values({
       actorId,
       locale,
-      assetKey: typeof source === "string" ? source : `studio-asset-${source.studioMediaAssetId}`,
-      ...(typeof source === "string" ? {} : { studioMediaAssetId: source.studioMediaAssetId }),
+      assetKey: `studio-asset-${studioMediaAssetId}`,
+      studioMediaAssetId,
       status: "editing",
       retentionUntil,
       createdAt: now,
@@ -252,7 +252,7 @@ export type VideoTechnicalCheck = {
 export async function validateVideoDraft(config: BackendConfig, backendDb: BackendDb, videoDraftId: number): Promise<VideoTechnicalCheck> {
   const draft = getVideoDraft(backendDb, videoDraftId);
   const locale = draft.locale === "en" ? "en" : "ru";
-  const source = videoSourcePath(backendDb, config, draft);
+  const source = videoSourcePath(backendDb, draft);
   if (!source) throw new StudioError("err.source-missing");
   if (path.extname(source).toLowerCase() !== ".mp4") throw new StudioError("err.need-mp4");
   const size = (await fs.promises.stat(source)).size;

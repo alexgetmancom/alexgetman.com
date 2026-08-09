@@ -5,11 +5,11 @@ import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { describeError, t } from "../foundation/i18n/index.js";
 import { createStudioServices } from "../studio/services/index.js";
+import { settingsService } from "../studio/services/settings.js";
 import { appendPendingAlbum } from "./albums.js";
 import { clearConversationState, getConversationState } from "./conversation-state.js";
 import { cancelPromptKeyboard } from "./dialog-ui.js";
 import { executePublicationEffects, type PublicationMessageResult } from "./effects.js";
-import { botLocale } from "./i18n.js";
 import { persistentKeyboard } from "./menu-render.js";
 import { extractMessage } from "./message.js";
 import { POST_FLOW, postStateStep } from "./post-flow.js";
@@ -33,7 +33,7 @@ async function renderPostScreen(ctx: Context, backendDb: BackendDb, mode: "reply
     data: {},
     controlMessageId: null,
   }).revision;
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const prompt = t(locale, "post.dialog-prompt");
   const options = { reply_markup: cancelPromptKeyboard(locale, publicationCallback("post", "cancel_dialog", [], revision)) };
   await executePublicationEffects(ctx, backendDb, [{ type: "screen", mode, text: prompt, options }]);
@@ -49,7 +49,7 @@ export async function openPostScreen(ctx: Context, backendDb: BackendDb): Promis
 
 export async function handlePostMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<PublicationMessageResult> {
   const actorId = Number(ctx.from?.id);
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const state = getConversationState(backendDb, actorId, "post");
   const stateStep = postStateStep(state);
   const message = extractMessage(ctx);

@@ -6,7 +6,7 @@ import { terminalIfMissingRemoteObject } from "./errors.js";
 import type { MetricResult } from "./types.js";
 
 export async function collectInstagramStory(task: MetricTask, config: BackendConfig, fetchImpl: typeof fetch): Promise<MetricResult> {
-  const { accessToken: token } = instagramCredentialsForLocale(config, task.target === "instagram_stories_ru" ? "ru" : "en", "shared");
+  const { accessToken: token } = instagramCredentialsForLocale(config, task.target === "instagram_stories_ru" ? "ru" : "en");
   if (!token || !task.externalId) throw new Error("missing_instagram_story_token_or_id");
   const host = instagramGraphHost(token);
   const version = config.INSTAGRAM_GRAPH_API_VERSION;

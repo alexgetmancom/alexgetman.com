@@ -9,8 +9,8 @@ import { log } from "../foundation/logger.js";
 import { setTelegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { importTelegramAlbumMedia } from "../interfaces/telegram/media-ingress.js";
 import { createStudioServices } from "../studio/services/index.js";
+import { settingsService } from "../studio/services/settings.js";
 import { clearConversationStateIfCurrent, getConversationState } from "./conversation-state.js";
-import { botLocale } from "./i18n.js";
 import { type PostSessionStep, type PostWizardStep, postStepData } from "./post-flow.js";
 import { translatePostText } from "./post-translation.js";
 import { publicationRenderers } from "./publication-renderers.js";
@@ -226,7 +226,7 @@ function resolveLocale(value: unknown): "ru" | "en" | null {
 async function giveUpAlbum(bot: Bot, backendDb: BackendDb, albumId: string, actorId: number, chatId: number): Promise<void> {
   unsafeDb(backendDb).db.delete(pendingAlbums).where(eq(pendingAlbums.id, albumId)).run();
   try {
-    await bot.api.sendMessage(chatId, t(botLocale(backendDb, actorId), "post.album-failed"));
+    await bot.api.sendMessage(chatId, t(settingsService(backendDb).locale(actorId), "post.album-failed"));
   } catch (error) {
     log("warn", "album give-up notice failed", { chat: chatId, error: String(error) });
   }
@@ -246,7 +246,7 @@ async function refreshDraftControlCard(
     actorId,
     publicationId: draftId,
     config,
-    locale: botLocale(backendDb, actorId),
+    locale: settingsService(backendDb).locale(actorId),
   });
   // A completed chat edit gets a fresh card at the bottom. Previous cards are
   // history, never a moving conversation prompt above the user's reply.

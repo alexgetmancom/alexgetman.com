@@ -1,24 +1,25 @@
 import { type Bot, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { t } from "../foundation/i18n/index.js";
+import type { StudioLocale } from "../foundation/locale.js";
 import { log } from "../foundation/logger.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
 import { truncateUnicode } from "../foundation/text.js";
 import { telegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 
 import { type PostProgressState, type PostProgressStatus, postProgressState } from "../studio/services/post-progress.js";
-import { botLocale } from "./i18n.js";
+import { settingsService } from "../studio/services/settings.js";
 import { isUnchangedMessageEdit } from "./telegram-errors.js";
 
 /** Telegram renderer over the transport-free Studio progress state. */
 export function postProgress(backendDb: BackendDb, draftId: number, details = false): { text: string; keyboard: InlineKeyboard } {
   const state = postProgressState(backendDb, draftId);
-  return renderPostProgress(state, botLocale(backendDb, state.actorId), details);
+  return renderPostProgress(state, settingsService(backendDb).locale(state.actorId), details);
 }
 
 export function renderPostProgress(
   state: PostProgressState,
-  locale: ReturnType<typeof botLocale>,
+  locale: StudioLocale,
   details = false,
 ): { text: string; keyboard: InlineKeyboard } {
   const { counts } = state;

@@ -152,11 +152,11 @@ const probes: Probe[] = [
   {
     target: "instagram_stories",
     configured: (c) => {
-      const credentials = instagramCredentialsForLocale(c, "en", "shared");
+      const credentials = instagramCredentialsForLocale(c, "en");
       return Boolean(credentials.accessToken && credentials.userId);
     },
     run: (config, fetchImpl) => {
-      const { accessToken: token, userId } = instagramCredentialsForLocale(config, "en", "shared");
+      const { accessToken: token, userId } = instagramCredentialsForLocale(config, "en");
       if (!token || !userId) throw new Error("Instagram Stories EN credentials are missing");
       const host = instagramGraphHost(token);
       const version = config.INSTAGRAM_GRAPH_API_VERSION;
@@ -166,11 +166,11 @@ const probes: Probe[] = [
   {
     target: "instagram_stories_ru",
     configured: (c) => {
-      const credentials = instagramCredentialsForLocale(c, "ru", "shared");
+      const credentials = instagramCredentialsForLocale(c, "ru");
       return Boolean(credentials.accessToken && credentials.userId);
     },
     run: (config, fetchImpl) => {
-      const { accessToken: token, userId } = instagramCredentialsForLocale(config, "ru", "shared");
+      const { accessToken: token, userId } = instagramCredentialsForLocale(config, "ru");
       if (!token || !userId) throw new Error("Instagram Stories RU credentials are missing");
       const host = instagramGraphHost(token);
       const version = config.INSTAGRAM_GRAPH_API_VERSION;

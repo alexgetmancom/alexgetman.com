@@ -1,16 +1,7 @@
-import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import * as z from "zod";
 import { publicationRef } from "../application/publication-ref.js";
-import {
-  SITE_MEDIA_URL_PREFIX,
-  siteMediaFilename,
-  siteMediaPosterFilename,
-  siteMediaVerticalFilename,
-} from "../content/site-media-naming.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { knowledgeEntities, postEntityLinks, postLocales, postMetrics, postSources, posts, publications } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
@@ -18,7 +9,7 @@ import { recordDomainEvent } from "../domain/events.js";
 const siteMediaSchema = z
   .object({
     type: z.string().optional(),
-    path: z.string().optional(),
+    path: z.string().min(1),
     poster: z.string().optional(),
   })
   .passthrough();
@@ -91,30 +82,24 @@ const FEED_CACHE_TTL_MS = 3_000;
 type CachedFeed = { snapshot: PublicSiteSnapshot; builtAt: number };
 // Keyed by the database handle so a test's `:memory:` database and the closed
 // handle of a previous runtime never hand their feed to anyone else.
-const feedCache = new WeakMap<BackendDb, Map<string, CachedFeed>>();
+const feedCache = new WeakMap<BackendDb, CachedFeed>();
 
 /** Published-site read model. It reads only stable publication data. */
-export function loadPublicSiteFeed(backendDb: BackendDb, sitePublicDir = process.env.SITE_PUBLIC_DIR ?? "/data/site"): FeedItem[] {
-  return loadPublicSiteSnapshot(backendDb, sitePublicDir).items;
+export function loadPublicSiteFeed(backendDb: BackendDb): FeedItem[] {
+  return loadPublicSiteSnapshot(backendDb).items;
 }
 
 /** Loads one published item without building the surrounding archive. */
-export function loadPublicSiteItem(
-  backendDb: BackendDb,
-  postId: number,
-  sitePublicDir = process.env.SITE_PUBLIC_DIR ?? "/data/site",
-): FeedItem | undefined {
-  return buildPublicSiteFeed(backendDb, sitePublicDir, postId)[0];
+export function loadPublicSiteItem(backendDb: BackendDb, postId: number): FeedItem | undefined {
+  return buildPublicSiteFeed(backendDb, postId)[0];
 }
 
-function loadPublicSiteSnapshot(backendDb: BackendDb, sitePublicDir = process.env.SITE_PUBLIC_DIR ?? "/data/site"): PublicSiteSnapshot {
-  const byDir = feedCache.get(backendDb) ?? new Map<string, CachedFeed>();
-  const cached = byDir.get(sitePublicDir);
+function loadPublicSiteSnapshot(backendDb: BackendDb): PublicSiteSnapshot {
+  const cached = feedCache.get(backendDb);
   if (cached && Date.now() - cached.builtAt < FEED_CACHE_TTL_MS) return cached.snapshot;
-  const items = buildPublicSiteFeed(backendDb, sitePublicDir);
+  const items = buildPublicSiteFeed(backendDb);
   const snapshot: PublicSiteSnapshot = { items, byPostId: new Map(items.map((item) => [item.post_id, item])) };
-  byDir.set(sitePublicDir, { snapshot, builtAt: Date.now() });
-  feedCache.set(backendDb, byDir);
+  feedCache.set(backendDb, { snapshot, builtAt: Date.now() });
   return snapshot;
 }
 
@@ -125,7 +110,7 @@ export function invalidatePublicSiteFeed(backendDb: BackendDb): void {
   feedCache.delete(backendDb);
 }
 
-function buildPublicSiteFeed(backendDb: BackendDb, sitePublicDir: string, postId?: number): FeedItem[] {
+function buildPublicSiteFeed(backendDb: BackendDb, postId?: number): FeedItem[] {
   const ruLocale = alias(postLocales, "site_locale_ru");
   const enLocale = alias(postLocales, "site_locale_en");
   const rows = unsafeDb(backendDb)
@@ -223,24 +208,8 @@ function buildPublicSiteFeed(backendDb: BackendDb, sitePublicDir: string, postId
   const now = Date.now();
   return rows.flatMap((row): FeedItem[] => {
     if (row.postId == null || row.messageId == null || row.postKey == null) return [];
-    const ru = locale(
-      row.ruEnabled,
-      row.ruPublishedAt,
-      row.ruText,
-      row.ruSlug,
-      row.ruHtml,
-      publishedMedia(row.ruMedia, row.postId, "ru", sitePublicDir),
-      now,
-    );
-    const en = locale(
-      row.enEnabled,
-      row.enPublishedAt,
-      row.enText,
-      row.enSlug,
-      row.enHtml,
-      publishedMedia(row.enMedia, row.postId, "en", sitePublicDir),
-      now,
-    );
+    const ru = locale(row.ruEnabled, row.ruPublishedAt, row.ruText, row.ruSlug, row.ruHtml, publishedMedia(row.ruMedia), now);
+    const en = locale(row.enEnabled, row.enPublishedAt, row.enText, row.enSlug, row.enHtml, publishedMedia(row.enMedia), now);
     if (!ru.enabled && !en.enabled) return [];
     const media = ru.media;
     const mediaEn = en.media.length > 0 ? en.media : media;
@@ -320,91 +289,7 @@ function firstImage(media: SiteMedia[]): string | null {
   return media.find((item) => item.type !== "video" && typeof item.path === "string")?.path ?? null;
 }
 
-/** Once a composite exists it is never deleted, so a positive result is safe to
- * remember for the life of the process; only "not yet backfilled" is re-checked
- * on every call, so a completed backfill is still picked up without a restart. */
-const MAX_MEDIA_CACHE_ENTRIES = 512;
-const verticalMediaExistsCache = new Map<string, boolean>();
-function verticalMediaExists(fullPath: string): boolean {
-  if (verticalMediaExistsCache.has(fullPath)) {
-    rememberMediaCache(verticalMediaExistsCache, fullPath, true);
-    return true;
-  }
-  const exists = fs.existsSync(fullPath);
-  if (exists) rememberMediaCache(verticalMediaExistsCache, fullPath, true);
-  return exists;
-}
-
-const mediaVersionCache = new Map<string, { signature: string; version: string }>();
-const MEDIA_HASH_CHUNK_BYTES = 64 * 1024;
-const MAX_SSR_CONTENT_HASH_BYTES = 8 * 1024 * 1024;
-function versionedMediaPath(publicPath: string, fullPath: string): string {
-  const stat = fs.statSync(fullPath, { throwIfNoEntry: false });
-  if (!stat?.isFile()) return publicPath;
-  const signature = `${stat.size}:${stat.mtimeMs}`;
-  const cached = mediaVersionCache.get(fullPath);
-  if (cached?.signature === signature) {
-    rememberMediaCache(mediaVersionCache, fullPath, cached);
-    return `${publicPath}?v=${cached.version}`;
-  }
-  // Images keep the old content hash semantics, but large videos use the
-  // stable size/mtime signature so SSR never allocates a video-sized Buffer.
-  const isVideo = /\.(?:mp4|webm|mov|m4v)$/i.test(fullPath);
-  const version =
-    !isVideo && stat.size <= MAX_SSR_CONTENT_HASH_BYTES ? hashFileInChunks(fullPath) : `s${stat.size}-${Math.trunc(stat.mtimeMs)}`;
-  rememberMediaCache(mediaVersionCache, fullPath, { signature, version });
-  return `${publicPath}?v=${version}`;
-}
-
-function hashFileInChunks(fullPath: string): string {
-  const hash = crypto.createHash("sha256");
-  const descriptor = fs.openSync(fullPath, "r");
-  const chunk = Buffer.allocUnsafe(MEDIA_HASH_CHUNK_BYTES);
-  let position = 0;
-  try {
-    while (true) {
-      const bytesRead = fs.readSync(descriptor, chunk, 0, chunk.length, position);
-      if (bytesRead === 0) break;
-      hash.update(chunk.subarray(0, bytesRead));
-      position += bytesRead;
-    }
-  } finally {
-    fs.closeSync(descriptor);
-  }
-  return hash.digest("hex").slice(0, 12);
-}
-
-function rememberMediaCache<K, V>(cache: Map<K, V>, key: K, value: V): void {
-  cache.delete(key);
-  cache.set(key, value);
-  while (cache.size > MAX_MEDIA_CACHE_ENTRIES) {
-    const oldest = cache.keys().next().value;
-    if (oldest === undefined) return;
-    cache.delete(oldest);
-  }
-}
-
-/** The final viewer URL is chosen only after its durable file exists. This is
- * deliberate: the archive is backfilled asynchronously on VM-106, and a
- * missing composite must never make an older card disappear. */
-function publishedMedia(media: unknown, postId: number, locale: "ru" | "en", sitePublicDir: string): SiteMedia[] {
+function publishedMedia(media: unknown): SiteMedia[] {
   const items = z.array(siteMediaSchema).safeParse(media);
-  return (items.success ? items.data : []).map((item, index) => {
-    if (typeof item.path === "string" && item.path) return item;
-    const type = String(item.type ?? "image").toLowerCase() === "video" ? "video" : "image";
-    const vertical = siteMediaVerticalFilename(postId, locale, index, type);
-    const original = siteMediaFilename(postId, locale, index, type === "video" ? "mp4" : "jpg");
-    const verticalPath = path.join(sitePublicDir, SITE_MEDIA_URL_PREFIX, vertical);
-    const viewerPath = verticalMediaExists(verticalPath) ? vertical : original;
-    const viewerFullPath = path.join(sitePublicDir, SITE_MEDIA_URL_PREFIX, viewerPath);
-    return {
-      ...item,
-      type,
-      // Source-only legacy rows do not carry the materializer's public path.
-      // Version the inferred projection too, otherwise a replaced stable file
-      // leaves different srcset widths cached for up to a week.
-      path: versionedMediaPath(`${SITE_MEDIA_URL_PREFIX}/${viewerPath}`, viewerFullPath),
-      ...(type === "video" ? { poster: `${SITE_MEDIA_URL_PREFIX}/${siteMediaPosterFilename(postId, locale, index)}` } : {}),
-    };
-  });
+  return items.success ? items.data : [];
 }

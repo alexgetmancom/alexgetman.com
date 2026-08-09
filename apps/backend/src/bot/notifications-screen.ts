@@ -3,16 +3,17 @@ import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
+import type { StudioLocale } from "../foundation/locale.js";
 import { truncateUnicode } from "../foundation/text.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { botLocale } from "./i18n.js";
+import { settingsService } from "../studio/services/settings.js";
 
 export const NOTIFICATIONS_MENU_ID = "notifications-menu";
 
 export function buildNotificationsMenu(config: BackendConfig, backendDb: BackendDb): Menu<Context> {
   const detail = new Menu<Context>("notification-detail", { autoAnswer: true }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     const notifications = createStudioServices(backendDb, config).notifications;
     const event = notifications.get(actorId, Number(ctx.match));
     if (!event) {
@@ -32,7 +33,7 @@ export function buildNotificationsMenu(config: BackendConfig, backendDb: Backend
   const inbox = new Menu<Context>(NOTIFICATIONS_MENU_ID, { autoAnswer: true });
   inbox.dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     const events = createStudioServices(backendDb, config).notifications.inbox(actorId, 10);
     for (const event of events) {
       range
@@ -55,12 +56,7 @@ export function buildNotificationsMenu(config: BackendConfig, backendDb: Backend
   return inbox;
 }
 
-export function notificationsInboxText(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  locale: ReturnType<typeof botLocale>,
-): string {
+export function notificationsInboxText(backendDb: BackendDb, config: BackendConfig, actorId: number, locale: StudioLocale): string {
   const events = createStudioServices(backendDb, config).notifications.inbox(actorId, 10);
   const lines = [`🔔 ${t(locale, "notif.title")}`];
   if (!events.length) lines.push(`\n${t(locale, "notif.none")}`);
@@ -69,7 +65,7 @@ export function notificationsInboxText(
 
 function notificationLabel(
   event: { severity: string; target: string | null; eventType: string; message: string },
-  locale: ReturnType<typeof botLocale>,
+  locale: StudioLocale,
 ): string {
   const prefix = event.severity === "error" ? "🔴" : event.severity === "warn" ? "🟡" : "🔔";
   const text = event.message || event.target || event.eventType;
@@ -78,7 +74,7 @@ function notificationLabel(
 
 function notificationText(
   event: { severity: string; target: string | null; eventType: string; message: string; postKey: string | null; createdAt: string },
-  locale: ReturnType<typeof botLocale>,
+  locale: StudioLocale,
   timeZone: string,
 ): string {
   const status =

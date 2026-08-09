@@ -2,6 +2,7 @@ import { type Bot, type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
+import type { StudioLocale } from "../foundation/locale.js";
 import { log } from "../foundation/logger.js";
 import {
   clearTelegramAnalyticsDashboard,
@@ -10,7 +11,7 @@ import {
 } from "../interfaces/telegram/control-cards.js";
 import { sendTelegramArchiveMedia } from "../interfaces/telegram/delivery-previews.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { botLocale } from "./i18n.js";
+import { settingsService } from "../studio/services/settings.js";
 import { isUnchangedMessageEdit } from "./telegram-errors.js";
 
 /** The sections this screen offers. The analytics read model also renders an
@@ -21,7 +22,7 @@ type AnalyticsSection = "overview" | "posts" | "video";
 export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const data = ctx.callbackQuery?.data ?? "";
   const actorId = Number(ctx.from?.id);
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const analytics = createStudioServices(backendDb, config).analytics;
   if (data === "archive_noop") {
     await ctx.answerCallbackQuery();
@@ -146,7 +147,7 @@ export async function showAnalyticsDashboard(
   days: 1 | 7 | 30,
 ): Promise<void> {
   const actorId = Number(ctx.from?.id);
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const dashboard = createStudioServices(backendDb, config).analytics.dashboard(section, days, locale);
   const keyboard = analyticsKeyboard(config, locale, section, days);
   await editScreen(ctx, { html: dashboard.richHtml }, { reply_markup: keyboard });
@@ -162,7 +163,7 @@ export async function refreshTelegramAnalyticsDashboards(bot: Bot, backendDb: Ba
   const results = await Promise.all(
     telegramAnalyticsDashboards(backendDb).map(async (card) => {
       const section = card.section === "overview" && !showOverview(config) ? defaultAnalyticsSection(config) : card.section;
-      const locale = botLocale(backendDb, card.actorId);
+      const locale = settingsService(backendDb).locale(card.actorId);
       const dashboard = analytics.dashboard(section, card.days, locale);
       try {
         await bot.api.editMessageText(
@@ -185,12 +186,7 @@ export async function refreshTelegramAnalyticsDashboards(bot: Bot, backendDb: Ba
   return results.filter(Boolean).length;
 }
 
-function analyticsKeyboard(
-  config: BackendConfig,
-  locale: ReturnType<typeof botLocale>,
-  section: AnalyticsSection,
-  days: 1 | 7 | 30,
-): InlineKeyboard {
+function analyticsKeyboard(config: BackendConfig, locale: StudioLocale, section: AnalyticsSection, days: 1 | 7 | 30): InlineKeyboard {
   const callback = (nextDays: 1 | 7 | 30) => `analytics_section:${section}:${nextDays}`;
   const keyboard = new InlineKeyboard();
   keyboard
@@ -232,7 +228,7 @@ function showOverview(config: BackendConfig): boolean {
   return config.studio.modules.text_posting && config.studio.modules.video_posting;
 }
 
-function periodButtonLabel(locale: ReturnType<typeof botLocale>, period: 1 | 7 | 30, selected: 1 | 7 | 30): string {
+function periodButtonLabel(locale: StudioLocale, period: 1 | 7 | 30, selected: 1 | 7 | 30): string {
   return t(locale, period === selected ? `analytics.period-${period}-active` : `analytics.period-${period}`);
 }
 
@@ -240,7 +236,7 @@ function periodButtonLabel(locale: ReturnType<typeof botLocale>, period: 1 | 7 |
  * numbers under a listing cannot disagree with the listing above them. */
 function archivePagination(
   keyboard: InlineKeyboard,
-  locale: ReturnType<typeof botLocale>,
+  locale: StudioLocale,
   prefix: "analytics_archive" | "analytics_post_archive",
   offset: number,
   archive: { items: Array<unknown>; total: number; pageSize: number },

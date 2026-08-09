@@ -14,7 +14,7 @@ import { log } from "../foundation/logger.js";
 import { recordWorkerHeartbeat } from "../foundation/runtime/worker-state.js";
 import { type ScheduledLoop, startLoop } from "../foundation/scheduler.js";
 import { runNotificationCycle } from "../notifications/jobs.js";
-import { observabilityService } from "../observability/service.js";
+import { runObservabilityCycle } from "../observability/cycle.js";
 import { pruneOperationalHistory, withMaintenanceLock } from "../operations/maintenance.js";
 import { recoverStalePublishJobs } from "../publishing/queue.js";
 import { recoverStoryCardJobs, runStoryCardCycle } from "../story-cards/worker.js";
@@ -188,7 +188,7 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
       if (result.total) log("info", "pruned operational history", result);
     }),
     startWorkerLoop("observability", config.OBSERVABILITY_INTERVAL_SECONDS * 1000, async () => {
-      const result = await observabilityService(backendDb, config).run();
+      const result = await runObservabilityCycle(config, backendDb);
       log("debug", "observability loop tick", result);
     }),
   ];

@@ -35,7 +35,7 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     create(actorId: number, studioMediaAssetId: number, locale: VideoLocale = "ru"): number {
       const [asset] = requireStudioMediaAssets(backendDb, actorId, [studioMediaAssetId], accessibleStudioActorIds(config, actorId));
       if (asset?.kind !== "video") throw new StudioError("err.video-needs-asset");
-      return createVideoDraft(backendDb, actorId, { studioMediaAssetId }, config.VIDEO_MEDIA_RETENTION_HOURS, locale);
+      return createVideoDraft(backendDb, actorId, studioMediaAssetId, config.VIDEO_MEDIA_RETENTION_HOURS, locale);
     },
     get(actorId: number, publicationId: number) {
       const draft = requireOwnedVideo(backendDb, config, actorId, publicationId);

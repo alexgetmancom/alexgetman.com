@@ -7,7 +7,7 @@ import { escapeMarkdown } from "../foundation/markdown.js";
 import { truncateUnicode } from "../foundation/text.js";
 import { createStudioServices } from "../studio/services/index.js";
 import type { StudioQueueAttentionItem, StudioQueueItem, StudioQueueSnapshot } from "../studio/services/queue.js";
-import { botLocale } from "./i18n.js";
+import { settingsService } from "../studio/services/settings.js";
 import { publicationCallback } from "./publication-callback.js";
 import { isUnchangedMessageEdit } from "./telegram-errors.js";
 
@@ -20,7 +20,7 @@ type QueueScreen = { text: string; items: QueuePage; currentPage: number; pages:
 export async function showQueue(ctx: Context, backendDb: BackendDb, config: BackendConfig, page = 0): Promise<void> {
   const actorId = ctx.from?.id;
   if (actorId === undefined) return;
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const services = createStudioServices(backendDb, config);
   const timeConfig = services.settings.timeConfig(actorId, config);
   const snapshot = services.queue.snapshot(actorId);
@@ -44,7 +44,7 @@ export async function showQueue(ctx: Context, backendDb: BackendDb, config: Back
 export async function showQueueAttention(ctx: Context, backendDb: BackendDb, config: BackendConfig, page = 0): Promise<void> {
   const actorId = ctx.from?.id;
   if (actorId === undefined) return;
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const services = createStudioServices(backendDb, config);
   const timeConfig = services.settings.timeConfig(actorId, config);
   const snapshot = services.queue.snapshot(actorId);

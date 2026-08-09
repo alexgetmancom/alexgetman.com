@@ -6,9 +6,9 @@ import type { StudioLocale } from "../foundation/locale.js";
 import type { VideoTechnicalCheck } from "../publishing/video-service.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 import type { StudioServices } from "../studio/services/index.js";
+import { settingsService } from "../studio/services/settings.js";
 import { VIDEO_FLOW, videoScheduleDates } from "../studio/video-fsm.js";
 import type { PublicationEffect } from "./effects.js";
-import { botLocale } from "./i18n.js";
 import { advancePublicationFlow } from "./publication-flow.js";
 import { publicationRenderers } from "./publication-renderers.js";
 import { clearVideoState, type VideoConversationState, videoScheduleConfirmationEffects, videoStepEffects } from "./video-ui.js";
@@ -57,7 +57,7 @@ export async function finishVideoSchedule(
   services: StudioServices,
 ): Promise<PublicationEffect[]> {
   if (!session.draftId) throw new StudioError("err.video-missing");
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const technical = await services.videos.schedule(actorId, session.draftId, schedule);
   return showScheduledVideo(backendDb, config, actorId, session, technical, locale, services);
 }
@@ -71,7 +71,7 @@ export async function finishVideoNow(
   services: StudioServices,
 ): Promise<PublicationEffect[]> {
   if (!session.draftId) throw new StudioError("err.video-missing");
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const technical = await services.videos.publish(actorId, session.draftId);
   return showScheduledVideo(backendDb, config, actorId, session, technical, locale, services);
 }

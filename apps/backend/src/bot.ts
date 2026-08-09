@@ -3,7 +3,6 @@ import { Bot, type Context } from "grammy";
 import { handleAnalyticsCallback } from "./bot/analytics-screen.js";
 import { runCallbackBoundary } from "./bot/callback-boundary.js";
 import { handlePublicationCallback, handlePublicationMessage } from "./bot/callback-router.js";
-import { botLocale } from "./bot/i18n.js";
 import { persistentKeyboard, showMainMenu } from "./bot/menu-render.js";
 import { buildMainMenu } from "./bot/navigation.js";
 import { buildNotificationsMenu, notificationsInboxText } from "./bot/notifications-screen.js";
@@ -23,6 +22,7 @@ import { log } from "./foundation/logger.js";
 import { clearTelegramAnalyticsDashboard } from "./interfaces/telegram/control-cards.js";
 import { handleTelegramDeliveryPreviewCallback } from "./interfaces/telegram/delivery-previews.js";
 import { trackUsageAsync } from "./observability/usage.js";
+import { settingsService } from "./studio/services/settings.js";
 
 export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | null {
   if (!config.controllerBotToken) {
@@ -89,7 +89,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   bot.use(mainMenu);
 
   const showBotMenu = async (ctx: Context) => {
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
+    const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
     if (!isAdmin(config, ctx.from?.id)) return;
     await ctx.reply(t(locale, "start.menu-hint"), {
       reply_markup: persistentKeyboard(locale),
@@ -106,7 +106,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     await showSettings(ctx, backendDb, settingsMenu);
   });
   bot.hears(localizedTextVariants(["menu.new-video"]), async (ctx) => {
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
+    const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
     if (!isAdmin(config, ctx.from?.id)) return;
     if (!config.studio.modules.video_posting) return void (await ctx.reply(t(locale, "bot.video-disabled")));
     await startVideoConversation(ctx, backendDb);
@@ -173,7 +173,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       handle: async (ctx) => {
         await ctx.answerCallbackQuery();
         const actorId = Number(ctx.from?.id);
-        await ctx.reply(notificationsInboxText(backendDb, config, actorId, botLocale(backendDb, actorId)), {
+        await ctx.reply(notificationsInboxText(backendDb, config, actorId, settingsService(backendDb).locale(actorId)), {
           reply_markup: notificationsMenu,
         });
         return true;
@@ -222,7 +222,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     const route = callbackRoutes.find((candidate) => candidate.matches(routeData));
     if (route) await route.handle(ctx);
     else {
-      const locale = botLocale(backendDb, Number(ctx.from?.id));
+      const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
       await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") });
     }
   });

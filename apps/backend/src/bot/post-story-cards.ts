@@ -5,8 +5,8 @@ import { t } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
 import { telegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { createStudioServices } from "../studio/services/index.js";
+import { settingsService } from "../studio/services/settings.js";
 import { executePublicationEffects, type PublicationEffect } from "./effects.js";
-import { botLocale } from "./i18n.js";
 import { publicationCallback } from "./publication-callback.js";
 
 type StoryCard = { locale: string; status: string; localPath: string | null };
@@ -22,7 +22,7 @@ export async function showStoryCardChoice(
   const posts = createStudioServices(backendDb, config).posts;
   const cards = posts.preview(actorId, draftId).storyCards;
   if (cards.length === 0) return null;
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   if (!cardsReady(cards)) {
     const effects: PublicationEffect[] = [{ type: "toast", text: t(locale, "post.story-cards-generating") }];
     queueStoryCardChoice(ctx, backendDb, config, actorId, draftId, intent);
@@ -78,7 +78,7 @@ function sendStoryCardChoice(
   intent: "publish" | "schedule",
   cards: StoryCard[],
 ): PublicationEffect[] {
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const effects: PublicationEffect[] = [];
   for (const cardLocale of ["ru", "en"] as const) {
     const card = cards.find((item) => item.locale === cardLocale);

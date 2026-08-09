@@ -1,41 +1,16 @@
-import { existsSync, readdirSync, rmSync } from "node:fs";
-import path from "node:path";
+import { existsSync } from "node:fs";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 
-/** Content-owned source files stay available through delivery, then the video
- * worker prunes them after the configured final-publication retention window. */
-export function videoPath(config: BackendConfig, assetKey: string): string | null {
-  if (!existsSync(config.VIDEO_MEDIA_DIR)) return null;
-  const match = readdirSync(config.VIDEO_MEDIA_DIR).find((entry) => entry.startsWith(`${assetKey}.`));
-  return match ? path.join(config.VIDEO_MEDIA_DIR, match) : null;
+export function videoSourcePath(backendDb: BackendDb, source: { studioMediaAssetId: number | null }): string | null {
+  if (source.studioMediaAssetId == null) throw new Error("Video draft has no Studio media asset");
+  const asset = backendDb.studioMediaAssets.get(source.studioMediaAssetId);
+  return asset?.kind === "video" && existsSync(asset.localPath) ? asset.localPath : null;
 }
 
-export function deleteVideo(config: BackendConfig, assetKey: string): void {
-  const file = videoPath(config, assetKey);
-  if (file) rmSync(file, { force: true });
-}
-
-/** Resolves a neutral Studio asset first; legacy asset keys remain readable during migration. */
-export function videoSourcePath(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  source: { assetKey: string; studioMediaAssetId: number | null },
-): string | null {
-  if (source.studioMediaAssetId != null) {
-    const asset = backendDb.studioMediaAssets.get(source.studioMediaAssetId);
-    return asset?.kind === "video" && existsSync(asset.localPath) ? asset.localPath : null;
-  }
-  return videoPath(config, source.assetKey);
-}
-
-export function videoPublicUrl(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  source: { assetKey: string; studioMediaAssetId: number | null },
-): string {
+export function videoPublicUrl(backendDb: BackendDb, config: BackendConfig, source: { studioMediaAssetId: number | null }): string {
   const base = config.PUBLIC_BASE_URL.replace(/\/$/, "");
-  if (source.studioMediaAssetId == null) return `${base}/media/video/${source.assetKey}`;
+  if (source.studioMediaAssetId == null) throw new Error("Video draft has no Studio media asset");
   // The public media route is content-addressed by sha256 so the unguessable
   // digest, not the enumerable asset id, is what grants read access.
   const asset = backendDb.studioMediaAssets.get(source.studioMediaAssetId);

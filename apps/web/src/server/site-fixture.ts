@@ -213,12 +213,9 @@ export function seedSiteFixture(options: { dbPath: string; publicDir: string; po
             locale,
             slug: spec.slug,
             text: spec.text,
-            // No `path`: production rows carry the Telegram file reference and the
-            // read model derives the public filename, so the fixture exercises
-            // that derivation instead of hard-coding a name.
             mediaJson: Array.from({ length: images }, (_, index) => ({
-              type: "photo",
-              file_id: `fixture-${post.postId}-${locale}-${index}`,
+              type: "image",
+              path: `media/posts/${post.postId}-${locale}-${index}-vertical.jpg`,
             })),
             siteEnabled: 1,
             publishedAt: now,

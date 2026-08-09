@@ -3,7 +3,7 @@ import type { BackendDb } from "../db/client.js";
 import { describeError } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
 import { truncateUnicode } from "../foundation/text.js";
-import { botLocale } from "./i18n.js";
+import { settingsService } from "../studio/services/settings.js";
 
 const CALLBACK_DEDUPLICATION_TTL_MS = 15 * 60_000;
 const CALLBACK_DEDUPLICATION_LIMIT = 10_000;
@@ -24,7 +24,7 @@ export async function runCallbackBoundary(ctx: Context, backendDb: BackendDb, ne
   try {
     await next();
   } catch (error) {
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
+    const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
     await answerCallbackSafely(ctx, { text: truncateCallbackToast(describeError(locale, error)) });
   }
 }

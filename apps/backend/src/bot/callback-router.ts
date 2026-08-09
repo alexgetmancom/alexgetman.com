@@ -8,9 +8,9 @@ import type { StudioLocale } from "../foundation/locale.js";
 import { truncateUnicode } from "../foundation/text.js";
 import { telegramPostCard, telegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { createStudioServices } from "../studio/services/index.js";
+import { settingsService } from "../studio/services/settings.js";
 import { getActiveConversationState, getConversationState } from "./conversation-state.js";
 import { executePublicationEffects, type PublicationMessageResult } from "./effects.js";
-import { botLocale } from "./i18n.js";
 import { handlePostMessage } from "./post-screen.js";
 import type {
   PublicationActionContext,
@@ -62,7 +62,7 @@ export async function handlePublicationCallback(
 
   const actorId = Number(ctx.from?.id);
   if (!Number.isSafeInteger(actorId) || actorId <= 0) return false;
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const action = publicationAction(callback.kind, callback.action);
   const common = {
     ctx,

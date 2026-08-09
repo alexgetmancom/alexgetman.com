@@ -34,7 +34,7 @@ export function createPlatformAdapters(config: BackendConfig, fetchImpl: typeof 
       publishInstagramStory(
         job.payload,
         config,
-        instagramCredentialsForLocale(config, target === "instagram_stories" ? "en" : "ru", "shared"),
+        instagramCredentialsForLocale(config, target === "instagram_stories" ? "en" : "ru"),
         fetchImpl,
       );
   for (const target of TARGET_GROUPS.telegramStory)
@@ -71,7 +71,7 @@ export async function verifyPlatformPublication(
       const verified = await verifyInstagramPublication(
         id,
         config,
-        instagramCredentialsForLocale(config, target === "instagram_stories" ? "en" : "ru", "shared"),
+        instagramCredentialsForLocale(config, target === "instagram_stories" ? "en" : "ru"),
         fetchImpl,
       );
       return { ...result, url: result.url ?? verified.url, verification: { status: "verified", providerId: verified.id } };
@@ -91,7 +91,7 @@ export async function verifyPlatformPublication(
 
 function validatePlatformTarget(target: string, config: BackendConfig): void {
   if (targetInGroup(TARGET_GROUPS.instagramStory, target)) {
-    const credentials = instagramCredentialsForLocale(config, target === "instagram_stories" ? "en" : "ru", "shared");
+    const credentials = instagramCredentialsForLocale(config, target === "instagram_stories" ? "en" : "ru");
     const missing = [credentials.accessToken ? null : "Instagram access token", credentials.userId ? null : "Instagram user id"].filter(
       (name): name is string => name !== null,
     );

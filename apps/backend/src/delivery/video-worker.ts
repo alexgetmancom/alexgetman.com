@@ -148,7 +148,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
   const target = unsafeDb(backendDb).db.select().from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
   const draft = getVideoDraft(backendDb, job.videoDraftId);
   if (!target || target.status === "cancelled" || target.status === "published") return;
-  const filePath = videoSourcePath(backendDb, config, draft);
+  const filePath = videoSourcePath(backendDb, draft);
   if (!filePath) throw new Error("Video source was removed before publication completed.");
   const metadata = target.metadataJson as VideoMetadata;
   const locale = draft.locale === "en" ? "en" : "ru";

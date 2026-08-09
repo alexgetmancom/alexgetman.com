@@ -3,10 +3,10 @@ import type { BackendDb } from "../db/client.js";
 import { StudioError } from "../foundation/errors.js";
 import { plural, t } from "../foundation/i18n/index.js";
 import { manualScheduleExample } from "../foundation/time.js";
+import { settingsService } from "../studio/services/settings.js";
 import { clearConversationState, getConversationState } from "./conversation-state.js";
 import { cancelPromptKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
-import { botLocale } from "./i18n.js";
 import { type PostWizardStep, postStateStep, postStepData } from "./post-flow.js";
 import { showStoryCardChoice } from "./post-story-cards.js";
 import { canEditLocale, type DraftView, modeLabel } from "./preview.js";
@@ -314,7 +314,7 @@ async function commitLocaleSchedule(
   });
   const otherLocale = scheduleLocale === "ru" ? "en" : "ru";
   const otherAt = otherLocale === "ru" ? ruAt : enAt;
-  const uiLocale = botLocale(backendDb, actorId);
+  const uiLocale = settingsService(backendDb).locale(actorId);
   if (!otherAt && posts.hasLocaleTargets(actorId, draftId, otherLocale)) {
     return previewEffects(args, otherLocale === "ru" ? "schedule_ru" : "schedule_en");
   }
@@ -337,7 +337,7 @@ async function commitLocaleSchedule(
 function sendPublishConfirmation(args: PostActionArgs): PublicationEffect[] {
   const { services, backendDb, config, actorId, draftId } = args;
   const delivery = services.posts.preview(actorId, draftId).delivery;
-  const uiLocale = botLocale(backendDb, actorId);
+  const uiLocale = settingsService(backendDb).locale(actorId);
   const card = args.renderer.card({
     backendDb,
     pipeline: services.posts,
@@ -407,7 +407,7 @@ function previewEffects(args: PostActionArgs, view: DraftView = "overview", call
 }
 
 function promptEffect(backendDb: BackendDb, actorId: number, text: string): PublicationEffect {
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const revision = getConversationState(backendDb, actorId, "post")?.revision;
   return {
     type: "prompt",

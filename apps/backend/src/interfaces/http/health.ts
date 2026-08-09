@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import { videoPath } from "../../content/video-assets.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { workerState } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -14,20 +13,6 @@ export const healthRoutes: RouteModule = (app, { config, backendDb }) => {
   app.get("/readyz", () => {
     const report = readiness(config, backendDb);
     return json(report, report.ok ? 200 : 503);
-  });
-
-  app.on(["GET", "HEAD"], "/media/video/:token{[A-Za-z0-9_-]{20,}}", (c) => {
-    const filePath = videoPath(config, c.req.param("token"));
-    if (!filePath) return text("not found\n", 404);
-    const file = Bun.file(filePath);
-    return new Response(c.req.method === "HEAD" ? null : file, {
-      headers: {
-        "content-type": file.type || "video/mp4",
-        "content-length": String(file.size),
-        "cache-control": "private, no-store",
-        "x-robots-tag": "noindex, nofollow",
-      },
-    });
   });
 };
 

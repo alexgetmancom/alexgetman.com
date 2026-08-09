@@ -8,11 +8,11 @@ import type { StudioLocale } from "../foundation/locale.js";
 import { manualScheduleExample } from "../foundation/time.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import { createStudioServices, type StudioServices } from "../studio/services/index.js";
+import { settingsService } from "../studio/services/settings.js";
 import { isVideoWizardStep, VIDEO_FLOW, type VideoConversationStep, type VideoWizardStep } from "../studio/video-fsm.js";
 import { type ConversationState, clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
 import { appendCancelButton, cancelPromptKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
-import { botLocale } from "./i18n.js";
 import { publicationCallback } from "./publication-callback.js";
 import { createPublicationScheduleEngine, SCHEDULE_SLOT_PRESETS, scheduleConfirmationEffects, scheduleTimeKeyboard } from "./scheduling.js";
 
@@ -95,7 +95,7 @@ export function clearVideoState(backendDb: BackendDb, actorId: number): void {
 }
 
 export function videoPromptEffect(backendDb: BackendDb, actorId: number, text: string, plainText = false): PublicationEffect {
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const revision = getVideoState(backendDb, actorId)?.revision;
   return {
     type: "prompt",
@@ -118,7 +118,7 @@ export function videoStepEffects(
   session: VideoConversationState,
 ): PublicationEffect[] {
   const step = session.step;
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const timeConfig = createStudioServices(backendDb, config).settings.timeConfig(actorId, config);
   if (isVideoWizardStep(step)) return metadataPromptEffects(locale, step, session);
   if (step === "schedule_choice")
@@ -225,7 +225,7 @@ export function videoScheduleConfirmationEffects(
 ): PublicationEffect[] {
   const { draftId } = session;
   if (!draftId) throw new StudioError("err.video-missing");
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const videos = services.videos;
   const timeConfig = services.settings.timeConfig(actorId, config);
   // The transition runner already saved the `schedule_confirm` session. This

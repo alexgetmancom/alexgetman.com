@@ -5,9 +5,9 @@ import { StudioError } from "../foundation/errors.js";
 import { t } from "../foundation/i18n/index.js";
 import { formatZonedDateTime } from "../foundation/time.js";
 import { createStudioServices } from "../studio/services/index.js";
+import { settingsService } from "../studio/services/settings.js";
 import { requireConversationState } from "./conversation-state.js";
 import type { PublicationEffect } from "./effects.js";
-import { botLocale } from "./i18n.js";
 import { extractMessage } from "./message.js";
 import { POST_FLOW, type PostFlowInput, type PostWizardStep, postStateStep } from "./post-flow.js";
 import { publicationCallback } from "./publication-callback.js";
@@ -36,7 +36,7 @@ export async function applyAdminState(
     actorId,
     publicationId: draftId,
     config,
-    locale: botLocale(backendDb, actorId),
+    locale: settingsService(backendDb).locale(actorId),
   });
   return [{ type: "session", operation: "clear", kind: "post", actorId }, ...publicationCardEffect(preview, { type: "prompt" })];
 }
@@ -48,7 +48,7 @@ function renderPostScheduleConfirmation(
   draftId: number,
   state: { revision: number; data: Record<string, unknown> },
 ): PublicationEffect[] {
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const step = postStateStep({ step: "schedule_confirm", data: state.data });
   if (step?.type !== "schedule_confirm") throw new StudioError("action.schedule-expired");
   const posts = createStudioServices(backendDb, config).posts;

@@ -2,7 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { and, eq, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { parseArrayValue } from "../content/message.js";
-import { deleteVideo } from "../content/video-assets.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { drafts, studioMediaAssets, videoDrafts } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -25,6 +24,7 @@ export function pruneExpiredVideos(config: BackendConfig, backendDb: BackendDb):
         // after that, re-touching updatedAt (which orders the Studio video
         // list) on a draft nobody had opened in months.
         isNull(videoDrafts.sourcePrunedAt),
+        isNotNull(videoDrafts.studioMediaAssetId),
         or(
           and(
             lte(videoDrafts.retentionUntil, now),
@@ -50,8 +50,8 @@ export function pruneExpiredVideos(config: BackendConfig, backendDb: BackendDb):
     )
     .all();
   for (const row of rows) {
-    if (row.studioMediaAssetId == null) deleteVideo(config, row.assetKey);
-    else pruneStudioAssetSource(config, backendDb, row.studioMediaAssetId, now);
+    if (row.studioMediaAssetId == null) throw new Error(`Video draft ${row.id} has no Studio media asset`);
+    pruneStudioAssetSource(config, backendDb, row.studioMediaAssetId, now);
     unsafeDb(backendDb)
       .db.update(videoDrafts)
       .set({

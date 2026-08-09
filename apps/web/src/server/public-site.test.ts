@@ -1,7 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { type BackendDb, openBackendDb, unsafeDb } from "../../../backend/src/db/client.js";
 import {
   knowledgeEntities,
@@ -164,7 +161,7 @@ describe("Drizzle site feed", () => {
     );
   });
 
-  it("maps published Telegram media IDs to the deterministic site media manifest", () => {
+  it("reads the persisted site media manifest", () => {
     const now = new Date().toISOString();
     rawDb.db.insert(publications).values({ postId: 9, status: "published", createdAt: now, updatedAt: now }).run();
     rawDb.db
@@ -178,29 +175,18 @@ describe("Drizzle site feed", () => {
         locale: "en",
         slug: "media-post",
         text: "Media post",
-        mediaJson: [{ type: "photo", file_id: "telegram-file" }],
+        mediaJson: [{ type: "image", path: "media/posts/9-en-0-vertical.jpg?v=1234" }],
         siteEnabled: 1,
         publishedAt: now,
         updatedAt: now,
       })
       .run();
 
-    const siteDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-read-model-"));
-    try {
-      const vertical = path.join(siteDir, "media/posts/9-en-0-vertical.jpg");
-      fs.mkdirSync(path.dirname(vertical), { recursive: true });
-      fs.writeFileSync(vertical, "ready");
-      expect(loadPublicSiteFeed(backendDb, siteDir)[0]).toEqual(
-        expect.objectContaining({
-          image_en: expect.stringMatching(/^media\/posts\/9-en-0-vertical\.jpg\?v=[a-f0-9]{12}$/),
-          media_en: [expect.objectContaining({ path: expect.stringMatching(/^media\/posts\/9-en-0-vertical\.jpg\?v=[a-f0-9]{12}$/) })],
-        }),
-      );
-      expect(loadPublicSiteFeed(backendDb, path.join(siteDir, "not-ready"))[0]).toEqual(
-        expect.objectContaining({ image_en: "media/posts/9-en-0.jpg" }),
-      );
-    } finally {
-      fs.rmSync(siteDir, { recursive: true, force: true });
-    }
+    expect(loadPublicSiteFeed(backendDb)[0]).toEqual(
+      expect.objectContaining({
+        image_en: "media/posts/9-en-0-vertical.jpg?v=1234",
+        media_en: [expect.objectContaining({ path: "media/posts/9-en-0-vertical.jpg?v=1234" })],
+      }),
+    );
   });
 });

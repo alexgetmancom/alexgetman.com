@@ -1,4 +1,4 @@
-import { asc, eq, or } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { postEvents, postTargets, publishJobs } from "../db/schema.js";
@@ -10,7 +10,7 @@ export function publicationTimeline(backendDb: BackendDb, ref: string): Record<s
   const events = unsafeDb(backendDb)
     .db.select()
     .from(postEvents)
-    .where(or(eq(postEvents.postKey, ref), eq(postEvents.postKey, publicationRef("post", postId))))
+    .where(eq(postEvents.postKey, publicationRef("post", postId)))
     .orderBy(asc(postEvents.createdAt), asc(postEvents.id))
     .all()
     .map((event) => ({

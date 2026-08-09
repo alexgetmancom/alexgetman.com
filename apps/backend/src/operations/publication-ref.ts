@@ -1,6 +1,6 @@
 import { eq, or } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { posts, publicationSources, publications, siteSourceItems } from "../db/schema.js";
+import { posts, publicationSources, publications } from "../db/schema.js";
 import { jsonObject } from "../json.js";
 
 export type ResolvedPublicationRef = { input: string; postId: number | null; postKey: string; messageId: number };
@@ -43,25 +43,14 @@ export function resolvePublicationRef(backendDb: BackendDb, ref: string): Resolv
 }
 
 export function sourcePayload(backendDb: BackendDb, ref: ResolvedPublicationRef): Record<string, unknown> {
-  if (ref.postId != null) {
-    const source = jsonObject(
-      unsafeDb(backendDb)
-        .db.select({ itemJson: publicationSources.itemJson })
-        .from(publicationSources)
-        .where(eq(publicationSources.postId, ref.postId))
-        .get()?.itemJson,
-    );
-    if (Object.keys(source).length > 0) return source;
-  }
-  const siteSource = jsonObject(
+  if (ref.postId == null) throw new Error("publication has no post id");
+  const source = jsonObject(
     unsafeDb(backendDb)
-      .db.select({ itemJson: siteSourceItems.itemJson })
-      .from(siteSourceItems)
-      .where(eq(siteSourceItems.messageId, ref.messageId))
+      .db.select({ itemJson: publicationSources.itemJson })
+      .from(publicationSources)
+      .where(eq(publicationSources.postId, ref.postId))
       .get()?.itemJson,
   );
-  if (Object.keys(siteSource).length > 0) return siteSource;
-  return jsonObject(
-    unsafeDb(backendDb).db.select({ rawJson: posts.rawJson }).from(posts).where(eq(posts.postKey, ref.postKey)).get()?.rawJson,
-  );
+  if (Object.keys(source).length === 0) throw new Error(`publication ${ref.postId} has no source payload`);
+  return source;
 }

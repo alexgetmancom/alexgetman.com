@@ -4,7 +4,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
 import { setTelegramPostProgressCard } from "../interfaces/telegram/control-cards.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { botLocale } from "./i18n.js";
+import { settingsService } from "../studio/services/settings.js";
 import { renderPostProgress } from "./progress.js";
 
 /** Render and update one durable publication-progress card in place. */
@@ -15,7 +15,7 @@ export async function handleProgressCallback(ctx: Context, backendDb: BackendDb,
   const cancel = data.match(/^progress_cancel:(\d+)$/);
   const match = details ?? overview ?? cancel;
   if (!match) return false;
-  const locale = botLocale(backendDb, Number(ctx.from?.id));
+  const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
   const draftId = Number(match[1]);
   if (!Number.isSafeInteger(draftId)) {
     await ctx.answerCallbackQuery({ text: t(locale, "progress.bad-draft-id") });

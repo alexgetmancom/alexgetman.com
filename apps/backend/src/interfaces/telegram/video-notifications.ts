@@ -1,7 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
 import { parsePublicationRef } from "../../application/publication-ref.js";
-import { botLocale } from "../../bot/i18n.js";
 import { publicationCallback } from "../../bot/publication-callback.js";
 import { isSiteTarget, targetDefinition, targetLocale } from "../../botTargets.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
@@ -9,6 +8,7 @@ import { drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../../
 import type { BackendConfig } from "../../foundation/config.js";
 import type { MessageKey } from "../../foundation/i18n/index.js";
 import { t } from "../../foundation/i18n/index.js";
+import type { StudioLocale } from "../../foundation/locale.js";
 import { log } from "../../foundation/logger.js";
 import { truncateUnicode } from "../../foundation/text.js";
 import { getVideoDraft } from "../../publishing/video-data.js";
@@ -38,7 +38,7 @@ export async function notifyFinalVideoFailure(
     // A dead target is the outcome of a publication, so the completion switch
     // silences it like any other outcome.
     if (!settingsService(backendDb).notifications(actorId).completionEnabled) return;
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     const title = draft.label || t(locale, "common.untitled");
     await bot.api.sendMessage(
       actorId,
@@ -67,7 +67,7 @@ export async function refreshVideoControlCard(
   const preview = videoPreview(
     { draft, targets: unsafeDb(backendDb).db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).all() },
     timeConfig,
-    botLocale(backendDb, draft.actorId),
+    settingsService(backendDb).locale(draft.actorId),
   );
   try {
     await bot.api.editMessageText(card.chatId, card.messageId, preview.text, {
@@ -95,7 +95,7 @@ export async function sendVideoReminder(
   await forEachAdmin(config.CONTROLLER_ADMIN_IDS, async (actorId) => {
     const preference = settingsService(backendDb).notifications(actorId);
     if (!preference.remindersEnabled) return;
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
     const title = draft.label || t(locale, "common.untitled");
     const text = `${t(locale, "notif.reminder-head", { minutes: preference.reminderMinutes })}\n\n🎬 ${title}\n${localeName(draft.locale === "en" ? "en" : "ru", locale)}\n\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt, locale, timeConfig)}`;
@@ -132,7 +132,7 @@ export async function sendStudioReminder(
   const videoLocale = videoLocaleForRef(backendDb, event.postKey);
   await forEachAdmin(config.CONTROLLER_ADMIN_IDS, async (actorId) => {
     if (!settingsService(backendDb).notifications(actorId).remindersEnabled) return;
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
     const title = typeof details.title === "string" ? details.title : (event.postKey ?? t(locale, "notif.publication"));
     const lines = targets.map((target) => `• ${friendlyTarget(target)}${videoLocale ? ` · ${videoLocale.toUpperCase()}` : ""}`);
@@ -165,7 +165,7 @@ export async function sendStudioCompletion(
   const draftId = publicationDraftId(backendDb, event.postKey);
   await forEachAdmin(config.CONTROLLER_ADMIN_IDS, async (actorId) => {
     if (!settingsService(backendDb).notifications(actorId).completionEnabled) return;
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
     const label = parsePublicationRef(event.postKey)?.kind === "video" ? t(locale, "notif.label-video") : t(locale, "notif.label-post");
     const headline = partialLocale
@@ -196,7 +196,7 @@ export async function sendStudioCompletion(
 }
 
 function completionKeyboard(
-  locale: ReturnType<typeof botLocale>,
+  locale: StudioLocale,
   postKey: string | null,
   draftId: number | null,
   failedTargets: Array<{ target: string; status: string; error: string | null }>,

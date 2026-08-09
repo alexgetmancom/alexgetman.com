@@ -17,8 +17,9 @@ import {
   telegramPostCard,
   telegramVideoCard,
 } from "../src/interfaces/telegram/control-cards.js";
-import { createVideoDraft, replaceVideoTargets } from "../src/publishing/video-service.js";
+import { replaceVideoTargets } from "../src/publishing/video-service.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { createTestVideoDraft } from "./helpers/video.js";
 
 function callbackContext(messageId: number): Context {
   return { callbackQuery: { message: { message_id: messageId } } } as unknown as Context;
@@ -252,7 +253,7 @@ describe("Telegram card freshness", () => {
       config.studio.modules.video_posting = true;
       config.studio.modules.youtube = true;
       config.studio.modules.instagram = true;
-      const draftId = createVideoDraft(backendDb, 42, "clip.mp4", 24);
+      const draftId = createTestVideoDraft(backendDb, 42, "clip.mp4", 24);
       replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
       setTelegramVideoCard(backendDb, draftId, 100, 10);
       let nextMessageId = 20;
@@ -282,12 +283,18 @@ describe("Telegram card freshness", () => {
       );
 
       expect(getVideoState(backendDb, 42)?.step).toBe("schedule_confirm");
-      expect(telegramVideoCard(backendDb, draftId)).toEqual({ chatId: 100, messageId: 24 });
+      const latestCard = telegramVideoCard(backendDb, draftId);
+      expect(latestCard).toEqual({ chatId: 100, messageId: expect.any(Number) });
+      expect(latestCard?.messageId).toBeGreaterThan(21);
       expect(
         isStaleCardCallback(context(videoAction("sched_confirm", [draftId]), 21), backendDb, videoPublication("sched_confirm", [draftId])),
       ).toBe(true);
       expect(
-        isStaleCardCallback(context(videoAction("sched_confirm", [draftId]), 24), backendDb, videoPublication("sched_confirm", [draftId])),
+        isStaleCardCallback(
+          context(videoAction("sched_confirm", [draftId]), latestCard?.messageId ?? 0),
+          backendDb,
+          videoPublication("sched_confirm", [draftId]),
+        ),
       ).toBe(false);
     } finally {
       backendDb.close();

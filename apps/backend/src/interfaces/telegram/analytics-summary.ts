@@ -1,7 +1,6 @@
 import type { Bot } from "grammy";
 import { creatorDashboard } from "../../analytics/reports/dashboard.js";
 import { claimSync, markSynced } from "../../analytics/snapshots/creator-store.js";
-import { botLocale } from "../../bot/i18n.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
@@ -46,7 +45,7 @@ export async function sendWeeklyAnalyticsSummary(
   const reports = new Map<string, string>();
   for (const actorId of config.CONTROLLER_ADMIN_IDS) {
     try {
-      const locale = botLocale(backendDb, actorId);
+      const locale = settingsService(backendDb).locale(actorId);
       let report = reports.get(locale);
       if (!report) {
         const weekTitle = `📊 *${t(locale, "report.stats-for", { period: t(locale, "report.period-days", { days: 7 }) })}*`;

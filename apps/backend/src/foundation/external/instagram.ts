@@ -12,15 +12,6 @@ type InstagramCredentialSource = {
 export type InstagramCredentials = { accessToken: string | undefined; userId: string | undefined };
 
 /**
- * Whether an unprefixed INSTAGRAM_* pair may stand in for the English account.
- *
- * "none" is the answer everywhere the locale names a real destination. The
- * English fallback exists only for `instagram_stories`, which has meant the
- * English account since before the prefixed variables existed.
- */
-type InstagramSharedFallback = "none" | "shared";
-
-/**
  * Resolves one Instagram account.
  *
  * The unprefixed pair names the *Russian* account: it predates the split, and a
@@ -31,20 +22,15 @@ type InstagramSharedFallback = "none" | "shared";
  * panel, while an English draft publishes to the Russian account instead of
  * failing as unconfigured.
  */
-export function instagramCredentialsForLocale(
-  config: InstagramCredentialSource,
-  locale: InstagramLocale,
-  fallback: InstagramSharedFallback = "none",
-): InstagramCredentials {
+export function instagramCredentialsForLocale(config: InstagramCredentialSource, locale: InstagramLocale): InstagramCredentials {
   if (locale === "ru")
     return {
       accessToken: config.INSTAGRAM_RU_ACCESS_TOKEN ?? config.INSTAGRAM_ACCESS_TOKEN,
       userId: config.INSTAGRAM_RU_USER_ID ?? config.INSTAGRAM_USER_ID,
     };
-  const shared = fallback === "shared";
   return {
-    accessToken: config.INSTAGRAM_EN_ACCESS_TOKEN ?? (shared ? config.INSTAGRAM_ACCESS_TOKEN : undefined),
-    userId: config.INSTAGRAM_EN_USER_ID ?? (shared ? config.INSTAGRAM_USER_ID : undefined),
+    accessToken: config.INSTAGRAM_EN_ACCESS_TOKEN,
+    userId: config.INSTAGRAM_EN_USER_ID,
   };
 }
 

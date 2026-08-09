@@ -164,7 +164,7 @@ describe("Telegram event consumer", () => {
       const sharedConfig = loadConfig({ CONTROLLER_ADMIN_IDS: "42,7" });
 
       await sendStudioReminder(backendDb, bot, sharedConfig, {
-        postKey: "video:10",
+        postKey: "publication:video:10",
         detailsJson: {
           actor_id: 42,
           title: "Shared launch",
@@ -174,7 +174,7 @@ describe("Telegram event consumer", () => {
         },
       });
       await sendStudioCompletion(backendDb, bot, sharedConfig, {
-        postKey: "video:10",
+        postKey: "publication:video:10",
         detailsJson: { total: 2, published: 2, failed: 0 },
       });
 
@@ -234,7 +234,7 @@ describe("Telegram event consumer", () => {
         ])
         .run();
       recordDomainEvent(backendDb.events, {
-        ref: "post:113",
+        ref: "publication:post:113",
         target: "en",
         type: "delivery.post.locale.completed",
         severity: "info",
@@ -309,7 +309,7 @@ describe("Telegram event consumer", () => {
         })
         .run();
       recordDomainEvent(backendDb.events, {
-        ref: "post:110",
+        ref: "publication:post:110",
         type: "delivery.post.completed",
         severity: "info",
         message: "Post #110 completed with 1 failed target(s)",

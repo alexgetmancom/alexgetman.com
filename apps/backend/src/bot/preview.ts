@@ -16,8 +16,8 @@ import { storyCardsForDraft } from "../story-cards/store.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { requirePostEditAllowed } from "../studio/services/post-access.js";
 import { postProgressState } from "../studio/services/post-progress.js";
+import { settingsService } from "../studio/services/settings.js";
 import { appendResultNavigation, confirmationKeyboard } from "./dialog-ui.js";
-import { botLocale } from "./i18n.js";
 import { publicationCallback } from "./publication-callback.js";
 import { createPublicationScheduleEngine, scheduleTimeKeyboard } from "./scheduling.js";
 
@@ -90,7 +90,7 @@ export function draftPreview(
   view: DraftView = "overview",
 ): { text: string; keyboard: InlineKeyboard } {
   const draft = requireDraft(backendDb, draftId);
-  const locale = botLocale(backendDb, draft.actor_id);
+  const locale = settingsService(backendDb).locale(draft.actor_id);
   const timeConfig = createStudioServices(backendDb, config).settings.timeConfig(draft.actor_id, config);
   const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
   const registered = registeredPostTargetIds(backendDb);

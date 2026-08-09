@@ -4,7 +4,6 @@ import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { postTargets, publications, publishJobs, siteJobs } from "../../db/schema.js";
 import { removePublishedTargets } from "../../delivery/external-removals.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import { jsonObject } from "../../json.js";
 import { requeuedPostTarget, requeuedPublishJobColumns } from "../../publishing/job-policy.js";
 import { localizeTargetPayload } from "../../publishing/payload.js";
 import { type ResolvedPublicationRef, sourcePayload } from "../publication-ref.js";
@@ -77,8 +76,7 @@ function requeuePublication(backendDb: BackendDb, ref: ResolvedPublicationRef, t
   for (const row of rows) if (!latest.has(row.target)) latest.set(row.target, row);
   if (latest.size === 0 && target) {
     if (ref.postId == null) throw new Error("publication has no post id");
-    const fallback = unsafeDb(backendDb).db.select().from(publishJobs).where(whereRef).orderBy(desc(publishJobs.updatedAt)).get();
-    const payload = localizeTargetPayload(Object.keys(source).length > 0 ? source : jsonObject(fallback?.payloadJson), target);
+    const payload = localizeTargetPayload(source, target);
     if (Object.keys(payload).length === 0) throw new Error("no publish jobs found");
     const now = new Date().toISOString();
     const inserted = unsafeDb(backendDb)
@@ -133,7 +131,7 @@ function requeuePublication(backendDb: BackendDb, ref: ResolvedPublicationRef, t
         continue;
       }
       if (!existing) {
-        const payload = localizeTargetPayload(Object.keys(source).length > 0 ? source : jsonObject(row.payloadJson), targetId);
+        const payload = localizeTargetPayload(source, targetId);
         tx.update(publishJobs).set(requeuedPublishJobColumns(payload, now)).where(eq(publishJobs.jobId, row.jobId)).run();
       }
       const mirrored = requeuedPostTarget(row.postKey ?? ref.postKey, targetId, now);

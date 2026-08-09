@@ -28,7 +28,7 @@ export function capabilityReport(config: BackendConfig, backendDb?: BackendDb): 
 
 function missingInstagramStoryCredentials(config: BackendConfig, target: string): string[] {
   const locale = target === "instagram_stories_ru" || target === "instagram_reels" ? "ru" : "en";
-  const credentials = instagramCredentialsForLocale(config, locale, "shared");
+  const credentials = instagramCredentialsForLocale(config, locale);
   if (credentials.accessToken && credentials.userId) return [];
   return locale === "ru"
     ? ["INSTAGRAM_RU_ACCESS_TOKEN", "INSTAGRAM_RU_USER_ID"].filter((name) => !(config as unknown as Record<string, unknown>)[name])

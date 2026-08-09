@@ -3,9 +3,10 @@ import { and, eq } from "drizzle-orm";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { postEvents, studioNotificationJobs, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { createVideoDraft, replaceVideoTargets } from "../src/publishing/video-service.js";
+import { replaceVideoTargets } from "../src/publishing/video-service.js";
 import { videoService } from "../src/studio/services/videos.js";
 import { useBackendDb } from "./helpers/db.js";
+import { createTestVideoDraft } from "./helpers/video.js";
 
 /**
  * Cancelling a video is the undo for a publication, and it is the one place
@@ -49,7 +50,7 @@ afterAll(() => {
 function setup(backendDb: UnsafeBackendDb): number {
   held.length = 0;
   failFor = new Set();
-  const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+  const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
   replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
   return draftId;
 }
@@ -105,7 +106,7 @@ describe("videoService.cancel", () => {
     scheduledYouTube(backendDb, draftId, "yt-broken");
     // A second draft supplies the second id: one draft carries one YouTube
     // target, and the point here is the loop, not the schema.
-    const second = createVideoDraft(backendDb, 42, "video-source-2", 24);
+    const second = createTestVideoDraft(backendDb, 42, "video-source-2", 24);
     replaceVideoTargets(backendDb, second, ["youtube_shorts"]);
     scheduledYouTube(backendDb, second, "yt-ok");
     failFor = new Set(["yt-broken"]);

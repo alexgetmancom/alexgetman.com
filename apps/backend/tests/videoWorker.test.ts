@@ -6,9 +6,10 @@ import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
 import { videoJobs, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { createVideoDraft, replaceVideoTargets, saveVideoMetadata, scheduleVideo } from "../src/publishing/video-service.js";
+import { replaceVideoTargets, saveVideoMetadata, scheduleVideo } from "../src/publishing/video-service.js";
 import { VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { useBackendDb } from "./helpers/db.js";
+import { createTestVideoDraft } from "./helpers/video.js";
 
 /**
  * The video cycle's job execution: which platform call a job makes, what it
@@ -111,11 +112,10 @@ function videoConfig(directory: string, overrides: Record<string, string> = {}) 
 
 /** A scheduled draft whose jobs are all due now, so one cycle runs them. */
 function dueDraft(backendDb: ReturnType<typeof testDb.open>, directory: string, targets: string[], locale: "ru" | "en" = "ru"): number {
-  // A draft references its source by asset key; videoPath resolves it as
-  // `<key>.<ext>` inside VIDEO_MEDIA_DIR.
   const assetKey = `clip-${targets.join("-")}`;
-  writeFileSync(path.join(directory, `${assetKey}.mp4`), "video-bytes");
-  const draftId = createVideoDraft(backendDb, 42, assetKey, 24, locale);
+  const source = path.join(directory, `${assetKey}.mp4`);
+  writeFileSync(source, "video-bytes");
+  const draftId = createTestVideoDraft(backendDb, 42, source, 24, locale);
   replaceVideoTargets(backendDb, draftId, targets as never);
   if (targets.includes("youtube_shorts")) {
     saveVideoMetadata(backendDb, draftId, "youtube_shorts", {

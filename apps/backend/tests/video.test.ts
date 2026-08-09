@@ -22,17 +22,11 @@ import { recoverVideoLocks, runVideoCycle } from "../src/delivery/video-worker.j
 import { loadConfig } from "../src/foundation/config.js";
 import { videoPreview } from "../src/interfaces/telegram/video-preview.js";
 import { listVideoTargets } from "../src/publishing/video-data.js";
-import {
-  cancelVideo,
-  createVideoDraft,
-  replaceVideoTargets,
-  retryVideoTarget,
-  saveVideoMetadata,
-  scheduleVideo,
-} from "../src/publishing/video-service.js";
+import { cancelVideo, replaceVideoTargets, retryVideoTarget, saveVideoMetadata, scheduleVideo } from "../src/publishing/video-service.js";
 import { videoService } from "../src/studio/services/videos.js";
 import { VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { useBackendDb } from "./helpers/db.js";
+import { createTestVideoDraft } from "./helpers/video.js";
 
 const testDb = useBackendDb(VIDEO_TEST_CHANNELS);
 
@@ -83,7 +77,7 @@ describe("video publication queue", () => {
 
   it("persists the selected locale and resolves the matching Zernio account", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24, "en");
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24, "en");
     replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
     registerChannel(backendDb, {
       platform: "instagram",
@@ -125,7 +119,7 @@ describe("video publication queue", () => {
         .returning({ id: studioMediaAssets.id })
         .get();
       if (!asset) throw new Error("asset missing");
-      const draftId = createVideoDraft(backendDb, 42, { studioMediaAssetId: asset.id }, 24);
+      const draftId = createTestVideoDraft(backendDb, 42, asset.id, 24);
       replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
       const target = listVideoTargets(backendDb, draftId)[0];
       if (!target) throw new Error("target missing");
@@ -168,7 +162,7 @@ describe("video publication queue", () => {
         .returning({ id: studioMediaAssets.id })
         .get();
       if (!asset) throw new Error("asset missing");
-      const draftId = createVideoDraft(backendDb, 42, { studioMediaAssetId: asset.id }, 24);
+      const draftId = createTestVideoDraft(backendDb, 42, asset.id, 24);
       replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
       const target = listVideoTargets(backendDb, draftId)[0];
       if (!target) throw new Error("target missing");
@@ -200,7 +194,7 @@ describe("video publication queue", () => {
 
   it("holds a stale video publish lock for verification instead of risking a duplicate", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
     const target = listVideoTargets(backendDb, draftId)[0];
     if (!target) throw new Error("target missing");
@@ -239,7 +233,7 @@ describe("video publication queue", () => {
 
   it("still retries a stale native Instagram prepare lock because it cannot have published", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
     const target = listVideoTargets(backendDb, draftId)[0];
     if (!target) throw new Error("target missing");
@@ -272,7 +266,7 @@ describe("video publication queue", () => {
 
   it("updates one video field through the Telegram message state machine", async () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
     saveVideoMetadata(backendDb, draftId, "youtube_shorts", { title: "Old", description: "Description", tags: [] });
     saveVideoState(backendDb, 42, { draftId, step: "youtube_title", selected: ["youtube_shorts"], data: { is_single_edit: true } });
@@ -285,7 +279,7 @@ describe("video publication queue", () => {
 
   it("advances the YouTube+Instagram wizard through every metadata step in FSM order", async () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
     saveVideoState(backendDb, 42, { draftId, step: "youtube_title", selected: ["youtube_shorts", "instagram_reels"], data: {} });
 
@@ -315,7 +309,7 @@ describe("video publication queue", () => {
 
   it("routes target selection callbacks and rejects an invalid target", async () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     const session = saveVideoState(backendDb, 42, { draftId, step: "targets", selected: ["youtube_shorts"], data: {} });
     const selected = videoContext({ callback: versionedCallback(publicationCallback("video", "targets_done"), session.revision) });
 
@@ -333,7 +327,7 @@ describe("video publication queue", () => {
 
   it("keeps independent platform schedules and queues Delivery prepare and publish work", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
     const youtubeAt = new Date(Date.now() + 60 * 60_000);
     const instagramAt = new Date(Date.now() + 2 * 60 * 60_000);
@@ -367,7 +361,7 @@ describe("video publication queue", () => {
 
   it("snapshots the Zernio route and account on a scheduled Instagram target", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
     registerChannel(backendDb, {
       platform: "instagram",
@@ -386,7 +380,7 @@ describe("video publication queue", () => {
 
   it("retains a cancelled source for at least the configured 24 hours", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
     cancelVideo(backendDb, draftId, 24);
     const row = backendDb.sqlite.prepare("SELECT status, retention_until FROM video_drafts WHERE id=?").get(draftId) as {
@@ -402,7 +396,7 @@ describe("video publication queue", () => {
 
   it("refuses cancellation while delivery is running and leaves every target untouched", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
     const targets = listVideoTargets(backendDb, draftId);
     const youtube = targets.find((target) => target.target === "youtube_shorts");
@@ -439,7 +433,7 @@ describe("video publication queue", () => {
 
   it("does not let another admin remove a video platform", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
     const service = videoService(backendDb, videoConfig());
 
@@ -451,7 +445,7 @@ describe("video publication queue", () => {
 
   it("refuses to reschedule a platform whose publish job a worker is still holding", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
     const initial = new Date(Date.now() + 60 * 60_000);
     scheduleVideo(backendDb, draftId, { instagram_reels: initial }, { prepareLeadMinutes: 15, reminderMinutes: 5 });
@@ -483,7 +477,7 @@ describe("video publication queue", () => {
 
   it("reschedules only the selected platform and never requeues a published target", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
     const initial = new Date(Date.now() + 60 * 60_000);
     scheduleVideo(
@@ -515,7 +509,7 @@ describe("video publication queue", () => {
 
   it("does not replace video targets once scheduling has begun", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
     scheduleVideo(
       backendDb,
@@ -529,7 +523,7 @@ describe("video publication queue", () => {
 
   it("cleans dependent analytics rows when editable targets are replaced", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
     const target = listVideoTargets(backendDb, draftId)[0];
     if (!target) throw new Error("target missing");
@@ -553,7 +547,7 @@ describe("video publication queue", () => {
 
   it("sets a 24-hour retention deadline as soon as a draft video is uploaded", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     const row = backendDb.sqlite.prepare("SELECT status, retention_until FROM video_drafts WHERE id=?").get(draftId) as {
       status: string;
       retention_until: string;
@@ -564,7 +558,7 @@ describe("video publication queue", () => {
 
   it("shows separate YouTube and Instagram metadata on the control card", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
     saveVideoMetadata(backendDb, draftId, "youtube_shorts", {
       title: "Название ролика",
@@ -586,7 +580,7 @@ describe("video publication queue", () => {
 
   it("retries only a failed platform without touching the other target", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
     const instagram = backendDb.db
       .select()

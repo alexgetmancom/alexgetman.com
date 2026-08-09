@@ -9,9 +9,9 @@ import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 import type { StudioServices } from "../studio/services/index.js";
 import { createStudioServices } from "../studio/services/index.js";
+import { settingsService } from "../studio/services/settings.js";
 import { advanceVideoMetadata, isVideoWizardStep, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
 import { executePublicationEffects, type PublicationEffect, type PublicationMessageResult } from "./effects.js";
-import { botLocale } from "./i18n.js";
 import { advancePublicationFlow } from "./publication-flow.js";
 import { publicationCardEffect, publicationRenderers } from "./publication-renderers.js";
 import { applyVideoScheduleDate } from "./video-scheduling.js";
@@ -40,7 +40,7 @@ type VideoMessageArgs = {
 /** Starts and advances the MP4 → metadata → schedule conversation. */
 export async function startVideoConversation(ctx: Context, backendDb: BackendDb): Promise<void> {
   const actorId = Number(ctx.from?.id);
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   // Reached via a menu button, this is pure navigation: turn that same
   // message into the prompt instead of leaving it and adding a new one.
   await executePublicationEffects(ctx, backendDb, startVideoEffects(ctx, backendDb, actorId, locale));
@@ -62,7 +62,7 @@ export async function handleVideoConversationMessage(
   try {
     const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
     if (input === "text" && !text) {
-      const locale = botLocale(backendDb, actorId);
+      const locale = settingsService(backendDb).locale(actorId);
       return { handled: true, effects: [videoPromptEffect(backendDb, actorId, t(locale, "video.await-text"))] };
     }
     const args = { ctx, backendDb, config, actorId, session, text };
@@ -73,7 +73,7 @@ export async function handleVideoConversationMessage(
       effects: singleEdit ? await finishSingleVideoEdit({ ...args, services }) : await acceptVideoMessage({ ...args, services }),
     };
   } catch (error) {
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     // The original error is operationally important (disk, Telegram download,
     // media import, Studio validation), and the admin reply can still be lost to
     // a Telegram send failure — log it first so the cause survives regardless.
@@ -136,7 +136,7 @@ async function acceptVideoLabel({ backendDb, config, actorId, session, text, ser
     { ...session.data, selectedTargets: session.selected },
     "err.video-restart",
   );
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   return videoControlEffects(
     saved,
     t(locale, "video.choose-platforms-next"),
@@ -188,7 +188,7 @@ async function acceptVideoScheduleDate({
   try {
     date = services.videos.manualSchedule(actorId, session.draftId, text);
   } catch (error) {
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     const timeConfig = services.settings.timeConfig(actorId, config);
     const message =
       error instanceof StudioError && error.code === "common.schedule-parse-error"
@@ -242,7 +242,7 @@ function videoCardEffects(
     actorId,
     publicationId: draftId,
     config,
-    locale: botLocale(backendDb, actorId),
+    locale: settingsService(backendDb).locale(actorId),
   });
   return publicationCardEffect(preview, { mode: "reply" });
 }

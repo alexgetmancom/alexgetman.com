@@ -14,14 +14,14 @@ import {
 } from "../foundation/deployment.js";
 import { t } from "../foundation/i18n/index.js";
 import type { StudioLocale } from "../foundation/locale.js";
-import { botLocale } from "./i18n.js";
+import { settingsService } from "../studio/services/settings.js";
 
 /** Operations callbacks are deliberately outside content/post screens.
  * Every deploy action is ask -> confirm -> progress -> result, all as edits
  * to the same message, so a tap never looks like it silently did nothing. */
 export async function handleOperationsCallback(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const data = ctx.callbackQuery?.data ?? "";
-  const locale = botLocale(backendDb, ctx.from?.id ?? 0);
+  const locale = settingsService(backendDb).locale(ctx.from?.id ?? 0);
 
   const rollbackAsk = parseDeploymentRollbackAskCallback(data);
   if (rollbackAsk) return askConfirmation(ctx, locale, "rollback", rollbackAsk.target, rollbackAsk.revision);

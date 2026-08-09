@@ -17,6 +17,7 @@ const config = loadConfig({
   THREADS_ACCESS_TOKEN: "ru-token",
   THREADS_EN_ACCESS_TOKEN: "en-token",
   INSTAGRAM_ACCESS_TOKEN: "shared-token",
+  INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
 });
 
 function task(overrides: Partial<MetricTask> = {}): MetricTask {
@@ -262,7 +263,7 @@ describe("collectInstagramStory", () => {
     expect(fb.calls[0]?.url).toStartWith("https://graph.facebook.com/");
   });
 
-  it("prefers the locale token over the shared one", async () => {
+  it("uses the Russian locale token instead of the unprefixed Russian token", async () => {
     const perLocale = loadConfig({
       CONTROLLER_ADMIN_IDS: "42",
       CONTROLLER_BOT_TOKEN: "t",

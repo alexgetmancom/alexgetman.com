@@ -11,7 +11,7 @@ import { escapeMarkdown } from "../foundation/markdown.js";
 import { downloadTelegramFile } from "../interfaces/telegram/file-download.js";
 import type { StudioZernioAccount } from "../studio/services/channels.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { botLocale } from "./i18n.js";
+import { settingsService } from "../studio/services/settings.js";
 import { persistentKeyboard } from "./menu-render.js";
 import { NOTIFICATIONS_MENU_ID, notificationsInboxText } from "./notifications-screen.js";
 
@@ -66,7 +66,7 @@ export async function handleSettingsMessage(
   if (await collectThreadsFollowers(ctx, backendDb, actorId, text, settingsMenu)) return true;
   if (await collectTimezone(ctx, backendDb, config, actorId, text, settingsMenu)) return true;
   if (!createStudioServices(backendDb, config).settings.saveYoutubeSignature(actorId, text)) return false;
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   await ctx.reply(t(locale, "settings.youtube-saved"));
   await ctx.reply(youtubeSignatureText(backendDb, config, actorId, locale), {
     parse_mode: "Markdown",
@@ -78,7 +78,7 @@ export async function handleSettingsMessage(
 export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): Menu<Context> {
   const channels = new Menu<Context>(CHANNELS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     const studioChannels = createStudioServices(backendDb, config).channels;
     const discovered = discoveredAccounts.get(actorId);
     if (discovered) {
@@ -122,7 +122,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
   const notificationSettings = new Menu<Context>(NOTIFICATION_SETTINGS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
     const settings = createStudioServices(backendDb, config).settings.notifications(actorId);
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     range
       .text(`${settings.remindersEnabled ? "✅" : "◻️"} ${t(locale, "settings.reminder-label")}`, async (ctx) => {
         createStudioServices(backendDb, config).settings.setNotifications(actorId, { remindersEnabled: !settings.remindersEnabled });
@@ -151,7 +151,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
   const weeklyDigest = new Menu<Context>(WEEKLY_DIGEST_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
     const settings = createStudioServices(backendDb, config).settings.weeklyDigest();
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     range
       .text(`${settings.enabled ? "✅" : "◻️"} ${t(locale, "settings.weekly-digest-enabled")}`, async (ctx) => {
         createStudioServices(backendDb, config).settings.setWeeklyDigest({ enabled: !settings.enabled });
@@ -175,7 +175,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
 
   const youtubeSignature = new Menu<Context>(YOUTUBE_SIGNATURE_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     range
       .text(t(locale, "settings.edit"), async (ctx) => {
         createStudioServices(backendDb, config).settings.beginYoutubeSignatureEdit(actorId);
@@ -195,7 +195,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
   });
 
   const language = new Menu<Context>(LANGUAGE_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
+    const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
     for (const target of STUDIO_LOCALES) range.text(STUDIO_LOCALE_NAMES[target], (ctx) => switchLanguage(ctx, target));
     range.row().back(t(locale, "settings.back-to-general"), async (ctx) => {
       await ctx.answerCallbackQuery();
@@ -205,7 +205,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
 
   const timezone = new Menu<Context>(TIMEZONE_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     const service = createStudioServices(backendDb, config).settings;
     const current = service.timezone(actorId, config.TIMEZONE);
     const options = TIMEZONE_OPTIONS.some(([zone]) => zone === current) ? TIMEZONE_OPTIONS : [[current, current], ...TIMEZONE_OPTIONS];
@@ -231,7 +231,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
 
   const threadsFollowers = new Menu<Context>(THREADS_FOLLOWERS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     for (const account of ["ru", "en"] as const)
       range.text(t(locale, "settings.threads-edit", { account: account.toUpperCase() }), async (ctx) => {
         pendingThreadsFollowers.set(actorId, account);
@@ -247,7 +247,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
 
   const xImport = new Menu<Context>(X_IMPORT_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     range
       .text(t(locale, "settings.x-import-start"), async (ctx) => {
         pendingXImports.add(actorId);
@@ -264,7 +264,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
 
   const publishing = new Menu<Context>(PUBLISHING_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     range
       .submenu(t(locale, "settings.channels"), CHANNELS_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();
@@ -283,7 +283,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
 
   const notificationsCategory = new Menu<Context>(NOTIFICATIONS_CATEGORY_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     range
       .submenu(t(locale, "settings.notifications-inbox"), NOTIFICATIONS_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();
@@ -304,7 +304,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
   });
 
   const analytics = new Menu<Context>(ANALYTICS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
+    const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
     range
       .submenu(t(locale, "settings.threads-followers"), THREADS_FOLLOWERS_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();
@@ -321,7 +321,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
 
   const general = new Menu<Context>(GENERAL_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
-    const locale = botLocale(backendDb, actorId);
+    const locale = settingsService(backendDb).locale(actorId);
     range
       .submenu(t(locale, "settings.timezone"), TIMEZONE_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();
@@ -341,7 +341,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
   // keyboard, where every entry had to be read to find any of them.
   const settings = new Menu<Context>(SETTINGS_MENU_ID, { autoAnswer: false });
   settings.dynamic((ctx, range) => {
-    const locale = botLocale(backendDb, Number(ctx.from?.id));
+    const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
     range
       .submenu(t(locale, "settings.category-publishing"), PUBLISHING_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();
@@ -385,12 +385,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
   settings.register(general);
   return settings;
 
-  async function discoverZernio(
-    ctx: Context & MenuFlavor,
-    actorId: number,
-    channelLocale: "ru" | "en",
-    locale: ReturnType<typeof botLocale>,
-  ) {
+  async function discoverZernio(ctx: Context & MenuFlavor, actorId: number, channelLocale: "ru" | "en", locale: StudioLocale) {
     try {
       const studioChannels = createStudioServices(backendDb, config).channels;
       const accounts = await studioChannels.discoverZernioAccounts();
@@ -419,17 +414,17 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
 function backToSettings(backendDb: BackendDb) {
   return async (ctx: Context): Promise<void> => {
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(t(botLocale(backendDb, Number(ctx.from?.id)), "settings.title"));
+    await ctx.editMessageText(t(settingsService(backendDb).locale(Number(ctx.from?.id)), "settings.title"));
   };
 }
 
-function analyticsText(backendDb: BackendDb, locale: ReturnType<typeof botLocale>): string {
+function analyticsText(backendDb: BackendDb, locale: StudioLocale): string {
   const followers = manualThreadsFollowers(backendDb);
   const value = (count: number | null) => (count == null ? t(locale, "settings.threads-unknown") : String(count));
   return t(locale, "settings.category-analytics-body", { ru: value(followers.ru), en: value(followers.en) });
 }
 
-function threadsFollowersText(backendDb: BackendDb, locale: ReturnType<typeof botLocale>): string {
+function threadsFollowersText(backendDb: BackendDb, locale: StudioLocale): string {
   const followers = manualThreadsFollowers(backendDb);
   const value = (count: number | null) => (count == null ? t(locale, "settings.threads-unknown") : String(count));
   return t(locale, "settings.threads-body", {
@@ -456,7 +451,7 @@ async function collectThreadsFollowers(
   if (!account) return false;
   pendingThreadsFollowers.delete(actorId);
   if (isNavigationMessage(text)) return false;
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const count = Number(text.replace(/[\s,]/gu, ""));
   if (!Number.isSafeInteger(count) || count < 0) {
     await ctx.reply(t(locale, "err.threads-followers-invalid"));
@@ -490,7 +485,7 @@ async function collectXAnalyticsCsv(
   settingsMenu: Menu<Context>,
 ): Promise<boolean> {
   if (!pendingXImports.has(actorId)) return false;
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   const document = ctx.message && "document" in ctx.message ? ctx.message.document : undefined;
   if (!document) {
     const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
@@ -540,12 +535,12 @@ function messageSampledAt(ctx: Context): string {
   return new Date(seconds ? seconds * 1000 : Date.now()).toISOString();
 }
 
-function weekdayLabel(locale: ReturnType<typeof botLocale>, weekday: number): string {
+function weekdayLabel(locale: StudioLocale, weekday: number): string {
   const labels = locale === "ru" ? ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"] : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   return labels[weekday] ?? labels[0] ?? "";
 }
 
-function weeklyDigestText(backendDb: BackendDb, config: BackendConfig, locale: ReturnType<typeof botLocale>): string {
+function weeklyDigestText(backendDb: BackendDb, config: BackendConfig, locale: StudioLocale): string {
   const settings = createStudioServices(backendDb, config).settings.weeklyDigest();
   return t(locale, "settings.weekly-digest-body", {
     status: settings.enabled ? t(locale, "settings.on") : t(locale, "settings.off"),
@@ -576,7 +571,7 @@ async function collectTimezone(
   if (!pendingTimezones.has(actorId)) return false;
   pendingTimezones.delete(actorId);
   if (isNavigationMessage(text)) return false;
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   try {
     createStudioServices(backendDb, config).settings.setTimezone(actorId, text);
     await ctx.reply(t(locale, "settings.timezone-set", { timezone: text }));
@@ -607,7 +602,7 @@ function channelPlatformLabel(platform: string): string {
 function channelsText(
   backendDb: BackendDb,
   config: BackendConfig,
-  locale: ReturnType<typeof botLocale>,
+  locale: StudioLocale,
   discoveredCount?: number,
   hiddenCount = 0,
 ): string {
@@ -620,19 +615,14 @@ function channelsText(
 }
 
 export async function showSettings(ctx: Context, backendDb: BackendDb, settingsMenu: Menu<Context>, edit = false): Promise<void> {
-  const locale = botLocale(backendDb, Number(ctx.from?.id));
+  const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
   const text = t(locale, "settings.title");
   const options = { reply_markup: settingsMenu };
   if (edit) await ctx.editMessageText(text, options);
   else await ctx.reply(text, options);
 }
 
-function notificationSettingsText(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  locale: ReturnType<typeof botLocale>,
-): string {
+function notificationSettingsText(backendDb: BackendDb, config: BackendConfig, actorId: number, locale: StudioLocale): string {
   const settings = createStudioServices(backendDb, config).settings.notifications(actorId);
   const on = (value: boolean) => (value ? t(locale, "settings.on") : t(locale, "settings.off"));
   return t(locale, "settings.notif-body", {
@@ -642,12 +632,12 @@ function notificationSettingsText(
   });
 }
 
-function timezoneText(backendDb: BackendDb, config: BackendConfig, actorId: number, locale: ReturnType<typeof botLocale>): string {
+function timezoneText(backendDb: BackendDb, config: BackendConfig, actorId: number, locale: StudioLocale): string {
   const current = createStudioServices(backendDb, config).settings.timezone(actorId, config.TIMEZONE);
   return t(locale, "settings.timezone-body", { timezone: current });
 }
 
-function youtubeSignatureText(backendDb: BackendDb, config: BackendConfig, actorId: number, locale: ReturnType<typeof botLocale>): string {
+function youtubeSignatureText(backendDb: BackendDb, config: BackendConfig, actorId: number, locale: StudioLocale): string {
   const signature = createStudioServices(backendDb, config).settings.youtubeSignature(actorId);
   return t(locale, "settings.youtube-body", {
     signature: signature ? escapeMarkdown(signature) : t(locale, "settings.youtube-not-set"),

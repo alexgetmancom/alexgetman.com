@@ -1,5 +1,4 @@
 import { type Context, InlineKeyboard, InputFile } from "grammy";
-import { botLocale } from "../../bot/i18n.js";
 import type { BackendDb } from "../../db/client.js";
 import { splitText } from "../../delivery/social/payload.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -10,6 +9,7 @@ import { escapeMarkdown } from "../../foundation/markdown.js";
 import { threadsBody, threadsTextLimit } from "../../publishing/threads-text.js";
 import type { DeliveryProjection } from "../../studio/projections.js";
 import { createStudioServices } from "../../studio/services/index.js";
+import { settingsService } from "../../studio/services/settings.js";
 
 const TELEGRAM_MEDIA_GROUP_LIMIT = 10;
 
@@ -116,7 +116,7 @@ export async function handleTelegramDeliveryPreviewCallback(ctx: Context, backen
   const projection = delivery?.projections.find((item) => item.id === projectionId);
   await ctx.answerCallbackQuery();
   if (!projection) return true;
-  const locale = botLocale(backendDb, actorId);
+  const locale = settingsService(backendDb).locale(actorId);
   if (view.name === "threads") {
     const target = projection.targets.find((item) => item === "threads_ru" || item === "threads_en");
     if (!target) return true;

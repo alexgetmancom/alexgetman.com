@@ -60,7 +60,7 @@ function isVisibleTo(backendDb: BackendDb, config: BackendConfig | undefined, re
   if (publication?.kind === "post") {
     return ownsPost(backendDb, config, publication.id, actorId);
   }
-  if (/^(?:publication:)?(draft|post|video):/.test(ref)) return false;
+  if (/^publication:(draft|post|video):/.test(ref)) return false;
   const postId = backendDb.studioNotifications.postIdForKey(ref);
   if (postId == null || !Number.isSafeInteger(postId)) return true;
   return ownsPost(backendDb, config, postId, actorId);

@@ -1,6 +1,5 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { claimSync, markSynced } from "../../analytics/snapshots/creator-store.js";
-import { botLocale } from "../../bot/i18n.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { knowledgeEntities, postEntityLinks, posts } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -9,6 +8,7 @@ import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 import { log } from "../../foundation/logger.js";
 import { truncateUnicode } from "../../foundation/text.js";
+import { settingsService } from "../../studio/services/settings.js";
 
 type ChatCompletion = { choices?: Array<{ message?: { content?: string } }> };
 type Opportunity = { kind?: string; title?: string; reason?: string; posts?: number[] };
@@ -71,7 +71,7 @@ export async function sendDailyEditorialInbox(
   // One read of each owner's interface language, reused for both the request
   // and the send: reading it twice let a language switch in between address a
   // message nobody had generated.
-  const recipients = config.CONTROLLER_ADMIN_IDS.map((actorId) => ({ actorId, locale: botLocale(backendDb, actorId) }));
+  const recipients = config.CONTROLLER_ADMIN_IDS.map((actorId) => ({ actorId, locale: settingsService(backendDb).locale(actorId) }));
 
   try {
     const messages = new Map<StudioLocale, string>();

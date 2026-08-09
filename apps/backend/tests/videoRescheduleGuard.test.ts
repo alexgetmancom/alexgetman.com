@@ -2,16 +2,11 @@ import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { videoDrafts, videoJobs, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-import {
-  createVideoDraft,
-  replaceVideoTargets,
-  saveVideoMetadata,
-  scheduleVideo,
-  updateVideoLabel,
-} from "../src/publishing/video-service.js";
+import { replaceVideoTargets, saveVideoMetadata, scheduleVideo, updateVideoLabel } from "../src/publishing/video-service.js";
 import { videoService } from "../src/studio/services/videos.js";
 import { VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { useBackendDb } from "./helpers/db.js";
+import { createTestVideoDraft } from "./helpers/video.js";
 
 const testDb = useBackendDb(VIDEO_TEST_CHANNELS);
 
@@ -27,7 +22,7 @@ const timing = { prepareLeadMinutes: 10, reminderMinutes: 15 };
 describe("video reschedule guard", () => {
   it("refuses to reschedule a platform that already published", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
     const target = backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, draftId)).get();
     if (!target) throw new Error("target was not created");
@@ -45,7 +40,7 @@ describe("video reschedule guard", () => {
 
   it("still schedules a platform that has not been delivered", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
 
     scheduleVideo(backendDb, draftId, { youtube_shorts: new Date(Date.now() + 3_600_000) }, timing, 24);
@@ -65,7 +60,7 @@ describe("video reschedule guard", () => {
 
   it("allows metadata and label changes while a scheduled platform is still waiting", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
     scheduleVideo(backendDb, draftId, { youtube_shorts: new Date(Date.now() + 3_600_000) }, timing, 24);
 
@@ -85,7 +80,7 @@ describe("video reschedule guard", () => {
 
   it("finishes a scheduled YouTube title edit instead of reporting a draft lock", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
     scheduleVideo(backendDb, draftId, { youtube_shorts: new Date(Date.now() + 3_600_000) }, timing, 24);
 
@@ -99,7 +94,7 @@ describe("video reschedule guard", () => {
 
   it("blocks metadata changes after target preparation has started", () => {
     const backendDb = testDb.open();
-    const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
     scheduleVideo(backendDb, draftId, { youtube_shorts: new Date(Date.now() + 3_600_000) }, timing, 24);
     const target = backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, draftId)).get();
