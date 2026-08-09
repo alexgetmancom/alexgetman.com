@@ -113,7 +113,6 @@ try {
     "-e",
     "FEED_JSON=/data/feed.json",
     "-e",
-    "-e",
     "SITE_CONTENT_METRICS_JSON=/data/content-metrics.json",
     "-e",
     "MEDIA_CACHE_DIR=/data/media-cache",
