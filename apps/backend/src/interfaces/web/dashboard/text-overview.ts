@@ -1,9 +1,6 @@
-import type { BackendDb } from "../../../db/client.js";
-import { zonedRollingPeriodBounds } from "../../../foundation/time.js";
-import type { createOperationsService } from "../../../operations/service.js";
 import { ORDERED_TARGETS } from "./assets.js";
-import { calendarDays, type DailyReach, dailyReach, emptyDailyReach, type PeriodDay } from "./daily-reach.js";
-import { textReachSeries, type XActivitySeries, xActivityReachSeries } from "./text-reach.js";
+import { type DailyReach, dailyReach, emptyDailyReach, type PeriodDay } from "./daily-reach.js";
+import { textReachSeries, type XActivitySeries } from "./text-reach.js";
 import type { PipelinePost } from "./types.js";
 
 /**
@@ -22,31 +19,6 @@ export type TextOverview = {
   byTarget: Record<string, Record<string, DailyReach>>;
   days: PeriodDay[];
 };
-
-type OverviewService = ReturnType<typeof createOperationsService>;
-
-/** The chart needs thirty days of context on top of whatever period is selected. */
-const HISTORY_CONTEXT_DAYS = 30;
-
-export function textOverview(
-  backendDb: BackendDb,
-  service: OverviewService,
-  weekOffset: number,
-  periodDays: number,
-  timeZone: string,
-): TextOverview {
-  const historyDays = periodDays + HISTORY_CONTEXT_DAYS;
-  const offsetDays = weekOffset * periodDays;
-  const posts = (service.pipelineOverview(0, historyDays, 0, offsetDays, {
-    includeSamples: true,
-    includeContent: false,
-    compact: true,
-  }).posts ?? []) as PipelinePost[];
-  const [startIso, endIso] = zonedRollingPeriodBounds(offsetDays / historyDays, historyDays, timeZone);
-  const days = calendarDays(new Date(startIso), new Date(endIso), timeZone);
-
-  return textOverviewOf(posts, xActivityReachSeries(backendDb, new Date(startIso), new Date(endIso)), days, timeZone);
-}
 
 /** The read model proper, once the rows have been fetched. */
 export function textOverviewOf(

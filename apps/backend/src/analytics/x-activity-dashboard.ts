@@ -11,8 +11,14 @@ export type XActivityDashboardItem = {
   metrics: Record<string, number>;
 };
 
+export type XActivityMetricSample = {
+  xPostId: string;
+  metricName: string;
+  value: number;
+  sampledAt: string;
+};
+
 type ItemRow = Omit<XActivityDashboardItem, "kind" | "metrics"> & { kind: string };
-type MetricRow = { xPostId: string; metricName: string; value: number };
 
 export function xActivityDashboard(
   backendDb: BackendDb,
@@ -21,11 +27,15 @@ export function xActivityDashboard(
   timeZone: string,
 ): XActivityDashboardItem[] {
   const [start, end] = zonedRollingPeriodBounds(weekOffset, periodDays, timeZone);
-  return xActivityDashboardRange(backendDb, start, end);
+  return xActivityDashboardRange(backendDb, start, end).items;
 }
 
 /** Loads one bounded X activity history for every dashboard comparison. */
-export function xActivityDashboardRange(backendDb: BackendDb, start: string, end: string): XActivityDashboardItem[] {
+export function xActivityDashboardRange(
+  backendDb: BackendDb,
+  start: string,
+  end: string,
+): { items: XActivityDashboardItem[]; samples: XActivityMetricSample[] } {
   const rows = unsafeDb(backendDb)
     .sqlite.prepare(
       `SELECT x_post_id AS xPostId,kind,published_at AS publishedAt,text,url,linked_post_key AS linkedPostKey
@@ -34,33 +44,29 @@ export function xActivityDashboardRange(backendDb: BackendDb, start: string, end
        ORDER BY published_at DESC,x_post_id DESC`,
     )
     .all(start, end) as ItemRow[];
-  if (!rows.length) return [];
+  if (!rows.length) return { items: [], samples: [] };
   const ids = rows.map((row) => row.xPostId);
   const placeholders = ids.map(() => "?").join(",");
-  const metrics = unsafeDb(backendDb)
+  const samples = unsafeDb(backendDb)
     .sqlite.prepare(
-      `SELECT snapshot.x_post_id AS xPostId,snapshot.metric_name AS metricName,snapshot.value
-       FROM x_activity_metric_snapshots AS snapshot
-       INNER JOIN (
-         SELECT x_post_id,metric_name,max(sampled_at) AS sampled_at
-         FROM x_activity_metric_snapshots
-         WHERE x_post_id IN (${placeholders})
-         GROUP BY x_post_id,metric_name
-       ) AS latest
-       ON latest.x_post_id=snapshot.x_post_id
-         AND latest.metric_name=snapshot.metric_name
-         AND latest.sampled_at=snapshot.sampled_at`,
+      `SELECT x_post_id AS xPostId,metric_name AS metricName,value,sampled_at AS sampledAt
+       FROM x_activity_metric_snapshots
+       WHERE x_post_id IN (${placeholders}) AND sampled_at <= ?
+       ORDER BY sampled_at ASC`,
     )
-    .all(...ids) as MetricRow[];
+    .all(...ids, end) as XActivityMetricSample[];
   const metricsById = new Map<string, Record<string, number>>();
-  for (const metric of metrics) {
-    const values = metricsById.get(metric.xPostId) ?? {};
-    values[metric.metricName] = Number(metric.value);
-    metricsById.set(metric.xPostId, values);
+  for (const sample of samples) {
+    const values = metricsById.get(sample.xPostId) ?? {};
+    values[sample.metricName] = Number(sample.value);
+    metricsById.set(sample.xPostId, values);
   }
-  return rows.map((row) => ({
-    ...row,
-    kind: row.kind === "reply" || row.kind === "repost" ? row.kind : "standalone",
-    metrics: metricsById.get(row.xPostId) ?? {},
-  }));
+  return {
+    items: rows.map((row) => ({
+      ...row,
+      kind: row.kind === "reply" || row.kind === "repost" ? row.kind : "standalone",
+      metrics: metricsById.get(row.xPostId) ?? {},
+    })),
+    samples,
+  };
 }

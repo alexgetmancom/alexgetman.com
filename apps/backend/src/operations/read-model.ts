@@ -51,7 +51,7 @@ export function pipelineOverviewPayload(
 
 /** One bounded history holding two adjacent dashboard periods, each capped at the public read model's 100 posts. */
 export function dashboardPipelineHistoryPayload(config: BackendConfig, backendDb: BackendDb, periodDays: number, offsetDays: number) {
-  const options = resolvePipelineReadModelOptions({ includeSamples: false, contentLimit: 4, compact: true });
+  const options = resolvePipelineReadModelOptions({ includeSamples: true, contentLimit: 4, compact: true });
   return { posts: pipelinePosts(backendDb, config, 0, periodDays, 0, offsetDays, options, 200) };
 }
 
@@ -359,7 +359,7 @@ export function pipelineUpdatedAt(backendDb: BackendDb): string | null {
            UNION ALL SELECT MAX(sampled_at) FROM metric_samples
            UNION ALL SELECT MAX(updated_at) FROM publish_jobs
            UNION ALL SELECT MAX(updated_at) FROM site_jobs
-           UNION ALL SELECT MAX(updated_at) FROM metric_schedule
+           UNION ALL SELECT MAX(updated_at) FROM metric_schedule WHERE last_error IS NOT NULL AND last_error <> ''
          )`,
     )
     .get() as { value: string | null };

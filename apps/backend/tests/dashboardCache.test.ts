@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { postLocales, posts, publications, publishJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { renderDashboard } from "../src/interfaces/web/dashboard.js";
+import { commandCenterFingerprint } from "../src/operations/command-center.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 describe("dashboard render cache", () => {
@@ -47,6 +48,23 @@ describe("dashboard render cache", () => {
       backendDb.db.insert(postLocales).values({ postId: 1, locale: "ru", slug: "today", text: "Current local day", updatedAt: now }).run();
 
       expect(renderDashboard(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb, 0)).toContain("Current local day");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("does not invalidate rendered data when only the metric scheduler advances", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const before = commandCenterFingerprint(backendDb);
+      backendDb.sqlite
+        .prepare("INSERT INTO metric_schedule(post_key,target,next_check_at,updated_at) VALUES ('post:cache','telegram',?,?)")
+        .run("2026-08-10T00:00:00.000Z", "2026-08-10T00:00:00.000Z");
+      expect(commandCenterFingerprint(backendDb)).toEqual(before);
+      backendDb.sqlite
+        .prepare("UPDATE metric_schedule SET last_error = 'provider failed', updated_at = ? WHERE post_key = 'post:cache'")
+        .run("2026-08-10T00:01:00.000Z");
+      expect(commandCenterFingerprint(backendDb)).not.toEqual(before);
     } finally {
       backendDb.close();
     }

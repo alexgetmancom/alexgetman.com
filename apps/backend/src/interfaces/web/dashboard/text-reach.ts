@@ -1,4 +1,4 @@
-import { type BackendDb, unsafeDb } from "../../../db/client.js";
+import type { XActivityDashboardItem, XActivityMetricSample } from "../../../analytics/x-activity-dashboard.js";
 import type { ReachCounters, ReachSample, ReachSeries } from "./daily-reach.js";
 import type { PipelinePost } from "./types.js";
 
@@ -77,37 +77,26 @@ export function textReachSeries(
 
 /** Every tweet in the window, standalone or crossposted, with its link back to
  * the publication it came from. */
-export function xActivityReachSeries(backendDb: BackendDb, start: Date, end: Date): XActivitySeries[] {
-  const items = unsafeDb(backendDb)
-    .sqlite.prepare(
-      `SELECT x_post_id AS xPostId, published_at AS publishedAt, linked_post_key AS linkedPostKey
-         FROM x_activity_items
-        WHERE published_at >= ? AND published_at <= ?`,
-    )
-    .all(start.toISOString(), end.toISOString()) as Array<{ xPostId: string; publishedAt: string; linkedPostKey: string | null }>;
-  const wanted = items;
+export function xActivityReachSeries(
+  items: readonly XActivityDashboardItem[],
+  snapshots: readonly XActivityMetricSample[],
+  start: Date,
+  end: Date,
+): XActivitySeries[] {
+  const startMs = start.getTime();
+  const endMs = end.getTime();
+  const wanted = items.filter((item) => {
+    const publishedAt = Date.parse(item.publishedAt);
+    return publishedAt >= startMs && publishedAt <= endMs;
+  });
   if (!wanted.length) return [];
-
-  const placeholders = wanted.map(() => "?").join(",");
-  const snapshots = unsafeDb(backendDb)
-    .sqlite.prepare(
-      `SELECT x_post_id AS xPostId, metric_name AS metricName, value, sampled_at AS sampledAt
-         FROM x_activity_metric_snapshots
-        WHERE x_post_id IN (${placeholders}) AND sampled_at <= ?
-        ORDER BY sampled_at ASC`,
-    )
-    .all(...wanted.map((item) => item.xPostId), end.toISOString()) as Array<{
-    xPostId: string;
-    metricName: string;
-    value: number;
-    sampledAt: string;
-  }>;
-
+  const wantedIds = new Set(wanted.map((item) => item.xPostId));
   const byItem = new Map<string, Map<string, RawSample[]>>();
   for (const snapshot of snapshots) {
+    if (!wantedIds.has(snapshot.xPostId)) continue;
     if (!X_COUNTERS[snapshot.metricName]) continue;
     const at = Date.parse(snapshot.sampledAt);
-    if (Number.isNaN(at)) continue;
+    if (Number.isNaN(at) || at > endMs) continue;
     const observed = byItem.get(snapshot.xPostId) ?? new Map<string, RawSample[]>();
     const list = observed.get(snapshot.metricName) ?? [];
     list.push({ at, value: numeric(snapshot.value) });

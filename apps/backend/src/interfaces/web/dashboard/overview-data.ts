@@ -4,12 +4,14 @@ import type { AudienceView } from "../../../botTargets.js";
 import type { BackendDb } from "../../../db/client.js";
 import type { BackendConfig } from "../../../foundation/config.js";
 import { log } from "../../../foundation/logger.js";
-import { zonedSlot } from "../../../foundation/time.js";
+import { zonedRollingPeriodBounds, zonedSlot } from "../../../foundation/time.js";
 import type { createOperationsService } from "../../../operations/service.js";
 import type { CombinedSectionInput, PlatformMetric } from "./combined-section.js";
+import { calendarDays } from "./daily-reach.js";
 import { audiencePlatformFollowers } from "./ops-sections.js";
 import { rollingPeriodDates } from "./period-controls.js";
-import { type TextOverview, textOverview } from "./text-overview.js";
+import { type TextOverview, textOverviewOf } from "./text-overview.js";
+import { xActivityReachSeries } from "./text-reach.js";
 import type { PipelineData, PipelinePost } from "./types.js";
 import {
   createVideoOverviewCache,
@@ -97,9 +99,9 @@ export function loadDashboardReadModel(
     xActivityDashboardRange(backendDb, historyStartBound.toISOString(), historyEndBound.toISOString()),
   );
   const xActivity = {
-    current: xActivityForDates(xHistory, start, end, config.TIMEZONE),
-    comparison: xActivityForDates(xHistory, previousStart, previousEnd, config.TIMEZONE),
-    median: xActivityForDates(xHistory, medianStart, medianEnd, config.TIMEZONE),
+    current: xActivityForDates(xHistory.items, start, end, config.TIMEZONE),
+    comparison: xActivityForDates(xHistory.items, previousStart, previousEnd, config.TIMEZONE),
+    median: xActivityForDates(xHistory.items, medianStart, medianEnd, config.TIMEZONE),
   };
   const videoHistoryStart = new Date(Math.min(start.getTime(), previousStart.getTime(), medianStart.getTime(), yesterdayStart.getTime()));
   const videoHistoryEnd = new Date(
@@ -122,14 +124,29 @@ export function loadDashboardReadModel(
       ? videoForDates(backendDb, config.TIMEZONE, videoCache, medianStart, medianEnd, true, videoView)
       : emptyVideoOverview(),
   }));
-  const text = timed("textMs", () => textOverview(backendDb, service, weekOffset, periodDays, config.TIMEZONE));
+  const text = timed("textMs", () => {
+    const textHistoryDays = periodDays + 30;
+    const [textStartIso, textEndIso] = zonedRollingPeriodBounds(offsetDays / textHistoryDays, textHistoryDays, config.TIMEZONE);
+    const textStart = new Date(textStartIso);
+    const textEnd = new Date(textEndIso);
+    const posts = (pipelineHistory.posts ?? []).filter((post) => {
+      const publishedAt = Date.parse(String(post.date ?? ""));
+      return publishedAt >= textStart.getTime() && publishedAt <= textEnd.getTime();
+    });
+    return textOverviewOf(
+      posts,
+      xActivityReachSeries(xHistory.items, xHistory.samples, textStart, textEnd),
+      calendarDays(textStart, textEnd, config.TIMEZONE),
+      config.TIMEZONE,
+    );
+  });
   const followers = timed("followersMs", () => audiencePlatformFollowers(backendDb));
   log("info", "dashboard read model timing", {
     periodDays,
     weekOffset,
     ...timings,
     pipelinePosts: pipelineHistory.posts?.length ?? 0,
-    xActivityItems: xHistory.length,
+    xActivityItems: xHistory.items.length,
     videoItems: video.history.items.length,
   });
 
