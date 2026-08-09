@@ -1,9 +1,11 @@
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { comparableText, editorialTexts, matchEditorialPost } from "./x-post-matching.js";
+import { comparableText, editorialTexts } from "./x-post-matching.js";
 
-/** A prefix this short is too weak for the linker to act on, but long enough to
- * be worth a human's eye in the report. */
-const CANDIDATE_PREFIX_LENGTH = 25;
+/** How alike an unlinked item and an editorial post must read before a human is
+ * asked to look. The linker itself only acts on a prefix relation; this catches
+ * the cases that relation cannot see — a post edited after publishing, or one
+ * X truncated in the middle. */
+const CANDIDATE_SIMILARITY = 0.5;
 
 export type XAnalyticsReport = {
   imports: Array<{
@@ -30,7 +32,7 @@ export type XAnalyticsReport = {
     covered: number;
     uncovered: Array<{ postKey: string; externalId: string | null }>;
   };
-  linkCandidates: Array<{ xPostId: string; postKey: string; matchedLength: number; url: string; text: string }>;
+  linkCandidates: Array<{ xPostId: string; postKey: string; similarity: number; url: string; text: string; postText: string }>;
   topUnlinked: Array<{
     xPostId: string;
     kind: string;
@@ -99,12 +101,28 @@ export function xAnalyticsReport(backendDb: BackendDb, limit: number): XAnalytic
     `SELECT x_post_id AS xPostId, kind, published_at AS publishedAt, text, url
      FROM x_activity_items WHERE linked_post_key IS NULL`,
   );
-  const editorial = editorialTexts(backendDb);
+  const editorial = editorialTexts(backendDb).map((post) => ({ postKey: post.post_key, words: words(post.text_en), text: post.text_en }));
   const linkCandidates = unlinked.flatMap((item) => {
-    const postKey = matchEditorialPost(item.text, editorial, CANDIDATE_PREFIX_LENGTH);
-    if (!postKey) return [];
+    // A reply's text describes the conversation, not the material being
+    // measured, so its resemblance to a post means nothing.
+    if (item.kind !== "standalone") return [];
+    const itemWords = words(item.text);
+    if (itemWords.size < 4) return [];
+    let best: { postKey: string; similarity: number; text: string } | null = null;
+    for (const post of editorial) {
+      const similarity = jaccard(itemWords, post.words);
+      if (!best || similarity > best.similarity) best = { postKey: post.postKey, similarity, text: post.text };
+    }
+    if (!best || best.similarity < CANDIDATE_SIMILARITY) return [];
     return [
-      { xPostId: item.xPostId, postKey, matchedLength: comparableText(item.text).length, url: item.url, text: item.text.slice(0, 120) },
+      {
+        xPostId: item.xPostId,
+        postKey: best.postKey,
+        similarity: Math.round(best.similarity * 100) / 100,
+        url: item.url,
+        text: item.text.slice(0, 120),
+        postText: best.text.slice(0, 120),
+      },
     ];
   });
 
@@ -146,7 +164,22 @@ export function xAnalyticsReport(backendDb: BackendDb, limit: number): XAnalytic
       covered: xTargets.filter((target) => target.covered > 0).length,
       uncovered: xTargets.filter((target) => target.covered === 0).map(({ postKey, externalId }) => ({ postKey, externalId })),
     },
-    linkCandidates,
+    linkCandidates: linkCandidates.sort((left, right) => right.similarity - left.similarity),
     topUnlinked,
   };
+}
+
+function words(value: string): Set<string> {
+  return new Set(
+    comparableText(value)
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((word) => word.length > 2),
+  );
+}
+
+function jaccard(left: Set<string>, right: Set<string>): number {
+  if (!left.size || !right.size) return 0;
+  let shared = 0;
+  for (const word of left) if (right.has(word)) shared += 1;
+  return shared / (left.size + right.size - shared);
 }
