@@ -1,4 +1,4 @@
-ARG RUNTIME_BASE_IMAGE
+ARG RUNTIME_BASE_IMAGE=ghcr.io/alexgetmancom/alexgetman-media-processor:runtime-base
 FROM ${RUNTIME_BASE_IMAGE}
 
 WORKDIR /app
