@@ -75,9 +75,7 @@ export async function generateStoryMedia(
         ...(item as unknown as PublishMediaItem),
         story_local_path: output,
         storyLocalPath: output,
-        ...(telegramOutput && fs.existsSync(telegramOutput)
-          ? { telegram_story_local_path: telegramOutput, telegramStoryLocalPath: telegramOutput }
-          : {}),
+        ...(telegramOutput && fs.existsSync(telegramOutput) ? { telegramStoryLocalPath: telegramOutput } : {}),
         story_width: 1080,
         story_height: 1920,
       },
@@ -154,31 +152,25 @@ async function transformRemotely(
         Number.isFinite(retryAfter) ? retryAfter : null,
       );
     }
-    // New workers return a manifest, then both cached variants are fetched
-    // over the authenticated tunnel. Older single-output workers remain
-    // supported during the manual VM-106 promotion window.
-    if (response.headers.get("content-type")?.includes("application/json")) {
-      const result = (await response.json()) as {
-        job?: string;
-        requestId?: string;
-        timings?: { uploadMs?: number; queueWaitMs?: number; ffmpegMs?: number; totalMs?: number; cacheHit?: boolean };
-        outputs?: Record<string, { bytes?: number }>;
-      };
-      if (!result.outputs?.standard || (video && (!result.outputs.telegram || !telegramOutput)))
-        throw new Error("media_processor_failed: incomplete story variants");
-      log("info", "story media remote processing completed", {
-        source,
-        phase: "media_processor.external",
-        providerRequestId: result.requestId ?? result.job,
-        ...result.timings,
-      });
-      await downloadRemoteVariant(config, idempotencyKey, "standard", output, fetchImpl);
-      if (video && telegramOutput) await downloadRemoteVariant(config, idempotencyKey, "telegram", telegramOutput, fetchImpl);
-      log("info", "story media remote variants written", { output, telegramOutput });
-    } else {
-      await withTimeout(writeResponseAtomically(output, response), 30_000, "media_processor_result_write_timeout");
-      log("info", "story media remote legacy result written", { output });
-    }
+    if (!response.headers.get("content-type")?.includes("application/json"))
+      throw new Error("media_processor_failed: expected a JSON transform manifest");
+    const result = (await response.json()) as {
+      job?: string;
+      requestId?: string;
+      timings?: { uploadMs?: number; queueWaitMs?: number; ffmpegMs?: number; totalMs?: number; cacheHit?: boolean };
+      outputs?: Record<string, { bytes?: number }>;
+    };
+    if (!result.outputs?.standard || (video && (!result.outputs.telegram || !telegramOutput)))
+      throw new Error("media_processor_failed: incomplete story variants");
+    log("info", "story media remote processing completed", {
+      source,
+      phase: "media_processor.external",
+      providerRequestId: result.requestId ?? result.job,
+      ...result.timings,
+    });
+    await downloadRemoteVariant(config, idempotencyKey, "standard", output, fetchImpl);
+    if (video && telegramOutput) await downloadRemoteVariant(config, idempotencyKey, "telegram", telegramOutput, fetchImpl);
+    log("info", "story media remote variants written", { output, telegramOutput });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError")
       throw new Error(`media_processor_timeout: remote worker exceeded ${timeoutSeconds}s`);

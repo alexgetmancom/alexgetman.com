@@ -17,12 +17,11 @@ type TargetId = (typeof TARGETS)[number]["id"];
 export const AUDIENCE_VIEWS = ["threads_ru", "threads_en", "telegram", "x"] as const;
 export type AudienceView = (typeof AUDIENCE_VIEWS)[number];
 
-/** Names that still occur in durable metric schedules or old publication rows. */
 export const TARGET_GROUPS = {
-  threads: ["threads", "threads_ru", "threads_en"],
-  x: ["x", "twitter"],
-  instagramStory: ["instagram_story", "instagram_stories", "instagram_stories_ru"],
-  telegramStory: ["telegram_story", "telegram_stories"],
+  threads: ["threads_ru", "threads_en"],
+  x: ["x"],
+  instagramStory: ["instagram_stories", "instagram_stories_ru"],
+  telegramStory: ["telegram_stories"],
 } as const;
 
 const targetById = new Map<string, (typeof TARGETS)[number]>(TARGETS.map((target) => [target.id, target]));
@@ -42,8 +41,6 @@ export const PRESETS: Record<string, Record<TargetId, boolean>> = {
 export function targetLocale(target: string): TargetLocale | null {
   const definition = targetById.get(target);
   if (definition) return definition.locale;
-  if (target === "threads" || target === "instagram_story" || target === "telegram_story" || target === "telegram_stories") return "ru";
-  if (target === "twitter") return "en";
   return null;
 }
 
@@ -51,11 +48,8 @@ export function targetDefinition(target: string): (typeof TARGETS)[number] | nul
   return targetById.get(target) ?? null;
 }
 
-const LEGACY_TARGETS = new Set<string>(Object.values(TARGET_GROUPS).flat());
-
-/** Accepts canonical targets and aliases that still exist in durable legacy rows. */
 export function isKnownTarget(target: string): boolean {
-  return targetById.has(target) || LEGACY_TARGETS.has(target);
+  return targetById.has(target);
 }
 
 export function isSiteTarget(target: string): boolean {

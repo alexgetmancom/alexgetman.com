@@ -15,7 +15,7 @@ export type StudioActorId = number;
  * second interface with its own id space maps here instead of teaching the core
  * about its identifiers. */
 export function actorFromTelegramUser(config: BackendConfig, userId: number | undefined): StudioActorId | null {
-  if (!userId || !config.ADMIN_IDS.includes(userId)) return null;
+  if (!userId || !config.CONTROLLER_ADMIN_IDS.includes(userId)) return null;
   return userId;
 }
 

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +6,7 @@ import { createApiHandler } from "../src/api.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
+import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 const tempDirs: string[] = [];
@@ -21,15 +22,13 @@ afterEach(() => {
 });
 
 function tempDb() {
-  return openBackendDb(join(tempDir("alexgetman-http-"), "pipeline.db"), 5000);
+  const backendDb = openBackendDb(join(tempDir("alexgetman-http-"), "pipeline.db"), 5000);
+  registerTestChannels(backendDb, TEXT_TEST_CHANNELS);
+  return backendDb;
 }
 
-function createApiApp(
-  config: ReturnType<typeof loadConfig>,
-  backendDb: ReturnType<typeof openBackendDb>,
-  bot: import("grammy").Bot | null = null,
-) {
-  const handler = createApiHandler({ config, backendDb, bot });
+function createApiApp(config: ReturnType<typeof loadConfig>, backendDb: ReturnType<typeof openBackendDb>) {
+  const handler = createApiHandler({ config, backendDb });
   return {
     request(path: string, init?: RequestInit) {
       return handler(new Request(`http://localhost${path}`, init));
@@ -125,21 +124,15 @@ describe("Astro endpoint controller", () => {
     }
   });
 
-  it("serves engagement, MCP and authenticated Telegram webhook routes", async () => {
+  it("serves engagement and MCP routes", async () => {
     const backendDb = tempDb();
-    const dir = tempDir("alexgetman-engagement-");
     try {
-      const init = mock(async () => undefined);
-      const handleUpdate = mock(async () => undefined);
       const app = createApiApp(
         loadConfig({
-          SITE_METRICS_JSON: join(dir, "metrics.json"),
-          LIKES_SALT: "salt",
-          TELEGRAM_WEBHOOK_SECRET: "webhook-secret",
+          CLIENT_IP_HASH_SALT: "salt",
           TRUSTED_CLIENT_IP_HEADER: "x-real-ip",
         }),
         backendDb,
-        { init, handleUpdate } as unknown as import("grammy").Bot,
       );
       expect(
         (
@@ -182,18 +175,6 @@ describe("Astro endpoint controller", () => {
         }),
       });
       expect(await limitedFeedback.json()).toMatchObject({ error: { code: -32000, message: "rate limit exceeded" } });
-      expect((await app.request("/tg-feed/webhook", { method: "POST", body: "{}" })).status).toBe(403);
-      expect(
-        (
-          await app.request("/tg-feed/webhook", {
-            method: "POST",
-            headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret" },
-            body: "{}",
-          })
-        ).status,
-      ).toBe(200);
-      expect(handleUpdate).toHaveBeenCalledTimes(1);
-      expect(init).toHaveBeenCalledTimes(1);
     } finally {
       backendDb.close();
     }
@@ -208,7 +189,7 @@ describe("Astro endpoint controller", () => {
       const response = await app.request("/api/command-center/action", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "edit_en", ref: `post:${postId}`, text_en: "Edited English", token: "secret" }),
+        body: JSON.stringify({ action: "edit", ref: `post:${postId}`, locale: "en", text: "Edited English", apply: true, token: "secret" }),
       });
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ ok: true, post_id: postId, text_en: true });
@@ -232,38 +213,6 @@ describe("Astro endpoint controller", () => {
     }
   });
 
-  it("acknowledges a Telegram webhook before slow update handling finishes", async () => {
-    const backendDb = tempDb();
-    const started = Promise.withResolvers<void>();
-    const finished = Promise.withResolvers<void>();
-    try {
-      const init = mock(async () => undefined);
-      const handleUpdate = mock(async () => {
-        started.resolve();
-        await finished.promise;
-      });
-      const app = createApiApp(loadConfig({ TELEGRAM_WEBHOOK_SECRET: "webhook-secret" }), backendDb, {
-        init,
-        handleUpdate,
-      } as unknown as import("grammy").Bot);
-      const responsePromise = app.request("/tg-feed/webhook", {
-        method: "POST",
-        headers: { "X-Telegram-Bot-Api-Secret-Token": "webhook-secret", "content-type": "application/json" },
-        body: JSON.stringify({ update_id: 99 }),
-      });
-
-      await started.promise;
-      const response = await Promise.race([responsePromise, new Promise<null>((resolve) => setTimeout(() => resolve(null), 25))]);
-      finished.resolve();
-      expect(response).not.toBeNull();
-      expect(response?.status).toBe(200);
-      await responsePromise;
-    } finally {
-      finished.resolve();
-      backendDb.close();
-    }
-  });
-
   it("renders the full command center through the framework-neutral controller", async () => {
     const backendDb = tempDb();
     const dir = tempDir("alexgetman-markdown-");
@@ -278,7 +227,6 @@ describe("Astro endpoint controller", () => {
           COMMAND_CENTER_TOKEN: "secret",
           COMMAND_CENTER_URL: "https://marux.ru/command-center",
           SITE_PUBLIC_DIR: dir,
-          SITE_METRICS_JSON: join(dir, "metrics.json"),
         }),
         backendDb,
       );

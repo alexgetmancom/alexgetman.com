@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { runAnalyticsCycle } from "../src/analytics/collection/creator-cycle.js";
 import { runVideoMetricSchedule } from "../src/analytics/collection/video-metrics.js";
 import { registerChannel } from "../src/channels/registry.js";
+import type { UnsafeBackendDb } from "../src/db/client.js";
 import {
   analyticsSync,
   creatorProfileSnapshots,
@@ -14,7 +15,11 @@ import {
 } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
-import { withDb } from "./helpers/db.js";
+import { TEXT_TEST_CHANNELS, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
+import { withDb as withFixtureDb } from "./helpers/db.js";
+
+const withDb = <T>(run: (backendDb: UnsafeBackendDb) => T | Promise<T>) =>
+  withFixtureDb(run, [...TEXT_TEST_CHANNELS, ...VIDEO_TEST_CHANNELS]);
 
 describe("creator analytics collection", () => {
   it("retains live YouTube channel counters when the Analytics API is unavailable", async () => {
@@ -518,11 +523,16 @@ describe("creator analytics collection", () => {
       });
       const config = loadConfig({
         ZERNIO_API_KEY: "a".repeat(16),
-        PUBLISH_PROVIDER_ROUTES_JSON: '{"instagram_reels":{"provider":"zernio","accountId":"maru-account"}}',
       });
       config.studio.modules.analytics = true;
       config.studio.modules.video_posting = true;
       config.studio.modules.instagram = true;
+      registerChannel(backendDb, {
+        platform: "instagram",
+        locale: "ru",
+        provider: "zernio",
+        providerAccountId: "maru-account",
+      });
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
         if (url === "https://zernio.com/api/v1/accounts")

@@ -104,7 +104,7 @@ async function deliverEvent(backendDb: BackendDb, bot: Bot, config: BackendConfi
   ) {
     await sendStudioCompletion(backendDb, bot, config, { ...event, detailsJson: details });
   } else if (event.eventType === "analytics.milestone.reached") {
-    for (const actorId of config.ADMIN_IDS) await bot.api.sendMessage(actorId, event.message);
+    for (const actorId of config.CONTROLLER_ADMIN_IDS) await bot.api.sendMessage(actorId, event.message);
   } else if (event.eventType === "delivery.post.settled" || event.eventType.startsWith("publish.job.")) {
     const postId = numberDetail(details, "post_id") ?? postIdFromRef(event.postKey);
     const draft =

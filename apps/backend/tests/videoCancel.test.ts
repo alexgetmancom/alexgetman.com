@@ -36,7 +36,7 @@ mock.module("../src/delivery/video-publishers.js", () => ({
   },
 }));
 
-const config = loadConfig({ ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "token", VIDEO_MEDIA_RETENTION_HOURS: "24" });
+const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "token", VIDEO_MEDIA_RETENTION_HOURS: "24" });
 const testDb = useBackendDb();
 
 beforeAll(() => {

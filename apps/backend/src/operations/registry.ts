@@ -176,7 +176,7 @@ const operationDefs = {
     schema: z.object({}),
     mutates: false,
     agent: true,
-    handler: (context) => channelReport(context.db(), context.config()),
+    handler: (context) => channelReport(context.db()),
   }),
   capabilities: operation({
     summary: "Platform capability tests and what each one last proved.",
@@ -452,50 +452,49 @@ const operationDefs = {
     handler: (context, input) => deduplicateSiteMedia(context.config(), input.apply),
   }),
   "channel-connect": operation({
-    summary: "Connect a publishing channel and store its credentials.",
+    summary: "Connect a publishing route.",
     schema: z.object({
       platform: example(z.string().min(1), "youtube|instagram").describe("platform to connect"),
       locale: z.enum(["ru", "en"]),
       provider: example(z.string().default("native"), "native|zernio").describe("delivery provider"),
+      target: z
+        .enum([
+          "telegram",
+          "site_ru",
+          "site_en",
+          "threads_ru",
+          "threads_en",
+          "x",
+          "telegram_stories",
+          "instagram_stories_ru",
+          "instagram_stories",
+        ])
+        .optional(),
       account_id: z.string().optional(),
       label: z.string().optional(),
-      credential: example(z.array(z.string()).default([]), "name=value").describe("repeatable"),
     }),
     mutates: true,
     agent: false,
     handler: (context, input) =>
-      connectChannel(context.db(), context.config(), {
+      connectChannel(context.db(), {
         platform: input.platform,
         locale: input.locale,
         provider: input.provider,
+        ...(input.target ? { targetId: input.target } : {}),
         ...(input.account_id ? { accountId: input.account_id } : {}),
         ...(input.label ? { label: input.label } : {}),
-        credentials: parseCredentials(input.credential),
       }),
   }),
   "channel-disable": operation({
     summary: "Disable a channel, keeping its publication history attributable.",
     schema: z.object({
       channel: example(z.string().min(1), "youtube_ru").describe("channel id"),
-      forget_credentials: z.boolean().default(false),
     }),
     mutates: true,
     agent: false,
-    handler: (context, input) => disableChannel(context.db(), input.channel, input.forget_credentials),
+    handler: (context, input) => disableChannel(context.db(), input.channel),
   }),
 } satisfies Record<string, OperationDef>;
-
-/** `name=value` pairs. Values reach the process through its arguments, so this
- * is meant for a shell inside the deployment, not for a shared terminal. */
-function parseCredentials(pairs: string[]): Record<string, string> {
-  return Object.fromEntries(
-    pairs.map((pair) => {
-      const separator = pair.indexOf("=");
-      if (separator <= 0) throw new Error(`--credential expects name=value, received: ${pair}`);
-      return [pair.slice(0, separator), pair.slice(separator + 1)];
-    }),
-  );
-}
 
 export function operationDef(name: string): OperationDef | undefined {
   return (operationDefs as Record<string, OperationDef>)[name];

@@ -6,14 +6,16 @@ import { createDraftFromMessage } from "../src/content/drafts.js";
 import { publishContentIndex } from "../src/delivery/site-content-index.js";
 import { pingIndexNow } from "../src/delivery/site-index-now.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { reconcilePublication } from "../src/publishing/publication-reconciliation.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
-import { reconcilePublication } from "../src/publishing/queue.js";
+import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 describe("site parity", () => {
   it("publishes content memory and deduplicates IndexNow submissions", async () => {
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-site-parity-"));
     const backendDb = openBackendDb(join(dir, "pipeline.db"));
+    registerTestChannels(backendDb, TEXT_TEST_CHANNELS);
     const config = loadConfig({ DATA_DIR: dir, SITE_PUBLIC_DIR: dir, PUBLIC_BASE_URL: "https://example.test", INDEXNOW_ENABLED: "true" });
     try {
       const draft = createDraftFromMessage(backendDb, 1, { text: "Русский заголовок", textEn: "English title", media: [], entities: [] });

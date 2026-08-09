@@ -13,12 +13,20 @@ import { botUiSettings } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { threadsPreviewText } from "../src/interfaces/telegram/delivery-previews.js";
 import { cancelDraft, scheduledDrafts } from "../src/publishing/draft-lifecycle.js";
+import { reconcilePublication } from "../src/publishing/publication-reconciliation.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
-import { reconcilePublication } from "../src/publishing/queue.js";
 import { postDeliveryProjections } from "../src/studio/projections.js";
+import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: UnsafeBackendDb | null = null;
+
+function openBotDb(): UnsafeBackendDb {
+  const memory = ":memory:";
+  const db = openBackendDb(memory);
+  registerTestChannels(db, TEXT_TEST_CHANNELS);
+  return db;
+}
 
 function persistPostState(db: UnsafeBackendDb, actorId: number, step: PostWizardStep, draftId: number, controlMessageId: number): number {
   return saveConversationState(db, actorId, {
@@ -42,7 +50,7 @@ afterEach(() => {
 
 describe("Telegram controller flow", () => {
   it("keeps mode and manual target controls on one ordinary-publication card", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Card", textEn: "Card", entities: [], media: [] });
     const preview = draftPreview(backendDb, draftId, loadConfig({}));
     expect(preview.text).toContain("Mode: *Manual*");
@@ -56,7 +64,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("renders post preview and confirmation controls in the selected interface language", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     backendDb.db.insert(botUiSettings).values({ actorId: 42, locale: "ru", updatedAt: new Date().toISOString() }).run();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Карточка", textEn: "Card", entities: [], media: [] });
     const preview = draftPreview(backendDb, draftId, loadConfig({}));
@@ -67,7 +75,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("escapes draft Markdown before embedding copy in the control card", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, {
       text: "*bold* [link] _under_ `code`",
       textEn: "*English* [link] _under_ `code`",
@@ -82,7 +90,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("creates a draft and queues enabled publication targets without Telegram API", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, {
       text: "Привет\n\nТестовая публикация",
       entities: [],
@@ -111,8 +119,8 @@ describe("Telegram controller flow", () => {
     ]);
     expect(jobs.every((job) => job.status === "queued")).toBe(true);
     expect(siteJobs).toEqual([
-      { status: "queued", reason: "publish_ru" },
-      { status: "queued", reason: "publish_en" },
+      { status: "queued", reason: "site_ru" },
+      { status: "queued", reason: "site_en" },
     ]);
     expect(locales).toEqual([
       { locale: "en", site_enabled: 1 },
@@ -121,7 +129,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("stores independent RU and EN publish times for a scheduled draft", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Schedule", textEn: "Schedule", entities: [], media: [] });
     const ruAt = new Date("2026-07-11T07:37:00.000Z");
     const enAt = new Date("2026-07-11T03:37:00.000Z");
@@ -139,15 +147,15 @@ describe("Telegram controller flow", () => {
     expect(jobs.find((job) => job.target === "telegram")?.publish_at).toBe(ruAt.toISOString());
     expect(jobs.find((job) => job.target === "threads_en")?.publish_at).toBe(enAt.toISOString());
     expect(backendDb.sqlite.prepare("SELECT reason, next_attempt_at FROM site_jobs WHERE post_id=? ORDER BY reason").all(postId)).toEqual([
-      { reason: "publish_en", next_attempt_at: enAt.toISOString() },
-      { reason: "publish_ru", next_attempt_at: ruAt.toISOString() },
+      { reason: "site_en", next_attempt_at: enAt.toISOString() },
+      { reason: "site_ru", next_attempt_at: ruAt.toISOString() },
     ]);
     expect(scheduledDrafts(backendDb)).toEqual([{ id: draftId, scheduledAt: ruAt.toISOString(), scheduledEnAt: enAt.toISOString() }]);
   });
 
   it("renders compact controls for a scheduled post", () => {
-    backendDb = openBackendDb(":memory:");
-    const config = loadConfig({ ADMIN_IDS: "42" });
+    backendDb = openBotDb();
+    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Scheduled", textEn: "Scheduled", entities: [], media: [] });
     const at = new Date(Date.now() + 60 * 60_000);
     publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt: at, enAt: at });
@@ -169,7 +177,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("does not enqueue a duplicate target job after that target is already final", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Repeat", textEn: "Repeat", entities: [], media: [] });
     const postId = publishDraftToQueue(backendDb, draftId);
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=? AND target='threads_en'").run(postId);
@@ -182,25 +190,23 @@ describe("Telegram controller flow", () => {
   });
 
   it("does not duplicate a final site locale when a publication is replanned", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Repeat site", textEn: "Repeat site", entities: [], media: [] });
     const postId = publishDraftToQueue(backendDb, draftId);
-    backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=? AND reason='publish_en'").run(postId);
+    backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=? AND reason='site_en'").run(postId);
 
     publishDraftToQueue(backendDb, draftId);
 
-    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM site_jobs WHERE post_id=? AND reason='publish_en'").get(postId)).toEqual(
-      {
-        count: 1,
-      },
-    );
+    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM site_jobs WHERE post_id=? AND reason='site_en'").get(postId)).toEqual({
+      count: 1,
+    });
   });
 
   it("keeps publication history when only the site has reached a final state", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Site history", textEn: "Site history", entities: [], media: [] });
     const postId = publishDraftToQueue(backendDb, draftId);
-    backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=? AND reason='publish_ru'").run(postId);
+    backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=? AND reason='site_ru'").run(postId);
 
     cancelDraft(backendDb, draftId);
 
@@ -213,7 +219,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("does not publish a locale whose scheduled time has not been chosen yet", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, {
       text: "Partial schedule",
       textEn: "Partial schedule",
@@ -232,7 +238,7 @@ describe("Telegram controller flow", () => {
       target: string;
       publish_at: string;
     }>;
-    const enSite = backendDb.sqlite.prepare("SELECT next_attempt_at FROM site_jobs WHERE post_id=? AND reason='publish_en'").get(postId);
+    const enSite = backendDb.sqlite.prepare("SELECT next_attempt_at FROM site_jobs WHERE post_id=? AND reason='site_en'").get(postId);
 
     expect(jobs.length).toBeGreaterThan(0);
     expect(jobs.every((job) => job.publish_at === ruAt.toISOString())).toBe(true);
@@ -244,7 +250,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("keeps a partial scheduled publication open until the missing locale is scheduled", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, {
       text: "Partial lifecycle",
       textEn: "Partial lifecycle",
@@ -269,7 +275,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("marks a publication published only after every social and site job is final", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Complete", textEn: "Complete", entities: [], media: [] });
     const postId = publishDraftToQueue(backendDb, draftId);
     expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "scheduled" });
@@ -283,7 +289,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("marks a publication failed when one final target fails and preserves cancellation", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Failure", textEn: "Failure", entities: [], media: [] });
     const postId = publishDraftToQueue(backendDb, draftId);
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
@@ -299,7 +305,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("removes all unpublished draft artifacts while retaining published history", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Cancel", textEn: "Cancel", entities: [], media: [] });
     const postId = publishDraftToQueue(backendDb, draftId, {
       mode: "scheduled",
@@ -314,7 +320,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("queues locale-specific text and media for RU and EN targets", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, {
       text: "Русский текст",
       textEn: "English text",
@@ -334,8 +340,6 @@ describe("Telegram controller flow", () => {
       expect(payloads[target]).toMatchObject({
         locale: "ru",
         text: "Русский текст",
-        text_en: "",
-        bodyMarkdown: "Русский текст",
         media: [{ type: "IMAGE", fileId: "ru-image" }],
       });
       expect(payloads[target]).not.toHaveProperty("media_en");
@@ -344,16 +348,13 @@ describe("Telegram controller flow", () => {
       expect(payloads[target]).toMatchObject({
         locale: "en",
         text: "Edited English text",
-        text_en: "Edited English text",
-        bodyMarkdown: "Edited English text",
         media: [{ type: "IMAGE", fileId: "en-image" }],
-        media_en: [{ type: "IMAGE", fileId: "en-image" }],
       });
     }
   });
 
   it("localizes every enabled social target from its declared locale", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, {
       text: "Русский текст",
       textEn: "English text",
@@ -379,7 +380,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("preserves Telegram entities in target payloads and site HTML", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, {
       text: "Жирный и ссылка",
       textEn: "Bold and link",
@@ -398,7 +399,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("retains source formatting entities in the Telegram delivery preview", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const entities = [
       { type: "bold", offset: 0, length: 6 },
       { type: "text_link", offset: 9, length: 6, url: "https://example.com" },
@@ -417,7 +418,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("warns before publishing when selected Stories targets have no media", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Text only", textEn: "Text only", entities: [], media: [] });
 
     const preview = draftPreview(backendDb, draftId, loadConfig({}), "confirm_publish");
@@ -463,7 +464,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("renders a live post progress card from publication job states", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Progress", textEn: "Progress", entities: [], media: [] });
     const postId = publishDraftToQueue(backendDb, draftId);
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=? AND target='telegram'").run(postId);
@@ -482,7 +483,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("finalizes a durable Telegram media album into one draft", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     backendDb.sqlite
       .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,text_ru,text_entities_json,media_json,notified,updated_at)
       VALUES ('album',42,42,'group','Album caption','[]',?,1,'2000-01-01T00:00:00.000Z')`)
@@ -504,7 +505,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("keeps one draft when the control card fails after the album is finalized", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     backendDb.sqlite
       .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,text_ru,text_entities_json,media_json,notified,updated_at)
       VALUES ('card-fails',42,42,'group','Album caption','[]',?,1,'2000-01-01T00:00:00.000Z')`)
@@ -522,7 +523,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("applies an English edit album to its draft instead of creating a new draft", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, {
       text: "Русский исходник",
       textEn: "English source",
@@ -565,7 +566,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("discards an album captured by an older conversation revision", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, {
       text: "Russian source",
       textEn: "English source",
@@ -589,7 +590,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("claims one pending album only once when Telegram workers overlap", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     backendDb.sqlite
       .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,step,text_ru,text_entities_json,media_json,notified,updated_at)
       VALUES ('once',42,42,'group','new_post','Album caption','[]',?,1,'2000-01-01T00:00:00.000Z')`)
@@ -613,7 +614,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("reclaims a stale album claim left by a crashed worker", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openBotDb();
     backendDb.sqlite
       .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,step,text_ru,text_entities_json,media_json,notified,updated_at)
       VALUES ('stale-claim',42,42,'group','new_post','Album caption','[]',?,2,'2000-01-01T00:00:00.000Z')`)
@@ -626,7 +627,7 @@ describe("Telegram controller flow", () => {
   });
 
   it("gives up on an album that keeps failing instead of retrying it forever", async () => {
-    const db = openBackendDb(":memory:");
+    const db = openBotDb();
     backendDb = db;
     db.sqlite
       .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,step,step_data_json,draft_id,text_ru,text_entities_json,media_json,notified,attempt_count,updated_at)

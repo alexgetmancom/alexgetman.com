@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { bootstrapConfiguredChannels } from "../../channels/registry.js";
+import { listChannels } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { log } from "../../foundation/logger.js";
@@ -36,8 +36,10 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
   if (!config.studio.modules.analytics) return 0;
   const profileInterval = config.CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS;
   let profiles = 0;
-  const channels = bootstrapConfiguredChannels(backendDb, config);
+  const channels = listChannels(backendDb);
   for (const channel of channels) {
+    if (channel.platform === "youtube" && !config.studio.modules.youtube) continue;
+    if (channel.platform === "instagram" && !config.studio.modules.instagram) continue;
     const standardProfile = channel.platform === "youtube" || channel.platform === "instagram";
     const profileSupported = standardProfile || (channel.provider === "zernio" && !standardProfile);
     if (!profileSupported) continue;

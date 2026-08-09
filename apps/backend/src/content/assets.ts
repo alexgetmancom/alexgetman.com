@@ -100,10 +100,10 @@ export function requireStudioMediaAssets(backendDb: BackendDb, actorId: number, 
 export function mediaItemsFromAssets(assets: StudioMediaAssetRecord[]): Record<string, unknown>[] {
   return assets.map((asset) => ({
     type: asset.kind,
-    asset_id: asset.id,
-    local_path: asset.localPath,
+    assetId: asset.id,
+    localPath: asset.localPath,
     filename: asset.filename,
-    mime_type: asset.mimeType,
+    mimeType: asset.mimeType,
   }));
 }
 

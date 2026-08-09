@@ -27,17 +27,9 @@ function wait(milliseconds: number): Promise<void> {
 }
 
 describe("core worker runtime", () => {
-  it("does not start any loop when workers are disabled", async () => {
-    await withDb((backendDb) => {
-      const config = loadConfig({ ENABLE_WORKERS: "0" });
-
-      expect(startCoreWorkers(config, backendDb)).toEqual([]);
-    });
-  });
-
   it("starts every enabled loop and persists lifecycle heartbeats", async () => {
     await withDb(async (backendDb) => {
-      const config = loadConfig({ ENABLE_WORKERS: "1", WORKER_HEARTBEAT_INTERVAL_SECONDS: "1" });
+      const config = loadConfig({ WORKER_HEARTBEAT_INTERVAL_SECONDS: "1" });
       config.studio.modules.video_posting = true;
       config.studio.modules.analytics = true;
       config.studio.modules.site = true;

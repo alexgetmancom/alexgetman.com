@@ -28,7 +28,7 @@ export async function runMetricsCycle(
   const collectableTargets = Object.keys(collectors).filter((target) => platformAnalyticsProfile(target).enabled);
   ensureMetricSchedule(backendDb, collectableTargets);
   freezeUnsupportedMetricSchedules(backendDb, SUPPORTED_METRIC_TARGETS);
-  freezeDisabledMetricSchedules(backendDb, [...(config.ENABLE_X_METRICS ? [] : ["x", "twitter"])]);
+  freezeDisabledMetricSchedules(backendDb, [...(config.ENABLE_X_METRICS ? [] : ["x"])]);
   const tasks = claimDueMetricTasks(backendDb, config, collectableTargets);
   for (const task of tasks) {
     const collector = collectors[task.target];

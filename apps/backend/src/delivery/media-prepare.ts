@@ -77,7 +77,7 @@ function remoteVariantKey(cacheKey: string, localPath: string, uploadPath: strin
 }
 
 function isTelegramStoryTarget(target: string | undefined): boolean {
-  return target === "telegram_story" || target === "telegram_stories";
+  return target === "telegram_stories";
 }
 
 export async function pruneMediaCache(config: BackendConfig, now = Date.now()): Promise<number> {

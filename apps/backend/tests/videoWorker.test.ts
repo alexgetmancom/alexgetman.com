@@ -3,9 +3,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { eq } from "drizzle-orm";
+import { registerChannel } from "../src/channels/registry.js";
 import { videoJobs, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { createVideoDraft, replaceVideoTargets, saveVideoMetadata, scheduleVideo } from "../src/publishing/video-service.js";
+import { VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { useBackendDb } from "./helpers/db.js";
 
 /**
@@ -53,20 +55,20 @@ mock.module("../src/delivery/video-publishers.js", () => ({
   prepareInstagramReel: async (...args: Parameters<typeof real.prepareInstagramReel>) => {
     if (!intercepting) return real.prepareInstagramReel(...args);
     seen.push("prepareInstagramReel");
-    instagramCredentialsSeen.push({ token: args[0].INSTAGRAM_ACCESS_TOKEN, userId: args[0].INSTAGRAM_USER_ID });
+    instagramCredentialsSeen.push({ token: args[1].accessToken, userId: args[1].userId });
     duringUpload?.();
     return { id: "ig-container" };
   },
   instagramContainerReady: async (...args: Parameters<typeof real.instagramContainerReady>) => {
     if (!intercepting) return real.instagramContainerReady(...args);
     seen.push("instagramContainerReady");
-    instagramCredentialsSeen.push({ token: args[0].INSTAGRAM_ACCESS_TOKEN, userId: args[0].INSTAGRAM_USER_ID });
+    instagramCredentialsSeen.push({ token: args[1].accessToken, userId: args[1].userId });
     if (containerReadyError) throw containerReadyError;
   },
   publishInstagramReel: async (...args: Parameters<typeof real.publishInstagramReel>) => {
     if (!intercepting) return real.publishInstagramReel(...args);
     seen.push("publishInstagramReel");
-    instagramCredentialsSeen.push({ token: args[0].INSTAGRAM_ACCESS_TOKEN, userId: args[0].INSTAGRAM_USER_ID });
+    instagramCredentialsSeen.push({ token: args[1].accessToken, userId: args[1].userId });
     return { id: "ig-reel", url: "https://www.instagram.com/reel/ig-reel/" };
   },
 }));
@@ -82,7 +84,7 @@ mock.module("../src/delivery/zernio.js", () => ({
 const { runVideoCycle } = await import("../src/delivery/video-worker.js");
 const { cancelVideo } = await import("../src/publishing/video-service.js");
 
-const testDb = useBackendDb();
+const testDb = useBackendDb(VIDEO_TEST_CHANNELS);
 
 beforeAll(() => {
   intercepting = true;
@@ -108,13 +110,7 @@ function videoConfig(directory: string, overrides: Record<string, string> = {}) 
 }
 
 /** A scheduled draft whose jobs are all due now, so one cycle runs them. */
-function dueDraft(
-  backendDb: ReturnType<typeof testDb.open>,
-  directory: string,
-  targets: string[],
-  config: ReturnType<typeof videoConfig>,
-  locale: "ru" | "en" = "ru",
-): number {
+function dueDraft(backendDb: ReturnType<typeof testDb.open>, directory: string, targets: string[], locale: "ru" | "en" = "ru"): number {
   // A draft references its source by asset key; videoPath resolves it as
   // `<key>.<ext>` inside VIDEO_MEDIA_DIR.
   const assetKey = `clip-${targets.join("-")}`;
@@ -129,16 +125,10 @@ function dueDraft(
     });
   }
   const at = new Date(Date.now() + 60 * 60_000);
-  scheduleVideo(
-    backendDb,
-    draftId,
-    Object.fromEntries(targets.map((target) => [target, at])),
-    {
-      prepareLeadMinutes: 15,
-      reminderMinutes: 5,
-    },
-    config,
-  );
+  scheduleVideo(backendDb, draftId, Object.fromEntries(targets.map((target) => [target, at])), {
+    prepareLeadMinutes: 15,
+    reminderMinutes: 5,
+  });
   // Drizzle needs a predicate to update; the point here is only to make every
   // job of this draft due, so drive it through the raw handle.
   const past = new Date(Date.now() - 1_000).toISOString();
@@ -168,7 +158,7 @@ describe("video job execution", () => {
     await withDirectory(async (directory) => {
       const backendDb = testDb.open();
       const config = videoConfig(directory);
-      const draftId = dueDraft(backendDb, directory, ["youtube_shorts"], config);
+      const draftId = dueDraft(backendDb, directory, ["youtube_shorts"]);
 
       await runVideoCycle(config, backendDb);
 
@@ -184,7 +174,7 @@ describe("video job execution", () => {
     await withDirectory(async (directory) => {
       const backendDb = testDb.open();
       const config = videoConfig(directory);
-      const draftId = dueDraft(backendDb, directory, ["youtube_shorts"], config);
+      const draftId = dueDraft(backendDb, directory, ["youtube_shorts"]);
       // The video id exists only in the upload response, so cancellation must
       // not discard the local job while the provider call is in flight.
       duringUpload = () => {
@@ -207,7 +197,7 @@ describe("video job execution", () => {
     await withDirectory(async (directory) => {
       const backendDb = testDb.open();
       const config = videoConfig(directory);
-      const draftId = dueDraft(backendDb, directory, ["instagram_reels"], config);
+      const draftId = dueDraft(backendDb, directory, ["instagram_reels"]);
 
       await runVideoCycle(config, backendDb);
 
@@ -228,7 +218,7 @@ describe("video job execution", () => {
         INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
         INSTAGRAM_EN_USER_ID: "en-user",
       });
-      const draftId = dueDraft(backendDb, directory, ["instagram_reels"], config, "en");
+      const draftId = dueDraft(backendDb, directory, ["instagram_reels"], "en");
 
       await runVideoCycle(config, backendDb);
 
@@ -246,7 +236,7 @@ describe("video job execution", () => {
     await withDirectory(async (directory) => {
       const backendDb = testDb.open();
       const config = videoConfig(directory);
-      const draftId = dueDraft(backendDb, directory, ["instagram_reels"], config);
+      const draftId = dueDraft(backendDb, directory, ["instagram_reels"]);
       containerReadyError = new publishers.InstagramContainerProcessingError("Instagram container IN_PROGRESS");
 
       await runVideoCycle(config, backendDb);
@@ -266,9 +256,14 @@ describe("video job execution", () => {
       const backendDb = testDb.open();
       const config = videoConfig(directory, {
         ZERNIO_API_KEY: "z".repeat(16),
-        PUBLISH_PROVIDER_ROUTES_JSON: '{"instagram_reels":{"provider":"zernio","accountId":"maru-account"}}',
       });
-      const draftId = dueDraft(backendDb, directory, ["instagram_reels"], config);
+      registerChannel(backendDb, {
+        platform: "instagram",
+        locale: "ru",
+        provider: "zernio",
+        providerAccountId: "maru-account",
+      });
+      const draftId = dueDraft(backendDb, directory, ["instagram_reels"]);
 
       await runVideoCycle(config, backendDb);
 
@@ -284,7 +279,7 @@ describe("video job execution", () => {
     await withDirectory(async (directory) => {
       const backendDb = testDb.open();
       const config = videoConfig(directory);
-      const draftId = dueDraft(backendDb, directory, ["youtube_shorts"], config);
+      const draftId = dueDraft(backendDb, directory, ["youtube_shorts"]);
       rmSync(path.join(directory, "clip-youtube_shorts.mp4"), { force: true });
 
       await runVideoCycle(config, backendDb);
@@ -301,7 +296,7 @@ describe("video job execution", () => {
     await withDirectory(async (directory) => {
       const backendDb = testDb.open();
       const config = videoConfig(directory);
-      const draftId = dueDraft(backendDb, directory, ["youtube_shorts"], config);
+      const draftId = dueDraft(backendDb, directory, ["youtube_shorts"]);
       // Only the reminder should run: scheduling creates prepare and publish
       // jobs, and a reminder is queued separately.
       backendDb.sqlite.prepare("DELETE FROM video_jobs").run();
@@ -329,7 +324,7 @@ describe("video job execution", () => {
     await withDirectory(async (directory) => {
       const backendDb = testDb.open();
       const config = videoConfig(directory);
-      const draftId = dueDraft(backendDb, directory, ["youtube_shorts"], config);
+      const draftId = dueDraft(backendDb, directory, ["youtube_shorts"]);
       cancelVideo(backendDb, draftId, 24);
 
       await runVideoCycle(config, backendDb);
@@ -343,7 +338,7 @@ describe("video job execution", () => {
     await withDirectory(async (directory) => {
       const backendDb = testDb.open();
       const config = videoConfig(directory);
-      dueDraft(backendDb, directory, ["youtube_shorts"], config);
+      dueDraft(backendDb, directory, ["youtube_shorts"]);
       const disabled = { ...config, studio: { ...config.studio, modules: { ...config.studio.modules, video_posting: false } } };
 
       expect(await runVideoCycle(disabled, backendDb)).toBe(0);

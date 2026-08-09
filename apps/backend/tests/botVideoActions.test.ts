@@ -8,16 +8,24 @@ import { loadConfig } from "../src/foundation/config.js";
 import { setTelegramVideoCard } from "../src/interfaces/telegram/control-cards.js";
 import { videoPreview } from "../src/interfaces/telegram/video-preview.js";
 import { createVideoDraft, replaceVideoTargets, scheduleVideo } from "../src/publishing/video-service.js";
+import { registerTestChannels, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: BackendDb | null = null;
+
+function openVideoDb(): BackendDb {
+  const memory = ":memory:";
+  const db = openBackendDb(memory);
+  registerTestChannels(db, VIDEO_TEST_CHANNELS);
+  return db;
+}
 
 afterEach(() => {
   backendDb?.close();
   backendDb = null;
 });
 
-const config = loadConfig({ ADMIN_IDS: "42" });
+const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
 
 function draftCard(status: string) {
   return {
@@ -50,7 +58,7 @@ describe("video card controls", () => {
   });
 
   it("offers Instagram metadata editing while a scheduled target is still waiting", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openVideoDb();
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
     scheduleVideo(
@@ -58,7 +66,6 @@ describe("video card controls", () => {
       draftId,
       { instagram_reels: new Date(Date.now() + 3_600_000) },
       { prepareLeadMinutes: 10, reminderMinutes: 15 },
-      config,
     );
     let options: { reply_markup?: unknown } | undefined;
     const ctx = {
@@ -81,7 +88,7 @@ describe("video card controls", () => {
 
 describe("video callback dispatch", () => {
   it("reports an unrouted video callback instead of answering it silently", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openVideoDb();
     const answers: Array<{ text?: string } | undefined> = [];
     const ctx = {
       callbackQuery: { data: "p:video:not_a_route:7" },
@@ -100,7 +107,7 @@ describe("video callback dispatch", () => {
   });
 
   it("routes namespaced callbacks to the video handler", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openVideoDb();
     const draftId = createVideoDraft(backendDb, 42, "clip.mp4", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
 
@@ -119,8 +126,8 @@ describe("video callback dispatch", () => {
   });
 
   it("asks every platform for its own time before confirming a per-target schedule", async () => {
-    backendDb = openBackendDb(":memory:");
-    const bothPlatforms = loadConfig({ ADMIN_IDS: "42" });
+    backendDb = openVideoDb();
+    const bothPlatforms = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
     bothPlatforms.studio.modules.youtube = true;
     bothPlatforms.studio.modules.instagram = true;
     const draftId = createVideoDraft(backendDb, 42, "clip.mp4", 24);
@@ -181,7 +188,7 @@ describe("video callback dispatch", () => {
   });
 
   it("rejects a callback from an older video dialog revision", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openVideoDb();
     const first = saveVideoState(backendDb, 42, { draftId: 7, step: "targets", selected: [], data: {} });
     saveVideoState(backendDb, 42, { ...first, selected: ["youtube_shorts"] });
     const answers: Array<{ text?: string } | undefined> = [];
@@ -197,7 +204,7 @@ describe("video callback dispatch", () => {
   });
 
   it("opens target scheduling after a previous video dialog was retired", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openVideoDb();
     const draftId = createVideoDraft(backendDb, 42, "clip.mp4", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
     const previous = saveVideoState(backendDb, 42, {
@@ -232,7 +239,7 @@ describe("video callback dispatch", () => {
   });
 
   it("accepts cancellation from a standalone reminder even when the card was replaced", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openVideoDb();
     const draftId = createVideoDraft(backendDb, 42, "clip.mp4", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
     setTelegramVideoCard(backendDb, draftId, 100, 10);

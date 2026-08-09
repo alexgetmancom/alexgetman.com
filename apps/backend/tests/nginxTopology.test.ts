@@ -17,11 +17,14 @@ describe("production nginx topology", () => {
 
     expect(stream).toContain("proxy_protocol on;");
     expect(tls.match(/listen 127\.0\.0\.1:4443 ssl proxy_protocol;/g)).toHaveLength(2);
-    expect(tls.match(/real_ip_header proxy_protocol;/g)).toHaveLength(2);
+    expect(tls.match(/real_ip_header proxy_protocol;/g)).toHaveLength(3);
     expect(tls).toContain("proxy_set_header X-Real-IP $remote_addr;");
     expect(http).toContain("listen 127.0.0.1:81;");
     expect(http).toContain("location = /feed.json");
     expect(http).toContain("location = /feed.xml");
+    expect(http.match(/return 301 https:\/\/alexgetman\.com\/sitemap\.xml;/g)).toHaveLength(2);
+    expect(http).toContain("location = /ru/60/codex-reset-the-limits-again/");
+    expect(http).toContain("return 301 https://alexgetman.com/ru/60/codex-снова-сбросил-лимиты/$is_args$args;");
     expect(headers).toContain("proxy_set_header X-Real-IP $http_x_real_ip;");
     expect(headers).toContain("proxy_set_header X-Forwarded-For $http_x_forwarded_for;");
   });

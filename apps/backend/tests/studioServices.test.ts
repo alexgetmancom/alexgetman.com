@@ -28,7 +28,7 @@ describe("Studio service boundaries", () => {
         filename: "first.jpg",
         contentType: "image/jpeg",
         bytes,
-        source: "mcp_upload",
+        source: "ops_upload",
       });
       const source = path.join(directory, "incoming.jpg");
       fs.writeFileSync(source, bytes);
@@ -68,22 +68,19 @@ describe("Studio service boundaries", () => {
     }
   });
 
-  it("connects channels through the shared channel service without exposing credentials", () => {
+  it("registers channels through the shared channel service", () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ CHANNEL_SECRET_KEY: "channel-secret-16" });
+      const config = loadConfig({});
       const channels = createStudioServices(backendDb, config).channels;
       const result = channels.connect({
         platform: "instagram",
         locale: "en",
         provider: "native",
         accountId: "account-1",
-        credentials: { accessToken: "secret-token", userId: "account-1" },
       });
-      expect(result.channel.source).toBe("interface");
-      expect(result.stored).toEqual(["accessToken", "userId"]);
-      expect(channels.list()).toMatchObject([{ id: "instagram_en", providerAccountId: "account-1" }]);
-      expect(JSON.stringify(channels.list())).not.toContain("secret-token");
+      expect(result.source).toBe("interface");
+      expect(channels.list().find((channel) => channel.id === "instagram_en")).toMatchObject({ providerAccountId: "account-1" });
     } finally {
       backendDb.close();
     }

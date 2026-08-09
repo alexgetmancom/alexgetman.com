@@ -1,6 +1,5 @@
 import type { BackendDb } from "../db/client.js";
 import {
-  BOOTSTRAP_VIDEO_DESTINATIONS,
   VIDEO_TARGET_PLATFORM,
   VIDEO_TARGETS,
   type VideoDestination,
@@ -14,10 +13,7 @@ import { listChannels } from "./registry.js";
  * registry.
  *
  * Every panel that names a channel, badges its language or counts its followers
- * asks here, so connecting an account is enough to make it appear. The static
- * catalogue is used only while the registry is empty — an un-bootstrapped
- * database or a fixture — because a hardcoded list is exactly what made adding
- * a destination a code change.
+ * asks here, so connecting an account is enough to make it appear.
  *
  * The profile key is the connection id (`youtube_ru`, `instagram_en`), which is
  * also the key its audience snapshots are recorded under. That is not a
@@ -26,19 +22,24 @@ import { listChannels } from "./registry.js";
  */
 export function videoDestinations(backendDb: BackendDb): VideoDestination[] {
   const channels = listChannels(backendDb).filter((channel) => VIDEO_PLATFORM_TARGET[channel.platform]);
-  if (!channels.length) return [...BOOTSTRAP_VIDEO_DESTINATIONS];
-  return channels.map((channel) => ({
-    target: VIDEO_PLATFORM_TARGET[channel.platform] as VideoTarget,
-    locale: (channel.locale === "en" ? "en" : "ru") as VideoLocale,
-    label: channel.label,
-    profile: channel.id,
-  }));
+  return channels
+    .map((channel) => ({
+      target: VIDEO_PLATFORM_TARGET[channel.platform] as VideoTarget,
+      locale: (channel.locale === "en" ? "en" : "ru") as VideoLocale,
+      label: channel.label,
+      profile: channel.id,
+    }))
+    .sort(
+      (left, right) =>
+        VIDEO_TARGETS.indexOf(left.target) - VIDEO_TARGETS.indexOf(right.target) ||
+        (left.locale === right.locale ? 0 : left.locale === "ru" ? -1 : 1),
+    );
 }
 
 /** Platforms the video pipeline can publish to, keyed by the registry's platform
  * name. A platform absent from here has no target to be delivered through, so a
  * channel for it would be a connection that never publishes. */
-export const VIDEO_PLATFORM_TARGET: Record<string, VideoTarget | undefined> = Object.fromEntries(
+const VIDEO_PLATFORM_TARGET: Record<string, VideoTarget | undefined> = Object.fromEntries(
   Object.entries(VIDEO_TARGET_PLATFORM).map(([target, platform]) => [platform, target]),
 ) as Record<string, VideoTarget | undefined>;
 

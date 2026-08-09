@@ -59,7 +59,7 @@ export function mcpStudioActor(request: Request, config: BackendConfig): StudioA
   return actorFromStudioToken(config, token, safeEqual);
 }
 
-export function safeEqual(left: string, right: string): boolean {
+function safeEqual(left: string, right: string): boolean {
   if (!left || !right) return false;
   const leftBuffer = Buffer.from(left);
   const rightBuffer = Buffer.from(right);

@@ -8,9 +8,10 @@ import type { BackendConfig } from "../foundation/config.js";
 import { isTargetAuthBlocked } from "../observability/auth-circuit.js";
 import { nextRetryAt } from "../publishing/errors.js";
 import { reconcilePublication } from "../publishing/publication-reconciliation.js";
-import { workerId } from "../publishing/queue.js";
+import { PUBLISH_CLAIM_LIMIT, workerId } from "../publishing/queue.js";
 import { refreshVideoDraftStatus } from "../publishing/video-data.js";
-import { platformConfig, verifyPlatformPublication } from "./ports/social.js";
+import { verifyPlatformPublication } from "./platform-adapters.js";
+import { platformConfig } from "./platform-routing.js";
 import { verifyYouTubeVideo } from "./video-publishers.js";
 import { verifyZernioPost } from "./zernio.js";
 
@@ -41,7 +42,7 @@ export async function runPublicationReconciliation(
         or(isNull(publishJobs.lockedBy), isNull(publishJobs.lockedAt), lt(publishJobs.lockedAt, staleBefore)),
       ),
     )
-    .limit(config.PUBLISH_CLAIM_LIMIT)
+    .limit(PUBLISH_CLAIM_LIMIT)
     .all();
   for (const row of ordinary) {
     const claimed = unsafeDb(backendDb)
@@ -106,7 +107,7 @@ export async function runPublicationReconciliation(
         .where(and(eq(postTargets.postKey, row.target.postKey), eq(postTargets.target, row.target.target)))
         .run();
     });
-    if (row.job.postId != null) reconcilePublication(backendDb, row.job.postId);
+    reconcilePublication(backendDb, row.job.postId);
     recordDomainEvent(backendDb.events, {
       ref: row.target.postKey,
       target: row.target.target,
@@ -132,7 +133,7 @@ export async function runPublicationReconciliation(
         or(isNull(videoJobs.lockedBy), isNull(videoJobs.lockedAt), lt(videoJobs.lockedAt, staleBefore)),
       ),
     )
-    .limit(config.PUBLISH_CLAIM_LIMIT)
+    .limit(PUBLISH_CLAIM_LIMIT)
     .all();
   for (const row of videos) {
     const claimed = unsafeDb(backendDb)

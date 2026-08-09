@@ -9,7 +9,7 @@ describe("weekly analytics summary", () => {
   it("uses one Studio-wide setting, sends to every administrator, and does not require video posting", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ ADMIN_IDS: "42,7" });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42,7" });
       settingsService(backendDb).setWeeklyDigest({ enabled: true, weekday: 1 });
       const sent: number[] = [];
       const bot = {
@@ -33,7 +33,7 @@ describe("weekly analytics summary", () => {
   it("waits until 21:00 in the Studio timezone", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ ADMIN_IDS: "42" });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
       settingsService(backendDb).setWeeklyDigest({ weekday: 1 });
       const bot = { api: { sendMessage: async () => undefined } } as unknown as Bot;
 

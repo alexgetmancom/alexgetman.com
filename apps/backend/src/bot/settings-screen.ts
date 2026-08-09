@@ -52,17 +52,6 @@ const TIMEZONE_OPTIONS = [
   ["America/Los_Angeles", "America/Los_Angeles"],
 ] as const;
 
-/**
- * A native connection being assembled, one value per message.
- *
- * Native accounts each carry their own secret, unlike Zernio accounts which
- * share one deployment-wide key and differ only by id. Collecting them here is
- * what makes "connect a channel" an action in an interface rather than a
- * redeploy — the values land in the encrypted per-channel store.
- */
-type PendingConnection = { platform: string; locale: "ru" | "en"; remaining: string[]; collected: Record<string, string> };
-const pendingConnections = new Map<number, PendingConnection>();
-
 /** Settings is an interface screen: it owns its callbacks and the small
  * transient input state, keeping the root Telegram router transport-only. */
 export async function handleSettingsMessage(
@@ -76,7 +65,6 @@ export async function handleSettingsMessage(
   if (await collectXAnalyticsCsv(ctx, backendDb, config, actorId, settingsMenu)) return true;
   if (await collectThreadsFollowers(ctx, backendDb, actorId, text, settingsMenu)) return true;
   if (await collectTimezone(ctx, backendDb, config, actorId, text, settingsMenu)) return true;
-  if (await collectChannelCredential(ctx, backendDb, config, actorId, text)) return true;
   if (!createStudioServices(backendDb, config).settings.saveYoutubeSignature(actorId, text)) return false;
   const locale = botLocale(backendDb, actorId);
   await ctx.reply(t(locale, "settings.youtube-saved"));
@@ -124,14 +112,6 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
         .text("➕ Zernio · RU", (ctx) => discoverZernio(ctx, actorId, "ru", locale))
         .text("➕ Zernio · EN", (ctx) => discoverZernio(ctx, actorId, "en", locale))
         .row();
-    // Native accounts are offered for every platform the pipeline publishes to,
-    // regardless of what the deployment's variables happen to hold.
-    for (const platform of studioChannels.nativeConnectablePlatforms()) {
-      range
-        .text(`➕ ${channelPlatformLabel(platform)} · RU`, (ctx) => startNativeConnection(ctx, actorId, platform, "ru", locale))
-        .text(`➕ ${channelPlatformLabel(platform)} · EN`, (ctx) => startNativeConnection(ctx, actorId, platform, "en", locale))
-        .row();
-    }
     range.back(t(locale, "settings.back-to-publishing"), async (ctx) => {
       discoveredAccounts.delete(actorId);
       await ctx.answerCallbackQuery();
@@ -405,32 +385,6 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
   settings.register(general);
   return settings;
 
-  async function startNativeConnection(
-    ctx: Context & MenuFlavor,
-    actorId: number,
-    platform: string,
-    channelLocale: "ru" | "en",
-    locale: ReturnType<typeof botLocale>,
-  ): Promise<void> {
-    if (!config.CHANNEL_SECRET_KEY) {
-      await ctx.answerCallbackQuery({ text: t(locale, "settings.channel-no-secret-key"), show_alert: true });
-      return;
-    }
-    const shape = createStudioServices(backendDb, config).channels.credentialShape(platform, "native", channelLocale);
-    if (!shape.length) {
-      await ctx.answerCallbackQuery({ text: t(locale, "settings.channels-error"), show_alert: true });
-      return;
-    }
-    pendingConnections.set(actorId, {
-      platform,
-      locale: channelLocale,
-      remaining: shape.map((field) => field.name),
-      collected: {},
-    });
-    await ctx.answerCallbackQuery();
-    await askNextCredential(ctx, actorId, locale);
-  }
-
   async function discoverZernio(
     ctx: Context & MenuFlavor,
     actorId: number,
@@ -599,19 +553,6 @@ function weeklyDigestText(backendDb: BackendDb, config: BackendConfig, locale: R
   });
 }
 
-async function askNextCredential(ctx: Context, actorId: number, locale: ReturnType<typeof botLocale>): Promise<void> {
-  const pending = pendingConnections.get(actorId);
-  const field = pending?.remaining[0];
-  if (!pending || !field) return;
-  await ctx.reply(
-    t(locale, "settings.channel-ask", {
-      field,
-      channel: `${channelPlatformLabel(pending.platform)} ${pending.locale.toUpperCase()}`,
-    }),
-    { parse_mode: "Markdown" },
-  );
-}
-
 /**
  * A message that is navigation rather than input.
  *
@@ -646,67 +587,6 @@ async function collectTimezone(
   } catch {
     await ctx.reply(t(locale, "err.timezone-invalid"));
   }
-  return true;
-}
-
-/**
- * Consumes one credential value from a message, or reports that this message is
- * not part of a connection.
- *
- * The message is deleted right after the value is stored: a publishing token
- * left in the chat history is readable by anyone who later gets to the account,
- * and unlike the encrypted store, Telegram is not where it belongs.
- */
-async function collectChannelCredential(
-  ctx: Context,
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  text: string,
-): Promise<boolean> {
-  const pending = pendingConnections.get(actorId);
-  if (!pending) return false;
-  const locale = botLocale(backendDb, actorId);
-  if (text === "/cancel") {
-    pendingConnections.delete(actorId);
-    await ctx.reply(t(locale, "settings.channel-cancel"));
-    return true;
-  }
-  if (isNavigationMessage(text)) {
-    pendingConnections.delete(actorId);
-    return false;
-  }
-  if (!text) {
-    await askNextCredential(ctx, actorId, locale);
-    return true;
-  }
-  const field = pending.remaining.shift();
-  if (!field) return true;
-  pending.collected[field] = text;
-  const messageId = ctx.message?.message_id;
-  if (messageId)
-    try {
-      await ctx.api.deleteMessage(ctx.chat?.id ?? actorId, messageId);
-    } catch {
-      // Telegram refuses deletions older than 48 hours and in some chat types.
-      // The value is already stored; failing to tidy up is not worth an error.
-    }
-  if (pending.remaining.length) {
-    await ctx.reply(t(locale, "settings.channel-stored", { remaining: pending.remaining.length }));
-    await askNextCredential(ctx, actorId, locale);
-    return true;
-  }
-  pendingConnections.delete(actorId);
-  const label = `${channelPlatformLabel(pending.platform)} ${pending.locale.toUpperCase()}`;
-  const channel = createStudioServices(backendDb, config).channels.connect({
-    platform: pending.platform,
-    locale: pending.locale,
-    provider: "native",
-    label,
-    ...(pending.collected.userId ? { accountId: pending.collected.userId } : {}),
-    credentials: pending.collected,
-  });
-  await ctx.reply(t(locale, "settings.channel-ready", { channel: channel.channel.label }));
   return true;
 }
 

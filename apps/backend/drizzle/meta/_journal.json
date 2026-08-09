@@ -36,6 +36,13 @@
       "when": 1786301147000,
       "tag": "0004_drop_unused_likes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1786302000000,
+      "tag": "0005_canonicalize_publication_targets",
+      "breakpoints": true
     }
   ]
 }

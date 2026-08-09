@@ -122,9 +122,6 @@ function hasUnscheduledLocale(
 ): boolean {
   const parsed = parseJsonValue(targetsJson);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
-  // Do not expand legacy rows with parseTargets here: its default preset adds
-  // every current locale, which would make an old one-locale row look like a
-  // partially scheduled RU+EN publication.
   const targets = backendDb.studioQueue.effectivePostTargets(
     Object.fromEntries(Object.entries(parsed as Record<string, unknown>).map(([target, enabled]) => [target, Boolean(enabled)])),
   );

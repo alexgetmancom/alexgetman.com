@@ -1,7 +1,7 @@
-import { TARGETS } from "../../botTargets.js";
+import { isSiteTarget, TARGETS } from "../../botTargets.js";
 import { effectivePostTargets } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
-import { parseTargets, siteTargetForReason } from "../../publishing/targets.js";
+import { parseTargets } from "../../publishing/targets.js";
 
 export type PostProgressStatus = "published" | "publishing" | "failed" | "verification_required" | "waiting" | "cancelled";
 export type PostProgressState = {
@@ -18,8 +18,7 @@ export function postProgressState(backendDb: BackendDb, draftId: number): PostPr
   const statuses = new Map<string, { status: PostProgressStatus; error: string | null }>();
   for (const job of progress.publishJobs) statuses.set(job.target, normalize(job.status, job.lastError));
   for (const job of progress.siteJobs) {
-    const target = siteTargetForReason(job.reason);
-    if (target) statuses.set(target, normalize(job.status, job.lastError));
+    if (isSiteTarget(job.reason)) statuses.set(job.reason, normalize(job.status, job.lastError));
   }
   const targets = effectivePostTargets(backendDb, parseTargets(progress.draft.targetsJson));
   const items = TARGETS.filter(({ id }) => targets[id]).map(({ id: target, label, locale }) => {

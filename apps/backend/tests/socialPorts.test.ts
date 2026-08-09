@@ -61,7 +61,7 @@ mock.module("../src/delivery/social/x.js", () => ({
 mock.module("../src/delivery/social/instagram.js", () => ({
   publishInstagramStory: async (...args: Parameters<typeof real.publishInstagramStory>) => {
     if (!intercepting) return real.publishInstagramStory(...args);
-    calls.push({ target: "instagram", payload: args[0], token: args[1].INSTAGRAM_ACCESS_TOKEN, userId: args[1].INSTAGRAM_USER_ID });
+    calls.push({ target: "instagram", payload: args[0], token: args[2].accessToken, userId: args[2].userId });
     return { ok: true, id: "ig" };
   },
 }));

@@ -38,7 +38,7 @@ describe("daily editorial inbox", () => {
           }),
           { status: 200 },
         );
-      const config = loadConfig({ ADMIN_IDS: "42", DEEPSEEK_API_KEY: "key", EDITORIAL_INBOX_HOUR_MSK: "10" });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", DEEPSEEK_API_KEY: "key", EDITORIAL_INBOX_HOUR_MSK: "10" });
       const now = new Date("2026-07-20T07:30:00.000Z");
 
       expect(await sendDailyEditorialInbox(config, backendDb, bot, now, fetchImpl as unknown as typeof fetch)).toBe(true);
@@ -69,7 +69,7 @@ describe("daily editorial inbox", () => {
         return new Response(JSON.stringify({ choices: [{ message: { content: '{"items":[]}' } }] }), { status: 200 });
       }) as unknown as typeof fetch;
       const bot: EditorialInboxBot = { api: { sendMessage: async () => undefined } };
-      const config = loadConfig({ ADMIN_IDS: "42", DEEPSEEK_API_KEY: "key", EDITORIAL_INBOX_HOUR_MSK: "10" });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", DEEPSEEK_API_KEY: "key", EDITORIAL_INBOX_HOUR_MSK: "10" });
 
       await sendDailyEditorialInbox(config, backendDb, bot, new Date("2026-07-20T07:30:00.000Z"), fetchImpl);
 
@@ -81,7 +81,7 @@ describe("daily editorial inbox", () => {
   it("waits for the configured Moscow delivery hour", async () => {
     await withDb(async (backendDb) => {
       const bot: EditorialInboxBot = { api: { sendMessage: async () => undefined } };
-      const config = loadConfig({ ADMIN_IDS: "42", DEEPSEEK_API_KEY: "key", EDITORIAL_INBOX_HOUR_MSK: "10" });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", DEEPSEEK_API_KEY: "key", EDITORIAL_INBOX_HOUR_MSK: "10" });
       expect(await sendDailyEditorialInbox(config, backendDb, bot, new Date("2026-07-20T06:30:00.000Z"))).toBe(false);
     });
   });

@@ -51,17 +51,7 @@ export function selectMediaForTarget<T>(target: string, media: readonly T[]): T[
 }
 
 function mediaRuleForTarget(target: string) {
-  const canonicalTarget =
-    target === "threads"
-      ? "threads_ru"
-      : target === "twitter"
-        ? "x"
-        : target === "instagram_story"
-          ? "instagram_stories_ru"
-          : target === "telegram_story"
-            ? "telegram_stories"
-            : target;
-  return platformProfile(canonicalTarget)?.media;
+  return platformProfile(target)?.media;
 }
 
 function all(target: string, inputCount: number): MediaPolicy {

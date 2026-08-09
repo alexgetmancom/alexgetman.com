@@ -44,7 +44,7 @@ export async function sendWeeklyAnalyticsSummary(
   // repeated delivery attempts to the other administrators on every worker tick.
   markSynced(backendDb, key, null, owner);
   const reports = new Map<string, string>();
-  for (const actorId of config.ADMIN_IDS) {
+  for (const actorId of config.CONTROLLER_ADMIN_IDS) {
     try {
       const locale = botLocale(backendDb, actorId);
       let report = reports.get(locale);

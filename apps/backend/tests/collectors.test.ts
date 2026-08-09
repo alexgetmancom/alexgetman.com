@@ -8,7 +8,7 @@ import type { MetricTask } from "../src/analytics/collection/metric-schedule.js"
 import { loadConfig } from "../src/foundation/config.js";
 
 const config = loadConfig({
-  ADMIN_IDS: "42",
+  CONTROLLER_ADMIN_IDS: "42",
   CONTROLLER_BOT_TOKEN: "token",
   X_CONSUMER_KEY: "ck",
   X_CONSUMER_SECRET: "cs",
@@ -162,7 +162,7 @@ describe("collectThreads", () => {
   });
 
   it("falls back to the Russian token when no English one is configured", async () => {
-    const ruOnly = loadConfig({ ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", THREADS_ACCESS_TOKEN: "ru-token" });
+    const ruOnly = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", THREADS_ACCESS_TOKEN: "ru-token" });
     const { fetch: impl, calls } = recordingFetch(() => json({ data: [] }));
     await collectThreads(task({ target: "threads_en", url: "https://x.test/p" }), ruOnly, impl);
 
@@ -185,7 +185,7 @@ describe("collectThreads", () => {
   });
 
   it("refuses to call out with no token or no ids", async () => {
-    const noToken = loadConfig({ ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t" });
+    const noToken = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t" });
     const { fetch: impl, calls } = recordingFetch(() => json({ data: [] }));
 
     await expect(collectThreads(task({ target: "threads_ru" }), noToken, impl)).rejects.toThrow("missing_threads_token_or_id");
@@ -252,7 +252,7 @@ describe("collectInstagramStory", () => {
   });
 
   it("routes an IG-prefixed token to graph.instagram.com and anything else to graph.facebook.com", async () => {
-    const igConfig = loadConfig({ ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", INSTAGRAM_EN_ACCESS_TOKEN: "IGtoken" });
+    const igConfig = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", INSTAGRAM_EN_ACCESS_TOKEN: "IGtoken" });
     const ig = recordingFetch(() => json({ data: [] }));
     await collectInstagramStory(storyTask(), igConfig, ig.fetch);
     expect(ig.calls[0]?.url).toStartWith("https://graph.instagram.com/");
@@ -264,7 +264,7 @@ describe("collectInstagramStory", () => {
 
   it("prefers the locale token over the shared one", async () => {
     const perLocale = loadConfig({
-      ADMIN_IDS: "42",
+      CONTROLLER_ADMIN_IDS: "42",
       CONTROLLER_BOT_TOKEN: "t",
       INSTAGRAM_ACCESS_TOKEN: "shared",
       INSTAGRAM_RU_ACCESS_TOKEN: "ru-only",
@@ -276,7 +276,7 @@ describe("collectInstagramStory", () => {
   });
 
   it("refuses to call out with no token or no story id", async () => {
-    const noToken = loadConfig({ ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t" });
+    const noToken = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t" });
     const { fetch: impl, calls } = recordingFetch(() => json({ data: [] }));
 
     await expect(collectInstagramStory(storyTask(), noToken, impl)).rejects.toThrow("missing_instagram_story_token_or_id");

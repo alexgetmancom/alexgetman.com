@@ -113,7 +113,6 @@ try {
     "-e",
     "FEED_JSON=/data/feed.json",
     "-e",
-    "SITE_METRICS_JSON=/data/metrics.json",
     "-e",
     "SITE_CONTENT_METRICS_JSON=/data/content-metrics.json",
     "-e",
@@ -122,12 +121,6 @@ try {
     "VIDEO_MEDIA_DIR=/data/video-media",
     "-e",
     "STUDIO_CONFIG=/app/studio.yaml",
-    // No credentials here: the bot and story publishing must stay off, or the
-    // smoke run would reach out to Telegram from CI.
-    "-e",
-    "ENABLE_BOT_POLLING=false",
-    "-e",
-    "ENABLE_TELEGRAM_STORIES=false",
     "-e",
     "BIND_HOST=0.0.0.0",
     "-e",

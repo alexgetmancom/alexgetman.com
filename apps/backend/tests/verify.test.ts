@@ -106,12 +106,12 @@ describe("verifyPostTargets", () => {
     await withDb(async (backendDb) => {
       insertPost(backendDb, { postKey: "post:1", postId: 1, messageId: 1 });
       insertTarget(backendDb, { postKey: "post:1", target: "instagram", status: "published", url: "https://example.test/gone" });
-      insertTarget(backendDb, { postKey: "post:1", target: "threads", status: "published", url: "https://example.test/deleted" });
+      insertTarget(backendDb, { postKey: "post:1", target: "threads_ru", status: "published", url: "https://example.test/deleted" });
       stubFetch((url) => new Response(null, { status: url.endsWith("/gone") ? 404 : 410 }));
 
       expect(await verifyPostTargets(backendDb, "post:1")).toMatchObject([
         { target: "instagram", ok: false, reason: "http_404" },
-        { target: "threads", ok: false, reason: "http_410" },
+        { target: "threads_ru", ok: false, reason: "http_410" },
       ]);
     });
   });

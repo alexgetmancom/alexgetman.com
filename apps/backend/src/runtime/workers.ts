@@ -7,7 +7,7 @@ import { createPlatformPorts } from "../delivery/ports/social.js";
 import type { DeliveryPorts } from "../delivery/ports.js";
 import { runPublicationReconciliation } from "../delivery/publication-reconciliation.js";
 import { runDeliveryPublishCycle } from "../delivery/publish-workflow.js";
-import { recoverStaleSiteJobs, runSiteJobCycle } from "../delivery/site-jobs.js";
+import { recoverStaleSiteJobs, runSiteJobCycle, SITE_JOB_RESTART_LOCK_GRACE_SECONDS } from "../delivery/site-jobs.js";
 import { runVideoCycle } from "../delivery/video-worker.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
@@ -18,6 +18,11 @@ import { observabilityService } from "../observability/service.js";
 import { pruneOperationalHistory, withMaintenanceLock } from "../operations/maintenance.js";
 import { recoverStalePublishJobs } from "../publishing/queue.js";
 import { recoverStoryCardJobs, runStoryCardCycle } from "../story-cards/worker.js";
+
+const WATCHDOG_INTERVAL_SECONDS = 60;
+const SITE_JOB_POLL_INTERVAL_SECONDS = 10;
+const PROFILE_POLL_INTERVAL_SECONDS = 60;
+const PUBLISH_RESTART_LOCK_GRACE_SECONDS = 30;
 
 /** Delivery-only publish cycle. Interfaces learn about settled work through durable events. */
 export async function runPublishCycle(
@@ -36,17 +41,13 @@ export function runPublishWatchdog(config: BackendConfig, backendDb: BackendDb):
 
 /** Starts domain workers only. It deliberately has no Telegram or HTTP dependency. */
 export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): ScheduledLoop[] {
-  if (!config.ENABLE_WORKERS) {
-    log("warn", "Workers are disabled by ENABLE_WORKERS");
-    return [];
-  }
   // Deployment/server restarts terminate the old process but leave its durable
   // locks behind. Do not wait the ordinary 15-minute crash TTL before the new
   // process can resume the same targets; the short grace still avoids racing a
   // request that was only just interrupted at the provider boundary.
-  const recoveredAtStartup = recoverStalePublishJobs(backendDb, config, config.PUBLISH_RESTART_LOCK_GRACE_SECONDS);
+  const recoveredAtStartup = recoverStalePublishJobs(backendDb, config, PUBLISH_RESTART_LOCK_GRACE_SECONDS);
   if (recoveredAtStartup) log("warn", "recovered interrupted publishing locks on worker startup", { recovered: recoveredAtStartup });
-  const recoveredSiteAtStartup = recoverStaleSiteJobs(config, backendDb, config.SITE_JOB_RESTART_LOCK_GRACE_SECONDS);
+  const recoveredSiteAtStartup = recoverStaleSiteJobs(backendDb, SITE_JOB_RESTART_LOCK_GRACE_SECONDS);
   if (recoveredSiteAtStartup)
     log("warn", "recovered interrupted site build locks on worker startup", { recovered: recoveredSiteAtStartup });
   const recoveredStoryCardsAtStartup = recoverStoryCardJobs(backendDb);
@@ -90,7 +91,7 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
           claimed,
         });
     }),
-    startWorkerLoop("publish-watchdog", config.WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
+    startWorkerLoop("publish-watchdog", WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
       const recovered = runPublishWatchdog(config, backendDb);
       if (recovered) log("warn", "recovered stale publishing locks", { recovered });
     }),
@@ -132,7 +133,7 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
                 checked,
               });
           }),
-          startWorkerLoop("creator-analytics", config.PROFILE_POLL_INTERVAL_SECONDS * 1000, async () => {
+          startWorkerLoop("creator-analytics", PROFILE_POLL_INTERVAL_SECONDS * 1000, async () => {
             const startedAt = Date.now();
             const creators = await runAnalyticsCycle(config, backendDb);
             if (creators)
@@ -157,7 +158,7 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
       : []),
     ...(config.studio.modules.site
       ? [
-          startWorkerLoop("site", config.SITE_JOB_POLL_INTERVAL_SECONDS * 1000, async () => {
+          startWorkerLoop("site", SITE_JOB_POLL_INTERVAL_SECONDS * 1000, async () => {
             const startedAt = Date.now();
             const claimed = await runSiteJobCycle(config, backendDb);
             if (claimed)
@@ -172,8 +173,8 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
       : []),
     ...(config.studio.modules.site
       ? [
-          startWorkerLoop("site-watchdog", config.WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
-            const recovered = recoverStaleSiteJobs(config, backendDb);
+          startWorkerLoop("site-watchdog", WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
+            const recovered = recoverStaleSiteJobs(backendDb);
             if (recovered) log("warn", "recovered stale site build locks", { recovered });
           }),
         ]

@@ -16,11 +16,9 @@ import { FIXTURE_JPEG, seedSiteFixture } from "./site-fixture.js";
  * Two non-obvious things this had to work around:
  * - `astro dev` must run under `bun --bun`, not its Node shebang directly —
  *   the backend opens `bun:sqlite`, which Node's ESM loader cannot resolve.
- * - `astro dev` keeps a single background daemon per project directory and
- *   ignores a new `--port` if one is already running (e.g. left over from a
- *   crashed previous run, or a `bun run dev` a human has open). We call
- *   `astro dev stop` before and after to avoid hanging on someone else's
- *   server — don't run this smoke test while you're also using `bun run dev`.
+ * - Astro auto-backgrounds under an AI-agent environment. Setting its internal
+ *   background marker disables that detection; `--ignore-lock` then keeps this
+ *   isolated test in its own foreground process on a random port.
  */
 
 const projectRoot = path.resolve(import.meta.dir, "../../../..");
@@ -38,11 +36,6 @@ let dbDir: string;
 let publicDir: string;
 let server: ReturnType<typeof Bun.spawn> | undefined;
 
-async function stopAnyDaemon(): Promise<void> {
-  const stop = Bun.spawn([astroBin, "dev", "stop"], { cwd: projectRoot, stdout: "ignore", stderr: "ignore" });
-  await stop.exited;
-}
-
 async function waitUntilReady(deadlineMs: number): Promise<void> {
   const deadline = Date.now() + deadlineMs;
   let lastError: unknown;
@@ -50,12 +43,15 @@ async function waitUntilReady(deadlineMs: number): Promise<void> {
     try {
       const response = await fetch(baseUrl, { signal: AbortSignal.timeout(2000) });
       if (response.ok) return;
+      lastError = new Error(`HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
     } catch (error) {
       lastError = error;
     }
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
-  throw new Error(`Dev server did not become ready on ${baseUrl}: ${String(lastError)}`);
+  const stderrStream = server?.stderr;
+  const stderr = server?.exitCode == null || !(stderrStream instanceof ReadableStream) ? "" : await new Response(stderrStream).text();
+  throw new Error(`Dev server did not become ready on ${baseUrl}: ${String(lastError)}${stderr ? `\n${stderr}` : ""}`);
 }
 
 /** Real `<h1>` tags only — Svelte's dev-mode inline `<style>` blocks keep
@@ -66,7 +62,6 @@ function countRealTags(html: string, tag: string): number {
 }
 
 beforeAll(async () => {
-  await stopAnyDaemon();
   dbDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-home-smoke-"));
   const dbPath = path.join(dbDir, "pipeline.db");
   publicDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-home-smoke-media-"));
@@ -74,18 +69,24 @@ beforeAll(async () => {
   // The fixture derives this name from the production naming helper; assert the
   // literal the tests below fetch, so a convention change fails here loudly.
   expect(seeded.imagePaths).toEqual([FIXTURE_IMAGE_PATH]);
-  server = Bun.spawn(["bun", "--bun", astroBin, "dev", "--port", String(port), "--host", host], {
+  server = Bun.spawn(["bun", "--bun", astroBin, "dev", "--ignore-lock", "--port", String(port), "--host", host], {
     cwd: projectRoot,
-    env: { ...process.env, PIPELINE_DB: dbPath, SITE_PUBLIC_DIR: publicDir, ENABLE_WORKERS: "0" },
+    env: {
+      ...process.env,
+      ASTRO_DEV_BACKGROUND: "0",
+      NODE_ENV: "test",
+      PIPELINE_DB: dbPath,
+      SITE_PUBLIC_DIR: publicDir,
+    },
     stdout: "ignore",
-    stderr: "ignore",
+    stderr: "pipe",
   });
   await waitUntilReady(30_000);
 }, 40_000);
 
 afterAll(async () => {
   server?.kill();
-  await stopAnyDaemon();
+  await server?.exited;
   fs.rmSync(dbDir, { recursive: true, force: true });
   fs.rmSync(publicDir, { recursive: true, force: true });
 });

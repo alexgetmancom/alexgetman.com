@@ -27,7 +27,7 @@ function tempRoot(): string {
 }
 
 function config(root: string, overrides: Record<string, string> = {}) {
-  return loadConfig({ ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "bot-token", DATA_DIR: root, ...overrides });
+  return loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "bot-token", DATA_DIR: root, ...overrides });
 }
 
 const JPEG = Buffer.from("jpeg bytes");
@@ -140,7 +140,7 @@ describe("generateStoryMedia source resolution", () => {
 
   it("cannot resolve a file id without a bot token", async () => {
     const root = tempRoot();
-    const config = loadConfig({ ADMIN_IDS: "42", DATA_DIR: root });
+    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", DATA_DIR: root });
 
     await expect(generateStoryMedia([{ type: "photo", file_id: "x" }], 1, "ru", config)).rejects.toThrow(
       "Cannot resolve story source media",

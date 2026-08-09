@@ -5,8 +5,8 @@ export const publishJobs = sqliteTable(
   "publish_jobs",
   {
     jobId: autoId(),
-    postId: integer(),
-    postKey: text(),
+    postId: integer().notNull(),
+    postKey: text().notNull(),
     messageId: integer().notNull(),
     target: text().notNull(),
     status: text().notNull().default("queued"),

@@ -84,7 +84,6 @@ describe("token health probes", () => {
         return jsonResponse({ id: "shared-user" });
       });
       const config = loadConfig({
-        ENABLE_INSTAGRAM_STORIES: "true",
         INSTAGRAM_ACCESS_TOKEN: "EAAtoken",
         INSTAGRAM_USER_ID: "shared-user",
       });

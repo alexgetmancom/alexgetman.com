@@ -361,10 +361,6 @@ export type ChannelStore = {
   disable(id: string, now: string): void;
   hasAny(): boolean;
   find(platform: string, locale: string): ChannelConnectionRecord | null;
-  secrets(channelId: string): Array<{ name: string; valueEncrypted: string }>;
-  saveSecret(input: { channelId: string; name: string; valueEncrypted: string; updatedAt: string }): void;
-  deleteSecrets(channelId: string, name?: string): void;
-  secretNames(channelId: string): string[];
 };
 
 /** Persistence port used by content and Studio use cases. */

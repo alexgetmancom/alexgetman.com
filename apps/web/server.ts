@@ -7,15 +7,7 @@ import { startRuntime, stopRuntime } from "./src/server/runtime.js";
 const runtime = startRuntime();
 if (runtime.bot) {
   await runtime.bot.init();
-  if (runtime.config.ENABLE_BOT_POLLING) {
-    void runtime.bot.start({ onStart: (botInfo) => log("info", "grammY polling started", { username: botInfo.username }) });
-  } else {
-    log("info", "grammY webhook bot initialized");
-  }
-}
-if (runtime.config.RUNTIME_ROLE === "worker") {
-  log("info", "worker runtime started", { loops: runtime.loops.map((loop) => loop.name) });
-  await new Promise<void>(() => {});
+  void runtime.bot.start({ onStart: (botInfo) => log("info", "grammY polling started", { username: botInfo.username }) });
 }
 const entry = process.env.ASTRO_DIST_ENTRY ?? "/app/dist/server/entry.mjs";
 const { handler } = await import(entry);

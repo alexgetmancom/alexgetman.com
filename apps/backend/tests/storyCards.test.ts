@@ -18,9 +18,17 @@ import { discardDraftStoryCards, readyStoryCardMedia, setStoryPublishMode, story
 import { emojiAssetFile, STORY_CARD_EMOJI_LEFT, STORY_CARD_EMOJI_SIZE, storyCardEmojiTop } from "../src/story-cards/svg.js";
 import { runStoryCardCycle } from "../src/story-cards/worker.js";
 import { postService } from "../src/studio/services/posts.js";
+import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 let backendDb: UnsafeBackendDb | null = null;
+
+function openStoryDb(): UnsafeBackendDb {
+  const memory = ":memory:";
+  const db = openBackendDb(memory);
+  registerTestChannels(db, TEXT_TEST_CHANNELS);
+  return db;
+}
 const temporaryDirectories: string[] = [];
 const storyCardAssets = fileURLToPath(new URL("../assets/story-card/", import.meta.url));
 const storyCardRenderer = fileURLToPath(new URL("../src/story-cards/renderer-process.ts", import.meta.url));
@@ -72,7 +80,7 @@ describe("text Story cards", () => {
   });
 
   it("queues RU and EN automatically and renders both through the isolated process", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openStoryDb();
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "story-card-test-"));
     temporaryDirectories.push(directory);
     const config = loadConfig({
@@ -201,11 +209,11 @@ describe("text Story cards", () => {
   });
 
   it("replans a scheduled text post after edited Story cards are ready", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openStoryDb();
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scheduled-story-edit-test-"));
     temporaryDirectories.push(directory);
     const config = loadConfig({
-      ADMIN_IDS: "42",
+      CONTROLLER_ADMIN_IDS: "42",
       DATA_DIR: directory,
       STORY_CARD_DIR: directory,
       STORY_CARD_ASSETS_DIR: storyCardAssets,
@@ -232,11 +240,11 @@ describe("text Story cards", () => {
   }, 20_000);
 
   it("skips Story delivery and notifies the inbox after a card exhausts retries", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openStoryDb();
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "failed-story-card-test-"));
     temporaryDirectories.push(directory);
     const config = loadConfig({
-      ADMIN_IDS: "42",
+      CONTROLLER_ADMIN_IDS: "42",
       DATA_DIR: directory,
       STORY_CARD_DIR: directory,
       STORY_CARD_ASSETS_DIR: storyCardAssets,
@@ -265,14 +273,14 @@ describe("text Story cards", () => {
   }, 20_000);
 
   it("stores the final bundle decision durably", () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openStoryDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Text", textEn: "Text", entities: [], media: [] });
     setStoryPublishMode(backendDb, draftId, "all");
     expect(backendDb.db.select().from(drafts).where(eq(drafts.id, draftId)).get()?.storyPublishMode).toBe("all");
   });
 
   it("backfills a published site's empty media without requeueing social delivery", async () => {
-    backendDb = openBackendDb(":memory:");
+    backendDb = openStoryDb();
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "story-card-backfill-test-"));
     temporaryDirectories.push(directory);
     const config = loadConfig({

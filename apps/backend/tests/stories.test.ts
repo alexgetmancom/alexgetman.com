@@ -122,14 +122,14 @@ describe("story publishers", () => {
       return new Response(JSON.stringify(responses.shift()), { status: 200 });
     }) as unknown as typeof fetch;
     const config = loadConfig({
-      ENABLE_INSTAGRAM_STORIES: "true",
       INSTAGRAM_ACCESS_TOKEN: "IG-token",
       INSTAGRAM_USER_ID: "ig-user",
     });
 
     const result = await publishInstagramStory(
-      { text: "Story caption", media: [{ type: "IMAGE", vps_url: "https://example.com/story.jpg" }] },
+      { text: "Story caption", media: [{ type: "IMAGE", vpsUrl: "https://example.com/story.jpg" }] },
       config,
+      { accessToken: "IG-token", userId: "ig-user" },
       fetchImpl,
     );
 
@@ -167,14 +167,14 @@ describe("story publishers", () => {
       return new Response(JSON.stringify(responses.shift()), { status: 200 });
     }) as unknown as typeof fetch;
     const config = loadConfig({
-      ENABLE_INSTAGRAM_STORIES: "true",
       INSTAGRAM_ACCESS_TOKEN: "IG-token",
       INSTAGRAM_USER_ID: "ig-user",
     });
 
     const result = await publishInstagramStory(
-      { media: [{ type: "IMAGE", vps_url: "https://example.com/story.jpg" }] },
+      { media: [{ type: "IMAGE", vpsUrl: "https://example.com/story.jpg" }] },
       config,
+      { accessToken: "IG-token", userId: "ig-user" },
       fetchImpl,
       instantSleep,
     );
@@ -201,14 +201,14 @@ describe("story publishers", () => {
       return new Response(JSON.stringify(responses.shift()), { status: 200 });
     }) as unknown as typeof fetch;
     const config = loadConfig({
-      ENABLE_INSTAGRAM_STORIES: "true",
       INSTAGRAM_ACCESS_TOKEN: "IG-token",
       INSTAGRAM_USER_ID: "ig-user",
     });
 
     const failure = await publishInstagramStory(
-      { media: [{ type: "IMAGE", vps_url: "https://example.com/story.jpg" }] },
+      { media: [{ type: "IMAGE", vpsUrl: "https://example.com/story.jpg" }] },
       config,
+      { accessToken: "IG-token", userId: "ig-user" },
       fetchImpl,
       instantSleep,
     ).catch((error: unknown) => error);
@@ -219,23 +219,4 @@ describe("story publishers", () => {
     expect(String(failure)).toContain('"contentType":"image/jpeg"');
     expect(String(failure)).toContain('"contentLength":"4321"');
   }, 10_000);
-
-  it("rejects a personal Telegram business story configuration before publishing", () => {
-    expect(() =>
-      loadConfig({
-        ENABLE_TELEGRAM_STORIES: "true",
-      }),
-    ).toThrow("TELEGRAM_STORIES_CHANNEL is required");
-  });
-
-  it("requires an explicit channel identity for Telegram stories", () => {
-    expect(() =>
-      loadConfig({
-        ENABLE_TELEGRAM_STORIES: "true",
-        TELEGRAM_CHANNEL_STORIES_API_ID: "1",
-        TELEGRAM_CHANNEL_STORIES_API_HASH: "hash",
-        TELEGRAM_CHANNEL_STORIES_SESSION: "session",
-      }),
-    ).toThrow("TELEGRAM_STORIES_CHANNEL is required");
-  });
 });

@@ -27,7 +27,7 @@ describe("locale-aware post edit lock", () => {
           updatedAt: now.toISOString(),
         })
         .run();
-      const config = loadConfig({ ADMIN_IDS: "42", POST_EDIT_LOCK_MINUTES: "2" });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", POST_EDIT_LOCK_MINUTES: "2" });
 
       expect(() => requirePostEditAllowed(backendDb, config, 42, 8, now, "ru")).toThrow("err.post-too-close-to-publish");
       expect(requirePostEditAllowed(backendDb, config, 42, 8, now, "en").id).toBe(8);

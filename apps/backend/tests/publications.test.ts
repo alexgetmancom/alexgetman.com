@@ -37,7 +37,7 @@ function videoAssetId(db: UnsafeBackendDb): number {
 describe("Studio publication services", () => {
   it("creates posts and videos through their direct service boundaries", () => {
     backendDb = openBackendDb(":memory:");
-    const config = loadConfig({ ADMIN_IDS: "42" });
+    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
     const posts = postService(backendDb, config);
     const videos = videoService(backendDb, config);
 

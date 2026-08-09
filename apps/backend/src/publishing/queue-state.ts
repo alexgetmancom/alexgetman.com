@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import * as z from "zod";
 import type { UnsafeBackendDb } from "../db/client.js";
 import type { JsonObject } from "../db/schema.js";
@@ -46,7 +46,7 @@ export function deleteSupersededJobs(
         eq(publishJobs.target, job.target),
         ne(publishJobs.jobId, jobId),
         inArray(publishJobs.status, ["queued", "failed", "verification_required"]),
-        or(eq(publishJobs.postKey, postKey), and(isNull(publishJobs.postKey), eq(publishJobs.messageId, job.messageId))),
+        eq(publishJobs.postKey, postKey),
       ),
     )
     .run();
@@ -61,11 +61,6 @@ export function externalIds(result: PublishResult): string[] {
   const ids = Array.isArray(result.ids) ? result.ids.map(String).filter(Boolean) : [];
   if (ids.length > 0) return [...new Set(ids)];
   return result.id == null ? [] : [String(result.id)];
-}
-
-/** Every current write sets postKey directly; this fallback covers legacy rows. */
-export function jobPostKey(job: Pick<typeof publishJobs.$inferSelect, "postKey" | "postId">): string {
-  return job.postKey ?? `post:${job.postId}`;
 }
 
 /** Keeps target state updates consistent across claim, completion, and recovery paths. */

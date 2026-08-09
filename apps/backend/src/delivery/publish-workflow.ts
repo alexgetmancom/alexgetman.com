@@ -15,6 +15,7 @@ import {
   completePublishJob,
   failPublishJob,
   forcePublishJobVerification,
+  PUBLISH_CLAIM_LIMIT,
   recoverStalePublishJobs,
   requirePublishVerification,
 } from "../publishing/queue.js";
@@ -29,7 +30,7 @@ export async function runDeliveryPublishCycle(
   publishers: DeliveryPorts = createPlatformPorts(config),
 ): Promise<number> {
   recoverStalePublishJobs(backendDb, config);
-  const jobs = claimDuePublishJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);
+  const jobs = claimDuePublishJobs(backendDb, PUBLISH_CLAIM_LIMIT);
   // One lane per target instead of one shared pool: a single global pLimit let a
   // slow/hung target occupy every concurrency slot,
   // so unrelated targets (Telegram, Threads, ...) sat waiting behind it even
@@ -179,7 +180,7 @@ type DeliveryPhase = "validate" | "prepare" | "provider.publish" | "provider.ver
 
 async function timedDeliveryPhase<T>(
   backendDb: BackendDb,
-  job: { jobId: number; postId: number | null; postKey: string; target: string; attemptCount: number; lockId: string },
+  job: { jobId: number; postId: number; postKey: string; target: string; attemptCount: number; lockId: string },
   phase: DeliveryPhase,
   timings: Record<string, number>,
   work: () => Promise<T>,
@@ -211,7 +212,7 @@ async function timedDeliveryPhase<T>(
     timings[timingKey] = durationMs;
     try {
       recordDomainEvent(backendDb.events, {
-        ref: job.postId == null ? job.postKey : publicationRef("post", job.postId),
+        ref: publicationRef("post", job.postId),
         target: job.target,
         type: "publish.job.phase",
         severity: "info",
@@ -233,7 +234,7 @@ async function timedDeliveryPhase<T>(
     timings[timingKey] = Date.now() - startedAt;
     try {
       recordDomainEvent(backendDb.events, {
-        ref: job.postId == null ? job.postKey : publicationRef("post", job.postId),
+        ref: publicationRef("post", job.postId),
         target: job.target,
         type: "publish.job.phase",
         severity: "error",

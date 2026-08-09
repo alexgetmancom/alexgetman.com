@@ -42,7 +42,6 @@ export function recordWorkerHeartbeat(
 
 /** Names expected once the corresponding runtime has started its workers. */
 export function expectedWorkerNames(config: BackendConfig): string[] {
-  if (!config.ENABLE_WORKERS) return [];
   return [
     "story-cards",
     "queue",

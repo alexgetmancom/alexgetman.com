@@ -76,7 +76,7 @@ describe("publication reconciliation", () => {
           {
             postId: 90,
             messageId: 90,
-            reason: "publish_en",
+            reason: "site_en",
             status: "published",
             createdAt: now.toISOString(),
             updatedAt: now.toISOString(),
@@ -84,7 +84,7 @@ describe("publication reconciliation", () => {
           {
             postId: 90,
             messageId: 90,
-            reason: "publish_ru",
+            reason: "site_ru",
             status: "queued",
             nextAttemptAt: later.toISOString(),
             createdAt: now.toISOString(),
@@ -137,7 +137,7 @@ describe("publication reconciliation", () => {
         .run();
       backendDb.db
         .insert(siteJobs)
-        .values({ postId: 91, messageId: 91, reason: "publish_en", status: "published", createdAt: now, updatedAt: now })
+        .values({ postId: 91, messageId: 91, reason: "site_en", status: "published", createdAt: now, updatedAt: now })
         .run();
 
       reconcilePublication(backendDb, 91);
@@ -154,14 +154,14 @@ describe("publication reconciliation", () => {
         postId: 81,
         postKey: "post:81",
         messageId: 81,
-        target: "threads",
+        target: "threads_ru",
         payload: { text: "published" },
       });
       const now = new Date().toISOString();
       backendDb.db.update(publishJobs).set({ status: "verification_required", updatedAt: now }).where(eq(publishJobs.jobId, jobId)).run();
       backendDb.db
         .insert(postTargets)
-        .values({ postKey: "post:81", target: "threads", status: "verification_required", externalId: "thread-81", updatedAt: now })
+        .values({ postKey: "post:81", target: "threads_ru", status: "verification_required", externalId: "thread-81", updatedAt: now })
         .run();
 
       const fetchImpl = (async () =>
@@ -180,7 +180,7 @@ describe("publication reconciliation", () => {
             confirmationSource: postTargets.confirmationSource,
           })
           .from(postTargets)
-          .where(and(eq(postTargets.postKey, "post:81"), eq(postTargets.target, "threads")))
+          .where(and(eq(postTargets.postKey, "post:81"), eq(postTargets.target, "threads_ru")))
           .get(),
       ).toEqual({ status: "published", confirmationSource: "provider_verify" });
     }));
@@ -191,7 +191,7 @@ describe("publication reconciliation", () => {
         postId: 83,
         postKey: "post:83",
         messageId: 83,
-        target: "threads",
+        target: "threads_ru",
         payload: { text: "retried before it turned ambiguous" },
       });
       const now = new Date().toISOString();
@@ -205,7 +205,7 @@ describe("publication reconciliation", () => {
         .run();
       backendDb.db
         .insert(postTargets)
-        .values({ postKey: "post:83", target: "threads", status: "verification_required", externalId: "thread-83", updatedAt: now })
+        .values({ postKey: "post:83", target: "threads_ru", status: "verification_required", externalId: "thread-83", updatedAt: now })
         .run();
 
       const fetchImpl = (async () =>
@@ -217,7 +217,7 @@ describe("publication reconciliation", () => {
         backendDb.db
           .select({ status: postTargets.status })
           .from(postTargets)
-          .where(and(eq(postTargets.postKey, "post:83"), eq(postTargets.target, "threads")))
+          .where(and(eq(postTargets.postKey, "post:83"), eq(postTargets.target, "threads_ru")))
           .get(),
       ).toEqual({ status: "published" });
     }));

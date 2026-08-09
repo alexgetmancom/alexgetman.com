@@ -19,7 +19,7 @@ describe("Telegram publication message routing", () => {
         message: { text: "This must stay in the video flow" },
       } as unknown as Context;
 
-      expect(await handlePublicationMessage(ctx, backendDb, loadConfig({ ADMIN_IDS: "42" }))).toBe(false);
+      expect(await handlePublicationMessage(ctx, backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }))).toBe(false);
       expect(unsafeDb(backendDb).sqlite.prepare("SELECT count(*) AS count FROM drafts").get()).toEqual({ count: 0 });
     } finally {
       backendDb.close();
@@ -37,7 +37,7 @@ describe("Telegram publication message routing", () => {
         reply: async () => ({ message_id: 1 }),
       } as unknown as Context;
 
-      expect(await handlePublicationMessage(ctx, backendDb, loadConfig({ ADMIN_IDS: "42" }))).toBe(true);
+      expect(await handlePublicationMessage(ctx, backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }))).toBe(true);
       expect(unsafeDb(backendDb).sqlite.prepare("SELECT count(*) AS count FROM drafts").get()).toEqual({ count: 1 });
       expect(unsafeDb(backendDb).sqlite.prepare("SELECT count(*) AS count FROM video_drafts").get()).toEqual({ count: 0 });
     } finally {
@@ -68,7 +68,7 @@ describe("Telegram publication message routing", () => {
         reply: async () => undefined,
       } as unknown as Context;
 
-      expect(await handlePublicationMessage(ctx, backendDb, loadConfig({ ADMIN_IDS: "42" }))).toBe(true);
+      expect(await handlePublicationMessage(ctx, backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }))).toBe(true);
       expect(unsafeDb(backendDb).db.select().from(pendingAlbums).all()).toHaveLength(1);
     } finally {
       backendDb.close();

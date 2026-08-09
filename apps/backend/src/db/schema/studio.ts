@@ -75,8 +75,7 @@ export const botUiSettings = sqliteTable("bot_ui_settings", {
   updatedAt: text().notNull(),
 });
 
-/** Canonical registry of publishing channels. Configuration bootstraps rows,
- * while interfaces may add provider accounts without changing application code. */
+/** Canonical registry of publishing routes. */
 export const channelConnections = sqliteTable(
   "channel_connections",
   {
@@ -97,26 +96,6 @@ export const channelConnections = sqliteTable(
     uniqueIndex("idx_channel_connections_route").on(table.platform, table.locale, table.provider, table.providerAccountId),
     uniqueIndex("idx_channel_connections_target").on(table.targetId),
   ],
-);
-
-/**
- * Per-channel secrets, so a connection carries what it takes to reach its
- * account instead of relying on a variable baked into the deployment.
- *
- * Values are encrypted with CHANNEL_SECRET_KEY; the column never holds a
- * readable token. Without this table a natively connected account could only be
- * added by a redeploy, which is why interfaces could offer Zernio (one shared
- * key, account chosen by id) and nothing else.
- */
-export const channelCredentials = sqliteTable(
-  "channel_credentials",
-  {
-    channelId: text().notNull(),
-    name: text().notNull(),
-    valueEncrypted: text().notNull(),
-    updatedAt: text().notNull(),
-  },
-  (table) => [primaryKey({ columns: [table.channelId, table.name] })],
 );
 
 /** Interface-owned presentation references. Domain aggregates never store UI message ids. */

@@ -5,7 +5,7 @@ import type { BackendConfig } from "../../foundation/config.js";
 import { escapeHtml } from "../../foundation/html.js";
 import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale } from "../../foundation/locale.js";
-import { audienceGroup, enabledAudiencePlatforms, studioAudiencePlatforms } from "../audience-groups.js";
+import { audienceGroup } from "../audience-groups.js";
 import {
   audienceGrowthByPlatform,
   type ContentMetrics,
@@ -354,21 +354,35 @@ function audiencePlatformsForSection(
   section: Exclude<AnalyticsSection, "audience">,
 ): Set<string> {
   if (section === "video") return dashboardVideoPlatforms(backendDb, config);
-  if (section === "posts") return new Set(studioAudiencePlatforms(config, "text"));
+  if (section === "posts") return dashboardTextPlatforms(backendDb, config);
   return dashboardAudiencePlatforms(backendDb, config);
 }
 
 function dashboardVideoPlatforms(backendDb: BackendDb, config: BackendConfig): Set<string> {
-  const registered = listChannels(backendDb).map((channel) => channel.id);
-  return new Set(registered.length ? registered : studioAudiencePlatforms(config, "video"));
+  if (!config.studio.modules.video_posting) return new Set();
+  return new Set(
+    listChannels(backendDb)
+      .filter(
+        (channel) =>
+          audienceGroup(channel.platform) === "video" &&
+          (channel.platform !== "youtube" || config.studio.modules.youtube) &&
+          (channel.platform !== "instagram" || config.studio.modules.instagram),
+      )
+      .map((channel) => channel.id),
+  );
 }
 
 function dashboardAudiencePlatforms(backendDb: BackendDb, config: BackendConfig): Set<string> {
-  const registered = listChannels(backendDb);
-  const registeredText = registered.filter((channel) => channel.targetId && audienceGroup(channel.platform) === "text");
-  const legacy = enabledAudiencePlatforms(config);
-  if (registeredText.length) for (const platform of studioAudiencePlatforms(config, "text")) legacy.delete(platform);
-  return new Set([...legacy, ...registeredText.map((channel) => channel.platform), ...dashboardVideoPlatforms(backendDb, config)]);
+  return new Set([...dashboardTextPlatforms(backendDb, config), ...dashboardVideoPlatforms(backendDb, config)]);
+}
+
+function dashboardTextPlatforms(backendDb: BackendDb, config: BackendConfig): Set<string> {
+  if (!config.studio.modules.text_posting) return new Set();
+  return new Set(
+    listChannels(backendDb)
+      .filter((channel) => channel.targetId && audienceGroup(channel.platform) === "text")
+      .map((channel) => channel.id),
+  );
 }
 
 function emptyMetrics(): ContentMetrics {

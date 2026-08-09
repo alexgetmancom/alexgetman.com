@@ -100,7 +100,6 @@ export function createStudioQueueStore(db: BackendDatabase): StudioQueueStore {
           .map((row) => row.targetId)
           .filter((target): target is string => Boolean(target)),
       );
-      if (registered.size === 0) return { ...targets };
       return Object.fromEntries(Object.entries(targets).map(([target, enabled]) => [target, enabled && registered.has(target)]));
     },
   };

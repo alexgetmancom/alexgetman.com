@@ -5,6 +5,7 @@ import { draftStoryCards, drafts, publishJobs, videoDrafts, videoTargets } from 
 import { loadConfig } from "../src/foundation/config.js";
 import type { StudioQueueSnapshot } from "../src/studio/services/queue.js";
 import { queueService } from "../src/studio/services/queue.js";
+import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 describe("Telegram work queue", () => {
@@ -83,7 +84,7 @@ describe("Telegram work queue", () => {
         .values({ videoDraftId: video.id, target: "youtube_shorts", metadataJson: {}, status: "draft", createdAt: now, updatedAt: now })
         .run();
 
-      const snapshot = queueService(backendDb, loadConfig({ ADMIN_IDS: "7,8" })).snapshot(7);
+      const snapshot = queueService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "7,8" })).snapshot(7);
       expect(snapshot.upcoming).toHaveLength(1);
       expect(snapshot.upcoming[0]?.label).toBe("Запланированный пост");
       expect(snapshot.drafts.map((item) => item.label)).toEqual(["Чужой черновик", "Черновик поста", "Черновик видео"]);
@@ -138,7 +139,7 @@ describe("Telegram work queue", () => {
         })
         .run();
 
-      const snapshot = queueService(backendDb, loadConfig({ ADMIN_IDS: "7" })).snapshot(7);
+      const snapshot = queueService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "7" })).snapshot(7);
       expect(snapshot.upcoming).toEqual([
         expect.objectContaining({ id: scheduled.id, label: "Recent scheduled video", kind: "video", targets: 1 }),
       ]);
@@ -150,6 +151,7 @@ describe("Telegram work queue", () => {
   it("keeps a partially scheduled post actionable instead of showing a past time as upcoming", () => {
     const backendDb = openBackendDb(":memory:");
     try {
+      registerTestChannels(backendDb, ["telegram", "threads_en"]);
       const now = new Date().toISOString();
       const ruAt = new Date(Date.now() + 60 * 60_000).toISOString();
       backendDb.db
@@ -182,7 +184,7 @@ describe("Telegram work queue", () => {
         .run();
       void futureDraft;
 
-      const snapshot = queueService(backendDb, loadConfig({ ADMIN_IDS: "7" })).snapshot(7);
+      const snapshot = queueService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "7" })).snapshot(7);
       expect(snapshot.upcoming).toHaveLength(0);
       expect(snapshot.drafts.map((item) => item.label)).toEqual(["⏳ RU then EN", "⏳ RU already handled"]);
     } finally {
@@ -249,7 +251,7 @@ describe("Telegram work queue", () => {
         })
         .run();
 
-      const label = queueService(backendDb, loadConfig({ ADMIN_IDS: "7" })).snapshot(7).drafts[0]?.label;
+      const label = queueService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "7" })).snapshot(7).drafts[0]?.label;
       expect(label).toBe(`${"x".repeat(37)}😀`);
       expect(label).not.toMatch(/[\uD800-\uDFFF]/u);
     } finally {
@@ -301,7 +303,7 @@ describe("Telegram work queue", () => {
         },
       } as unknown as Context;
 
-      await showQueue(ctx, backendDb, loadConfig({ ADMIN_IDS: "7" }));
+      await showQueue(ctx, backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "7" }));
       const buttonText = options?.reply_markup?.inline_keyboard?.[0]?.[0]?.text;
       expect(buttonText).toBeTruthy();
       encodeURIComponent(buttonText ?? "");

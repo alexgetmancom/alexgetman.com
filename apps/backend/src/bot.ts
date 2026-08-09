@@ -97,7 +97,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     await showMainMenu(ctx, backendDb, mainMenu);
   };
   bot.command("start", showBotMenu);
-  bot.hears(localizedTextVariants(["menu.button", "menu.button-legacy"]), async (ctx) => {
+  bot.hears(localizedTextVariants(["menu.button"]), async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return;
     await showMainMenu(ctx, backendDb, mainMenu);
   });
@@ -249,7 +249,7 @@ function localizedTextVariants(keys: readonly MessageKey[]): string[] {
 }
 
 /** Telegram-side gate: does this chat's user resolve to a Studio actor? The bot
- * asks the resolver rather than reading ADMIN_IDS itself, so the credential
+ * asks the resolver rather than reading CONTROLLER_ADMIN_IDS itself, so the credential
  * mapping stays in one place as other interfaces are added. */
 export function isAdmin(config: BackendConfig, userId: number | undefined): boolean {
   return actorFromTelegramUser(config, userId) !== null;

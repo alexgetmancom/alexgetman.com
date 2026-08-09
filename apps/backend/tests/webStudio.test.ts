@@ -7,7 +7,12 @@ import { openBackendDb } from "./helpers/open-db.js";
 const COMMAND_TOKEN = "b".repeat(16);
 
 function testConfig() {
-  return loadConfig({ ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42", COMMAND_CENTER_TOKEN: COMMAND_TOKEN });
+  return loadConfig({
+    CONTROLLER_ADMIN_IDS: "42",
+    MCP_STUDIO_TOKEN: "a".repeat(16),
+    MCP_STUDIO_ACTOR_ID: "42",
+    COMMAND_CENTER_TOKEN: COMMAND_TOKEN,
+  });
 }
 
 describe("Command Center Studio tab", () => {
@@ -15,7 +20,7 @@ describe("Command Center Studio tab", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const config = testConfig();
-      const app = createApiHandler({ config, backendDb, bot: null });
+      const app = createApiHandler({ config, backendDb });
 
       const anonymous = await app(new Request("http://localhost/command-center?tab=studio"));
       expect(anonymous.status).toBe(200);
@@ -64,7 +69,7 @@ describe("Command Center Studio tab", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const config = testConfig();
-      const app = createApiHandler({ config, backendDb, bot: null });
+      const app = createApiHandler({ config, backendDb });
       const denied = await app(
         new Request("http://localhost/command-center/studio/acknowledge", {
           method: "POST",
@@ -82,7 +87,7 @@ describe("Command Center Studio tab", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const config = loadConfig({ COMMAND_CENTER_TOKEN: COMMAND_TOKEN });
-      const app = createApiHandler({ config, backendDb, bot: null });
+      const app = createApiHandler({ config, backendDb });
       const response = await app(
         new Request("http://localhost/command-center?tab=studio", { headers: { "X-Admin-Token": COMMAND_TOKEN } }),
       );

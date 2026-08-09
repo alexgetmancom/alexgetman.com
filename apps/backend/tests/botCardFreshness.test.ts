@@ -67,7 +67,7 @@ describe("Telegram card freshness", () => {
   it("tracks the publish confirmation card after delivery previews", async () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ ADMIN_IDS: "42" });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
       const draftId = createDraftFromMessage(backendDb, 42, {
         text: "Video post",
         textEn: "Video post",
@@ -159,7 +159,7 @@ describe("Telegram card freshness", () => {
   it("keeps the Story scheduling flow on the message that renders its next screen", async () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ ADMIN_IDS: "42" });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
       const draftId = createDraftFromMessage(backendDb, 42, { text: "Card", textEn: "Card", entities: [], media: [] });
       for (const locale of ["ru", "en"] as const) {
         unsafeDb(backendDb)
@@ -248,7 +248,7 @@ describe("Telegram card freshness", () => {
   it("keeps a two-platform video schedule on the latest Telegram control message", async () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ ADMIN_IDS: "42" });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
       config.studio.modules.video_posting = true;
       config.studio.modules.youtube = true;
       config.studio.modules.instagram = true;

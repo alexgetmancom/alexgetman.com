@@ -139,7 +139,7 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
         .values({
           postId: plan.postId,
           messageId: plan.messageId,
-          reason: `publish_${locale}`,
+          reason: `site_${locale}`,
           status: "queued",
           nextAttemptAt: publishAt ?? plan.now,
           createdAt: plan.now,

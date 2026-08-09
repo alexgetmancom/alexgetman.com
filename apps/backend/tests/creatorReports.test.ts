@@ -148,7 +148,7 @@ describe("creatorVideoMetrics", () => {
 });
 
 describe("audienceAnalysis", () => {
-  const config = loadConfig({ ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", DEEPSEEK_API_KEY: "sk-test" });
+  const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", DEEPSEEK_API_KEY: "sk-test" });
 
   function comment(backendDb: UnsafeBackendDb, targetId: number, text: string, publishedAt: string): void {
     backendDb.db
@@ -207,7 +207,7 @@ describe("audienceAnalysis", () => {
         return new Response("{}");
       }) as unknown as typeof fetch;
 
-      const noKey = loadConfig({ ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t" });
+      const noKey = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t" });
       expect(await audienceAnalysis(backendDb, noKey, "en", impl)).toContain("add DEEPSEEK_API_KEY");
       expect(called).toBe(false);
     });

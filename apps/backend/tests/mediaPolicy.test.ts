@@ -12,7 +12,7 @@ test("media policy states delivery limits and story projection without mutating 
 test("media policy selects the same bounded payload that delivery will send", () => {
   expect(selectMediaForTarget("telegram", images)).toHaveLength(10);
   expect(selectMediaForTarget("telegram_stories", images)).toHaveLength(1);
-  expect(selectMediaForTarget("instagram_story", images)).toHaveLength(1);
+  expect(selectMediaForTarget("instagram_stories_ru", images)).toHaveLength(1);
 });
 
 test("social payload media helpers stay browser-safe without changing extension handling", () => {

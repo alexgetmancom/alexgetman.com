@@ -35,7 +35,7 @@ describe("video publication card flow", () => {
   it("keeps the immediate confirmation on the current video card", async () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ ADMIN_IDS: "42" });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
       config.studio.modules.video_posting = true;
       config.studio.modules.youtube = true;
       const draftId = createVideoDraft(backendDb, 42, "clip.mp4", 24);
@@ -64,7 +64,7 @@ describe("post publication card flow", () => {
   it("tracks the publish confirmation card after delivery previews", async () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ ADMIN_IDS: "42" });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
       const draftId = createDraftFromMessage(backendDb, 42, {
         text: "Video post",
         textEn: "Video post",

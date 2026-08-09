@@ -62,7 +62,6 @@ describe("site jobs", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-"));
     const config = loadConfig({
       FEED_JSON: path.join(tempDir, "feed.json"),
-      SITE_METRICS_JSON: path.join(tempDir, "metrics.json"),
       SITE_CONTENT_METRICS_JSON: path.join(tempDir, "content-metrics.json"),
       SITE_PUBLIC_DIR: tempDir,
     });
@@ -111,16 +110,16 @@ describe("site jobs", () => {
     backendDb.db
       .insert(siteJobs)
       .values([
-        { postId: 7, messageId: 7, reason: "publish_en", status: "queued", nextAttemptAt: now, createdAt: now, updatedAt: now },
-        { postId: 7, messageId: 7, reason: "publish_ru", status: "queued", nextAttemptAt: later, createdAt: now, updatedAt: now },
+        { postId: 7, messageId: 7, reason: "site_en", status: "queued", nextAttemptAt: now, createdAt: now, updatedAt: now },
+        { postId: 7, messageId: 7, reason: "site_ru", status: "queued", nextAttemptAt: later, createdAt: now, updatedAt: now },
       ])
       .run();
 
     expect(await runSiteJobCycle(config, backendDb)).toBe(1);
     expect(backendDb.db.select({ reason: siteJobs.reason, status: siteJobs.status }).from(siteJobs).orderBy(siteJobs.reason).all()).toEqual(
       [
-        { reason: "publish_en", status: "published" },
-        { reason: "publish_ru", status: "queued" },
+        { reason: "site_en", status: "published" },
+        { reason: "site_ru", status: "queued" },
       ],
     );
   });
@@ -148,7 +147,7 @@ describe("site jobs", () => {
       .values({
         postId: 7,
         messageId: 7,
-        reason: "publish_ru",
+        reason: "site_ru",
         status: "cancelled",
         createdAt: now,
         updatedAt: now,
@@ -159,7 +158,7 @@ describe("site jobs", () => {
       .values({
         postId: 7,
         messageId: 7,
-        reason: "publish_en",
+        reason: "site_en",
         status: "published",
         createdAt: now,
         updatedAt: now,

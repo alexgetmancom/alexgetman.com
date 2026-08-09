@@ -201,11 +201,4 @@ describe("publishToTelegram", () => {
     // A failed publish must not be reacted to.
     expect(calls.map((entry) => entry.method)).toEqual(["sendMessage"]);
   });
-
-  it("honours an explicit chat id and then has no public channel URL to report", async () => {
-    const { fetchImpl, call } = recorder();
-    const result = await publishToTelegram({ text: "dm", chat_id: 4242 }, config, fetchImpl);
-    expect(call("sendMessage")?.json?.chat_id).toBe("4242");
-    expect(result.url).toBeNull();
-  });
 });

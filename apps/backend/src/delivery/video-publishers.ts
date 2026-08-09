@@ -1,6 +1,6 @@
 import { InstagramContainerInvalidError, isExpiredInstagramContainer } from "../delivery/social/instagram-container.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { instagramGraphHost } from "../foundation/external/instagram.js";
+import { type InstagramCredentials, instagramGraphHost } from "../foundation/external/instagram.js";
 import { type VideoLocale, youtubeAccessToken } from "../foundation/external/youtube.js";
 import { ExternalTransportError, externalFetch, formBody, requestJson } from "../foundation/http.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../publishing/video-types.js";
@@ -36,8 +36,8 @@ type InstagramPublish = { id: string };
 export class InstagramContainerProcessingError extends Error {}
 export { InstagramContainerInvalidError };
 
-function instagramGraphBase(config: BackendConfig): string {
-  const host = instagramGraphHost(config.INSTAGRAM_ACCESS_TOKEN ?? "");
+function instagramGraphBase(config: BackendConfig, accessToken: string): string {
+  const host = instagramGraphHost(accessToken);
   const version = config.INSTAGRAM_GRAPH_API_VERSION;
   return `https://${host}/${version}`;
 }
@@ -176,27 +176,42 @@ function preservedStatusFields(status: YouTubeStatus): Partial<YouTubeStatus> {
   );
 }
 
-export async function prepareInstagramReel(config: BackendConfig, publicUrl: string, metadata: InstagramMetadata): Promise<{ id: string }> {
+export async function prepareInstagramReel(
+  config: BackendConfig,
+  credentials: InstagramCredentials,
+  publicUrl: string,
+  metadata: InstagramMetadata,
+): Promise<{ id: string }> {
   // Instagram has a single caption field. Hashtags are part of the caption the
   // creator writes, rather than a second field appended during publication.
   const caption = metadata.caption.trim();
-  const response = await requestJson<InstagramContainer>(fetch, `${instagramGraphBase(config)}/${config.INSTAGRAM_USER_ID}/media`, {
-    method: "POST",
-    body: formBody({
-      media_type: "REELS",
-      video_url: publicUrl,
-      caption,
-      share_to_feed: true,
-      access_token: config.INSTAGRAM_ACCESS_TOKEN,
-    }),
-  });
+  const account = requireInstagramAccount(credentials);
+  const response = await requestJson<InstagramContainer>(
+    fetch,
+    `${instagramGraphBase(config, account.accessToken)}/${account.userId}/media`,
+    {
+      method: "POST",
+      body: formBody({
+        media_type: "REELS",
+        video_url: publicUrl,
+        caption,
+        share_to_feed: true,
+        access_token: account.accessToken,
+      }),
+    },
+  );
   return { id: response.id };
 }
 
-export async function instagramContainerReady(config: BackendConfig, containerId: string): Promise<void> {
+export async function instagramContainerReady(
+  config: BackendConfig,
+  credentials: InstagramCredentials,
+  containerId: string,
+): Promise<void> {
+  const account = requireInstagramAccount(credentials);
   const status = await requestJson<InstagramStatus>(
     fetch,
-    `${instagramGraphBase(config)}/${containerId}?fields=status_code,status&access_token=${encodeURIComponent(config.INSTAGRAM_ACCESS_TOKEN ?? "")}`,
+    `${instagramGraphBase(config, account.accessToken)}/${containerId}?fields=status_code,status&access_token=${encodeURIComponent(account.accessToken)}`,
   );
   if (["ERROR", "EXPIRED"].includes(status.status_code ?? ""))
     throw new InstagramContainerInvalidError(`Instagram container ${status.status_code}: ${status.status ?? "unknown error"}`);
@@ -204,13 +219,18 @@ export async function instagramContainerReady(config: BackendConfig, containerId
     throw new InstagramContainerProcessingError(`Instagram container ${status.status_code ?? "PROCESSING"}`);
 }
 
-export async function publishInstagramReel(config: BackendConfig, containerId: string): Promise<{ id: string; url: string }> {
+export async function publishInstagramReel(
+  config: BackendConfig,
+  credentials: InstagramCredentials,
+  containerId: string,
+): Promise<{ id: string; url: string }> {
+  const account = requireInstagramAccount(credentials);
   let published: InstagramPublish;
   try {
     published = await ambiguousExternalMutation("instagram_reels", () =>
-      requestJson<InstagramPublish>(fetch, `${instagramGraphBase(config)}/${config.INSTAGRAM_USER_ID}/media_publish`, {
+      requestJson<InstagramPublish>(fetch, `${instagramGraphBase(config, account.accessToken)}/${account.userId}/media_publish`, {
         method: "POST",
-        body: formBody({ creation_id: containerId, access_token: config.INSTAGRAM_ACCESS_TOKEN }),
+        body: formBody({ creation_id: containerId, access_token: account.accessToken }),
       }),
     );
   } catch (error) {
@@ -222,4 +242,9 @@ export async function publishInstagramReel(config: BackendConfig, containerId: s
     throw error;
   }
   return { id: published.id, url: `https://www.instagram.com/reel/${published.id}/` };
+}
+
+function requireInstagramAccount(credentials: InstagramCredentials): { accessToken: string; userId: string } {
+  if (!credentials.accessToken || !credentials.userId) throw new Error("Instagram credentials are missing");
+  return { accessToken: credentials.accessToken, userId: credentials.userId };
 }

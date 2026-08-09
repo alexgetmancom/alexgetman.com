@@ -1,9 +1,8 @@
 import crypto from "node:crypto";
-import { channelConfig } from "../../channels/channel-config.js";
 import type { ChannelConnection } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import { instagramConfigForLocale, instagramGraphHost } from "../../foundation/external/instagram.js";
+import { instagramCredentialsForLocale, instagramGraphHost } from "../../foundation/external/instagram.js";
 import { createChannelStoryClient } from "../../foundation/external/telegram-session.js";
 import { oauthAuthorization } from "../../foundation/external/x-oauth.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
@@ -52,7 +51,7 @@ export async function syncYouTubeProfile(
     backendDb,
     profileKey,
     async () => {
-      const token = await youtubeAccessToken(channelConfig(backendDb, config, "youtube", locale), fetchImpl, locale);
+      const token = await youtubeAccessToken(config, fetchImpl, locale);
       const auth = { Authorization: `Bearer ${token}` };
       const channel = await requestJson<YouTubeChannel>(
         fetchImpl,
@@ -130,14 +129,12 @@ export async function syncInstagramProfile(
         return;
       }
       const instagramLocale = connection.locale === "en" ? "en" : "ru";
-      const instagramConfig = instagramConfigForLocale(channelConfig(backendDb, config, "instagram", instagramLocale), instagramLocale);
-      const token = instagramConfig.INSTAGRAM_ACCESS_TOKEN;
-      const userId = instagramConfig.INSTAGRAM_USER_ID;
+      const { accessToken: token, userId } = instagramCredentialsForLocale(config, instagramLocale);
       if (!token || !userId) throw new Error("Instagram credentials are missing");
       const host = instagramGraphHost(token);
       const profileData = await requestJson<InstagramProfile>(
         fetchImpl,
-        `https://${host}/${instagramConfig.INSTAGRAM_GRAPH_API_VERSION}/${userId}?fields=username,biography,followers_count,media_count&access_token=${encodeURIComponent(token)}`,
+        `https://${host}/${config.INSTAGRAM_GRAPH_API_VERSION}/${userId}?fields=username,biography,followers_count,media_count&access_token=${encodeURIComponent(token)}`,
       );
       recordProfileSnapshot(backendDb, {
         platform: profileKey,

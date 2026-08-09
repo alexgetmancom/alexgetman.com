@@ -32,7 +32,7 @@ type PublicationPreflightIssue = {
 
 /**
  * Checks constraints that must block a plan. Delivery still defensively
- * normalizes legacy payloads, but a new draft must never become a partial
+ * validates delivery payloads, but a new draft must never become a partial
  * publication merely because a selected target cannot accept its media caption.
  */
 export function publicationPreflight(draft: DraftForPreflight): PublicationPreflightIssue[] {

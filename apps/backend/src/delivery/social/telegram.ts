@@ -19,7 +19,7 @@ export async function publishToTelegram(
 ): Promise<PublishResult> {
   const token = config.controllerBotToken;
   if (!token) return { skipped: true, reason: "missing Telegram bot token" };
-  const chatId = String(payload.chat_id ?? payload.chatId ?? payload.channel ?? `@${config.CHANNEL_USERNAME.replace(/^@/, "")}`);
+  const chatId = `@${config.CHANNEL_USERNAME.replace(/^@/, "")}`;
   const text = payloadText(payload);
   const media = payloadMedia(payload);
   const entities = Array.isArray(payload.entities) ? payload.entities : undefined;
@@ -99,7 +99,7 @@ function telegramLinkPreview(entities: unknown[] | undefined): { url: string; pr
   return null;
 }
 
-/** Defensive compatibility for pre-existing queued payloads. New drafts are blocked by Publishing preflight. */
+/** Keeps a malformed queued caption inside Telegram's hard limit. */
 function telegramCaption(text: string, entities: unknown[] | undefined): { text: string; entities: Record<string, unknown>[] } {
   const limit = 1024;
   let caption = text.slice(0, limit);

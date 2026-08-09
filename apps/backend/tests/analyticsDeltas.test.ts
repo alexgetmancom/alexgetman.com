@@ -9,6 +9,7 @@ import { registerChannel } from "../src/channels/registry.js";
 import { creatorProfileSnapshots, creatorProfiles, metricSamples, postEvents, videoMetricSnapshots } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
+import { registerTestChannels } from "./helpers/channels.js";
 import { withDb } from "./helpers/db.js";
 
 describe("creator analytics deltas", () => {
@@ -61,6 +62,7 @@ describe("creator analytics deltas", () => {
 
   it("changes audience growth with the selected period instead of repeating lifetime totals", async () => {
     await withDb(async (backendDb) => {
+      registerTestChannels(backendDb, ["telegram"]);
       const now = new Date().toISOString();
       const thirtyFiveDaysAgo = new Date(Date.now() - 35 * 24 * 60 * 60_000).toISOString();
       const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60_000).toISOString();

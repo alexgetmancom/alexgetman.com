@@ -145,7 +145,7 @@ export function applyMetricsBackfill(
   // A backfill must not resurrect targets this Studio has deliberately kept
   // paid-metrics disabled for; follow the same config-driven list the regular
   // metrics cycle uses instead of a hardcoded platform pair.
-  freezeDisabledMetricSchedules(backendDb, [...(config.ENABLE_X_METRICS ? [] : ["x", "twitter"])]);
+  freezeDisabledMetricSchedules(backendDb, [...(config.ENABLE_X_METRICS ? [] : ["x"])]);
   return rows.length;
 }
 

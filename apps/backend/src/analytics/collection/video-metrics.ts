@@ -1,12 +1,11 @@
 import crypto from "node:crypto";
 import { and, asc, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { publicationRef } from "../../application/publication-ref.js";
-import { videoChannelConfig } from "../../channels/channel-config.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { videoDrafts, videoMetricSchedule, videoTargets } from "../../db/schema.js";
 import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import { instagramConfigForLocale, instagramGraphHost } from "../../foundation/external/instagram.js";
+import { instagramCredentialsForLocale, instagramGraphHost } from "../../foundation/external/instagram.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { requestJson } from "../../foundation/http.js";
 import { markSynced, mergeVideoSnapshot, metricNumber, upsertComment, upsertVideoSnapshot } from "../snapshots/creator-store.js";
@@ -98,10 +97,7 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
       // One fresh access token is enough for every Data API request in this
       // cycle. Refreshing once per historical target turns a revoked token
       // into a noisy burst of identical OAuth failures.
-      youtubeTokens.set(
-        locale,
-        await youtubeAccessToken(videoChannelConfig(backendDb, config, "youtube_shorts", locale), fetchImpl, locale),
-      );
+      youtubeTokens.set(locale, await youtubeAccessToken(config, fetchImpl, locale));
     } catch (error) {
       const normalized = terminalIfMissingRemoteObject(error);
       const message = normalized instanceof Error ? normalized.message : String(normalized);
@@ -561,11 +557,10 @@ async function collectInstagramVideoMetrics(
   target: VideoMetricTask,
   fetchImpl: typeof fetch,
 ): Promise<void> {
-  const instagramConfig = instagramConfigForLocale(videoChannelConfig(backendDb, config, "instagram_reels", target.locale), target.locale);
-  const token = instagramConfig.INSTAGRAM_ACCESS_TOKEN;
+  const { accessToken: token } = instagramCredentialsForLocale(config, target.locale);
   if (!token) throw new Error("Instagram credentials are missing");
   const host = instagramGraphHost(token);
-  const base = `https://${host}/${instagramConfig.INSTAGRAM_GRAPH_API_VERSION}/${target.externalId}`;
+  const base = `https://${host}/${config.INSTAGRAM_GRAPH_API_VERSION}/${target.externalId}`;
   const media = await requestJson<InstagramMedia>(
     fetchImpl,
     `${base}?fields=like_count,comments_count,permalink,timestamp,caption&access_token=${encodeURIComponent(token)}`,

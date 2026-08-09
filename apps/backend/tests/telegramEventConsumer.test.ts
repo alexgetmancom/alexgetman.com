@@ -9,7 +9,7 @@ import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer
 import { refreshVideoControlCard, sendStudioCompletion, sendStudioReminder } from "../src/interfaces/telegram/video-notifications.js";
 import { withDb } from "./helpers/db.js";
 
-const config = loadConfig({ ADMIN_IDS: "42" });
+const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
 
 function milestone(message: string) {
   return { type: "analytics.milestone.reached", severity: "info" as const, message };
@@ -161,7 +161,7 @@ describe("Telegram event consumer", () => {
         options,
       }));
       const bot = { api: { sendMessage } } as unknown as Bot;
-      const sharedConfig = loadConfig({ ADMIN_IDS: "42,7" });
+      const sharedConfig = loadConfig({ CONTROLLER_ADMIN_IDS: "42,7" });
 
       await sendStudioReminder(backendDb, bot, sharedConfig, {
         postKey: "video:10",
@@ -229,8 +229,8 @@ describe("Telegram event consumer", () => {
       backendDb.db
         .insert(siteJobs)
         .values([
-          { postId: 113, messageId: 113, reason: "publish_en", status: "published", createdAt: now, updatedAt: now },
-          { postId: 113, messageId: 113, reason: "publish_ru", status: "queued", nextAttemptAt: later, createdAt: now, updatedAt: now },
+          { postId: 113, messageId: 113, reason: "site_en", status: "published", createdAt: now, updatedAt: now },
+          { postId: 113, messageId: 113, reason: "site_ru", status: "queued", nextAttemptAt: later, createdAt: now, updatedAt: now },
         ])
         .run();
       recordDomainEvent(backendDb.events, {
@@ -302,7 +302,7 @@ describe("Telegram event consumer", () => {
         .values({
           postId: 110,
           messageId: 110,
-          reason: "publish_en",
+          reason: "site_en",
           status: "published",
           createdAt: now,
           updatedAt: now,

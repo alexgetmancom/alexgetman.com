@@ -42,19 +42,19 @@ async function settingsMenuLabels(config: ReturnType<typeof loadConfig>, db: Bac
 
 describe("isAdmin", () => {
   it("rejects an undefined user id", () => {
-    expect(isAdmin(loadConfig({ ADMIN_IDS: "1,2" }), undefined)).toBe(false);
+    expect(isAdmin(loadConfig({ CONTROLLER_ADMIN_IDS: "1,2" }), undefined)).toBe(false);
   });
 
-  it("accepts a user id listed in ADMIN_IDS", () => {
-    expect(isAdmin(loadConfig({ ADMIN_IDS: "1,2" }), 2)).toBe(true);
+  it("accepts a user id listed in CONTROLLER_ADMIN_IDS", () => {
+    expect(isAdmin(loadConfig({ CONTROLLER_ADMIN_IDS: "1,2" }), 2)).toBe(true);
   });
 
-  it("rejects a user id not listed in ADMIN_IDS", () => {
-    expect(isAdmin(loadConfig({ ADMIN_IDS: "1,2" }), 3)).toBe(false);
+  it("rejects a user id not listed in CONTROLLER_ADMIN_IDS", () => {
+    expect(isAdmin(loadConfig({ CONTROLLER_ADMIN_IDS: "1,2" }), 3)).toBe(false);
   });
 
-  it("rejects everyone when ADMIN_IDS is empty", () => {
-    expect(isAdmin(loadConfig({ ADMIN_IDS: "" }), 1)).toBe(false);
+  it("rejects everyone when CONTROLLER_ADMIN_IDS is empty", () => {
+    expect(isAdmin(loadConfig({ CONTROLLER_ADMIN_IDS: "" }), 1)).toBe(false);
   });
 });
 

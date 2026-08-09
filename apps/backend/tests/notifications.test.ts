@@ -8,13 +8,21 @@ import { createVideoDraft } from "../src/publishing/video-service.js";
 import { notificationService } from "../src/studio/services/notifications.js";
 import { postService } from "../src/studio/services/posts.js";
 import { settingsService } from "../src/studio/services/settings.js";
+import { registerTestChannels, TEXT_TEST_CHANNELS, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+
+function openNotificationDb() {
+  const memory = ":memory:";
+  const backendDb = openBackendDb(memory);
+  registerTestChannels(backendDb, [...TEXT_TEST_CHANNELS, ...VIDEO_TEST_CHANNELS]);
+  return backendDb;
+}
 
 describe("Studio notifications", () => {
   it("shares the durable inbox across configured administrators", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openNotificationDb();
     try {
-      const notifications = notificationService(backendDb, loadConfig({ ADMIN_IDS: "42,7" }));
+      const notifications = notificationService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42,7" }));
       const videoId = createVideoDraft(backendDb, 42, "shared-video", 24);
       notifications.record({
         ref: `video:${videoId}`,
@@ -32,7 +40,7 @@ describe("Studio notifications", () => {
   });
 
   it("keeps a durable inbox, suppresses cooled-down duplicates and acknowledges events", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openNotificationDb();
     try {
       const notifications = notificationService(backendDb);
       const ownedVideo = createVideoDraft(backendDb, 42, "owner-video", 24);
@@ -82,7 +90,7 @@ describe("Studio notifications", () => {
   });
 
   it("keeps Content and Publishing audit events out of the creator inbox", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openNotificationDb();
     try {
       const draftId = createDraftFromMessage(backendDb, 42, { text: "Private", entities: [], media: [] });
       const notifications = notificationService(backendDb);
@@ -94,7 +102,7 @@ describe("Studio notifications", () => {
   });
 
   it("does not fall open on a post ref whose id is not a number", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openNotificationDb();
     try {
       const notifications = notificationService(backendDb);
       notifications.record({ ref: "post:abc", type: "delivery.post.completed", severity: "info", message: "Broken ref" });
@@ -106,7 +114,7 @@ describe("Studio notifications", () => {
   });
 
   it("creates durable interface-neutral reminders and honours cancellation", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openNotificationDb();
     try {
       const videoId = createVideoDraft(backendDb, 42, "owner-video", 24);
       scheduleReminder(backendDb, {
@@ -142,7 +150,7 @@ describe("Studio notifications", () => {
   });
 
   it("does not remind about a publication that is already due", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openNotificationDb();
     try {
       scheduleReminder(backendDb, {
         actorId: 42,
@@ -161,9 +169,9 @@ describe("Studio notifications", () => {
   });
 
   it("uses the owner's stored reminder interval when scheduling a post", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openNotificationDb();
     try {
-      const config = loadConfig({ ADMIN_IDS: "42" });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
       settingsService(backendDb).setNotifications(42, { reminderMinutes: 17 });
       const posts = postService(backendDb, config);
       const draftId = posts.create(42, { text: "Scheduled", textEn: "Scheduled", entities: [], media: [] });
@@ -180,7 +188,7 @@ describe("Studio notifications", () => {
   });
 
   it("cancels queued reminders when the owner disables reminders", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openNotificationDb();
     try {
       const videoId = createVideoDraft(backendDb, 42, "owner-video", 24);
       scheduleReminder(backendDb, {

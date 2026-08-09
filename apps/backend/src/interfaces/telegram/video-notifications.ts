@@ -3,7 +3,7 @@ import { type Bot, InlineKeyboard } from "grammy";
 import { parsePublicationRef } from "../../application/publication-ref.js";
 import { botLocale } from "../../bot/i18n.js";
 import { publicationCallback } from "../../bot/publication-callback.js";
-import { targetDefinition, targetLocale } from "../../botTargets.js";
+import { isSiteTarget, targetDefinition, targetLocale } from "../../botTargets.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -11,7 +11,6 @@ import type { MessageKey } from "../../foundation/i18n/index.js";
 import { t } from "../../foundation/i18n/index.js";
 import { log } from "../../foundation/logger.js";
 import { truncateUnicode } from "../../foundation/text.js";
-import { siteTargetForReason } from "../../publishing/targets.js";
 import { getVideoDraft } from "../../publishing/video-data.js";
 import type { VideoTarget } from "../../publishing/video-types.js";
 import { VIDEO_TARGETS, videoTargetLabel } from "../../publishing/video-types.js";
@@ -26,7 +25,7 @@ type StudioTimeConfig = Pick<BackendConfig, "TIMEZONE" | "TIMEZONE_LABEL">;
 export async function notifyFinalVideoFailure(
   backendDb: BackendDb,
   bot: Bot | null,
-  config: Pick<BackendConfig, "ADMIN_IDS">,
+  config: Pick<BackendConfig, "CONTROLLER_ADMIN_IDS">,
   videoDraftId: number,
   videoTargetId: number | null,
 ): Promise<void> {
@@ -35,7 +34,7 @@ export async function notifyFinalVideoFailure(
   if (target?.status !== "failed") return;
   const draft = getVideoDraft(backendDb, videoDraftId);
   const targetName = target.target as VideoTarget;
-  await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
+  await forEachAdmin(config.CONTROLLER_ADMIN_IDS, async (actorId) => {
     // A dead target is the outcome of a publication, so the completion switch
     // silences it like any other outcome.
     if (!settingsService(backendDb).notifications(actorId).completionEnabled) return;
@@ -85,7 +84,7 @@ export async function refreshVideoControlCard(
 export async function sendVideoReminder(
   backendDb: BackendDb,
   bot: Bot | null,
-  config: StudioTimeConfig & Pick<BackendConfig, "ADMIN_IDS">,
+  config: StudioTimeConfig & Pick<BackendConfig, "CONTROLLER_ADMIN_IDS">,
   videoDraftId: number,
   videoTargetId: number | null,
 ): Promise<void> {
@@ -93,7 +92,7 @@ export async function sendVideoReminder(
   const target =
     videoTargetId == null ? null : unsafeDb(backendDb).db.select().from(videoTargets).where(eq(videoTargets.id, videoTargetId)).get();
   if (!bot || !target || draft.status !== "scheduled") return;
-  await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
+  await forEachAdmin(config.CONTROLLER_ADMIN_IDS, async (actorId) => {
     const preference = settingsService(backendDb).notifications(actorId);
     if (!preference.remindersEnabled) return;
     const locale = botLocale(backendDb, actorId);
@@ -117,7 +116,7 @@ export async function sendVideoReminder(
 export async function sendStudioReminder(
   backendDb: BackendDb,
   bot: Bot | null,
-  config: StudioTimeConfig & Pick<BackendConfig, "ADMIN_IDS">,
+  config: StudioTimeConfig & Pick<BackendConfig, "CONTROLLER_ADMIN_IDS">,
   event: { postKey: string | null; detailsJson: unknown },
 ): Promise<void> {
   if (!bot) return;
@@ -131,7 +130,7 @@ export async function sendStudioReminder(
   const minutes = number(details.minutes) ?? 5;
   const publishAt = typeof details.publish_at === "string" ? details.publish_at : null;
   const videoLocale = videoLocaleForRef(backendDb, event.postKey);
-  await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
+  await forEachAdmin(config.CONTROLLER_ADMIN_IDS, async (actorId) => {
     if (!settingsService(backendDb).notifications(actorId).remindersEnabled) return;
     const locale = botLocale(backendDb, actorId);
     const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
@@ -148,7 +147,7 @@ export async function sendStudioReminder(
 export async function sendStudioCompletion(
   backendDb: BackendDb,
   bot: Bot | null,
-  config: Pick<BackendConfig, "ADMIN_IDS" | "TIMEZONE" | "TIMEZONE_LABEL">,
+  config: Pick<BackendConfig, "CONTROLLER_ADMIN_IDS" | "TIMEZONE" | "TIMEZONE_LABEL">,
   event: { postKey: string | null; detailsJson: unknown; eventType?: string },
 ): Promise<void> {
   if (!bot) return;
@@ -164,7 +163,7 @@ export async function sendStudioCompletion(
   const videoLocale = videoLocaleForRef(backendDb, event.postKey);
   const failedTargets = results.filter((result) => result.status === "failed" || result.status === "verification_required");
   const draftId = publicationDraftId(backendDb, event.postKey);
-  await forEachAdmin(config.ADMIN_IDS, async (actorId) => {
+  await forEachAdmin(config.CONTROLLER_ADMIN_IDS, async (actorId) => {
     if (!settingsService(backendDb).notifications(actorId).completionEnabled) return;
     const locale = botLocale(backendDb, actorId);
     const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
@@ -260,8 +259,8 @@ function completionTargets(backendDb: BackendDb, ref: string | null): Array<{ ta
     .orderBy(desc(siteJobs.jobId))
     .all();
   for (const job of site) {
-    const target = siteTargetForReason(job.reason);
-    if (target && !latest.has(target)) latest.set(target, { target, status: job.status, error: job.error, jobId: job.jobId });
+    if (isSiteTarget(job.reason) && !latest.has(job.reason))
+      latest.set(job.reason, { target: job.reason, status: job.status, error: job.error, jobId: job.jobId });
   }
   return [...latest.values()];
 }

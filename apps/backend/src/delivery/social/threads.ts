@@ -27,7 +27,7 @@ export async function publishToThreads(
   // One post by default: the text is written to fit 500 characters and preflight
   // refuses the draft otherwise, so there is nothing to continue into. A chain is
   // only built when the author waived the rule for this draft and saw the cost.
-  const chainApproved = payload.threads_chain_approved === true;
+  const chainApproved = payload.threadsChainApproved === true;
   const entities = Array.isArray(payload.entities) ? (payload.entities as Record<string, unknown>[]) : [];
   const text = threadsBody(target, payloadText(payload), entities, { chain: chainApproved }).text;
   const limit = threadsTextLimit(target);

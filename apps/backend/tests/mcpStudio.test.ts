@@ -21,8 +21,8 @@ describe("Studio MCP", () => {
   it("exposes owner-bound Studio commands only to the configured bearer token and audits mutations", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" });
-      const app = createApiHandler({ config, backendDb, bot: null });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" });
+      const app = createApiHandler({ config, backendDb });
       const anonymousTools = await request(app, { jsonrpc: "2.0", id: 1, method: "tools/list" });
       expect(JSON.stringify(await anonymousTools.json())).not.toContain("studio_post_create");
 
@@ -113,8 +113,8 @@ describe("Studio MCP", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const token = "a".repeat(16);
-      const config = loadConfig({ ADMIN_IDS: "42", MCP_STUDIO_TOKEN: token, MCP_STUDIO_ACTOR_ID: "42" });
-      const app = createApiHandler({ config, backendDb, bot: null });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: token, MCP_STUDIO_ACTOR_ID: "42" });
+      const app = createApiHandler({ config, backendDb });
       const authorization = `Bearer ${token}`;
       const now = new Date().toISOString();
       backendDb.db
@@ -127,7 +127,7 @@ describe("Studio MCP", () => {
           localPath: "/tmp/uploaded.mp4",
           byteSize: 1,
           sha256: "video-asset",
-          source: "mcp_upload",
+          source: "ops_upload",
           createdAt: now,
         })
         .run();
@@ -206,12 +206,12 @@ describe("Studio MCP", () => {
     try {
       const token = "a".repeat(16);
       const config = loadConfig({
-        ADMIN_IDS: "42",
+        CONTROLLER_ADMIN_IDS: "42",
         MCP_STUDIO_TOKEN: token,
         MCP_STUDIO_ACTOR_ID: "42",
         STUDIO_MEDIA_DIR: directory,
       });
-      const app = createApiHandler({ config, backendDb, bot: null });
+      const app = createApiHandler({ config, backendDb });
       const authorization = `Bearer ${token}`;
       const created = await request(
         app,
@@ -240,7 +240,7 @@ describe("Studio MCP", () => {
       );
       expect(JSON.stringify(await attached.json())).toContain('\\"attached\\":true');
       expect(backendDb.sqlite.prepare("SELECT media_en_json FROM drafts WHERE id=1").get()).toMatchObject({
-        media_en_json: expect.stringContaining('"asset_id":1'),
+        media_en_json: expect.stringContaining('"assetId":1'),
       });
       expect(backendDb.sqlite.prepare("SELECT source FROM studio_media_assets WHERE id=1").get()).toEqual({ source: "http_upload" });
     } finally {

@@ -1,6 +1,5 @@
 import * as z from "zod";
 import { loadStudioConfig, type StudioConfig } from "../studio.js";
-import { instagramCredentialsForLocale } from "./external/instagram.js";
 
 /** Env flags arrive as strings, so the default has to be a string too: a boolean
  * default would be handed to the transform below on any Zod version that does
@@ -11,30 +10,10 @@ const booleanFlag = (fallback: boolean) =>
     .default(fallback ? "1" : "0")
     .transform((value) => !["0", "false", "no", "off"].includes(value.toLowerCase()));
 
-const providerRouteSchema = z.object({
-  provider: z.enum(["native", "zernio"]),
-  accountId: z.string().min(1).optional(),
-});
-
-const providerRoutes = z
-  .string()
-  .default("{}")
-  .transform((value, context) => {
-    try {
-      const routes = z.record(z.string(), providerRouteSchema).safeParse(JSON.parse(value));
-      if (routes.success) return routes.data;
-      context.addIssue({ code: "custom", message: "PUBLISH_PROVIDER_ROUTES_JSON must be an object of provider routes" });
-    } catch {
-      context.addIssue({ code: "custom", message: "PUBLISH_PROVIDER_ROUTES_JSON must be valid JSON" });
-    }
-    return z.NEVER;
-  });
-
 const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     DEPLOYMENT_ENV: z.enum(["development", "test", "production"]).default("development"),
-    RUNTIME_ROLE: z.enum(["web", "worker"]).default("web"),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
     PORT: z.coerce.number().int().positive().default(8788),
     BIND_HOST: z.string().default("127.0.0.1"),
@@ -42,14 +21,11 @@ const envSchema = z
     STUDIO_CONFIG: z.string().default("studio.yaml"),
     PIPELINE_DB: z.string().default("/data/pipeline.db"),
     FEED_JSON: z.string().default("/data/feed.json"),
-    SITE_METRICS_JSON: z.string().default("/data/metrics.json"),
     SITE_CONTENT_METRICS_JSON: z.string().default("/data/content-metrics.json"),
     TELEGRAM_API_BASE_URL: z.string().default("http://bot-api:8081"),
     TELEGRAM_BOT_TOKEN: z.string().optional(),
     CONTROLLER_BOT_TOKEN: z.string().optional(),
-    TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
-    WEBHOOK_PATH: z.string().default("/tg-feed/webhook"),
-    LIKES_SALT: z.string().optional(),
+    CLIENT_IP_HASH_SALT: z.string().optional(),
     // Defaulted, not optional: every production nginx vhost sets X-Real-IP, and
     // when this was unset the whole internet collapsed onto one visitor identity
     // (see engagement/identity.ts), making the public rate limit one global budget.
@@ -63,7 +39,7 @@ const envSchema = z
     DEEPSEEK_API_KEY: z.string().optional(),
     /** Moscow hour at which the editor receives one AI-generated opportunity inbox. */
     EDITORIAL_INBOX_HOUR_MSK: z.coerce.number().int().min(0).max(23).default(10),
-    ADMIN_IDS: z
+    CONTROLLER_ADMIN_IDS: z
       .string()
       .default("")
       .transform((value) =>
@@ -72,11 +48,8 @@ const envSchema = z
           .map((part) => Number(part.trim()))
           .filter((value) => Number.isSafeInteger(value) && value > 0),
       ),
-    CONTROLLER_ADMIN_IDS: z.string().optional(),
-    /** The Studio roster proper. ADMIN_IDS predates it and means "Telegram user
-     * ids the bot answers to"; leaving this unset keeps that list as the roster,
-     * which is what every existing deployment relies on. Setting it lets a
-     * deployment own work without granting anyone Telegram access. */
+    /** Leaving the Studio roster unset uses the Telegram controller roster.
+     * Setting it lets Studio own work without granting Telegram access. */
     STUDIO_ACTOR_IDS: z
       .string()
       .default("")
@@ -87,7 +60,6 @@ const envSchema = z
           .filter((value) => Number.isSafeInteger(value) && value > 0),
       ),
     CHANNEL_USERNAME: z.string().default("alexgetmancom"),
-    PIPELINE_BASELINE_MESSAGE_ID: z.coerce.number().int().default(422),
     METRICS_REFRESH_INTERVAL_SECONDS: z.coerce.number().int().positive().default(10),
     /** Refreshes account-level followers and aggregate platform insights. */
     CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS: z.coerce
@@ -111,28 +83,12 @@ const envSchema = z
     // Refuse material post edits shortly before delivery so one locale cannot
     // silently publish the old payload while another publishes the new one.
     POST_EDIT_LOCK_MINUTES: z.coerce.number().int().min(1).max(60).default(2),
-    /** Stale publish locks are recovered on the watchdog's own clock, not the
-     * queue's. A lock lives for PUBLISH_LOCK_TIMEOUT_SECONDS (900 by default)
-     * with a 180s heartbeat, so probing for one every idle tick spent 12 SQLite
-     * scans a minute to find something that cannot appear that fast. */
-    WATCHDOG_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
-    /** Site materialization is its own subsystem; it was on the metrics clock
-     * only because both happened to want a short interval. */
-    SITE_JOB_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(10),
-    /** Every profile is separately rate-limited by
-     * CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS, so a faster loop only re-runs
-     * channel bootstrap and claim checks to decide it has nothing to do. */
-    PROFILE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
     CONTROLLER_ALBUM_SETTLE_SECONDS: z.coerce.number().positive().default(4),
-    PUBLISH_CLAIM_LIMIT: z.coerce.number().int().positive().default(20),
     // A provider call must not hold the complete queue loop forever. Timeouts
     // are terminal and require an explicit retry, because the provider may
     // have accepted the request while its response was lost.
     PUBLISH_JOB_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(3_600).default(600),
     PUBLISH_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
-    // A newly started worker may safely reclaim locks older than this short
-    // grace period: the process that held them is already gone after restart.
-    PUBLISH_RESTART_LOCK_GRACE_SECONDS: z.coerce.number().int().positive().default(30),
     // Social publish jobs heartbeat (see publish-workflow.ts's withJobHeartbeat)
     // while a slow provider call is in flight, touching lockedAt so
     // recoverStalePublishJobs doesn't mistake "still working" for "worker crashed".
@@ -141,13 +97,6 @@ const envSchema = z
     PUBLISH_MAX_ATTEMPTS: z.coerce.number().int().positive().default(4),
     PUBLISH_BACKOFF_BASE_SECONDS: z.coerce.number().int().positive().default(60),
     PUBLISH_BACKOFF_MAX_SECONDS: z.coerce.number().int().positive().default(3600),
-    SITE_JOB_CLAIM_LIMIT: z.coerce.number().int().positive().default(20),
-    SITE_JOB_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
-    SITE_JOB_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
-    SITE_JOB_RESTART_LOCK_GRACE_SECONDS: z.coerce.number().int().positive().default(30),
-    SITE_JOB_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
-    SITE_JOB_BACKOFF_BASE_SECONDS: z.coerce.number().int().positive().default(60),
-    SITE_JOB_BACKOFF_MAX_SECONDS: z.coerce.number().int().positive().default(900),
     FFMPEG_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(600),
     FFMPEG_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(2).default(2),
     /** Where optional heavy media transforms execute. Remote workers are
@@ -206,33 +155,22 @@ const envSchema = z
     INSTAGRAM_RU_ACCESS_TOKEN: z.string().optional(),
     INSTAGRAM_RU_USER_ID: z.string().optional(),
     INSTAGRAM_GRAPH_API_VERSION: z.string().default("v23.0"),
-    /** Per durable target route, e.g. {"instagram_reels":{"provider":"zernio","accountId":"..."}}. */
-    PUBLISH_PROVIDER_ROUTES_JSON: providerRoutes,
     ZERNIO_API_KEY: z.string().min(16).optional(),
-    /** Encrypts channel credentials at rest. Required only to connect an
-     * account from an interface; environment-configured channels never touch
-     * the store. Any passphrase works — it is hashed to key length. */
-    CHANNEL_SECRET_KEY: z.string().min(16).optional(),
     YOUTUBE_CLIENT_ID: z.string().optional(),
     YOUTUBE_CLIENT_SECRET: z.string().optional(),
     YOUTUBE_REFRESH_TOKEN: z.string().optional(),
     YOUTUBE_EN_CLIENT_ID: z.string().optional(),
     YOUTUBE_EN_CLIENT_SECRET: z.string().optional(),
     YOUTUBE_EN_REFRESH_TOKEN: z.string().optional(),
-    ENABLE_INSTAGRAM_STORIES: booleanFlag(false),
-    ENABLE_TELEGRAM_STORIES: booleanFlag(false),
     TELEGRAM_STORIES_CHANNEL: z.string().optional(),
     TELEGRAM_CHANNEL_STORIES_API_ID: z.coerce.number().int().positive().optional(),
     TELEGRAM_CHANNEL_STORIES_API_HASH: z.string().optional(),
     TELEGRAM_CHANNEL_STORIES_SESSION: z.string().optional(),
     REMOTE_MEDIA_PATH: z.string().default("/feed-data/media"),
     PUBLIC_MEDIA_BASE_URL: z.string().default("https://alexgetman.com/media"),
-    TEMP_MEDIA_DIR: z.string().default("/tmp/alexgetman-media"),
     PUBLIC_BASE_URL: z.string().default("https://alexgetman.com"),
     DEPLOY_AGENT_URL: z.url().optional(),
     DEPLOY_AGENT_TOKEN: z.string().min(16).optional(),
-    ENABLE_BOT_POLLING: booleanFlag(false),
-    ENABLE_WORKERS: booleanFlag(true),
     INDEXNOW_ENABLED: booleanFlag(true),
   })
   .superRefine((env, context) => {
@@ -242,23 +180,6 @@ const envSchema = z
         code: "custom",
         path: ["YOUTUBE_EN_CLIENT_ID"],
         message: "YOUTUBE_EN_CLIENT_ID, YOUTUBE_EN_CLIENT_SECRET and YOUTUBE_EN_REFRESH_TOKEN must be configured together",
-      });
-    }
-    if (env.ENABLE_TELEGRAM_STORIES) {
-      for (const key of [
-        "TELEGRAM_STORIES_CHANNEL",
-        "TELEGRAM_CHANNEL_STORIES_API_ID",
-        "TELEGRAM_CHANNEL_STORIES_API_HASH",
-        "TELEGRAM_CHANNEL_STORIES_SESSION",
-      ] as const) {
-        if (!env[key]) context.addIssue({ code: "custom", path: [key], message: `${key} is required when ENABLE_TELEGRAM_STORIES=true` });
-      }
-    }
-    if (env.ENABLE_INSTAGRAM_STORIES && (!env.INSTAGRAM_ACCESS_TOKEN || !env.INSTAGRAM_USER_ID)) {
-      context.addIssue({
-        code: "custom",
-        path: ["INSTAGRAM_ACCESS_TOKEN"],
-        message: "INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_USER_ID are required when ENABLE_INSTAGRAM_STORIES=true",
       });
     }
     if (Boolean(env.DEPLOY_AGENT_URL) !== Boolean(env.DEPLOY_AGENT_TOKEN)) {
@@ -304,12 +225,12 @@ const envSchema = z
     // The MCP token authorizes an actor, so that actor has to be on the roster.
     // It is not required to be a Telegram admin: a deployment that lists
     // STUDIO_ACTOR_IDS can run the Studio with the bot switched off entirely.
-    const roster = env.STUDIO_ACTOR_IDS.length > 0 ? env.STUDIO_ACTOR_IDS : env.ADMIN_IDS;
+    const roster = env.STUDIO_ACTOR_IDS.length > 0 ? env.STUDIO_ACTOR_IDS : env.CONTROLLER_ADMIN_IDS;
     if (env.MCP_STUDIO_ACTOR_ID && !roster.includes(env.MCP_STUDIO_ACTOR_ID)) {
       context.addIssue({
         code: "custom",
         path: ["MCP_STUDIO_ACTOR_ID"],
-        message: "MCP_STUDIO_ACTOR_ID must belong to STUDIO_ACTOR_IDS (or ADMIN_IDS when that is the roster)",
+        message: "MCP_STUDIO_ACTOR_ID must belong to STUDIO_ACTOR_IDS (or CONTROLLER_ADMIN_IDS when that is the roster)",
       });
     }
   });
@@ -326,20 +247,13 @@ export type BackendConfig = z.infer<typeof envSchema> & {
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig {
-  const parsed = envSchema.parse({
-    ...env,
-    // An empty ADMIN_IDS must still fall back to the legacy variable, otherwise
-    // an unset-but-present env leaves the Studio with no administrators.
-    ADMIN_IDS: env.ADMIN_IDS || env.CONTROLLER_ADMIN_IDS,
-  });
+  const parsed = envSchema.parse(env);
   if (parsed.NODE_ENV === "production" && parsed.DEPLOYMENT_ENV !== "production")
     throw new Error("DEPLOYMENT_ENV=production is required when NODE_ENV=production");
   if (parsed.DEPLOYMENT_ENV === "production" && parsed.NODE_ENV !== "production")
     throw new Error("NODE_ENV=production is required when DEPLOYMENT_ENV=production");
   if (parsed.DEPLOYMENT_ENV === "production") {
     if (!parsed.COMMAND_CENTER_TOKEN) throw new Error("COMMAND_CENTER_TOKEN is required in production");
-    if (parsed.COMMAND_CENTER_TOKEN === parsed.TELEGRAM_WEBHOOK_SECRET)
-      throw new Error("COMMAND_CENTER_TOKEN must be separate from TELEGRAM_WEBHOOK_SECRET in production");
   }
   const studio = loadStudioConfig(parsed.STUDIO_CONFIG);
   // The channel default exists for the first deployment and is a hazard for
@@ -353,27 +267,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
       if (!parsed[key]) throw new Error(`${key} is required when YouTube video publishing is enabled`);
     }
   }
-  if (studio.modules.instagram && studio.modules.video_posting) {
-    for (const locale of ["ru", "en"] as const) {
-      const route = parsed.PUBLISH_PROVIDER_ROUTES_JSON[locale === "en" ? "instagram_reels_en" : "instagram_reels"];
-      if (route?.provider === "zernio") {
-        if (!parsed.ZERNIO_API_KEY || !route.accountId)
-          throw new Error(
-            `ZERNIO_API_KEY and ${locale === "en" ? "instagram_reels_en" : "instagram_reels"}.accountId are required when Zernio Instagram publishing is enabled`,
-          );
-      } else if (locale === "en") {
-        // An English Reels account is optional — a Studio publishing in Russian
-        // only has none, and the shared pair is the Russian account, not a
-        // second destination. Half a pair is a typo rather than a choice.
-        if (Boolean(parsed.INSTAGRAM_EN_ACCESS_TOKEN) !== Boolean(parsed.INSTAGRAM_EN_USER_ID))
-          throw new Error("INSTAGRAM_EN_ACCESS_TOKEN and INSTAGRAM_EN_USER_ID must be set together");
-      } else {
-        const credentials = instagramCredentialsForLocale(parsed, locale);
-        if (!credentials.accessToken || !credentials.userId)
-          throw new Error("INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_USER_ID are required when Instagram video publishing is enabled");
-      }
-    }
-  }
+  if (
+    studio.modules.instagram &&
+    studio.modules.video_posting &&
+    Boolean(parsed.INSTAGRAM_EN_ACCESS_TOKEN) !== Boolean(parsed.INSTAGRAM_EN_USER_ID)
+  )
+    throw new Error("INSTAGRAM_EN_ACCESS_TOKEN and INSTAGRAM_EN_USER_ID must be set together");
   if (parsed.MEDIA_PROCESSOR_PROVIDER === "remote_http" && (!parsed.MEDIA_PROCESSOR_URL || !parsed.MEDIA_PROCESSOR_TOKEN)) {
     throw new Error("MEDIA_PROCESSOR_URL and MEDIA_PROCESSOR_TOKEN are required when MEDIA_PROCESSOR_PROVIDER=remote_http");
   }
@@ -385,7 +284,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
     TIMEZONE: studio.timezone,
     TIMEZONE_LABEL: studio.timezoneLabel,
     controllerBotToken: parsed.CONTROLLER_BOT_TOKEN ?? parsed.TELEGRAM_BOT_TOKEN,
-    commandCenterToken: parsed.COMMAND_CENTER_TOKEN ?? parsed.TELEGRAM_WEBHOOK_SECRET,
+    commandCenterToken: parsed.COMMAND_CENTER_TOKEN,
     studio,
   };
 }

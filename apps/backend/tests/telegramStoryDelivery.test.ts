@@ -13,9 +13,8 @@ import { loadConfig } from "../src/foundation/config.js";
  * publish and whose wrong answer is either a silent skip or a live connection
  * attempt with half a configuration. */
 const storyEnv = {
-  ADMIN_IDS: "42",
+  CONTROLLER_ADMIN_IDS: "42",
   CONTROLLER_BOT_TOKEN: "token",
-  ENABLE_TELEGRAM_STORIES: "true",
   TELEGRAM_STORIES_CHANNEL: "@alexgetman",
   TELEGRAM_CHANNEL_STORIES_API_ID: "1",
   TELEGRAM_CHANNEL_STORIES_API_HASH: "hash",
@@ -26,13 +25,13 @@ const storyEnv = {
 // the one generateStoryMedia actually produces: the original item plus the
 // generated story variant.
 const payload = {
-  text_en: "A story",
-  media_en: [{ type: "photo", local_path: "/tmp/source.jpg", story_local_path: "/tmp/story.jpg" }],
+  text: "A story",
+  media: [{ type: "photo", localPath: "/tmp/source.jpg", storyLocalPath: "/tmp/story.jpg" }],
 };
 
 describe("publishTelegramStory guards", () => {
   it("skips without media rather than connecting to Telegram", async () => {
-    expect(await publishTelegramStory({ text_en: "No media" }, loadConfig(storyEnv))).toEqual({
+    expect(await publishTelegramStory({ text: "No media" }, loadConfig(storyEnv))).toEqual({
       ok: false,
       skipped: true,
       reason: "missing_media",
@@ -40,19 +39,9 @@ describe("publishTelegramStory guards", () => {
   });
 
   it("skips media that carries neither a story path nor a local path", async () => {
-    const remoteOnly = { text_en: "t", media_en: [{ type: "photo", vps_url: "https://cdn.test/a.jpg" }] };
+    const remoteOnly = { text: "t", media: [{ type: "photo", vpsUrl: "https://cdn.test/a.jpg" }] };
 
     expect(await publishTelegramStory(remoteOnly, loadConfig(storyEnv))).toMatchObject({ skipped: true, reason: "missing_media" });
-  });
-
-  it("skips when the Stories module is switched off", async () => {
-    const { ENABLE_TELEGRAM_STORIES: _off, ...disabled } = storyEnv;
-
-    expect(await publishTelegramStory(payload, loadConfig(disabled))).toEqual({
-      ok: false,
-      skipped: true,
-      reason: "telegram_stories_disabled",
-    });
   });
 
   it("skips on a partial MTProto session instead of attempting a connection", async () => {
@@ -82,8 +71,8 @@ describe("publishTelegramStory guards", () => {
 
   it("reports every guard as skipped rather than failed, so the queue does not retry it", async () => {
     const results = [
-      await publishTelegramStory({ text_en: "t" }, loadConfig(storyEnv)),
-      await publishTelegramStory(payload, loadConfig({ ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "token" })),
+      await publishTelegramStory({ text: "t" }, loadConfig(storyEnv)),
+      await publishTelegramStory(payload, loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "token" })),
     ];
 
     for (const result of results) expect(result).toMatchObject({ ok: false, skipped: true });

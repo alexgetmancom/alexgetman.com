@@ -8,10 +8,10 @@ import type {
   StudioPostStore,
 } from "../../application/ports.js";
 import { publicationRef } from "../../application/publication-ref.js";
+import { isSiteTarget } from "../../botTargets.js";
 import { jsonObject } from "../../json.js";
 import { requeuedPostTarget, requeuedPublishJobColumns } from "../../publishing/job-policy.js";
 import { localizeTargetPayload } from "../../publishing/payload.js";
-import { siteReasonForTarget, siteTargetForReason } from "../../publishing/targets.js";
 import {
   draftEntityCandidates,
   draftSources,
@@ -137,8 +137,7 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
         .all();
       const latestSite = new Map<string, (typeof site)[number]>();
       for (const row of site) {
-        const target = siteTargetForReason(row.reason);
-        if (target && !latestSite.has(target)) latestSite.set(target, row);
+        if (isSiteTarget(row.reason) && !latestSite.has(row.reason)) latestSite.set(row.reason, row);
       }
 
       return [...latestSocial.entries(), ...latestSite.entries()].flatMap(([target, row]) => {
@@ -156,24 +155,23 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
 
       db.transaction((tx) => {
         for (const target of requested) {
-          const siteTargetName = siteReasonForTarget(target);
           let result: PublicationRetryResult;
 
-          if (siteTargetName) {
+          if (isSiteTarget(target)) {
             result = retryPublicationTarget({
               target,
               latest: () =>
                 tx
                   .select()
                   .from(siteJobs)
-                  .where(and(eq(siteJobs.postId, postId), eq(siteJobs.reason, siteTargetName)))
+                  .where(and(eq(siteJobs.postId, postId), eq(siteJobs.reason, target)))
                   .orderBy(desc(siteJobs.jobId))
                   .get(),
               queued: () =>
                 tx
                   .select({ jobId: siteJobs.jobId })
                   .from(siteJobs)
-                  .where(and(eq(siteJobs.postId, postId), eq(siteJobs.reason, siteTargetName), eq(siteJobs.status, "queued")))
+                  .where(and(eq(siteJobs.postId, postId), eq(siteJobs.reason, target), eq(siteJobs.status, "queued")))
                   .get() != null,
               requeue: (row) => {
                 tx.update(siteJobs)

@@ -10,8 +10,8 @@ import { trackUsageSync } from "../observability/usage.js";
 import { readyStoryCardMedia } from "../story-cards/store.js";
 import { assertPublicationPreflight } from "./preflight.js";
 import { createPublicationPlan, type PublishMode } from "./publication-plan.js";
+import { reconcilePublication } from "./publication-reconciliation.js";
 import { persistPublicationPlanTx } from "./publication-writer.js";
-import { reconcilePublication } from "./queue.js";
 import { parseTargets } from "./targets.js";
 
 type PublishDraftOptions = { mode?: PublishMode; ruAt?: Date | null; enAt?: Date | null; immediateLocale?: "ru" | "en" };

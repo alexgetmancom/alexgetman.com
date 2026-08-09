@@ -192,7 +192,7 @@ describe("publishToThreads", () => {
 
   it("builds the reply chain when the draft carries the author's waiver", async () => {
     const { fetchImpl, creations } = transport({ publishIds: ["p1", "p2"], containerIds: ["c1", "c2"] });
-    const result = await publishToThreads({ text: `${"a".repeat(500)} tail`, threads_chain_approved: true }, config, fetchImpl);
+    const result = await publishToThreads({ text: `${"a".repeat(500)} tail`, threadsChainApproved: true }, config, fetchImpl);
 
     expect(creations()).toHaveLength(2);
     // The continuation is a reply to what was just published, not a second

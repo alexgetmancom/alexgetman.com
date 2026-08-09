@@ -9,7 +9,7 @@ type InstagramCredentialSource = {
   INSTAGRAM_RU_USER_ID?: string | undefined;
 };
 
-type InstagramCredentials = { accessToken: string | undefined; userId: string | undefined };
+export type InstagramCredentials = { accessToken: string | undefined; userId: string | undefined };
 
 /**
  * Whether an unprefixed INSTAGRAM_* pair may stand in for the English account.
@@ -46,20 +46,6 @@ export function instagramCredentialsForLocale(
     accessToken: config.INSTAGRAM_EN_ACCESS_TOKEN ?? (shared ? config.INSTAGRAM_ACCESS_TOKEN : undefined),
     userId: config.INSTAGRAM_EN_USER_ID ?? (shared ? config.INSTAGRAM_USER_ID : undefined),
   };
-}
-
-/** Adapts the legacy Instagram publisher interface to one locale's account. */
-export function instagramConfigForLocale<T extends InstagramCredentialSource>(
-  config: T,
-  locale: InstagramLocale,
-  fallback: InstagramSharedFallback = "none",
-): T {
-  const credentials = instagramCredentialsForLocale(config, locale, fallback);
-  return {
-    ...config,
-    INSTAGRAM_ACCESS_TOKEN: credentials.accessToken,
-    INSTAGRAM_USER_ID: credentials.userId,
-  } as T;
 }
 
 /**

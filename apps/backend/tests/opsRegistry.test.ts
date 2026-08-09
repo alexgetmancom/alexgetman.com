@@ -28,7 +28,13 @@ const HOST_ONLY = [
 ];
 
 function context(db: UnsafeBackendDb): OperationContext {
-  return { dbPath: ":memory:", config: () => loadConfig({ ADMIN_IDS: "42" }), db: () => db, fetchImpl: fetch, actorType: "test" };
+  return {
+    dbPath: ":memory:",
+    config: () => loadConfig({ CONTROLLER_ADMIN_IDS: "42" }),
+    db: () => db,
+    fetchImpl: fetch,
+    actorType: "test",
+  };
 }
 
 describe("operations registry", () => {
@@ -43,7 +49,7 @@ describe("operations registry", () => {
   /** A usage line reading `--ref VALUE` is what produced `--ref 160` and the
    * round-trip it cost; the placeholder has to survive into the rendered line. */
   it("derives the usage line from the schema, showing the real invocation", () => {
-    expect(operationUsage("retry", operationDef("retry") as never)).toBe("retry --ref post:160 [--target x] [--locale ru|en]");
+    expect(operationUsage("retry", operationDef("retry") as never)).toBe("retry --ref post:160 [--target x] [--locale ru|en] [--apply]");
     expect(operationUsage("recent", operationDef("recent") as never)).toBe("recent [--limit VALUE]");
     expect(operationUsage("story-card-backfill", operationDef("story-card-backfill") as never)).toBe(
       "story-card-backfill --ref post:160 [--apply] [--force]",
@@ -69,7 +75,7 @@ describe("operations registry", () => {
 
   it("serves every agent operation as an MCP tool and nothing else", async () => {
     backendDb = openBackendDb(":memory:");
-    const config = loadConfig({ ADMIN_IDS: "42" });
+    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
 
     const listed = (await mcpResponse(backendDb, config, { jsonrpc: "2.0", id: 1, method: "tools/list" }, "key", 42)) as {
       result: { tools: Array<{ name: string }> };
@@ -86,7 +92,7 @@ describe("operations registry", () => {
 
   it("refuses a host-only operation asked for over MCP", async () => {
     backendDb = openBackendDb(":memory:");
-    const config = loadConfig({ ADMIN_IDS: "42" });
+    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
 
     const response = (await mcpResponse(
       backendDb,
@@ -101,7 +107,7 @@ describe("operations registry", () => {
 
   it("names the offending field when an agent calls an operation wrongly", async () => {
     backendDb = openBackendDb(":memory:");
-    const config = loadConfig({ ADMIN_IDS: "42" });
+    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
 
     const response = (await mcpResponse(
       backendDb,

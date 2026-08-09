@@ -5,7 +5,6 @@ import { type BackendDb, unsafeDb } from "../db/client.js";
 import { drafts, postEvents, publicationPlans, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import { effectivePublicationStatus, planObject, planScheduleAt } from "./state.js";
-import { siteTargetForReason } from "./targets.js";
 
 type PublicationJob = { target: string; status: string; error: string | null };
 
@@ -27,8 +26,7 @@ export function reconcilePublication(backendDb: BackendDb, postId: number): void
     .db.select({ target: siteJobs.reason, status: siteJobs.status, error: siteJobs.lastError })
     .from(siteJobs)
     .where(eq(siteJobs.postId, postId))
-    .all()
-    .map((job) => ({ ...job, target: siteTargetForReason(job.target) ?? job.target }));
+    .all();
   const all: PublicationJob[] = [...social, ...site];
   const plan = publicationPlan(backendDb, postId);
   emitLocaleCompletion(backendDb, postId, all, plan);

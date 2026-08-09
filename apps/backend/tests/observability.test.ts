@@ -1,20 +1,22 @@
 import { describe, expect, it, mock } from "bun:test";
 import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
-import { alertDedup, credentialChecks, postEvents, publishJobs, siteJobs, workerState } from "../src/db/schema.js";
+import { alertDedup, channelConnections, credentialChecks, postEvents, publishJobs, siteJobs, workerState } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { renderDashboard } from "../src/interfaces/web/dashboard.js";
 import { runObservabilityCycle } from "../src/observability/cycle.js";
 import { healthReport } from "../src/observability/health.js";
 import { recordMemoryPressure } from "../src/observability/runtime-health.js";
 import { commandCenterPayload } from "../src/operations/command-center.js";
+import { registerTestChannels, TEXT_TEST_CHANNELS, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 function testHarness() {
   const backendDb = openBackendDb(":memory:");
+  registerTestChannels(backendDb, [...TEXT_TEST_CHANNELS, ...VIDEO_TEST_CHANNELS]);
   const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
   const alertsPort = { sendAlert: async (_text: string) => void (await sendMessage()) };
-  const config = loadConfig({ ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "token", ALERT_COOLDOWN_SECONDS: "3600" });
+  const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "token", ALERT_COOLDOWN_SECONDS: "3600" });
   return { backendDb, sendMessage, alertsPort, config };
 }
 
@@ -65,9 +67,10 @@ describe("observability", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
+          postId: 1,
           postKey: "post:stale",
           messageId: 1,
-          target: "threads",
+          target: "threads_ru",
           status: "publishing",
           lockedAt: "2000-01-01T00:00:00.000Z",
           payloadJson: {},
@@ -93,7 +96,7 @@ describe("observability", () => {
         .values({
           postId: 7,
           messageId: 7,
-          reason: "publish_ru",
+          reason: "site_ru",
           status: "failed",
           lastError: "Astro build failed",
           createdAt: now,
@@ -116,6 +119,7 @@ describe("observability", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
+          postId: 8,
           postKey: "post:terminal",
           messageId: 8,
           target: "telegram_stories",
@@ -239,7 +243,7 @@ describe("runtime health", () => {
 /** Every capability requirement satisfied, so `ok` reflects credentials and
  * workers alone rather than being pinned false by a missing integration. */
 const READY_ENV = {
-  ADMIN_IDS: "42",
+  CONTROLLER_ADMIN_IDS: "42",
   CONTROLLER_BOT_TOKEN: "token",
   YOUTUBE_CLIENT_ID: "id",
   YOUTUBE_CLIENT_SECRET: "secret",
@@ -281,18 +285,26 @@ function insertAlertEvent(backendDb: ReturnType<typeof openBackendDb>, severity:
     .run();
 }
 
+function setHealthChannels(backendDb: ReturnType<typeof openBackendDb>, targets: Array<"telegram" | "threads_ru" | "x">): void {
+  backendDb.db.delete(channelConnections).run();
+  for (const target of targets) {
+    const locale = target === "x" ? "en" : "ru";
+    registerChannel(backendDb, {
+      platform: target === "threads_ru" ? "threads" : target,
+      locale,
+      provider: "native",
+      targetId: target,
+      source: "test",
+    });
+  }
+}
+
 describe("healthReport", () => {
   it("scopes health and dashboard credentials to registered channels", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const config = loadConfig(READY_ENV);
-      registerChannel(backendDb, {
-        platform: "telegram",
-        locale: "ru",
-        provider: "native",
-        targetId: "telegram",
-        source: "test",
-      });
+      setHealthChannels(backendDb, ["telegram"]);
       insertCredential(backendDb, "telegram", "ready");
       insertCredential(backendDb, "threads_ru", "missing");
       insertWorker(backendDb, "publisher", { ok: true });
@@ -315,6 +327,7 @@ describe("healthReport", () => {
   it("reports ok with an ISO timestamp when credentials, workers and capabilities are all ready", () => {
     const backendDb = openBackendDb(":memory:");
     try {
+      setHealthChannels(backendDb, ["x"]);
       insertCredential(backendDb, "x", "ready");
       insertWorker(backendDb, "publisher", { ok: true });
       const report = healthReport(loadConfig(READY_ENV), backendDb);
@@ -331,6 +344,7 @@ describe("healthReport", () => {
   it("goes not-ok when any credential check is not ready", () => {
     const backendDb = openBackendDb(":memory:");
     try {
+      setHealthChannels(backendDb, ["x", "threads_ru"]);
       insertCredential(backendDb, "x", "ready");
       insertCredential(backendDb, "threads_ru", "expired");
       insertWorker(backendDb, "publisher", { ok: true });
@@ -344,6 +358,7 @@ describe("healthReport", () => {
   it("goes not-ok when a worker reports ok:false, and stays ok when it reports no verdict", () => {
     const backendDb = openBackendDb(":memory:");
     try {
+      setHealthChannels(backendDb, ["x"]);
       insertCredential(backendDb, "x", "ready");
       insertWorker(backendDb, "publisher", { ok: false, lastError: "stalled" });
       expect(healthReport(loadConfig(READY_ENV), backendDb).ok).toBe(false);
@@ -353,6 +368,7 @@ describe("healthReport", () => {
 
     const clean = openBackendDb(":memory:");
     try {
+      setHealthChannels(clean, ["x"]);
       insertCredential(clean, "x", "ready");
       insertWorker(clean, "collector", { phase: "idle" });
       expect(healthReport(loadConfig(READY_ENV), clean).ok).toBe(true);
@@ -364,6 +380,7 @@ describe("healthReport", () => {
   it("goes not-ok when a lifecycle heartbeat is stale", () => {
     const backendDb = openBackendDb(":memory:");
     try {
+      setHealthChannels(backendDb, ["x"]);
       insertCredential(backendDb, "x", "ready");
       backendDb.db
         .insert(workerState)
@@ -384,10 +401,11 @@ describe("healthReport", () => {
   it("goes not-ok and names the missing env when a capability is unconfigured", () => {
     const backendDb = openBackendDb(":memory:");
     try {
+      setHealthChannels(backendDb, ["x"]);
       insertCredential(backendDb, "x", "ready");
       insertWorker(backendDb, "publisher", { ok: true });
-      const { ADMIN_IDS, CONTROLLER_BOT_TOKEN } = READY_ENV;
-      const report = healthReport(loadConfig({ ADMIN_IDS, CONTROLLER_BOT_TOKEN }), backendDb);
+      const { CONTROLLER_ADMIN_IDS, CONTROLLER_BOT_TOKEN } = READY_ENV;
+      const report = healthReport(loadConfig({ CONTROLLER_ADMIN_IDS, CONTROLLER_BOT_TOKEN }), backendDb);
 
       expect(report.ok).toBe(false);
       expect(report.capabilities.find((capability) => capability.target === "x")).toMatchObject({
@@ -416,6 +434,7 @@ describe("healthReport", () => {
   it("treats an empty database as ok rather than throwing on a missing count row", () => {
     const backendDb = openBackendDb(":memory:");
     try {
+      backendDb.db.delete(channelConnections).run();
       const report = healthReport(loadConfig(READY_ENV), backendDb);
       expect(report).toMatchObject({ ok: true, pendingAlerts: 0, credentials: [], workers: [] });
     } finally {

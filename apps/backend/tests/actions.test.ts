@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { asc, count, eq } from "drizzle-orm";
-import { posts, postTargets, publicationSources, publications, publishJobs, siteJobs, siteSourceItems } from "../src/db/schema.js";
+import { posts, postTargets, publicationSources, publications, publishJobs, siteJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { runOperationCommand } from "../src/operations/commands.js";
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
@@ -71,68 +71,14 @@ describe("command center actions", () => {
       expect(payloads.threads_ru).toMatchObject({
         locale: "ru",
         text: "Русский текст",
-        text_en: "",
         media: [{ type: "IMAGE", fileId: "ru-photo" }],
       });
       expect(payloads.threads_en).toMatchObject({
         locale: "en",
         text: "English text",
-        text_en: "English text",
         media: [{ type: "IMAGE", fileId: "en-photo" }],
       });
       expect(backendDb.db.select({ count: count() }).from(publishJobs).where(eq(publishJobs.postId, 52)).get()?.count).toBe(2);
-    } finally {
-      backendDb.close();
-    }
-  });
-
-  it("requeues a missing target job for a legacy Telegram post", async () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
-      const now = new Date().toISOString();
-      backendDb.db
-        .insert(posts)
-        .values({
-          postKey: "telegram:alexgetmancom:777",
-          channel: "alexgetmancom",
-          messageId: 777,
-          text: "Русский",
-          textEn: "English",
-          status: "active",
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      backendDb.db
-        .insert(siteSourceItems)
-        .values({
-          messageId: 777,
-          itemJson: {
-            text_ru: "Русский",
-            text_en: "English",
-            media: [{ type: "photo", file_id: "ru" }],
-            media_en: [{ type: "photo", file_id: "en" }],
-          },
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      const result = await runOperationCommand(backendDb, {
-        action: "retry",
-        apply: true,
-        ref: "777",
-        target: "threads_en",
-      });
-      expect(result).toMatchObject({
-        ok: true,
-        post_key: "telegram:alexgetmancom:777",
-        targets: ["threads_en"],
-      });
-      expect(backendDb.db.select().from(publishJobs).where(eq(publishJobs.target, "threads_en")).get()?.payloadJson).toMatchObject({
-        locale: "en",
-        text: "English",
-        media: [{ type: "IMAGE", fileId: "en" }],
-      });
     } finally {
       backendDb.close();
     }
@@ -333,7 +279,7 @@ describe("command center actions", () => {
   it("reschedules a Studio post by locale through the operations command", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ ADMIN_IDS: "42" });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
       const posts = postService(backendDb, config);
       const draftId = posts.create(42, { text: "RU", textEn: "EN", entities: [], media: [] });
       const initialAt = new Date(Date.now() + 60 * 60_000);
@@ -434,7 +380,7 @@ describe("command center actions", () => {
         .values({
           postId: 90,
           messageId: 90,
-          reason: "publish_ru",
+          reason: "site_ru",
           status: "failed",
           attemptCount: 2,
           lastError: "render boom",
@@ -470,7 +416,7 @@ describe("command center actions", () => {
         .run();
       backendDb.db
         .insert(siteJobs)
-        .values({ postId: 91, messageId: 91, reason: "publish_ru", status: "published", attemptCount: 1, createdAt: now, updatedAt: now })
+        .values({ postId: 91, messageId: 91, reason: "site_ru", status: "published", attemptCount: 1, createdAt: now, updatedAt: now })
         .run();
       for (const target of ["telegram", "site_ru"])
         backendDb.db.insert(postTargets).values({ postKey: "post:91", target, status: "published", skipped: 0, updatedAt: now }).run();

@@ -8,7 +8,7 @@ describe("site engagement", () => {
   it("uses SQLite counters for pageviews and ignores untrusted forwarded IPs", () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ LIKES_SALT: "salt", TRUSTED_CLIENT_IP_HEADER: "x-real-ip" });
+      const config = loadConfig({ CLIENT_IP_HASH_SALT: "salt", TRUSTED_CLIENT_IP_HEADER: "x-real-ip" });
       recordPageview(backendDb, "/article/");
       recordPageview(backendDb, "/article/");
       expect(backendDb.sqlite.prepare("SELECT count FROM site_pageviews WHERE path=?").get("/article/")).toEqual({ count: 2 });

@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { ChannelStore } from "../../application/ports.js";
-import { channelConnections, channelCredentials } from "../schema.js";
+import { channelConnections } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite adapter for channel routing and encrypted credential metadata. */
@@ -51,40 +51,6 @@ export function createChannelStore(db: BackendDatabase): ChannelStore {
           .where(and(eq(channelConnections.platform, platform), eq(channelConnections.locale, locale), eq(channelConnections.enabled, 1)))
           .get() ?? null
       );
-    },
-
-    secrets(channelId) {
-      return db
-        .select({ name: channelCredentials.name, valueEncrypted: channelCredentials.valueEncrypted })
-        .from(channelCredentials)
-        .where(eq(channelCredentials.channelId, channelId))
-        .all();
-    },
-
-    saveSecret(input) {
-      db.insert(channelCredentials)
-        .values(input)
-        .onConflictDoUpdate({
-          target: [channelCredentials.channelId, channelCredentials.name],
-          set: { valueEncrypted: input.valueEncrypted, updatedAt: input.updatedAt },
-        })
-        .run();
-    },
-
-    deleteSecrets(channelId, name) {
-      const where = name
-        ? and(eq(channelCredentials.channelId, channelId), eq(channelCredentials.name, name))
-        : eq(channelCredentials.channelId, channelId);
-      db.delete(channelCredentials).where(where).run();
-    },
-
-    secretNames(channelId) {
-      return db
-        .select({ name: channelCredentials.name })
-        .from(channelCredentials)
-        .where(eq(channelCredentials.channelId, channelId))
-        .all()
-        .map((row) => row.name);
     },
   };
 }

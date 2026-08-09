@@ -23,7 +23,6 @@ export async function publishTelegramStory(payload: Record<string, unknown>, con
   if (!media) return { ok: false, skipped: true, reason: "missing_media" };
   const caption = telegramStoryCaptionInput(payloadText(payload), Array.isArray(payload.entities) ? payload.entities : []);
 
-  if (!config.ENABLE_TELEGRAM_STORIES) return { ok: false, skipped: true, reason: "telegram_stories_disabled" };
   if (!config.TELEGRAM_CHANNEL_STORIES_API_ID || !config.TELEGRAM_CHANNEL_STORIES_API_HASH || !config.TELEGRAM_CHANNEL_STORIES_SESSION) {
     return { ok: false, skipped: true, reason: "missing_channel_story_credentials" };
   }
@@ -50,9 +49,9 @@ async function publishChannelStory(
     if (media.type === "VIDEO" && fs.statSync(uploadPath).size > STORY_MAX_BYTES) {
       cleanupPath = path.join(os.tmpdir(), `tg_story_${Date.now()}.mp4`);
       const targetBytes = 9 * 1024 * 1024;
-      // Compatibility only while an older single-output worker is still
-      // running during manual promotion. Current VM-106 emits the Telegram
-      // derivative before this publisher starts. Never turn a 128/320 kbps
+      // The local media provider emits only the quality master, so keep its
+      // small-file conversion here. The remote provider supplies this variant
+      // before the publisher starts. Never turn a 128/320 kbps
       // source track into 64 kbps here: the audio is copied verbatim below, so
       // its real bitrate — 320 kbps for our own story encode — has to come out
       // of the budget. Assuming 128 kbps here overshot the 9.5 MiB ceiling by
@@ -91,7 +90,7 @@ async function publishChannelStory(
     const storyChannel = config.TELEGRAM_STORIES_CHANNEL?.replace(/^@/, "");
     if (!storyChannel) throw new Error("telegram_story_channel_missing");
     // Preserve TypeScript's post-validation narrowing across the mutation
-    // closure; uploadPath may have been replaced by the compatibility render.
+    // closure; uploadPath may have been replaced by the local-provider render.
     const finalUploadPath = uploadPath;
     const story = await ambiguousExternalMutation("telegram_stories", () =>
       withTimeout(

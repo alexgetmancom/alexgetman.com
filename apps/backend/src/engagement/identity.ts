@@ -11,7 +11,7 @@ import type { BackendConfig } from "../foundation/config.js";
 export function clientIpHash(request: Request, config: BackendConfig): string {
   const address = request.headers.get(config.TRUSTED_CLIENT_IP_HEADER)?.trim() || "unknown";
   return crypto
-    .createHmac("sha256", config.LIKES_SALT || "alexgetman-likes")
+    .createHmac("sha256", config.CLIENT_IP_HASH_SALT || "alexgetman-client-ip")
     .update(address)
     .digest("hex");
 }

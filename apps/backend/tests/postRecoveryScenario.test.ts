@@ -10,7 +10,7 @@ import { HttpPublishError } from "../src/publishing/errors.js";
 import { claimDuePublishJobs, enqueuePublishJobTx, failPublishJob } from "../src/publishing/queue.js";
 import { withDb } from "./helpers/db.js";
 
-const config = loadConfig({ ADMIN_IDS: "42" });
+const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
 
 describe("post recovery scenario", () => {
   it("notifies once, retries all failed targets once, and exposes no duplicate queue rows", async () =>

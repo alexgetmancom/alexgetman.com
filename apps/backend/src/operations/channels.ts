@@ -1,11 +1,9 @@
 import { eq } from "drizzle-orm";
-import { credentialShape, deleteChannelSecrets, storedCredentialNames } from "../channels/credentials.js";
 import { isPublishableVideoPlatform } from "../channels/destinations.js";
 import { persistChannelConnection } from "../channels/management.js";
 import { listChannels } from "../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { channelConnections } from "../db/schema.js";
-import type { BackendConfig } from "../foundation/config.js";
 import type { VideoLocale } from "../publishing/video-types.js";
 
 /**
@@ -27,14 +25,10 @@ type ChannelReport = {
   enabled: boolean;
   source: string;
   publishable: boolean;
-  credentials: { stored: string[]; missing: string[] };
 };
 
-export function channelReport(backendDb: BackendDb, config: BackendConfig): ChannelReport[] {
+export function channelReport(backendDb: BackendDb): ChannelReport[] {
   return listChannels(backendDb, false).map((channel) => {
-    const locale: VideoLocale = channel.locale === "en" ? "en" : "ru";
-    const stored = storedCredentialNames(backendDb, channel.id);
-    const shape = credentialShape(channel.platform, channel.provider, locale);
     return {
       id: channel.id,
       platform: channel.platform,
@@ -46,37 +40,27 @@ export function channelReport(backendDb: BackendDb, config: BackendConfig): Chan
       source: channel.source,
       // A text channel has no video target and is not expected to have one.
       publishable: channel.targetId ? true : isPublishableVideoPlatform(channel.platform),
-      credentials: {
-        stored,
-        // Missing only counts what neither the store nor the environment has:
-        // a Studio still configured entirely through variables is complete.
-        missing: shape
-          .filter((field) => !stored.includes(field.name) && !config[field.envVariable as keyof BackendConfig])
-          .map((field) => field.name),
-      },
     };
   });
 }
 
 export function connectChannel(
   backendDb: BackendDb,
-  config: BackendConfig,
   input: {
     platform: string;
     locale: VideoLocale;
     provider: string;
+    targetId?: string;
     accountId?: string;
     label?: string;
-    credentials: Record<string, string>;
   },
-): { id: string; stored: string[] } {
-  const result = persistChannelConnection(backendDb, config, { ...input, source: "cli" });
-  return { id: result.channel.id, stored: result.stored };
+): { id: string } {
+  return { id: persistChannelConnection(backendDb, { ...input, source: "cli" }).id };
 }
 
 /** Disabling keeps the row: its publications, metrics and audience history stay
  * attributable to the account they came from. */
-export function disableChannel(backendDb: BackendDb, channelId: string, forgetCredentials: boolean): { id: string; disabled: boolean } {
+export function disableChannel(backendDb: BackendDb, channelId: string): { id: string; disabled: boolean } {
   const updated = unsafeDb(backendDb)
     .db.update(channelConnections)
     .set({ enabled: 0, updatedAt: new Date().toISOString() })
@@ -84,6 +68,5 @@ export function disableChannel(backendDb: BackendDb, channelId: string, forgetCr
     .returning({ id: channelConnections.id })
     .get();
   if (!updated) throw new Error(`unknown channel: ${channelId}`);
-  if (forgetCredentials) deleteChannelSecrets(backendDb, channelId);
   return { id: channelId, disabled: true };
 }

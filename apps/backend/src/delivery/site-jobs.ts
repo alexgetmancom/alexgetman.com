@@ -17,6 +17,14 @@ import { publishContentIndex } from "./site-content-index.js";
 import { pingIndexNow } from "./site-index-now.js";
 import { materializeSiteMedia } from "./site-media.js";
 
+export const SITE_JOB_RESTART_LOCK_GRACE_SECONDS = 30;
+const SITE_JOB_CLAIM_LIMIT = 20;
+const SITE_JOB_HEARTBEAT_INTERVAL_SECONDS = 60;
+const SITE_JOB_LOCK_TIMEOUT_SECONDS = 900;
+const SITE_JOB_MAX_ATTEMPTS = 5;
+const SITE_JOB_BACKOFF_BASE_SECONDS = 60;
+const SITE_JOB_BACKOFF_MAX_SECONDS = 900;
+
 type SiteJob = {
   job_id: number;
   post_id: number | null;
@@ -26,15 +34,15 @@ type SiteJob = {
 };
 
 export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendDb): Promise<number> {
-  recoverStaleSiteJobs(config, backendDb);
-  const jobs = claimSiteJobs(config, backendDb);
+  recoverStaleSiteJobs(backendDb);
+  const jobs = claimSiteJobs(backendDb);
   if (jobs.length === 0) {
     recordWorkerState(backendDb, "site", { claimed: 0 });
     return 0;
   }
   try {
     await withJobHeartbeat(
-      config.SITE_JOB_HEARTBEAT_INTERVAL_SECONDS,
+      SITE_JOB_HEARTBEAT_INTERVAL_SECONDS,
       () => {
         unsafeDb(backendDb)
           .db.update(siteJobs)
@@ -76,7 +84,7 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
     }
     recordWorkerState(backendDb, "site", { claimed: jobs.length, published: completed.length });
   } catch (error) {
-    const failed = failSiteJobs(config, backendDb, jobs, error);
+    const failed = failSiteJobs(backendDb, jobs, error);
     recordWorkerState(
       backendDb,
       "site",
@@ -87,11 +95,7 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
   return jobs.length;
 }
 
-export function recoverStaleSiteJobs(
-  config: BackendConfig,
-  backendDb: BackendDb,
-  maxLockAgeSeconds = config.SITE_JOB_LOCK_TIMEOUT_SECONDS,
-): number {
+export function recoverStaleSiteJobs(backendDb: BackendDb, maxLockAgeSeconds = SITE_JOB_LOCK_TIMEOUT_SECONDS): number {
   const cutoff = new Date(Date.now() - maxLockAgeSeconds * 1000).toISOString();
   const now = new Date().toISOString();
   return unsafeDb(backendDb)
@@ -198,7 +202,7 @@ export async function renderFeedFiles(
   }
 }
 
-function claimSiteJobs(config: BackendConfig, backendDb: BackendDb): SiteJob[] {
+function claimSiteJobs(backendDb: BackendDb): SiteJob[] {
   const now = new Date().toISOString();
   const lockId = `${workerId("site")}:${crypto.randomUUID()}`;
   const rows = unsafeDb(backendDb)
@@ -206,7 +210,7 @@ function claimSiteJobs(config: BackendConfig, backendDb: BackendDb): SiteJob[] {
     .from(siteJobs)
     .where(and(eq(siteJobs.status, "queued"), or(isNull(siteJobs.nextAttemptAt), lte(siteJobs.nextAttemptAt, now))))
     .orderBy(asc(siteJobs.createdAt), asc(siteJobs.jobId))
-    .limit(config.SITE_JOB_CLAIM_LIMIT)
+    .limit(SITE_JOB_CLAIM_LIMIT)
     .all();
   const claimed: SiteJob[] = [];
   unsafeDb(backendDb).db.transaction((tx) => {
@@ -259,20 +263,20 @@ function completeSiteJobs(backendDb: BackendDb, jobs: SiteJob[]): SiteJob[] {
   return completed;
 }
 
-function failSiteJobs(config: BackendConfig, backendDb: BackendDb, jobs: SiteJob[], error: unknown): SiteJob[] {
+function failSiteJobs(backendDb: BackendDb, jobs: SiteJob[], error: unknown): SiteJob[] {
   const now = new Date().toISOString();
   const message = String(error instanceof Error ? error.message : error);
   const failed: SiteJob[] = [];
   unsafeDb(backendDb).db.transaction((tx) => {
     for (const job of jobs) {
       const attempt = Number(job.attempt_count ?? 0) + 1;
-      const retry = attempt < config.SITE_JOB_MAX_ATTEMPTS;
+      const retry = attempt < SITE_JOB_MAX_ATTEMPTS;
       const updated = tx
         .update(siteJobs)
         .set({
           status: retry ? "queued" : "failed",
           attemptCount: attempt,
-          nextAttemptAt: retry ? nextRetryAt(attempt, config.SITE_JOB_BACKOFF_BASE_SECONDS, config.SITE_JOB_BACKOFF_MAX_SECONDS) : null,
+          nextAttemptAt: retry ? nextRetryAt(attempt, SITE_JOB_BACKOFF_BASE_SECONDS, SITE_JOB_BACKOFF_MAX_SECONDS) : null,
           lockedBy: null,
           lockedAt: null,
           lastError: message,
@@ -287,7 +291,7 @@ function failSiteJobs(config: BackendConfig, backendDb: BackendDb, jobs: SiteJob
   });
   for (const postId of new Set(
     failed
-      .filter((job) => Number(job.attempt_count ?? 0) + 1 >= config.SITE_JOB_MAX_ATTEMPTS)
+      .filter((job) => Number(job.attempt_count ?? 0) + 1 >= SITE_JOB_MAX_ATTEMPTS)
       .map((job) => job.post_id)
       .filter((value): value is number => value != null),
   ))

@@ -34,13 +34,13 @@ describe("Studio media storage", () => {
       filename: "one.jpg",
       contentType: "image/jpeg",
       localPath: firstPath,
-      source: "mcp_upload",
+      source: "ops_upload",
     });
     const second = await importStudioMediaFile(backendDb, config, 42, {
       filename: "two.png",
       contentType: "image/png",
       localPath: secondPath,
-      source: "mcp_upload",
+      source: "ops_upload",
     });
 
     expect(second.id).toBe(first.id);

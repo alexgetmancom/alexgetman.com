@@ -41,9 +41,6 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
   return createPlatformAdapters(config, fetchImpl, prepare);
 }
 
-export { verifyPlatformPublication } from "../platform-adapters.js";
-export { platformConfig } from "../platform-routing.js";
-
 async function withPreparedMedia(
   job: ClaimedPublishJob,
   config: BackendConfig,
@@ -80,7 +77,7 @@ async function withPreparedMedia(
     mediaCache.delete(key);
     throw error;
   }
-  return { ...job, payload: { ...job.payload, media: items, media_en: items } };
+  return { ...job, payload: { ...job.payload, media: items } };
 }
 
 async function createStoryMedia(job: ClaimedPublishJob, media: ReturnType<typeof payloadMedia>, config: BackendConfig) {
@@ -91,7 +88,7 @@ async function createStoryMedia(job: ClaimedPublishJob, media: ReturnType<typeof
   // re-downloading or re-transcoding an unchanged source video.
   if (source.storyLocalPath) return [source];
   const locale = job.payload.locale === "ru" ? "ru" : "en";
-  const draftId = Number(job.payload.draft_id ?? job.postId ?? job.jobId);
+  const draftId = Number(job.payload.draftId ?? job.postId ?? job.jobId);
   return generateStoryMedia([source], Number.isSafeInteger(draftId) ? draftId : job.jobId, locale, config);
 }
 
@@ -110,7 +107,7 @@ function mediaCacheKey(job: ClaimedPublishJob, media: ReturnType<typeof payloadM
 
 function storyMediaCacheKey(job: ClaimedPublishJob, media: ReturnType<typeof payloadMedia>): string {
   return JSON.stringify({
-    draft: job.payload.draft_id ?? job.postId,
+    draft: job.payload.draftId ?? job.postId,
     locale: job.payload.locale ?? "en",
     media: media.map((item) => [item.fileId, item.localPath, item.type]),
   });

@@ -7,6 +7,7 @@ import { handlePublicationCallback } from "../src/bot/callback-router.js";
 import { publicationCallback, versionedCallback } from "../src/bot/publication-callback.js";
 import { handleVideoConversationMessage } from "../src/bot/video-conversation.js";
 import { getVideoState, saveVideoState } from "../src/bot/video-ui.js";
+import { registerChannel } from "../src/channels/registry.js";
 import {
   drafts,
   socialComments,
@@ -30,9 +31,10 @@ import {
   scheduleVideo,
 } from "../src/publishing/video-service.js";
 import { videoService } from "../src/studio/services/videos.js";
+import { VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { useBackendDb } from "./helpers/db.js";
 
-const testDb = useBackendDb();
+const testDb = useBackendDb(VIDEO_TEST_CHANNELS);
 
 function videoConfig() {
   const config = loadConfig({});
@@ -83,17 +85,17 @@ describe("video publication queue", () => {
     const backendDb = testDb.open();
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24, "en");
     replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
-    const config = loadConfig({
-      PUBLISH_PROVIDER_ROUTES_JSON:
-        '{"instagram_reels":{"provider":"zernio","accountId":"ru-account"},"instagram_reels_en":{"provider":"zernio","accountId":"en-account"}}',
-      ZERNIO_API_KEY: "z".repeat(16),
+    registerChannel(backendDb, {
+      platform: "instagram",
+      locale: "en",
+      provider: "zernio",
+      providerAccountId: "en-account",
     });
     scheduleVideo(
       backendDb,
       draftId,
       { instagram_reels: new Date(Date.now() + 60 * 60_000) },
       { prepareLeadMinutes: 15, reminderMinutes: 5 },
-      config,
     );
 
     expect(backendDb.db.select().from(videoDrafts).where(eq(videoDrafts.id, draftId)).get()?.locale).toBe("en");
@@ -340,7 +342,6 @@ describe("video publication queue", () => {
       draftId,
       { youtube_shorts: youtubeAt, instagram_reels: instagramAt },
       { prepareLeadMinutes: 15, reminderMinutes: 5 },
-      videoConfig(),
       24,
     );
 
@@ -368,16 +369,17 @@ describe("video publication queue", () => {
     const backendDb = testDb.open();
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
-    const config = loadConfig({
-      ZERNIO_API_KEY: "a".repeat(16),
-      PUBLISH_PROVIDER_ROUTES_JSON: '{"instagram_reels":{"provider":"zernio","accountId":"maru-account"}}',
+    registerChannel(backendDb, {
+      platform: "instagram",
+      locale: "ru",
+      provider: "zernio",
+      providerAccountId: "maru-account",
     });
     scheduleVideo(
       backendDb,
       draftId,
       { instagram_reels: new Date(Date.now() + 60 * 60_000) },
       { prepareLeadMinutes: 15, reminderMinutes: 5 },
-      config,
     );
     expect(listVideoTargets(backendDb, draftId)[0]).toMatchObject({ deliveryProvider: "zernio", providerAccountId: "maru-account" });
   });
@@ -452,7 +454,7 @@ describe("video publication queue", () => {
     const draftId = createVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
     const initial = new Date(Date.now() + 60 * 60_000);
-    scheduleVideo(backendDb, draftId, { instagram_reels: initial }, { prepareLeadMinutes: 15, reminderMinutes: 5 }, videoConfig());
+    scheduleVideo(backendDb, draftId, { instagram_reels: initial }, { prepareLeadMinutes: 15, reminderMinutes: 5 });
     backendDb.db
       .update(videoJobs)
       .set({ status: "running", lockedBy: "worker-1", lockedAt: new Date().toISOString() })
@@ -467,7 +469,6 @@ describe("video publication queue", () => {
         draftId,
         { instagram_reels: new Date(Date.now() + 3 * 60 * 60_000) },
         { prepareLeadMinutes: 15, reminderMinutes: 5 },
-        videoConfig(),
       ),
     ).toThrow("err.video-job-running");
     expect(
@@ -490,7 +491,6 @@ describe("video publication queue", () => {
       draftId,
       { youtube_shorts: initial, instagram_reels: new Date(initial.getTime() + 60 * 60_000) },
       { prepareLeadMinutes: 15, reminderMinutes: 5 },
-      videoConfig(),
     );
     backendDb.db
       .update(videoTargets)
@@ -499,7 +499,7 @@ describe("video publication queue", () => {
       .run();
 
     const instagramAt = new Date(Date.now() + 3 * 60 * 60_000);
-    scheduleVideo(backendDb, draftId, { instagram_reels: instagramAt }, { prepareLeadMinutes: 15, reminderMinutes: 5 }, videoConfig());
+    scheduleVideo(backendDb, draftId, { instagram_reels: instagramAt }, { prepareLeadMinutes: 15, reminderMinutes: 5 });
 
     expect(
       listVideoTargets(backendDb, draftId).map((target) => ({
@@ -522,7 +522,6 @@ describe("video publication queue", () => {
       draftId,
       { youtube_shorts: new Date(Date.now() + 60 * 60_000) },
       { prepareLeadMinutes: 15, reminderMinutes: 5 },
-      videoConfig(),
     );
     expect(() => replaceVideoTargets(backendDb, draftId, ["instagram_reels"])).toThrow("err.video-targets-locked");
     expect(listVideoTargets(backendDb, draftId).map((target) => target.target)).toEqual(["youtube_shorts"]);

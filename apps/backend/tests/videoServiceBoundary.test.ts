@@ -7,6 +7,7 @@ import { studioMediaAssets, studioNotificationJobs, videoJobs, videoTargets } fr
 import { loadConfig } from "../src/foundation/config.js";
 import { createVideoDraft, replaceVideoTargets } from "../src/publishing/video-service.js";
 import { videoService } from "../src/studio/services/videos.js";
+import { VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { withDb } from "./helpers/db.js";
 
 type VideoFixture = {
@@ -57,7 +58,7 @@ function fixture(backendDb: UnsafeBackendDb, targets = ["instagram_reels"]): Vid
   const draftId = createVideoDraft(backendDb, 42, { studioMediaAssetId: asset.id }, 24);
   replaceVideoTargets(backendDb, draftId, targets as ("youtube_shorts" | "instagram_reels")[]);
   const config = loadConfig({
-    ADMIN_IDS: "42",
+    CONTROLLER_ADMIN_IDS: "42",
     INSTAGRAM_ACCESS_TOKEN: "instagram-token",
     INSTAGRAM_USER_ID: "instagram-user",
     STUDIO_MEDIA_DIR: directory,
@@ -76,7 +77,7 @@ async function withFixture<T>(fn: (backendDb: UnsafeBackendDb, fixture: VideoFix
     } finally {
       rmSync(current.directory, { recursive: true, force: true });
     }
-  });
+  }, VIDEO_TEST_CHANNELS);
 }
 
 describe("video Studio service boundary", () => {

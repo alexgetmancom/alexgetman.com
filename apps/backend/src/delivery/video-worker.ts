@@ -1,17 +1,17 @@
 import crypto from "node:crypto";
 import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import { publicationRef } from "../application/publication-ref.js";
-import { videoChannelConfig } from "../channels/channel-config.js";
 import { videoPublicUrl, videoSourcePath } from "../content/video-assets.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
 import { botSettings, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { instagramConfigForLocale } from "../foundation/external/instagram.js";
+import { instagramCredentialsForLocale } from "../foundation/external/instagram.js";
 import { withJobHeartbeat } from "../foundation/runtime/job-heartbeat.js";
 import { trackUsageAsync } from "../observability/usage.js";
 import { nextRetryAt } from "../publishing/errors.js";
 import { failedJobTransition } from "../publishing/job-policy.js";
+import { PUBLISH_CLAIM_LIMIT } from "../publishing/queue.js";
 import { getVideoDraft, refreshVideoDraftStatus, type VideoJob } from "../publishing/video-data.js";
 import type { InstagramMetadata, VideoMetadata, YouTubeMetadata } from "../publishing/video-types.js";
 import { isAmbiguousPublicationError } from "./ambiguous-publication.js";
@@ -31,7 +31,7 @@ import { publishZernioInstagramReel } from "./zernio.js";
 export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb): Promise<number> {
   if (!config.studio.modules.video_posting) return 0;
   recoverVideoLocks(backendDb, config);
-  const jobs = claimVideoJobs(backendDb, config.PUBLISH_CLAIM_LIMIT);
+  const jobs = claimVideoJobs(backendDb, PUBLISH_CLAIM_LIMIT);
   // Deliberately serial, unlike the social pipeline's per-target lanes
   // (delivery/publish-workflow.ts): every job here moves a video file of a few
   // hundred MB, and two concurrent uploads share one uplink, so they finish no
@@ -154,8 +154,9 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
   const locale = draft.locale === "en" ? "en" : "ru";
   // The channel's own credentials, when it has them, stand in for the
   // deployment's before any publisher sees the configuration.
-  const youtubeConfig = videoChannelConfig(backendDb, config, "youtube_shorts", locale);
-  const instagramConfig = instagramConfigForLocale(videoChannelConfig(backendDb, config, "instagram_reels", locale), locale);
+  const youtubeConfig = config;
+  const instagramConfig = config;
+  const instagramCredentials = instagramCredentialsForLocale(instagramConfig, locale);
   if (job.kind === "prepare") {
     if (target.target === "youtube_shorts") {
       const result = await prepareYouTubeVideo(
@@ -199,7 +200,12 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
       if (!target.providerAccountId) throw new Error("Zernio Instagram account is missing");
       updateVideoTarget(unsafeDb(backendDb).db, target.id, { status: "prepared", preparedAt: new Date().toISOString() });
     } else {
-      const result = await prepareInstagramReel(instagramConfig, videoPublicUrl(backendDb, config, draft), metadata as InstagramMetadata);
+      const result = await prepareInstagramReel(
+        instagramConfig,
+        instagramCredentials,
+        videoPublicUrl(backendDb, config, draft),
+        metadata as InstagramMetadata,
+      );
       if (!ownsVideoJob(backendDb, job)) return;
       updateVideoTarget(unsafeDb(backendDb).db, target.id, {
         status: "prepared",
@@ -238,14 +244,14 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
     });
   } else {
     if (!target.externalId) throw new Error("Instagram upload has not completed yet.");
-    await instagramContainerReady(instagramConfig, target.externalId);
+    await instagramContainerReady(instagramConfig, instagramCredentials, target.externalId);
     if (!ownsVideoJob(backendDb, job)) return;
-    const result = await publishInstagramReel(instagramConfig, target.externalId);
+    const result = await publishInstagramReel(instagramConfig, instagramCredentials, target.externalId);
     if (!ownsVideoJob(backendDb, job)) return;
     let externalUrl = result.url;
     let verifiedAt: string | null = null;
     try {
-      externalUrl = (await verifyInstagramPublication(result.id, instagramConfig)).url ?? externalUrl;
+      externalUrl = (await verifyInstagramPublication(result.id, instagramConfig, instagramCredentials)).url ?? externalUrl;
       verifiedAt = new Date().toISOString();
     } catch {
       // The publish response already returned the media ID. Verification

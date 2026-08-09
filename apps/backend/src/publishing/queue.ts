@@ -16,7 +16,6 @@ import {
   durationSince,
   externalIds,
   insertEvent,
-  jobPostKey,
   parsePayload,
   publicationConfirmationSource,
   publishRetryPolicy,
@@ -25,11 +24,11 @@ import {
   verificationStatus,
 } from "./queue-state.js";
 
-export { reconcilePublication } from "./publication-reconciliation.js";
+export const PUBLISH_CLAIM_LIMIT = 20;
 
 export type ClaimedPublishJob = {
   jobId: number;
-  postId: number | null;
+  postId: number;
   postKey: string;
   messageId: number;
   target: string;
@@ -73,7 +72,7 @@ export function claimDuePublishJobs(
         .returning({ jobId: publishJobs.jobId })
         .get();
       if (!locked) continue;
-      const postKey = jobPostKey(row);
+      const postKey = row.postKey;
       upsertPostTarget(tx, {
         postKey,
         target: row.target,
@@ -118,7 +117,7 @@ export function recoverStalePublishJobs(
       const error = job.lastError || "worker_lost: publishing lock expired before completion";
       const publicMutationMayHaveRun = job.currentPhase === "provider.publish";
       const recoveredStatus = publicMutationMayHaveRun ? "verification_required" : "queued";
-      deleteSupersededJobs(tx, job, job.jobId, jobPostKey(job));
+      deleteSupersededJobs(tx, job, job.jobId, job.postKey);
       const updated = tx
         .update(publishJobs)
         .set({
@@ -135,7 +134,7 @@ export function recoverStalePublishJobs(
         .returning({ jobId: publishJobs.jobId })
         .get();
       if (!updated) continue;
-      const postKey = jobPostKey(job);
+      const postKey = job.postKey;
       settleJob(
         tx,
         job.jobId,
@@ -165,7 +164,7 @@ export function recoverStalePublishJobs(
       );
     }
   });
-  for (const job of stale) if (job.postId != null) reconcilePublication(backendDb, job.postId);
+  for (const job of stale) reconcilePublication(backendDb, job.postId);
   return stale.length;
 }
 
@@ -179,7 +178,7 @@ export function completePublishJob(
   const now = new Date().toISOString();
   const job = unsafeDb(backendDb).db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return;
-  const postKey = jobPostKey(job);
+  const postKey = job.postKey;
   // Threads partial-publish and generic reconciliation both resume from a set of
   // external ids on the next attempt; they only differ in which payload key the
   // platform's publisher reads back and in the event type recorded.
@@ -198,7 +197,7 @@ export function completePublishJob(
       result,
       now,
     );
-    if (!retry && job.postId != null) reconcilePublication(backendDb, job.postId);
+    if (!retry) reconcilePublication(backendDb, job.postId);
     return;
   }
   const reconciliationIds = externalIds(result);
@@ -216,7 +215,7 @@ export function completePublishJob(
       result,
       now,
     );
-    if (!retry && job.postId != null) reconcilePublication(backendDb, job.postId);
+    if (!retry) reconcilePublication(backendDb, job.postId);
     return;
   }
   const normalized = normalizePublishResult(result);
@@ -277,7 +276,7 @@ export function completePublishJob(
       url: normalized.url,
       publishedAt: now,
     });
-  if (job.postId != null) reconcilePublication(backendDb, job.postId);
+  reconcilePublication(backendDb, job.postId);
 }
 
 function settleRetryableIds(
@@ -335,7 +334,7 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
   const now = new Date().toISOString();
   const job = unsafeDb(backendDb).db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return;
-  const postKey = jobPostKey(job);
+  const postKey = job.postKey;
   const {
     attempt,
     errorClass,
@@ -387,14 +386,14 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
     );
   });
   if (errorClass === "auth") recordAuthFailure(backendDb, job.target);
-  if (!shouldRetry && job.postId != null) reconcilePublication(backendDb, job.postId);
+  if (!shouldRetry) reconcilePublication(backendDb, job.postId);
 }
 
 export function requirePublishVerification(backendDb: BackendDb, jobId: number, error: unknown, lockId?: string): boolean {
   const now = new Date().toISOString();
   const job = unsafeDb(backendDb).db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return false;
-  const postKey = jobPostKey(job);
+  const postKey = job.postKey;
   const errorText = error instanceof Error ? error.message : String(error);
   let updated = false;
   unsafeDb(backendDb).db.transaction((tx) => {
@@ -429,7 +428,7 @@ export function requirePublishVerification(backendDb: BackendDb, jobId: number, 
     );
     updated = true;
   });
-  if (updated && job.postId != null) reconcilePublication(backendDb, job.postId);
+  if (updated) reconcilePublication(backendDb, job.postId);
   return updated;
 }
 
@@ -448,7 +447,7 @@ export function forcePublishJobVerification(
   const now = new Date().toISOString();
   const job = unsafeDb(backendDb).db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return false;
-  const postKey = jobPostKey(job);
+  const postKey = job.postKey;
   const errorText = error instanceof Error ? error.message : String(error);
   const evidence = result ? normalizePublishResult(result) : null;
   const updated = unsafeDb(backendDb).db.transaction((tx) => {
@@ -492,7 +491,7 @@ export function forcePublishJobVerification(
     });
     return true;
   });
-  if (updated && job.postId != null) reconcilePublication(backendDb, job.postId);
+  if (updated) reconcilePublication(backendDb, job.postId);
   return updated;
 }
 

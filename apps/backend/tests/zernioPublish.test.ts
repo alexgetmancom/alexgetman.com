@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { publishZernioInstagramReel } from "../src/delivery/zernio.js";
 import { loadConfig } from "../src/foundation/config.js";
 
-const config = loadConfig({ ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", ZERNIO_API_KEY: "zernio-placeholder-not-a-secret" });
+const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", ZERNIO_API_KEY: "zernio-placeholder-not-a-secret" });
 
 const input = {
   accountId: "acct-1",
@@ -203,7 +203,7 @@ describe("publishZernioInstagramReel", () => {
 
   it("refuses to publish without an API key, and does not call out", async () => {
     const { fetch: impl, calls } = recordingFetch(() => json({ _id: "zernio-1" }));
-    const noKey = loadConfig({ ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t" });
+    const noKey = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t" });
 
     await expect(publishZernioInstagramReel(noKey, input, impl)).rejects.toThrow("ZERNIO_API_KEY is missing");
     expect(calls).toEqual([]);

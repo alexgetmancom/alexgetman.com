@@ -32,7 +32,7 @@ export async function sendDailyEditorialInbox(
   now = new Date(),
   fetchImpl: typeof fetch = fetch,
 ): Promise<boolean> {
-  if (!bot || !config.DEEPSEEK_API_KEY || config.ADMIN_IDS.length === 0) return false;
+  if (!bot || !config.DEEPSEEK_API_KEY || config.CONTROLLER_ADMIN_IDS.length === 0) return false;
   const date = zonedDate(config.TIMEZONE, now);
   if (date.hour < config.EDITORIAL_INBOX_HOUR_MSK) return false;
   const key = `editorial_inbox:${date.day}`;
@@ -71,7 +71,7 @@ export async function sendDailyEditorialInbox(
   // One read of each owner's interface language, reused for both the request
   // and the send: reading it twice let a language switch in between address a
   // message nobody had generated.
-  const recipients = config.ADMIN_IDS.map((actorId) => ({ actorId, locale: botLocale(backendDb, actorId) }));
+  const recipients = config.CONTROLLER_ADMIN_IDS.map((actorId) => ({ actorId, locale: botLocale(backendDb, actorId) }));
 
   try {
     const messages = new Map<StudioLocale, string>();

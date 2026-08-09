@@ -1,4 +1,3 @@
-import type { Bot } from "grammy";
 import { Hono } from "hono";
 import type { BackendDb } from "./db/client.js";
 import { engagementService } from "./engagement/service.js";
@@ -8,14 +7,12 @@ import { commandCenterRoutes } from "./interfaces/http/command-center.js";
 import { engagementRoutes } from "./interfaces/http/engagement.js";
 import { healthRoutes } from "./interfaces/http/health.js";
 import { studioRoutes } from "./interfaces/http/studio.js";
-import { telegramWebhookRoute } from "./interfaces/telegram/webhook.js";
 import { createOperationsService } from "./operations/service.js";
 import { createStudioServices, type StudioServices } from "./studio/services/index.js";
 
 type ApiContext = {
   config: BackendConfig;
   backendDb: BackendDb;
-  bot: Bot | null;
   studio?: StudioServices;
 };
 const apps = new WeakMap<ApiContext, Hono>();
@@ -33,7 +30,7 @@ export function createApiHandler(context: ApiContext) {
  * each route module, and owns nothing else. Handlers live under
  * interfaces/http/ (and interfaces/telegram/ for the webhook, which is the only
  * one that touches grammy); response and auth helpers live in foundation/. */
-function buildApp({ config, backendDb, bot, studio: providedStudio }: ApiContext): Hono {
+function buildApp({ config, backendDb, studio: providedStudio }: ApiContext): Hono {
   const studio = providedStudio ?? createStudioServices(backendDb, config);
   const deps = {
     config,
@@ -50,8 +47,6 @@ function buildApp({ config, backendDb, bot, studio: providedStudio }: ApiContext
   commandCenterRoutes(app, deps);
   engagementRoutes(app, deps);
   studioRoutes(app, deps);
-  telegramWebhookRoute(app, config, bot);
-
   app.notFound(() => text("not found\n", 404));
   return app;
 }

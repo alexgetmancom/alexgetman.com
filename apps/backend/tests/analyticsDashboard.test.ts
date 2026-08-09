@@ -2,10 +2,15 @@ import { describe, expect, it } from "bun:test";
 import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
 import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
 import { pruneMetricSamples } from "../src/analytics/snapshots/metric-repository.js";
+import type { UnsafeBackendDb } from "../src/db/client.js";
 import { creatorProfiles, metricSamples, posts, postTargets, videoMetricSnapshots } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
-import { withDb } from "./helpers/db.js";
+import { TEXT_TEST_CHANNELS, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
+import { withDb as withFixtureDb } from "./helpers/db.js";
+
+const withDb = <T>(run: (backendDb: UnsafeBackendDb) => T | Promise<T>) =>
+  withFixtureDb(run, [...TEXT_TEST_CHANNELS, ...VIDEO_TEST_CHANNELS]);
 
 describe("creator analytics dashboards", () => {
   it("builds a compact video dashboard from cached platform data", async () => {
@@ -141,7 +146,7 @@ describe("creator analytics dashboards", () => {
         .run();
       backendDb.db
         .insert(creatorProfiles)
-        .values({ platform: "instagram", dataJson: { followersCount: 306, views1d: 63_394, likes1d: 1_227 }, updatedAt: now })
+        .values({ platform: "instagram_ru", dataJson: { followersCount: 306, views1d: 63_394, likes1d: 1_227 }, updatedAt: now })
         .run();
       const config = loadConfig({});
       config.studio.modules.video_posting = true;
@@ -150,7 +155,7 @@ describe("creator analytics dashboards", () => {
 
       const dashboard = studioAnalyticsDashboard(backendDb, config, "video", 1, "ru");
       expect(dashboard.text).not.toContain("Аккаунт ·");
-      expect(dashboard.text).toContain("| 📸 Instagram | 306 | — | 63394 | 1227");
+      expect(dashboard.text).toContain("| 📸 Instagram RU | 306 | — | 63394 | 1227");
       expect(dashboard.text).toContain("| Видео | 👁 | ♥ | 💬 | ↗ | 🔖 |");
       expect(dashboard.text).toContain("| Все | 200 | 20 | 0 | 7 | 5 |");
       expect(dashboard.text).toContain("| Симулятор… · 📸 RU | 200 | 20 | 0 | 7 | 5 |");
@@ -242,8 +247,8 @@ describe("creator analytics dashboards", () => {
         .insert(creatorProfiles)
         .values([
           { platform: "telegram", dataJson: { followersCount: 130 }, updatedAt: now },
-          { platform: "youtube", dataJson: { subscriberCount: 120 }, updatedAt: now },
-          { platform: "instagram", dataJson: { followersCount: 306 }, updatedAt: now },
+          { platform: "youtube_ru", dataJson: { subscriberCount: 120 }, updatedAt: now },
+          { platform: "instagram_ru", dataJson: { followersCount: 306 }, updatedAt: now },
         ])
         .run();
       const config = loadConfig({});

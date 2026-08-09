@@ -1,5 +1,6 @@
 import { TARGET_GROUPS, targetInGroup } from "../botTargets.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { instagramCredentialsForLocale } from "../foundation/external/instagram.js";
 import { isCapabilityReady } from "../observability/capabilities.js";
 import type { PublishResult } from "../publishing/errors.js";
 import { platformProfile } from "../publishing/platform-profiles.js";
@@ -29,7 +30,13 @@ export function createPlatformAdapters(config: BackendConfig, fetchImpl: typeof 
       );
   for (const target of TARGET_GROUPS.x) publishers[target] = (job) => publishToX(job.payload, config, fetchImpl);
   for (const target of TARGET_GROUPS.instagramStory)
-    publishers[target] = (job) => publishInstagramStory(job.payload, targetConfigs[target] ?? config, fetchImpl);
+    publishers[target] = (job) =>
+      publishInstagramStory(
+        job.payload,
+        config,
+        instagramCredentialsForLocale(config, target === "instagram_stories" ? "en" : "ru", "shared"),
+        fetchImpl,
+      );
   for (const target of TARGET_GROUPS.telegramStory)
     publishers[target] = (job) =>
       import("./social/telegramStories.js").then(({ publishTelegramStory }) => publishTelegramStory(job.payload, config));
@@ -61,7 +68,12 @@ export async function verifyPlatformPublication(
       return { ...result, url: result.url ?? verified.url, verification: { status: "verified", providerId: verified.id } };
     }
     if (targetInGroup(TARGET_GROUPS.instagramStory, target)) {
-      const verified = await verifyInstagramPublication(id, config, fetchImpl);
+      const verified = await verifyInstagramPublication(
+        id,
+        config,
+        instagramCredentialsForLocale(config, target === "instagram_stories" ? "en" : "ru", "shared"),
+        fetchImpl,
+      );
       return { ...result, url: result.url ?? verified.url, verification: { status: "verified", providerId: verified.id } };
     }
     if (targetInGroup(TARGET_GROUPS.x, target)) {
@@ -78,6 +90,14 @@ export async function verifyPlatformPublication(
 }
 
 function validatePlatformTarget(target: string, config: BackendConfig): void {
+  if (targetInGroup(TARGET_GROUPS.instagramStory, target)) {
+    const credentials = instagramCredentialsForLocale(config, target === "instagram_stories" ? "en" : "ru", "shared");
+    const missing = [credentials.accessToken ? null : "Instagram access token", credentials.userId ? null : "Instagram user id"].filter(
+      (name): name is string => name !== null,
+    );
+    if (missing.length) throw new Error(`Instagram Stories is not configured: ${missing.join(", ")}`);
+    return;
+  }
   const profile = platformProfile(target);
   if (!profile?.requirements.length) return;
   if (isCapabilityReady(config, profile.id)) return;

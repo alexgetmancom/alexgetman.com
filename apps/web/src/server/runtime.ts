@@ -1,5 +1,4 @@
 import { createBot } from "../../../backend/src/bot.js";
-import { bootstrapConfiguredChannels } from "../../../backend/src/channels/registry.js";
 import { type BackendDb, openBackendDb } from "../../../backend/src/db/client.js";
 import type { RawBackendDb } from "../../../backend/src/db/unsafe.js";
 import { unsafeDb } from "../../../backend/src/db/unsafe.js";
@@ -39,10 +38,9 @@ export function startRuntime(): AppRuntime {
   configureLogging(config.LOG_LEVEL);
   configureFfmpegConcurrency(config.FFMPEG_MAX_CONCURRENCY);
   const backendDb = openBackendDb(config.PIPELINE_DB);
-  bootstrapConfiguredChannels(backendDb, config);
   const studio = createStudioServices(backendDb, config);
   const bot = createBot(config, backendDb);
-  const loops = [...startCoreWorkers(config, backendDb), ...startTelegramWorkers(config, backendDb, bot)];
+  const loops = config.NODE_ENV === "test" ? [] : [...startCoreWorkers(config, backendDb), ...startTelegramWorkers(config, backendDb, bot)];
   runtime = { config, backendDb, studio, bot, loops };
   runtimeGlobal.__alexgetmanRuntime = runtime;
   if (!assertFfmpegAvailable()) log("warn", "ffmpeg is not available; video poster generation will fail until Docker/runtime installs it");

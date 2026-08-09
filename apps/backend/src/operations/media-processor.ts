@@ -101,7 +101,7 @@ export async function reprocessPostMedia(
     .sqlite.query(
       `SELECT job_id,target,payload_json
        FROM publish_jobs
-       WHERE post_key=? AND target IN ('instagram_story','instagram_stories','instagram_stories_ru','telegram_story','telegram_stories')
+       WHERE post_key=? AND target IN ('instagram_stories','instagram_stories_ru','telegram_stories')
        ORDER BY job_id`,
     )
     .all(ref) as Array<{ job_id: number; target: string; payload_json: string | null }>;

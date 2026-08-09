@@ -125,7 +125,7 @@ describe("TypeScript operations tooling", () => {
         .run(now);
       const plan = buildMetricsBackfillPlan(backendDb, { targets: ["threads_ru"] });
       expect(plan).toHaveLength(1);
-      const config = loadConfig({ ADMIN_IDS: "42" });
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
       expect(withMaintenanceLock(backendDb, () => applyMetricsBackfill(backendDb, config, plan, true))).toBe(1);
       expect(
         backendDb.sqlite.prepare("SELECT check_count,frozen_at FROM metric_schedule WHERE post_key='post:1' AND target='threads_ru'").get(),

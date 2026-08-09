@@ -15,9 +15,17 @@ import {
   videoOverview,
 } from "../src/interfaces/web/dashboard/video-overview.js";
 import { createOperationsService } from "../src/operations/service.js";
+import { registerTestChannels, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 const hoursAgo = (hours: number): string => new Date(Date.now() - hours * 3_600_000).toISOString();
+
+function openOverviewDb() {
+  const memory = ":memory:";
+  const backendDb = openBackendDb(memory);
+  registerTestChannels(backendDb, VIDEO_TEST_CHANNELS);
+  return backendDb;
+}
 
 /** rollingPeriodDates hands the renderer a UTC-midnight Date carrying the
  * zone's calendar fields; the chart reads it back with getUTC*. */
@@ -257,7 +265,7 @@ function seedCrosspostedVideo(backendDb: ReturnType<typeof openBackendDb>): void
 
 describe("unified overview video read model", () => {
   it("reuses the operations service for one database and configuration", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openOverviewDb();
     try {
       const config = loadConfig({});
       expect(createOperationsService(backendDb, config)).toBe(createOperationsService(backendDb, config));
@@ -267,7 +275,7 @@ describe("unified overview video read model", () => {
   });
 
   it("includes videos published during the selected current day", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openOverviewDb();
     try {
       seedVideo(backendDb, new Date().toISOString());
       const config = loadConfig({});
@@ -295,7 +303,7 @@ describe("unified overview video read model", () => {
   // The text side has always shown one row per post with a badge for the places
   // it went; a clip that went to two destinations now reads the same way.
   it("keeps one clip on two destinations as one publication", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openOverviewDb();
     try {
       seedCrosspostedVideo(backendDb);
       const overview = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
@@ -314,7 +322,7 @@ describe("unified overview video read model", () => {
   });
 
   it("reports the latest sample per publication and names the destination", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openOverviewDb();
     try {
       seedVideo(backendDb);
       const overview = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
@@ -341,7 +349,7 @@ describe("unified overview video read model", () => {
   });
 
   it("uses a collected permalink when an older video target has no stored URL", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openOverviewDb();
     try {
       const publishedAt = hoursAgo(3);
       const draft = backendDb.db
@@ -390,7 +398,7 @@ describe("unified overview video read model", () => {
   });
 
   it("keeps declared destinations and their audiences independent of the period", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openOverviewDb();
     try {
       seedVideo(backendDb);
       seedLocalizedVideoProfiles(backendDb);
@@ -409,7 +417,7 @@ describe("unified overview video read model", () => {
   });
 
   it("excludes publications outside the window", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openOverviewDb();
     try {
       seedVideo(backendDb);
       const older = videoOverview(backendDb, new Date(Date.now() - 10 * 86_400_000), new Date(Date.now() - 5 * 86_400_000));
@@ -421,7 +429,7 @@ describe("unified overview video read model", () => {
   });
 
   it("freezes a historical period and exposes later lifetime growth separately", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openOverviewDb();
     try {
       seedHistoricalVideo(backendDb);
       const overview = videoOverview(backendDb, new Date("2026-07-29T21:00:00.000Z"), new Date("2026-07-30T20:59:59.999Z"));
@@ -440,7 +448,7 @@ describe("unified overview video read model", () => {
   });
 
   it("sums daily increments for a multi-day period instead of lifetime totals", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openOverviewDb();
     try {
       seedHistoricalVideo(backendDb);
       const overview = videoOverview(backendDb, new Date("2026-07-29T21:00:00.000Z"), new Date("2026-07-31T20:59:59.999Z"));
@@ -460,7 +468,7 @@ describe("unified overview video read model", () => {
   // earned" when it was the selected day, and "what the whole catalogue earned"
   // on every other bar of the same chart — 3k against 65k for one date.
   it("reports catalogue reach for a day whose clips were published earlier", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openOverviewDb();
     try {
       seedHistoricalVideo(backendDb);
       const cache = createVideoOverviewCache(24 * 60 * 60);
@@ -559,7 +567,7 @@ describe("unified overview rendering", () => {
   };
 
   it("shows both halves separately and never their sum", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openOverviewDb();
     try {
       seedVideo(backendDb);
       const video = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
@@ -659,7 +667,7 @@ describe("unified overview rendering", () => {
   });
 
   it("derives the locale badge from the data rather than from the platform name", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openOverviewDb();
     try {
       seedVideo(backendDb);
       const video = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
@@ -946,7 +954,7 @@ describe("unified overview rendering", () => {
   });
 
   it("filters one half without disturbing the other", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openOverviewDb();
     try {
       seedVideo(backendDb);
       const video = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
@@ -977,7 +985,7 @@ describe("unified overview rendering", () => {
   });
 
   it("points each half's list loader at its own publications", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openOverviewDb();
     try {
       seedVideo(backendDb);
       const loaded = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
@@ -1004,7 +1012,7 @@ describe("unified overview rendering", () => {
   });
 
   it("keeps both halves available in the single overview mode", () => {
-    const backendDb = openBackendDb(":memory:");
+    const backendDb = openOverviewDb();
     try {
       seedVideo(backendDb);
       const video = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());

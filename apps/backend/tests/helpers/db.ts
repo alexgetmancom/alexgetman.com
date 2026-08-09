@@ -1,5 +1,6 @@
 import { afterEach } from "bun:test";
 import type { UnsafeBackendDb } from "../../src/db/client.js";
+import { registerTestChannels, type TestChannelId } from "./channels.js";
 import { openBackendDb } from "./open-db.js";
 
 /** Open an in-memory backend DB for one test and always close it, even on
@@ -8,8 +9,9 @@ import { openBackendDb } from "./open-db.js";
  *   it("...", () => withDb((backendDb) => { ... }));
  *   it("...", async () => withDb(async (backendDb) => { ... }));
  */
-export function withDb<T>(fn: (backendDb: UnsafeBackendDb) => T | Promise<T>): Promise<T> {
+export function withDb<T>(fn: (backendDb: UnsafeBackendDb) => T | Promise<T>, channels: readonly TestChannelId[] = []): Promise<T> {
   const backendDb = openBackendDb(":memory:");
+  registerTestChannels(backendDb, channels);
   return (async () => fn(backendDb))().finally(() => backendDb.close());
 }
 
@@ -23,7 +25,7 @@ export function withDb<T>(fn: (backendDb: UnsafeBackendDb) => T | Promise<T>): P
  *     ...
  *   });
  */
-export function useBackendDb(): { open: () => UnsafeBackendDb } {
+export function useBackendDb(channels: readonly TestChannelId[] = []): { open: () => UnsafeBackendDb } {
   let backendDb: UnsafeBackendDb | null = null;
   afterEach(() => {
     backendDb?.close();
@@ -32,6 +34,7 @@ export function useBackendDb(): { open: () => UnsafeBackendDb } {
   return {
     open: () => {
       backendDb = openBackendDb(":memory:");
+      registerTestChannels(backendDb, channels);
       return backendDb;
     },
   };

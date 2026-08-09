@@ -1,6 +1,6 @@
 import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
 import { AUDIENCE_VIEWS, targetDefinition } from "../../../botTargets.js";
-import { hasChannelRegistry, listChannels } from "../../../channels/registry.js";
+import { listChannels } from "../../../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../../../db/client.js";
 import { creatorProfiles } from "../../../db/schema.js";
 import { escapeHtml } from "../../../foundation/html.js";
@@ -40,7 +40,6 @@ export function audiencePlatformFollowers(backendDb: BackendDb): Array<{ key: st
 }
 
 function activeAudiencePlatforms(backendDb: BackendDb): AudiencePlatform[] {
-  if (!hasChannelRegistry(backendDb)) return AUDIENCE_PLATFORMS;
   const registeredTargets = new Set(
     listChannels(backendDb)
       .map((channel) => channel.targetId)

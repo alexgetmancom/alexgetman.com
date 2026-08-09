@@ -28,11 +28,10 @@ describe("operations CLI arguments", () => {
     expect(input("recent --limit 3 --json")).toEqual({ limit: "3" });
   });
 
-  it("collects a repeated option and keeps the last single value", () => {
-    expect(input("channel-connect --platform youtube --locale en --credential a=1 --credential b=2")).toEqual({
-      platform: "youtube",
+  it("keeps the last value when an option is repeated", () => {
+    expect(input("channel-connect --platform youtube --platform instagram --locale en")).toEqual({
+      platform: "instagram",
       locale: "en",
-      credential: ["a=1", "b=2"],
     });
   });
 });

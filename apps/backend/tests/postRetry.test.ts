@@ -42,7 +42,7 @@ describe("post publication retry", () => {
         .values({
           postId: 700,
           messageId: 700,
-          reason: "publish_en",
+          reason: "site_en",
           status: "verification_required",
           attemptCount: 2,
           lastError: "Site verification expired",
@@ -51,7 +51,7 @@ describe("post publication retry", () => {
         })
         .run();
 
-      const posts = createStudioServices(backendDb, loadConfig({ ADMIN_IDS: "42" })).posts;
+      const posts = createStudioServices(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" })).posts;
       expect(backendDb.studioPosts.failedPublicationTargets(700).map((item) => item.target)).toEqual(["telegram_ru", "site_en"]);
 
       expect(posts.retryTarget(42, 7)).toMatchObject({ requeued: 2, alreadyQueued: 0 });

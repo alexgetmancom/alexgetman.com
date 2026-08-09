@@ -8,8 +8,7 @@ import type { MetricCollector } from "./types.js";
 import { collectX } from "./x.js";
 
 /**
- * Every target this build knows how to collect, including the paid ones and the legacy
- * aliases still present in durable schedules. Deliberately static: `createMetricCollectors`
+ * Every target this build knows how to collect. Deliberately static: `createMetricCollectors`
  * drops targets when a flag or credential is absent, and callers that retire schedules must
  * not confuse "off right now" with "gone from the product".
  */

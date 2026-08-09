@@ -34,6 +34,7 @@ const config = loadConfig({
   INSTAGRAM_ACCESS_TOKEN: "EAAB-facebook-token",
   INSTAGRAM_USER_ID: "ig-user",
 });
+const instagramCredentials = { accessToken: "EAAB-facebook-token", userId: "ig-user" };
 
 type Recorded = { url: string; method: string; body?: unknown; headers: Headers };
 
@@ -255,7 +256,7 @@ describe("keepYouTubeUploadPrivate", () => {
 describe("Instagram Reels", () => {
   it("creates a REELS container against the Graph host implied by the token", async () => {
     install(() => json({ id: "container-1" }));
-    const result = await prepareInstagramReel(config, "https://cdn/clip.mp4", { caption: "  caption  " });
+    const result = await prepareInstagramReel(config, instagramCredentials, "https://cdn/clip.mp4", { caption: "  caption  " });
 
     const create = recorded.at(-1);
     expect(create?.url).toStartWith("https://graph.facebook.com/");
@@ -268,24 +269,28 @@ describe("Instagram Reels", () => {
 
   it("switches to graph.instagram.com for an Instagram-issued token", async () => {
     install(() => json({ id: "container-1" }));
-    await prepareInstagramReel({ ...config, INSTAGRAM_ACCESS_TOKEN: "IGAAB-token" }, "https://cdn/clip.mp4", { caption: "c" });
+    await prepareInstagramReel(config, { ...instagramCredentials, accessToken: "IGAAB-token" }, "https://cdn/clip.mp4", {
+      caption: "c",
+    });
     expect(recorded.at(-1)?.url).toStartWith("https://graph.instagram.com/");
   });
 
   it("treats a FINISHED container as ready", async () => {
     install(() => json({ status_code: "FINISHED" }));
-    await expect(instagramContainerReady(config, "container-1")).resolves.toBeUndefined();
+    await expect(instagramContainerReady(config, instagramCredentials, "container-1")).resolves.toBeUndefined();
   });
 
   it("keeps polling while the container is still processing", async () => {
     install(() => json({ status_code: "IN_PROGRESS" }));
-    await expect(instagramContainerReady(config, "container-1")).rejects.toBeInstanceOf(InstagramContainerProcessingError);
+    await expect(instagramContainerReady(config, instagramCredentials, "container-1")).rejects.toBeInstanceOf(
+      InstagramContainerProcessingError,
+    );
   });
 
   it("marks an ERROR or EXPIRED container as unusable so the worker rebuilds it", async () => {
     for (const statusCode of ["ERROR", "EXPIRED"]) {
       install(() => json({ status_code: statusCode, status: "the reason" }));
-      const failure = await instagramContainerReady(config, "container-1").catch((error: unknown) => error);
+      const failure = await instagramContainerReady(config, instagramCredentials, "container-1").catch((error: unknown) => error);
       expect(failure).toBeInstanceOf(InstagramContainerInvalidError);
       expect(String(failure)).toContain("the reason");
     }
@@ -293,7 +298,7 @@ describe("Instagram Reels", () => {
 
   it("returns the canonical reel URL on publish", async () => {
     install(() => json({ id: "reel-9" }));
-    await expect(publishInstagramReel(config, "container-1")).resolves.toEqual({
+    await expect(publishInstagramReel(config, instagramCredentials, "container-1")).resolves.toEqual({
       id: "reel-9",
       url: "https://www.instagram.com/reel/reel-9/",
     });
@@ -301,12 +306,12 @@ describe("Instagram Reels", () => {
 
   it("classifies a 400 about a dead creation_id as an invalid container", async () => {
     install(() => new Response("(#2207027) Media ID is not available", { status: 400 }));
-    await expect(publishInstagramReel(config, "container-1")).rejects.toBeInstanceOf(InstagramContainerInvalidError);
+    await expect(publishInstagramReel(config, instagramCredentials, "container-1")).rejects.toBeInstanceOf(InstagramContainerInvalidError);
   });
 
   it("leaves a transient failure retryable rather than rebuilding the container", async () => {
     install(() => new Response("(#2207027) Media ID is not available", { status: 500 }));
-    const failure = await publishInstagramReel(config, "container-1").catch((error: unknown) => error);
+    const failure = await publishInstagramReel(config, instagramCredentials, "container-1").catch((error: unknown) => error);
     expect(failure).not.toBeInstanceOf(InstagramContainerInvalidError);
   });
 });

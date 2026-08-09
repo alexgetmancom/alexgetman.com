@@ -3,11 +3,7 @@ import { firstLine } from "../content/message.js";
 import { payloadMedia } from "../delivery/social/payload.js";
 import { selectMediaForTarget } from "./media-policy.js";
 
-/** Resolves a draft's dual-locale payload to one target's locale, and
- * canonicalizes its media items (localPath/local_path, vpsUrl/vps_url, ...)
- * to their one camelCase shape at write time. Every consumer downstream
- * (delivery ports, media staging) can then read `media`/`media_en` directly
- * instead of re-running alias resolution on each read. */
+/** Resolves the dual-locale publication source into the one durable job shape. */
 export function localizeTargetPayload(payload: Record<string, unknown>, target: string): Record<string, unknown> {
   const locale = targetLocale(target) ?? "en";
   const storyMedia = isStoryTarget(target) ? payload[locale === "ru" ? "story_media_ru" : "story_media_en"] : undefined;
@@ -15,42 +11,54 @@ export function localizeTargetPayload(payload: Record<string, unknown>, target: 
     const text = String(payload.text_ru ?? payload.text ?? "");
     const entities = recordArray(payload.entities_ru ?? payload.entities);
     const rawMedia = storyMedia ?? payload.media;
-    const selectedMedia = Array.isArray(rawMedia) ? selectMediaForTarget(target, rawMedia) : rawMedia;
+    const selectedMedia = Array.isArray(rawMedia) ? selectMediaForTarget(target, rawMedia).map(deliveryMedia) : rawMedia;
     const localized = {
-      ...payload,
       locale,
       title: firstLine(text),
       text,
-      text_ru: text,
-      text_en: "",
-      bodyMarkdown: text,
       media: selectedMedia,
-      media_en: undefined,
       entities,
       slug: payload.slug_ru,
-      slug_en: undefined,
+      postId: payload.post_id,
+      draftId: payload.draft_id,
+      threadsChainApproved: payload.threads_chain_approved === true,
     };
-    return { ...localized, media: payloadMedia(localized), media_en: undefined };
+    return { ...localized, media: payloadMedia(localized) };
   }
 
   const text = String(payload.text_en ?? payload.text ?? "");
   const entities = recordArray(payload.entities_en ?? payload.entities);
   const rawMedia = storyMedia ?? payload.media_en ?? payload.media;
-  const selectedMedia = Array.isArray(rawMedia) ? selectMediaForTarget(target, rawMedia) : rawMedia;
+  const selectedMedia = Array.isArray(rawMedia) ? selectMediaForTarget(target, rawMedia).map(deliveryMedia) : rawMedia;
   const localized = {
-    ...payload,
     locale,
     title: firstLine(text),
     text,
-    text_en: text,
-    bodyMarkdown: text,
     media: selectedMedia,
-    media_en: selectedMedia,
     entities,
     slug: payload.slug_en,
+    postId: payload.post_id,
+    draftId: payload.draft_id,
+    threadsChainApproved: payload.threads_chain_approved === true,
   };
-  const media = payloadMedia(localized);
-  return { ...localized, media, media_en: media };
+  return { ...localized, media: payloadMedia(localized) };
+}
+
+/** Translates the persisted Studio/Telegram media record into the one shape
+ * stored on delivery jobs. Provider code never reads persistence field names. */
+function deliveryMedia(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const media = value as Record<string, unknown>;
+  return {
+    type: media.type,
+    fileId: media.fileId ?? media.file_id,
+    localPath: media.localPath ?? media.local_path ?? media.path,
+    vpsUrl: media.vpsUrl ?? media.vps_url ?? media.public_url,
+    token: media.token,
+    storyLocalPath: media.storyLocalPath ?? media.story_local_path,
+    telegramStoryLocalPath: media.telegramStoryLocalPath ?? media.telegram_story_local_path,
+    storyVpsUrl: media.storyVpsUrl ?? media.story_vps_url,
+  };
 }
 
 function recordArray(value: unknown): Record<string, unknown>[] {

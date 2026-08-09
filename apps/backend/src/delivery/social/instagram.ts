@@ -1,5 +1,5 @@
 import type { BackendConfig } from "../../foundation/config.js";
-import { instagramGraphHost } from "../../foundation/external/instagram.js";
+import { type InstagramCredentials, instagramGraphHost } from "../../foundation/external/instagram.js";
 import { externalFetch, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
 import { redactExternalSecrets } from "../../foundation/redact.js";
 import type { PublishResult } from "../../publishing/errors.js";
@@ -36,12 +36,12 @@ const defaultSleep: SleepImplementation = (milliseconds) => new Promise((resolve
 export async function publishInstagramStory(
   payload: Record<string, unknown>,
   config: BackendConfig,
+  credentials: InstagramCredentials,
   fetchImpl: typeof fetch = fetch,
   sleepImpl: SleepImplementation = defaultSleep,
 ): Promise<PublishResult> {
-  if (!config.ENABLE_INSTAGRAM_STORIES) return { ok: false, skipped: true, reason: "instagram_stories_disabled" };
-  if (!config.INSTAGRAM_ACCESS_TOKEN) throw new Error("missing INSTAGRAM_ACCESS_TOKEN");
-  if (!config.INSTAGRAM_USER_ID) throw new Error("missing INSTAGRAM_USER_ID");
+  if (!credentials.accessToken) throw new Error("missing Instagram access token");
+  if (!credentials.userId) throw new Error("missing Instagram user id");
 
   const media = payloadMedia(payload).find((item) => item.storyVpsUrl || item.vpsUrl);
   if (!media) return { ok: false, skipped: true, reason: "missing_public_media_url" };
@@ -52,7 +52,8 @@ export async function publishInstagramStory(
     try {
       const creation = await graphPost(
         config,
-        `${config.INSTAGRAM_USER_ID}/media`,
+        credentials,
+        `${credentials.userId}/media`,
         {
           media_type: "STORIES",
           ...(media.type === "VIDEO" ? { video_url: publicUrl } : { image_url: publicUrl }),
@@ -60,8 +61,8 @@ export async function publishInstagramStory(
         fetchImpl,
       );
       if (!creation.id) return { ok: false, error: JSON.stringify(creation) };
-      await waitForContainer(config, creation.id, publicUrl, media.type, fetchImpl, sleepImpl);
-      published = await publishReadyContainer(config, creation.id, fetchImpl, sleepImpl);
+      await waitForContainer(config, credentials, creation.id, publicUrl, media.type, fetchImpl, sleepImpl);
+      published = await publishReadyContainer(config, credentials, creation.id, fetchImpl, sleepImpl);
     } catch (error) {
       if (containerAttempt < CONTAINER_ATTEMPTS - 1 && isExpiredInstagramContainer(error)) {
         await sleepImpl(POLL_DELAY_MS);
@@ -74,7 +75,7 @@ export async function publishInstagramStory(
 
   let permalink: string | null = null;
   try {
-    permalink = (await graphGet(config, published.id, { fields: "permalink" }, fetchImpl)).permalink ?? null;
+    permalink = (await graphGet(config, credentials, published.id, { fields: "permalink" }, fetchImpl)).permalink ?? null;
   } catch {
     // Publishing succeeded; a permalink lookup failure must not retry the story.
   }
@@ -84,15 +85,17 @@ export async function publishInstagramStory(
 export async function verifyInstagramPublication(
   id: string,
   config: BackendConfig,
+  credentials: InstagramCredentials,
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ id: string; url: string | null }> {
-  const media = await graphGet(config, id, { fields: "id,permalink" }, fetchImpl);
+  const media = await graphGet(config, credentials, id, { fields: "id,permalink" }, fetchImpl);
   if (media.id !== id) throw new Error("Instagram verification did not return the expected media");
   return { id, url: media.permalink ?? null };
 }
 
 async function waitForContainer(
   config: BackendConfig,
+  credentials: InstagramCredentials,
   creationId: string,
   publicUrl: string,
   mediaType: string,
@@ -100,7 +103,7 @@ async function waitForContainer(
   sleepImpl: SleepImplementation,
 ): Promise<void> {
   for (let attempt = 0; attempt < READY_POLLS; attempt += 1) {
-    const status = await graphGet(config, creationId, { fields: "status_code,status" }, fetchImpl);
+    const status = await graphGet(config, credentials, creationId, { fields: "status_code,status" }, fetchImpl);
     const code = status.status_code ?? status.status;
     if (code === "FINISHED") return;
     if (code === "ERROR" || code === "EXPIRED") {
@@ -142,6 +145,7 @@ async function probePublicMedia(publicUrl: string, fetchImpl: typeof fetch): Pro
 
 async function publishReadyContainer(
   config: BackendConfig,
+  credentials: InstagramCredentials,
   creationId: string,
   fetchImpl: typeof fetch,
   sleepImpl: SleepImplementation,
@@ -149,7 +153,7 @@ async function publishReadyContainer(
   for (let attempt = 1; attempt <= PUBLISH_ATTEMPTS; attempt += 1) {
     try {
       return await ambiguousExternalMutation("instagram_stories", () =>
-        graphPost(config, `${config.INSTAGRAM_USER_ID}/media_publish`, { creation_id: creationId }, fetchImpl),
+        graphPost(config, credentials, `${credentials.userId}/media_publish`, { creation_id: creationId }, fetchImpl),
       );
     } catch (error) {
       if (isAmbiguousPublicationError(error)) throw error;
@@ -170,29 +174,37 @@ async function publishReadyContainer(
 
 async function graphPost(
   config: BackendConfig,
+  credentials: InstagramCredentials,
   path: string,
   payload: Record<string, string>,
   fetchImpl: typeof fetch,
 ): Promise<GraphResponse> {
-  return graphRequest(config, path, fetchImpl, {
+  return graphRequest(config, credentials, path, fetchImpl, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ ...payload, access_token: instagramToken(config) }),
+    body: new URLSearchParams({ ...payload, access_token: instagramToken(credentials) }),
   });
 }
 
 async function graphGet(
   config: BackendConfig,
+  credentials: InstagramCredentials,
   path: string,
   query: Record<string, string>,
   fetchImpl: typeof fetch,
 ): Promise<GraphResponse> {
-  const params = new URLSearchParams({ ...query, access_token: instagramToken(config) });
-  return graphRequest(config, `${path}?${params}`, fetchImpl);
+  const params = new URLSearchParams({ ...query, access_token: instagramToken(credentials) });
+  return graphRequest(config, credentials, `${path}?${params}`, fetchImpl);
 }
 
-async function graphRequest(config: BackendConfig, path: string, fetchImpl: typeof fetch, init?: RequestInit): Promise<GraphResponse> {
-  const host = instagramGraphHost(config.INSTAGRAM_ACCESS_TOKEN ?? "");
+async function graphRequest(
+  config: BackendConfig,
+  credentials: InstagramCredentials,
+  path: string,
+  fetchImpl: typeof fetch,
+  init?: RequestInit,
+): Promise<GraphResponse> {
+  const host = instagramGraphHost(credentials.accessToken ?? "");
   const version = config.INSTAGRAM_GRAPH_API_VERSION;
   const response = await externalFetch(fetchImpl, `https://${host}/${version}/${path.replace(/^\/+/, "")}`, init);
   const body = await response.text();
@@ -208,7 +220,7 @@ async function graphRequest(config: BackendConfig, path: string, fetchImpl: type
   return body ? (JSON.parse(body) as GraphResponse) : {};
 }
 
-function instagramToken(config: BackendConfig): string {
-  if (!config.INSTAGRAM_ACCESS_TOKEN) throw new Error("missing Instagram access token");
-  return config.INSTAGRAM_ACCESS_TOKEN;
+function instagramToken(credentials: InstagramCredentials): string {
+  if (!credentials.accessToken) throw new Error("missing Instagram access token");
+  return credentials.accessToken;
 }
