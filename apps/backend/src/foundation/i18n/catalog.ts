@@ -621,7 +621,7 @@ const en = {
   "cc.reach.period": "REACH · LAST {days} DAYS",
   "cc.reach.day": "REACH · {day} {month}",
   "cc.repair.note":
-    "All external actions are logged. Replace media removes the old external publication on supported platforms and queues a new one; Delete → republish does the same without changing content. Refresh site rebuilds only the selected language version.",
+    "All external actions are logged. Replace media removes the old external publication on supported platforms and queues a new one; Delete does the same without changing content, and publishes it again only if you tick the box. Refresh site rebuilds only the selected language version.",
   "cc.repair.retry": "Republish",
   "cc.repair.refresh-site": "Refresh site only",
   "cc.repair.edit": "Edit text",
@@ -1278,7 +1278,7 @@ const ru = {
   "cc.reach.period": "ОХВАТ · ПОСЛЕДНИЕ {days} ДН.",
   "cc.reach.day": "ОХВАТ · {day} {month}",
   "cc.repair.note":
-    "Все внешние действия журналируются. «Заменить медиа» удаляет старую внешнюю публикацию на поддерживаемых платформах и ставит новую в очередь; «Удалить → опубликовать» делает то же без изменения контента. «Обновить сайт» пересобирает только выбранную языковую версию сайта.",
+    "Все внешние действия журналируются. «Заменить медиа» удаляет старую внешнюю публикацию на поддерживаемых платформах и ставит новую в очередь; «Удалить» делает то же без изменения контента и публикует заново, только если отметить галочку. «Обновить сайт» пересобирает только выбранную языковую версию сайта.",
   "cc.repair.retry": "Переопубликовать",
   "cc.repair.refresh-site": "Обновить только сайт",
   "cc.repair.edit": "Изменить текст",
