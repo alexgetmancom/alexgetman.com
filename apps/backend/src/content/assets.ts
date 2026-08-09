@@ -12,7 +12,7 @@ type ImportedStudioMedia = {
   filename: string;
   contentType: string;
   bytes: Uint8Array;
-  source: "mcp_upload" | "http_upload" | "telegram_upload" | "ops_upload";
+  source: "http_upload" | "telegram_upload" | "ops_upload";
 };
 
 type ImportedStudioMediaFile = Omit<ImportedStudioMedia, "bytes"> & { localPath: string; byteSize?: number };
