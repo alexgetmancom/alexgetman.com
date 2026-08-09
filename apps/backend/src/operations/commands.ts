@@ -10,7 +10,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { parseManualSchedule } from "../publishing/schedule.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { recordOperationAction } from "./action-audit.js";
-import { editLocaleContent, parseEnglishMedia, refreshLocaleSite, replaceLocaleMedia } from "./commands/content-repair.js";
+import { editLocaleContent, parseLocaleMedia, refreshLocaleSite, replaceLocaleMedia } from "./commands/content-repair.js";
 import { replaceTextFallbackTargets, requeueAfterRemoval, requeuePublicationScope } from "./commands/requeue.js";
 import { resolvePublicationRef } from "./publication-ref.js";
 
@@ -80,7 +80,7 @@ export async function runOperationCommand(
     }
   } else if (input.action === "replace_media" || input.action === "replace_en_media") {
     const locale = input.locale ?? "en";
-    result = replaceLocaleMedia(backendDb, publicationRef, locale, parseEnglishMedia(input.media_json ?? input.media_en_json));
+    result = replaceLocaleMedia(backendDb, publicationRef, locale, parseLocaleMedia(input.media_json ?? input.media_en_json));
     if (config) {
       result.removed = await removePublishedTargets(
         backendDb,

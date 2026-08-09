@@ -82,13 +82,20 @@ export function refreshLocaleSite(backendDb: BackendDb, ref: ResolvedPublication
   return { ok: true, post_id: ref.postId, post_key: ref.postKey, locale, site_refresh: true };
 }
 
-export function parseEnglishMedia(raw: string | undefined): Record<string, unknown>[] | null {
+/** Media reaches Delivery either as a Content asset on disk or as a Telegram
+ * file id; ingress converts file ids into assets, so requiring one here would
+ * reject every item Studio itself produces. */
+export function parseLocaleMedia(raw: string | undefined): Record<string, unknown>[] | null {
   if (!raw || ["none", "null", "ru", "fallback"].includes(raw.trim().toLowerCase())) return null;
   const parsed = JSON.parse(raw) as unknown;
   const items = Array.isArray(parsed) ? parsed : parsed && typeof parsed === "object" ? [parsed] : null;
-  if (!items || items.some((item) => !item || typeof item !== "object" || !(item as Record<string, unknown>).file_id))
-    throw new Error("each media item needs file_id");
+  if (!items || items.some((item) => !item || typeof item !== "object" || !locatesMedia(item as Record<string, unknown>)))
+    throw new Error("each media item needs file_id, local_path or asset_id");
   return items as Record<string, unknown>[];
+}
+
+function locatesMedia(item: Record<string, unknown>): boolean {
+  return ["file_id", "fileId", "local_path", "localPath", "path", "asset_id"].some((key) => item[key] != null);
 }
 
 function updateSource(db: UnsafeBackendDb["db"], ref: ResolvedPublicationRef, patch: Record<string, unknown>, now: string): void {

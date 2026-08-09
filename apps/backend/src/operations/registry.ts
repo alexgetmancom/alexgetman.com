@@ -10,6 +10,7 @@ import { capabilityReport } from "../observability/capabilities.js";
 import { usageReport } from "../observability/usage.js";
 import { capabilitySummary, recordCapabilityPost } from "./capabilities.js";
 import { channelReport, connectChannel, disableChannel } from "./channels.js";
+import { replacePublishedMedia } from "./commands/media-replacement.js";
 import { doctorChecks } from "./doctor.js";
 import {
   applyMetricsBackfill,
@@ -240,6 +241,19 @@ const operationDefs = {
         },
         context.fetchImpl,
       ),
+  }),
+  "replace-media": operation({
+    summary: "Swap the media of a published post on one target and re-render the site.",
+    schema: z.object({
+      ref: refOption,
+      locale: z.enum(["ru", "en"]).describe("which language's media to replace"),
+      file: example(z.string().min(1), "PATH").describe("image or MP4 path on this host"),
+      target: example(z.string().min(1), "threads_en").describe("the delivery target to take down and publish again"),
+    }),
+    mutates: true,
+    agent: false,
+    note: "deletes the published post on that target before republishing it",
+    handler: (context, input) => replacePublishedMedia(context.db(), context.config(), input, context.fetchImpl),
   }),
   reschedule: operation({
     summary: "Move a scheduled publication to another time.",
