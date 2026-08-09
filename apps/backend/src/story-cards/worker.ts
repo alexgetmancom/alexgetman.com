@@ -144,40 +144,71 @@ function claimStoryCard(backendDb: BackendDb, preferDraftId?: number): ClaimedCa
 }
 
 async function renderStoryCard(config: BackendConfig, card: ClaimedCard, output: string): Promise<void> {
-  fs.mkdirSync(config.STORY_CARD_DIR, { recursive: true });
-  const fontConfig = path.join(config.STORY_CARD_DIR, "fontconfig.xml");
-  if (!fs.existsSync(fontConfig)) fs.writeFileSync(fontConfig, fontConfigXml(config.STORY_CARD_ASSETS_DIR));
-  const copy = buildStoryCardCopy(card.headline);
-  copy.emoji = card.emoji;
-  copy.headline = card.headline;
-  const child = Bun.spawn([process.execPath, config.STORY_CARD_RENDERER_ENTRY], {
-    stdin: Buffer.from(
+  const startedAt = Date.now();
+  let prepareMs = 0;
+  let rendererMs = 0;
+  let outputBytes = 0;
+  let success = false;
+  let failure: unknown;
+  try {
+    const prepareStartedAt = Date.now();
+    fs.mkdirSync(config.STORY_CARD_DIR, { recursive: true });
+    const fontConfig = path.join(config.STORY_CARD_DIR, "fontconfig.xml");
+    if (!fs.existsSync(fontConfig)) fs.writeFileSync(fontConfig, fontConfigXml(config.STORY_CARD_ASSETS_DIR));
+    const copy = buildStoryCardCopy(card.headline);
+    copy.emoji = card.emoji;
+    copy.headline = card.headline;
+    const input = Buffer.from(
       JSON.stringify({
         backgroundPath: path.join(config.STORY_CARD_ASSETS_DIR, "strata-master-background.png"),
         assetsDir: config.STORY_CARD_ASSETS_DIR,
         outputPath: output,
         copy,
       }),
-    ),
-    stdout: "pipe",
-    stderr: "pipe",
-    env: { ...process.env, FONTCONFIG_FILE: fontConfig },
-  });
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    child.kill("SIGKILL");
-  }, config.STORY_CARD_TIMEOUT_SECONDS * 1000);
-  try {
-    // stdout is drained alongside stderr rather than left unread: an unread pipe
-    // that fills stalls the child on write, and the kill above would then read as
-    // a render timeout instead of a stuck reader.
-    const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()]);
-    if (timedOut) throw new Error(`story_card_renderer_failed: timed out after ${config.STORY_CARD_TIMEOUT_SECONDS}s`);
-    if (exitCode !== 0) throw new Error(`story_card_renderer_failed: ${stderr.slice(0, 800) || `exit ${exitCode}`}`);
-    if (!fs.existsSync(output)) throw new Error("story_card_renderer_failed: output missing");
+    );
+    prepareMs = Date.now() - prepareStartedAt;
+
+    const rendererStartedAt = Date.now();
+    const child = Bun.spawn([process.execPath, config.STORY_CARD_RENDERER_ENTRY], {
+      stdin: input,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, FONTCONFIG_FILE: fontConfig },
+    });
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, config.STORY_CARD_TIMEOUT_SECONDS * 1000);
+    try {
+      // stdout is drained alongside stderr rather than left unread: an unread pipe
+      // that fills stalls the child on write, and the kill above would then read as
+      // a render timeout instead of a stuck reader.
+      const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()]);
+      rendererMs = Date.now() - rendererStartedAt;
+      if (timedOut) throw new Error(`story_card_renderer_failed: timed out after ${config.STORY_CARD_TIMEOUT_SECONDS}s`);
+      if (exitCode !== 0) throw new Error(`story_card_renderer_failed: ${stderr.slice(0, 800) || `exit ${exitCode}`}`);
+      if (!fs.existsSync(output)) throw new Error("story_card_renderer_failed: output missing");
+      outputBytes = fs.statSync(output).size;
+      success = true;
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (error) {
+    failure = error;
+    throw error;
   } finally {
-    clearTimeout(timer);
+    log(success ? "info" : "warn", "operation timing", {
+      operation: "content.story_card.render",
+      draftId: card.draftId,
+      locale: card.locale,
+      success,
+      totalMs: Date.now() - startedAt,
+      prepareMs,
+      rendererMs,
+      outputBytes,
+      ...(failure === undefined ? {} : { error: failure instanceof Error ? failure.message : String(failure) }),
+    });
   }
 }
 

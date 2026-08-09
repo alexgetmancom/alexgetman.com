@@ -14,11 +14,19 @@ import { runVideoMetricSchedule } from "./video-metrics.js";
  * runner catches per tick, so an unguarded throw here meant video metrics were
  * never collected again until someone noticed. */
 async function step(backendDb: BackendDb, name: string, featureKey: string, run: () => Promise<void>): Promise<number> {
+  const startedAt = Date.now();
   try {
     await trackUsageAsync(backendDb, featureKey, run);
+    log("info", "operation timing", { operation: featureKey, step: name, success: true, totalMs: Date.now() - startedAt });
     return 1;
   } catch (error) {
-    log("error", "analytics cycle step failed", { step: name, error: String(error) });
+    log("error", "operation timing", {
+      operation: featureKey,
+      step: name,
+      success: false,
+      totalMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return 0;
   }
 }

@@ -4,6 +4,7 @@ import { and, asc, count, desc, eq, isNotNull, isNull, lt, lte, or, sql } from "
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
 import { postEvents, postMetrics, postTargets, publicationSources, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { log } from "../foundation/logger.js";
 import { withJobHeartbeat } from "../foundation/runtime/job-heartbeat.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { atomicWriteJson, parseObject } from "../fsUtils.js";
@@ -114,34 +115,87 @@ export async function renderFeedFiles(
   fetchImpl: typeof fetch = fetch,
   materializePostIds?: ReadonlySet<number>,
 ): Promise<void> {
-  const targetUrls = siteTargetUrlsByPostKey(backendDb);
-  const previousItems = previousFeedItems(config);
-  const items = await Promise.all(
-    sourceItems(backendDb).map((item) => {
-      const postId = Number(item.post_id ?? 0);
-      const existing = materializePostIds && !materializePostIds.has(postId) ? previousItems.get(postId) : undefined;
-      return prepareFeedItem(config, item, targetUrls, fetchImpl, existing);
-    }),
-  );
-  const views = viewsByPostKey(backendDb);
-  for (const item of items.filter((value): value is Record<string, unknown> => value != null)) {
-    item.views = views.get(String(item.id ?? "")) ?? Number(item.views ?? 0);
+  const startedAt = Date.now();
+  let loadMs = 0;
+  let mediaMs = 0;
+  let decorateMs = 0;
+  let writeMs = 0;
+  let sourceCount = 0;
+  let outputCount = 0;
+  let outputBytes = 0;
+  let success = false;
+  let failure: unknown;
+  try {
+    let phaseStartedAt = Date.now();
+    const targetUrls = siteTargetUrlsByPostKey(backendDb);
+    const previousItems = previousFeedItems(config);
+    const sources = sourceItems(backendDb);
+    sourceCount = sources.length;
+    loadMs = Date.now() - phaseStartedAt;
+
+    phaseStartedAt = Date.now();
+    let items: Awaited<ReturnType<typeof prepareFeedItem>>[];
+    try {
+      items = await Promise.all(
+        sources.map((item) => {
+          const postId = Number(item.post_id ?? 0);
+          const existing = materializePostIds && !materializePostIds.has(postId) ? previousItems.get(postId) : undefined;
+          return prepareFeedItem(config, item, targetUrls, fetchImpl, existing);
+        }),
+      );
+    } finally {
+      mediaMs = Date.now() - phaseStartedAt;
+    }
+
+    phaseStartedAt = Date.now();
+    const views = viewsByPostKey(backendDb);
+    for (const item of items.filter((value): value is Record<string, unknown> => value != null)) {
+      item.views = views.get(String(item.id ?? "")) ?? Number(item.views ?? 0);
+    }
+    const ordered = items
+      .filter((value): value is Record<string, unknown> => value != null)
+      .sort((a, b) => String(b.date ?? b.created_at ?? "").localeCompare(String(a.date ?? a.created_at ?? "")));
+    outputCount = ordered.length;
+    decorateMs = Date.now() - phaseStartedAt;
+
+    phaseStartedAt = Date.now();
+    try {
+      await atomicWriteJson(config.FEED_JSON, { updated_at: new Date().toISOString(), channel: config.CHANNEL_USERNAME, items: ordered });
+      const targetCounts = unsafeDb(backendDb)
+        .db.select({ target: postTargets.target, status: postTargets.status, count: count() })
+        .from(postTargets)
+        .groupBy(postTargets.target, postTargets.status)
+        .all();
+      await atomicWriteJson(config.SITE_CONTENT_METRICS_JSON, {
+        updated_at: new Date().toISOString(),
+        total: ordered.reduce((sum, item) => sum + Number(item.views ?? 0), 0),
+        posts: ordered.length,
+        targets: targetCounts,
+      });
+      outputBytes = fs.statSync(config.FEED_JSON).size + fs.statSync(config.SITE_CONTENT_METRICS_JSON).size;
+    } finally {
+      writeMs = Date.now() - phaseStartedAt;
+    }
+    success = true;
+  } catch (error) {
+    failure = error;
+    throw error;
+  } finally {
+    log(success ? "info" : "warn", "operation timing", {
+      operation: "publishing.site.materialize",
+      success,
+      totalMs: Date.now() - startedAt,
+      loadMs,
+      mediaMs,
+      decorateMs,
+      writeMs,
+      sourceCount,
+      outputCount,
+      outputBytes,
+      materializedPosts: materializePostIds?.size ?? sourceCount,
+      ...(failure === undefined ? {} : { error: failure instanceof Error ? failure.message : String(failure) }),
+    });
   }
-  const ordered = items
-    .filter((value): value is Record<string, unknown> => value != null)
-    .sort((a, b) => String(b.date ?? b.created_at ?? "").localeCompare(String(a.date ?? a.created_at ?? "")));
-  await atomicWriteJson(config.FEED_JSON, { updated_at: new Date().toISOString(), channel: config.CHANNEL_USERNAME, items: ordered });
-  const targetCounts = unsafeDb(backendDb)
-    .db.select({ target: postTargets.target, status: postTargets.status, count: count() })
-    .from(postTargets)
-    .groupBy(postTargets.target, postTargets.status)
-    .all();
-  await atomicWriteJson(config.SITE_CONTENT_METRICS_JSON, {
-    updated_at: new Date().toISOString(),
-    total: ordered.reduce((sum, item) => sum + Number(item.views ?? 0), 0),
-    posts: ordered.length,
-    targets: targetCounts,
-  });
 }
 
 function claimSiteJobs(config: BackendConfig, backendDb: BackendDb): SiteJob[] {

@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../../db/client.js";
 import { type JsonValue, postTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { log } from "../../foundation/logger.js";
 import { recordWorkerState } from "../../foundation/runtime/worker-state.js";
 import { trackUsageAsync } from "../../observability/usage.js";
 import { platformAnalyticsProfile } from "../../publishing/platform-profiles.js";
@@ -34,16 +35,48 @@ export async function runMetricsCycle(
     if (!collector) continue;
     try {
       await trackUsageAsync(backendDb, "analytics.metrics.collect", async () => {
-        const result = await collector(task);
-        unsafeDb(backendDb).db.transaction((tx) => {
-          upsertMetrics(backendDb, task.postKey, task.target, result.metrics, result.source, result.raw, tx as UnsafeBackendDb["db"]);
-          if (result.url)
-            tx.update(postTargets)
-              .set({ url: result.url, updatedAt: new Date().toISOString() })
-              .where(and(eq(postTargets.postKey, task.postKey), eq(postTargets.target, task.target)))
-              .run();
-          finishMetricTask(backendDb, task, null, false, tx as UnsafeBackendDb["db"]);
-        });
+        const startedAt = Date.now();
+        let providerMs = 0;
+        let persistMs = 0;
+        let metricCount = 0;
+        let success = false;
+        let failure: unknown;
+        try {
+          const providerStartedAt = Date.now();
+          let result: Awaited<ReturnType<MetricCollector>>;
+          try {
+            result = await collector(task);
+          } finally {
+            providerMs = Date.now() - providerStartedAt;
+          }
+          metricCount = Object.keys(result.metrics).length;
+          const persistStartedAt = Date.now();
+          unsafeDb(backendDb).db.transaction((tx) => {
+            upsertMetrics(backendDb, task.postKey, task.target, result.metrics, result.source, result.raw, tx as UnsafeBackendDb["db"]);
+            if (result.url)
+              tx.update(postTargets)
+                .set({ url: result.url, updatedAt: new Date().toISOString() })
+                .where(and(eq(postTargets.postKey, task.postKey), eq(postTargets.target, task.target)))
+                .run();
+            finishMetricTask(backendDb, task, null, false, tx as UnsafeBackendDb["db"]);
+          });
+          persistMs = Date.now() - persistStartedAt;
+          success = true;
+        } catch (error) {
+          failure = error;
+          throw error;
+        } finally {
+          log(success ? "info" : "warn", "operation timing", {
+            operation: "analytics.metrics.collect",
+            target: task.target,
+            success,
+            totalMs: Date.now() - startedAt,
+            providerMs,
+            persistMs,
+            metricCount,
+            ...(failure === undefined ? {} : { error: failure instanceof Error ? failure.message : String(failure) }),
+          });
+        }
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

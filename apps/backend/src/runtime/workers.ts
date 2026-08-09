@@ -69,12 +69,26 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
   };
   return [
     startWorkerLoop("story-cards", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
+      const startedAt = Date.now();
       const claimed = await runStoryCardCycle(config, backendDb);
-      log("debug", "Story card loop tick", { claimed });
+      if (claimed)
+        log("info", "operation timing", {
+          operation: "content.story_card.cycle",
+          success: true,
+          totalMs: Date.now() - startedAt,
+          claimed,
+        });
     }),
     startWorkerLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
+      const startedAt = Date.now();
       const claimed = await runPublishCycle(config, backendDb);
-      log("debug", "queue loop tick", { claimed });
+      if (claimed)
+        log("info", "operation timing", {
+          operation: "publishing.social.cycle",
+          success: true,
+          totalMs: Date.now() - startedAt,
+          claimed,
+        });
     }),
     startWorkerLoop("publish-watchdog", config.WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
       const recovered = runPublishWatchdog(config, backendDb);
@@ -91,8 +105,15 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
     ...(config.studio.modules.video_posting
       ? [
           startWorkerLoop("video", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
+            const startedAt = Date.now();
             const claimed = await runVideoCycle(config, backendDb);
-            log("debug", "video loop tick", { claimed });
+            if (claimed)
+              log("info", "operation timing", {
+                operation: "publishing.video.cycle",
+                success: true,
+                totalMs: Date.now() - startedAt,
+                claimed,
+              });
           }),
         ]
       : []),
@@ -101,12 +122,26 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
           // Two independent collectors on one schedule. They do not share a
           // failure: a provider outage on one must not silently stop the other.
           startWorkerLoop("metrics", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
+            const startedAt = Date.now();
             const checked = await runMetricsCycle(config, backendDb);
-            log("debug", "metrics loop tick", { checked });
+            if (checked)
+              log("info", "operation timing", {
+                operation: "analytics.metrics.cycle",
+                success: true,
+                totalMs: Date.now() - startedAt,
+                checked,
+              });
           }),
           startWorkerLoop("creator-analytics", config.PROFILE_POLL_INTERVAL_SECONDS * 1000, async () => {
+            const startedAt = Date.now();
             const creators = await runAnalyticsCycle(config, backendDb);
-            log("debug", "creator analytics loop tick", { creators });
+            if (creators)
+              log("info", "operation timing", {
+                operation: "analytics.creator_cycle",
+                success: true,
+                totalMs: Date.now() - startedAt,
+                completed: creators,
+              });
           }),
           // Retention is a housekeeping concern, not a collection one: it used
           // to run on every metrics tick (10s by default), scanning
@@ -123,8 +158,15 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
     ...(config.studio.modules.site
       ? [
           startWorkerLoop("site", config.SITE_JOB_POLL_INTERVAL_SECONDS * 1000, async () => {
+            const startedAt = Date.now();
             const claimed = await runSiteJobCycle(config, backendDb);
-            log("debug", "site materialization loop tick", { claimed });
+            if (claimed)
+              log("info", "operation timing", {
+                operation: "publishing.site.cycle",
+                success: true,
+                totalMs: Date.now() - startedAt,
+                claimed,
+              });
           }),
         ]
       : []),

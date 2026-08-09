@@ -49,7 +49,28 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   const notificationsMenu = buildNotificationsMenu(config, backendDb);
   const settingsMenu = buildSettingsMenu(config, backendDb);
   const mainMenu = buildMainMenu(config, backendDb, settingsMenu, notificationsMenu);
-  bot.use((_ctx, next) => trackUsageAsync(backendDb, "telegram.update.handle", next));
+  bot.use(async (ctx, next) => {
+    const startedAt = Date.now();
+    const updateType = Object.keys(ctx.update).find((key) => key !== "update_id") ?? "unknown";
+    let success = false;
+    let failure: unknown;
+    try {
+      await trackUsageAsync(backendDb, "telegram.update.handle", next);
+      success = true;
+    } catch (error) {
+      failure = error;
+      throw error;
+    } finally {
+      log(success ? "info" : "warn", "operation timing", {
+        operation: "telegram.update.handle",
+        updateId: ctx.update.update_id,
+        updateType,
+        success,
+        totalMs: Date.now() - startedAt,
+        ...(failure === undefined ? {} : { error: failure instanceof Error ? failure.message : String(failure) }),
+      });
+    }
+  });
   // The menu plugin installs its own callback_query:data middleware, so the
   // admin gate that used to sit at the top of the single callback handler
   // below must also run in front of it, or a non-admin's tap on a menu

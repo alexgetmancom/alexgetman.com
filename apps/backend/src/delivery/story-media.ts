@@ -26,37 +26,81 @@ export async function generateStoryMedia(
   const item = items[0] as Record<string, unknown>;
   const type = String(item.type ?? "").toLowerCase();
   if (!["photo", "image", "video"].includes(type)) throw new Error("Story-safe generation supports photo or video media");
+  const startedAt = Date.now();
+  let resolveMs = 0;
+  let transformMs = 0;
+  let finalizeMs = 0;
+  let outputBytes = 0;
+  let success = false;
+  let failure: unknown;
   const directory = path.join(config.DATA_DIR, "story-media");
-  await fs.promises.mkdir(directory, { recursive: true });
   const video = type === "video";
-  log("info", "story media source resolving", { draftId, locale, kind: video ? "video" : "image" });
-  const source = await withTimeout(
-    resolveSource(item, draftId, locale, directory, config, fetchImpl),
-    30_000,
-    "story_source_resolution_timeout",
-  );
-  log("info", "story media source resolved", { draftId, locale, source });
-  const stamp = Date.now();
-  const output = path.join(directory, `draft-${draftId}-${locale}-story-standard-${stamp}.${video ? "mp4" : "jpg"}`);
-  const telegramOutput = video ? path.join(directory, `draft-${draftId}-${locale}-story-telegram-${stamp}.mp4`) : undefined;
-  const args = storyFfmpegArgs(source, output, video ? "video" : "image");
-  log("info", "story media transform started", { draftId, locale, provider: config.MEDIA_PROCESSOR_PROVIDER });
-  if (config.MEDIA_PROCESSOR_PROVIDER === "remote_http") await transformRemotely(source, output, telegramOutput, video, config, fetchImpl);
-  else await withTimeout(runFfmpeg(args, config.FFMPEG_TIMEOUT_SECONDS), storyTransformTimeout(config), "story_transform_timeout");
-  await withTimeout(fs.promises.chmod(output, 0o664), 30_000, "story_output_finalize_timeout");
-  log("info", "story media transform completed", { draftId, locale, output });
-  return [
-    {
-      ...(item as unknown as PublishMediaItem),
-      story_local_path: output,
-      storyLocalPath: output,
-      ...(telegramOutput && fs.existsSync(telegramOutput)
-        ? { telegram_story_local_path: telegramOutput, telegramStoryLocalPath: telegramOutput }
-        : {}),
-      story_width: 1080,
-      story_height: 1920,
-    },
-  ];
+  try {
+    await fs.promises.mkdir(directory, { recursive: true });
+    const resolveStartedAt = Date.now();
+    let source: string;
+    try {
+      source = await withTimeout(
+        resolveSource(item, draftId, locale, directory, config, fetchImpl),
+        30_000,
+        "story_source_resolution_timeout",
+      );
+    } finally {
+      resolveMs = Date.now() - resolveStartedAt;
+    }
+    const stamp = Date.now();
+    const output = path.join(directory, `draft-${draftId}-${locale}-story-standard-${stamp}.${video ? "mp4" : "jpg"}`);
+    const telegramOutput = video ? path.join(directory, `draft-${draftId}-${locale}-story-telegram-${stamp}.mp4`) : undefined;
+    const args = storyFfmpegArgs(source, output, video ? "video" : "image");
+
+    const transformStartedAt = Date.now();
+    try {
+      if (config.MEDIA_PROCESSOR_PROVIDER === "remote_http")
+        await transformRemotely(source, output, telegramOutput, video, config, fetchImpl);
+      else await withTimeout(runFfmpeg(args, config.FFMPEG_TIMEOUT_SECONDS), storyTransformTimeout(config), "story_transform_timeout");
+    } finally {
+      transformMs = Date.now() - transformStartedAt;
+    }
+
+    const finalizeStartedAt = Date.now();
+    try {
+      await withTimeout(fs.promises.chmod(output, 0o664), 30_000, "story_output_finalize_timeout");
+      outputBytes = (await fs.promises.stat(output)).size;
+    } finally {
+      finalizeMs = Date.now() - finalizeStartedAt;
+    }
+    success = true;
+    return [
+      {
+        ...(item as unknown as PublishMediaItem),
+        story_local_path: output,
+        storyLocalPath: output,
+        ...(telegramOutput && fs.existsSync(telegramOutput)
+          ? { telegram_story_local_path: telegramOutput, telegramStoryLocalPath: telegramOutput }
+          : {}),
+        story_width: 1080,
+        story_height: 1920,
+      },
+    ];
+  } catch (error) {
+    failure = error;
+    throw error;
+  } finally {
+    log(success ? "info" : "warn", "operation timing", {
+      operation: "media.story.transform",
+      draftId,
+      locale,
+      kind: video ? "video" : "image",
+      provider: config.MEDIA_PROCESSOR_PROVIDER,
+      success,
+      totalMs: Date.now() - startedAt,
+      resolveMs,
+      transformMs,
+      finalizeMs,
+      outputBytes,
+      ...(failure === undefined ? {} : { error: failure instanceof Error ? failure.message : String(failure) }),
+    });
+  }
 }
 
 /** Media Processing Port. The delivery adapters only receive the finished
