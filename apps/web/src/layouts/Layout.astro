@@ -70,6 +70,16 @@ const safeSchema = schema?.replace(/</g, "\\u003c").replace(/>/g, "\\u003e").rep
         }
       })();
     </script>
+    <script is:inline>
+      window.Fusionaly = window.Fusionaly || {};
+      window.Fusionaly.config = {
+        autoInstrumentButtons: false,
+        autoSendPageViews: true,
+        respectDoNotTrack: true,
+        debug: false,
+      };
+    </script>
+    <script defer src="https://data.alexgetman.com/y/api/v1/sdk.js"></script>
     <link rel="icon" type="image/png" href="/brand-favicon-20260629.png" />
     <link rel="apple-touch-icon" href="/brand-favicon-20260629.png" />
     <link rel="icon" type="image/svg+xml" href={`/favicon.svg?v=${BRAND_ASSET_VERSION}`} />
