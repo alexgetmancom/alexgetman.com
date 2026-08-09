@@ -508,7 +508,7 @@ async function collectXAnalyticsCsv(
   }
   const downloaded = await downloadTelegramFile(config, apiFile.file_path, ".csv");
   try {
-    const result = importXAnalyticsCsv(backendDb, downloaded.path, messageSampledAt(ctx));
+    const result = importXAnalyticsCsv(backendDb, downloaded.path, messageSampledAt(ctx), document.file_name ?? undefined);
     await ctx.reply(
       result.duplicateImport
         ? t(locale, "settings.x-import-duplicate")

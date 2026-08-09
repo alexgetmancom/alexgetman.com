@@ -31,7 +31,14 @@ export type XAnalyticsReport = {
     uncovered: Array<{ postKey: string; externalId: string | null }>;
   };
   linkCandidates: Array<{ xPostId: string; postKey: string; matchedLength: number; url: string; text: string }>;
-  topUnlinked: Array<{ xPostId: string; kind: string; publishedAt: string | null; views: number; url: string; text: string }>;
+  topUnlinked: Array<{
+    xPostId: string;
+    kind: string;
+    publishedAt: string | null;
+    url: string;
+    text: string;
+    metrics: Record<string, number>;
+  }>;
 };
 
 /** Read-only account of what the X CSV imports have accumulated: what came in,
@@ -101,15 +108,27 @@ export function xAnalyticsReport(backendDb: BackendDb, limit: number): XAnalytic
     ];
   });
 
-  const views = new Map(
-    query<{ xPostId: string; value: number }>(
-      `SELECT x_post_id AS xPostId, max(value) AS value
-       FROM x_activity_metric_snapshots WHERE metric_name='views' GROUP BY x_post_id`,
-    ).map((row) => [row.xPostId, Number(row.value)]),
+  // The newest snapshot of every metric, so an item is reported exactly as X
+  // last described it — the same numbers the export screen shows.
+  const latest = query<{ xPostId: string; metricName: string; value: number }>(
+    `SELECT snapshot.x_post_id AS xPostId, snapshot.metric_name AS metricName, snapshot.value
+     FROM x_activity_metric_snapshots AS snapshot
+     INNER JOIN (
+       SELECT x_post_id, metric_name, max(sampled_at) AS sampled_at
+       FROM x_activity_metric_snapshots GROUP BY x_post_id, metric_name
+     ) AS newest
+       ON newest.x_post_id=snapshot.x_post_id AND newest.metric_name=snapshot.metric_name
+         AND newest.sampled_at=snapshot.sampled_at`,
   );
+  const metricsById = new Map<string, Record<string, number>>();
+  for (const row of latest) {
+    const values = metricsById.get(row.xPostId) ?? {};
+    values[row.metricName] = Number(row.value);
+    metricsById.set(row.xPostId, values);
+  }
   const topUnlinked = unlinked
-    .map((item) => ({ ...item, views: views.get(item.xPostId) ?? 0, text: item.text.slice(0, 120) }))
-    .sort((left, right) => right.views - left.views)
+    .map((item) => ({ ...item, text: item.text.slice(0, 120), metrics: metricsById.get(item.xPostId) ?? {} }))
+    .sort((left, right) => (right.metrics.views ?? 0) - (left.metrics.views ?? 0))
     .slice(0, limit);
 
   return {

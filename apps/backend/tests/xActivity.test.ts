@@ -259,7 +259,7 @@ describe("X Activity", () => {
       // post:9 was published to X but no export row carries it.
       expect(report.editorialCoverage).toMatchObject({ xTargets: 2, covered: 1, uncovered: [{ postKey: "post:9" }] });
       expect(report.linkCandidates).toMatchObject([{ xPostId: "101", postKey: "post:2" }]);
-      expect(report.topUnlinked[0]).toMatchObject({ xPostId: "101", views: 500 });
+      expect(report.topUnlinked[0]).toMatchObject({ xPostId: "101", metrics: { views: 500, likes: 2, replies: 1 } });
     } finally {
       backendDb.close();
     }

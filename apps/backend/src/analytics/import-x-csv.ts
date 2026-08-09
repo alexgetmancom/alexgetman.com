@@ -39,7 +39,15 @@ export type XCsvImportResult = {
 /** Imports an X Analytics content export as account-wide activity, then hands
  * the whole table to the linker: an export knows X post ids, not editorial
  * posts, and attaching the two is one job wherever the rows came from. */
-export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sampledAt: string): XCsvImportResult {
+export function importXAnalyticsCsv(
+  backendDb: BackendDb,
+  sourcePath: string,
+  sampledAt: string,
+  // What the export was called where it came from. A file that arrived over
+  // Telegram is stored under a name Telegram chose, and the export's own name
+  // is the only thing carrying the window it covers.
+  sourceName = path.basename(sourcePath),
+): XCsvImportResult {
   if (Number.isNaN(Date.parse(sampledAt))) throw new Error("--sampled-at must be an ISO timestamp");
   const { headers, rows } = parseCsv(fs.readFileSync(sourcePath, "utf8"));
   if (!rows.length || !rows[0]?.["Идентификатор поста"]) throw new Error("Expected an X Analytics CSV with the column Идентификатор поста");
@@ -67,7 +75,7 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
       importId: existingImport.id,
       duplicateImport: true,
     };
-  const [periodStart, periodEnd] = exportPeriod(sourcePath);
+  const [periodStart, periodEnd] = exportPeriod(sourceName);
   const importedAt = new Date().toISOString();
   unsafeDb(backendDb)
     .sqlite.prepare(
@@ -75,7 +83,7 @@ export function importXAnalyticsCsv(backendDb: BackendDb, sourcePath: string, sa
        (checksum,source_file,period_start,period_end,sampled_at,imported_at,row_count)
        VALUES (?,?,?,?,?,?,?)`,
     )
-    .run(checksum, path.basename(sourcePath), periodStart, periodEnd, sampledAt, importedAt, rows.length);
+    .run(checksum, sourceName, periodStart, periodEnd, sampledAt, importedAt, rows.length);
   const importRow = unsafeDb(backendDb).sqlite.prepare("SELECT id FROM x_activity_imports WHERE checksum=?").get(checksum) as {
     id: number;
   };
@@ -162,8 +170,8 @@ function xPublishedAt(value: string | undefined): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-function exportPeriod(sourcePath: string): [string | null, string | null] {
-  const match = path.basename(sourcePath).match(/(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})\.csv$/u);
+function exportPeriod(sourceName: string): [string | null, string | null] {
+  const match = sourceName.match(/(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})\.csv$/u);
   return [match?.[1] ?? null, match?.[2] ?? null];
 }
 
