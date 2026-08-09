@@ -221,6 +221,61 @@ describe("X Activity", () => {
     }
   });
 
+  it("links a tweet whose text is spelled differently or was edited on the same day", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = "2026-07-29T11:49:00.000Z";
+      const cases = [
+        // The post reads `⚡️` and `>`; the export writes `⚡` and `&gt;`.
+        {
+          key: "post:1",
+          post: "⚡️ OpenAI plans to sell resets > higher limits cost more money",
+          x: "⚡ OpenAI plans to sell resets &gt; higher limits cost more money",
+        },
+        // Same publication, wording changed after it went out.
+        {
+          key: "post:2",
+          post: "Alibaba released Qwen 3.8 Max and now it is up to users to see whether it wins",
+          x: "Alibaba released Qwen 3.8 Max and now users will decide whether it wins",
+        },
+      ];
+      for (const [index, item] of cases.entries())
+        backendDb.sqlite
+          .prepare(
+            "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES (?,?,'test',?,?,?,'active',?,?)",
+          )
+          .run(item.key, index + 1, index + 1, now, item.post, now, now);
+      const directory = mkdtempSync(join(tmpdir(), "x-activity-spelling-"));
+      const file = join(directory, "account_analytics_content_2026-07-23_2026-07-29.csv");
+      const metrics = [50, 2, 4, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0];
+      writeFileSync(
+        file,
+        [
+          HEADERS.join(","),
+          ...cases.map((item, index) =>
+            [200 + index, '"Wed, Jul 29, 2026"', `"${item.x}"`, `https://x.com/test/status/${200 + index}`, ...metrics].join(","),
+          ),
+          // The same wording a day later belongs to no post: an edit explains one
+          // publication reading two ways, not two publications on two days.
+          ["300", '"Thu, Jul 30, 2026"', `"${cases[1]?.x}"`, "https://x.com/test/status/300", ...metrics].join(","),
+        ].join("\n"),
+      );
+
+      const result = importXAnalyticsCsv(backendDb, file, now);
+
+      expect(result).toMatchObject({ linkedByText: 2 });
+      expect(
+        backendDb.sqlite.prepare("SELECT x_post_id AS id, linked_post_key AS post FROM x_activity_items ORDER BY id").all(),
+      ).toMatchObject([
+        { id: "200", post: "post:1" },
+        { id: "201", post: "post:2" },
+        { id: "300", post: null },
+      ]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("reports coverage and the near-miss links an import declined to make", () => {
     const backendDb = openBackendDb(":memory:");
     try {

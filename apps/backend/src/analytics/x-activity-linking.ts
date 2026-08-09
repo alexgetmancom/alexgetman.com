@@ -29,15 +29,14 @@ export function attachXActivityToPosts(backendDb: BackendDb, apply: boolean): XA
     idsByPost.set(target.post_key, ids);
     for (const id of ids) postByExternalId.set(id, target.post_key);
   }
-  const unlinked = sqlite.prepare("SELECT x_post_id AS xPostId, text FROM x_activity_items WHERE linked_post_key IS NULL").all() as Array<{
-    xPostId: string;
-    text: string;
-  }>;
+  const unlinked = sqlite
+    .prepare("SELECT x_post_id AS xPostId, kind, text, published_at AS publishedAt FROM x_activity_items WHERE linked_post_key IS NULL")
+    .all() as Array<{ xPostId: string; kind: string; text: string; publishedAt: string | null }>;
   const editorial = editorialTexts(backendDb);
   const links: XLink[] = [];
   for (const item of unlinked) {
     const byId = postByExternalId.get(item.xPostId);
-    const postKey = byId ?? matchEditorialPost(item.text, editorial);
+    const postKey = byId ?? (item.kind === "standalone" ? matchEditorialPost(item, editorial) : null);
     if (!postKey) continue;
     links.push({ xPostId: item.xPostId, postKey, matchedBy: byId ? "external_id" : "direct_text" });
   }
