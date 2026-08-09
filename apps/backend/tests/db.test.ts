@@ -46,11 +46,9 @@ describe("openBackendDb", () => {
     }
   });
 
-  /** The one inventory worth maintaining by hand: it guards the destructive
-   * direction. A migration that drops or renames a table still applies cleanly
-   * and passes every behavioural test whose data it did not touch, and the loss
-   * only surfaces on production data. One line per new table is the price. */
-  it("preserves every legacy pipeline table when applying Drizzle migrations", () => {
+  /** Required persisted state is explicit: a destructive migration still
+   * applies cleanly, so behavioural tests cannot detect an unrelated drop. */
+  it("keeps every required persisted table after applying Drizzle migrations", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const tables = new Set(

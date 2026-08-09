@@ -1,16 +1,6 @@
-import { asc, desc, eq, or, sql } from "drizzle-orm";
+import { asc, desc, sql } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import {
-  credentialChecks,
-  drafts,
-  metricSchedule,
-  opsActions,
-  postEvents,
-  postMetrics,
-  posts,
-  postTargets,
-  publishJobs,
-} from "../db/schema.js";
+import { credentialChecks, drafts, opsActions, postEvents, postTargets, publishJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { capabilityReport } from "../observability/capabilities.js";
 import { pipelineUpdatedAt, recentPostMetrics } from "./read-model.js";
@@ -112,8 +102,8 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
   return {
     generatedAt: new Date().toISOString(),
     // The dashboard only needs current metric issues here. Full post history,
-    // samples and provider raw payloads belong to the period read model and
-    // /api/post-debug, not to this always-on operations payload.
+    // samples and provider raw payloads belong to explicit diagnostic operations,
+    // not to this always-on operations payload.
     pipeline: { updated_at: fingerprint.pipelineUpdatedAt, metrics: { recent: recentMetrics } },
     queue,
     targets,
@@ -195,74 +185,4 @@ export function commandCenterFingerprint(backendDb: BackendDb): CommandCenterFin
     )
     .get() as { analyticsRevision: string | null };
   return { pipelineUpdatedAt: pipelineUpdatedAt(backendDb), ...revisions, analyticsRevision: analytics.analyticsRevision ?? null };
-}
-
-export function postDebugPayload(backendDb: BackendDb, ref: string) {
-  const postKey = resolvePostKey(backendDb, ref);
-  if (!postKey) return null;
-  const post = unsafeDb(backendDb).db.select().from(posts).where(eq(posts.postKey, postKey)).get();
-  const targets = unsafeDb(backendDb)
-    .db.select()
-    .from(postTargets)
-    .where(eq(postTargets.postKey, postKey))
-    .orderBy(asc(postTargets.target))
-    .all();
-  const metrics = unsafeDb(backendDb)
-    .db.select()
-    .from(postMetrics)
-    .where(eq(postMetrics.postKey, postKey))
-    .orderBy(asc(postMetrics.target), asc(postMetrics.metricName))
-    .all();
-  const schedule = unsafeDb(backendDb)
-    .db.select()
-    .from(metricSchedule)
-    .where(eq(metricSchedule.postKey, postKey))
-    .orderBy(asc(metricSchedule.target))
-    .all();
-  const id = numericRef(ref);
-  const jobs = unsafeDb(backendDb)
-    .db.select()
-    .from(publishJobs)
-    .where(
-      or(
-        eq(publishJobs.postKey, postKey),
-        id == null ? sql`false` : eq(publishJobs.postId, id),
-        id == null ? sql`false` : eq(publishJobs.messageId, id),
-      ),
-    )
-    .orderBy(desc(publishJobs.jobId))
-    .all();
-  return {
-    ref: { input: ref, postKey },
-    post: post ?? null,
-    targets,
-    metrics,
-    schedule,
-    jobs,
-  };
-}
-
-function resolvePostKey(backendDb: BackendDb, ref: string): string | null {
-  const value = ref.trim();
-  if (!value) return null;
-  if (value.startsWith("post:")) return value;
-  const id = numericRef(value);
-  if (id == null) return value;
-  const post = unsafeDb(backendDb)
-    .db.select({ postKey: posts.postKey })
-    .from(posts)
-    .where(or(eq(posts.postId, id), eq(posts.postKey, `post:${id}`), eq(posts.messageId, id)))
-    .get();
-  if (post?.postKey) return post.postKey;
-  const job = unsafeDb(backendDb)
-    .db.select({ postKey: publishJobs.postKey, postId: publishJobs.postId })
-    .from(publishJobs)
-    .where(or(eq(publishJobs.messageId, id), eq(publishJobs.postId, id)))
-    .orderBy(desc(publishJobs.jobId))
-    .get();
-  return job?.postKey ?? (job?.postId != null ? `post:${job.postId}` : `post:${id}`);
-}
-
-function numericRef(ref: string): number | null {
-  return /^\d+$/.test(ref) ? Number(ref) : null;
 }

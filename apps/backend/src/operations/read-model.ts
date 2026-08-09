@@ -1,23 +1,8 @@
-import fs from "node:fs";
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import {
-  type JsonValue,
-  metricSamples,
-  metricSchedule,
-  postLocales,
-  postMetrics,
-  posts,
-  postTargets,
-  publications,
-  publishJobs,
-  siteJobs,
-  workerState,
-} from "../db/schema.js";
+import { postLocales, postMetrics, posts, postTargets, publications } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { gitRevision } from "../foundation/runtime/git.js";
-import { workerLiveness } from "../foundation/runtime/worker-state.js";
 import { zonedRollingPeriodBounds } from "../foundation/time.js";
 import {
   formatPipelinePosts,
@@ -68,140 +53,6 @@ export function pipelineOverviewPayload(
 export function dashboardPipelineHistoryPayload(config: BackendConfig, backendDb: BackendDb, periodDays: number, offsetDays: number) {
   const options = resolvePipelineReadModelOptions({ includeSamples: false, contentLimit: 4, compact: true });
   return { posts: pipelinePosts(backendDb, config, 0, periodDays, 0, offsetDays, options, 200) };
-}
-
-/** Operations read model over publication, delivery and worker state. */
-export function pipelineStatusPayload(
-  config: BackendConfig,
-  backendDb: BackendDb,
-  weekOffset = 0,
-  periodDays = 7,
-  comparisonOffset = 0,
-  offsetDays?: number,
-  options: PipelineReadModelOptions = {},
-) {
-  const readModelOptions = resolvePipelineReadModelOptions(options);
-  const jobs = unsafeDb(backendDb)
-    .db.select({
-      jobId: publishJobs.jobId,
-      postId: publishJobs.postId,
-      postKey: publishJobs.postKey,
-      messageId: publishJobs.messageId,
-      target: publishJobs.target,
-      status: publishJobs.status,
-      attemptCount: publishJobs.attemptCount,
-      publishAt: publishJobs.publishAt,
-      nextAttemptAt: publishJobs.nextAttemptAt,
-      lastError: publishJobs.lastError,
-      createdAt: publishJobs.createdAt,
-      updatedAt: publishJobs.updatedAt,
-    })
-    .from(publishJobs)
-    .orderBy(desc(publishJobs.updatedAt))
-    .limit(50)
-    .all();
-
-  const workers = unsafeDb(backendDb)
-    .db.select({ name: workerState.name, stateJson: workerState.stateJson, updatedAt: workerState.updatedAt })
-    .from(workerState)
-    .all()
-    .map((row) => {
-      const state: Record<string, JsonValue> = row.stateJson;
-      return {
-        name: row.name,
-        ok: state.ok !== false,
-        lastRunAt: typeof state.last_run_at === "string" ? state.last_run_at : row.updatedAt,
-        nextRunAt: typeof state.next_run_at === "string" ? state.next_run_at : null,
-        lastError:
-          typeof state.scheduler_error === "string"
-            ? state.scheduler_error
-            : typeof state.last_error === "string"
-              ? state.last_error
-              : null,
-        ...workerLiveness(state, row.updatedAt),
-      };
-    });
-
-  const [postCount] = unsafeDb(backendDb).db.select({ count: sql<number>`count(*)` }).from(posts).all();
-  const [targetCount] = unsafeDb(backendDb).db.select({ count: sql<number>`count(*)` }).from(postTargets).all();
-  const [metricCount] = unsafeDb(backendDb).db.select({ count: sql<number>`count(*)` }).from(postMetrics).all();
-  const [sampleCount] = unsafeDb(backendDb).db.select({ count: sql<number>`count(*)` }).from(metricSamples).all();
-  const latestSiteJobs = unsafeDb(backendDb)
-    .db.select({
-      jobId: siteJobs.jobId,
-      postId: siteJobs.postId,
-      messageId: siteJobs.messageId,
-      reason: siteJobs.reason,
-      status: siteJobs.status,
-      attemptCount: siteJobs.attemptCount,
-      nextAttemptAt: siteJobs.nextAttemptAt,
-      lastError: siteJobs.lastError,
-      createdAt: siteJobs.createdAt,
-      updatedAt: siteJobs.updatedAt,
-    })
-    .from(siteJobs)
-    .orderBy(desc(siteJobs.updatedAt), desc(siteJobs.jobId))
-    .limit(25)
-    .all();
-  const recentMetrics = recentPostMetrics(backendDb);
-  const now = new Date().toISOString();
-  const [metricScheduleSummary] = unsafeDb(backendDb)
-    .db.select({
-      total: sql<number>`count(*)`,
-      frozen: sql<number>`sum(case when ${metricSchedule.frozenAt} is not null then 1 else 0 end)`,
-      due: sql<number>`sum(case when ${metricSchedule.frozenAt} is null and (${metricSchedule.nextCheckAt} is null or ${metricSchedule.nextCheckAt} <= ${now}) then 1 else 0 end)`,
-      errors: sql<number>`sum(case when ${metricSchedule.frozenAt} is null and ${metricSchedule.lastError} is not null then 1 else 0 end)`,
-      lastCheckedAt: sql<string | null>`max(${metricSchedule.lastCheckedAt})`,
-    })
-    .from(metricSchedule)
-    .all();
-  const pipelinePostRows = pipelinePosts(backendDb, config, weekOffset, periodDays, comparisonOffset, offsetDays, readModelOptions);
-  const feed = readFeedSummary(config, backendDb);
-  const socialState = readWorkerState(backendDb, "crosspost_worker") ?? readWorkerState(backendDb, "queue") ?? {};
-  const [targetFailureCount] = unsafeDb(backendDb)
-    .db.select({ count: sql<number>`count(*)` })
-    .from(postTargets)
-    .where(eq(postTargets.status, "failed"))
-    .all();
-  const [siteFailureCount] = unsafeDb(backendDb)
-    .db.select({ count: sql<number>`count(*)` })
-    .from(siteJobs)
-    .where(eq(siteJobs.status, "failed"))
-    .all();
-
-  const generatedAt = new Date().toISOString();
-  const stableUpdatedAt = pipelineUpdatedAt(backendDb);
-  return {
-    ok: Number(targetFailureCount?.count ?? 0) === 0 && Number(siteFailureCount?.count ?? 0) === 0 && workers.every((worker) => worker.ok),
-    generatedAt,
-    gitRevision: gitRevision(),
-    pipelineDb: {
-      path: config.PIPELINE_DB,
-      exists: fs.existsSync(config.PIPELINE_DB),
-    },
-    jobs,
-    siteJobs: latestSiteJobs,
-    workers,
-    metrics: {
-      generatedAt,
-      posts: Number(postCount?.count ?? 0),
-      targets: Number(targetCount?.count ?? 0),
-      metrics: Number(metricCount?.count ?? 0),
-      samples: Number(sampleCount?.count ?? 0),
-      schedule: metricScheduleSummary,
-      recent: recentMetrics,
-    },
-    updated_at: stableUpdatedAt ?? generatedAt,
-    feed,
-    social_worker: {
-      pipeline_db: config.PIPELINE_DB,
-      last_update_id: socialState.last_update_id ?? null,
-      processed_count: Array.isArray(socialState.processed_message_ids)
-        ? socialState.processed_message_ids.length
-        : Number(socialState.claimed ?? 0),
-    },
-    posts: pipelinePostRows,
-  };
 }
 
 function pipelinePosts(
@@ -513,17 +364,4 @@ export function pipelineUpdatedAt(backendDb: BackendDb): string | null {
     )
     .get() as { value: string | null };
   return row.value ?? null;
-}
-
-function readFeedSummary(config: BackendConfig, backendDb: BackendDb): { channel: string; updated_at: string | null; items: number } {
-  const [summary] = unsafeDb(backendDb)
-    .db.select({ items: sql<number>`count(*)`, updatedAt: sql<string | null>`max(${posts.updatedAt})` })
-    .from(posts)
-    .all();
-  return { channel: config.CHANNEL_USERNAME, updated_at: summary?.updatedAt ?? null, items: Number(summary?.items ?? 0) };
-}
-
-function readWorkerState(backendDb: BackendDb, name: string): Record<string, unknown> | null {
-  const row = unsafeDb(backendDb).db.select({ stateJson: workerState.stateJson }).from(workerState).where(eq(workerState.name, name)).get();
-  return row?.stateJson ?? null;
 }

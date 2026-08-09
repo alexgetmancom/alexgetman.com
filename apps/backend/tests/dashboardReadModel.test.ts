@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { loadConfig } from "../src/foundation/config.js";
 import { zonedRollingPeriodBounds } from "../src/foundation/time.js";
-import { pipelineStatusPayload } from "../src/operations/read-model.js";
+import { pipelineOverviewPayload } from "../src/operations/read-model.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 describe("dashboard read model bounds", () => {
@@ -52,7 +52,7 @@ describe("dashboard read model bounds", () => {
         metrics: { telegram: { views: { raw?: unknown; samples: Array<{ value: number; sampled_at: string }> } } };
         targets: { telegram: Record<string, unknown> };
       };
-      const payload = pipelineStatusPayload(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb, 0, 1, 0, undefined, {
+      const payload = pipelineOverviewPayload(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb, 0, 1, 0, undefined, {
         includeSamples: true,
         sampleLimitPerSeries: 200,
       }) as unknown as { posts: TestPost[] };
@@ -71,7 +71,7 @@ describe("dashboard read model bounds", () => {
       expect(metric).not.toHaveProperty("raw");
       expect(target).not.toHaveProperty("raw");
 
-      const longPeriod = pipelineStatusPayload(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb, 0, 30, 0, undefined, {
+      const longPeriod = pipelineOverviewPayload(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb, 0, 30, 0, undefined, {
         includeSamples: true,
         sampleLimitPerSeries: 200,
       }) as unknown as { posts: TestPost[] };
@@ -80,7 +80,7 @@ describe("dashboard read model bounds", () => {
         new Date(periodStart30Ms + 23 * 60 * 60 * 1_000 + 2_000).toISOString(),
       );
 
-      const compact = pipelineStatusPayload(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb, 0, 1, 0, undefined, {
+      const compact = pipelineOverviewPayload(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb, 0, 1, 0, undefined, {
         includeSamples: false,
         includeContent: false,
         compact: true,

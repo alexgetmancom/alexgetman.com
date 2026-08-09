@@ -16,7 +16,6 @@ import {
   withMaintenanceLock,
 } from "../src/operations/maintenance.js";
 import { diagnoseMediaProcessor, mediaProcessorStatus, reprocessPostMedia } from "../src/operations/media-processor.js";
-import { pipelineStatusPayload } from "../src/operations/read-model.js";
 import { compactOperationsStatus } from "../src/operations/status.js";
 import { publicationTimeline } from "../src/operations/timeline.js";
 import { openBackendDb } from "./helpers/open-db.js";
@@ -137,7 +136,7 @@ describe("TypeScript operations tooling", () => {
     }
   });
 
-  it("keeps frozen terminal metric history out of current status and audit errors", () => {
+  it("keeps frozen terminal metric history out of audit errors", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
@@ -148,8 +147,6 @@ describe("TypeScript operations tooling", () => {
           { postKey: "post:frozen", target: "telegram", lastError: "terminal", frozenAt: now, updatedAt: now },
         ])
         .run();
-      const status = pipelineStatusPayload(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb);
-      expect(status.metrics.schedule?.errors).toBe(1);
       expect(auditOperations(backendDb).metricScheduleErrors).toEqual([{ target: "telegram", count: 1, latest: now }]);
     } finally {
       backendDb.close();

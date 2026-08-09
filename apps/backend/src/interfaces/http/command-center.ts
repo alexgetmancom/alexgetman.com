@@ -1,5 +1,5 @@
 import { commandAllowed, sameOriginCommandLogin } from "../../foundation/http-auth.js";
-import { html, json, loginRedirect, queryTokenRedirect, sse, text } from "../../foundation/http-response.js";
+import { html, json, loginRedirect, queryTokenRedirect, text } from "../../foundation/http-response.js";
 import { parseStudioLocale } from "../../foundation/locale.js";
 import { measureMemorySync } from "../../observability/memory.js";
 import { trackUsageAsync, trackUsageSync } from "../../observability/usage.js";
@@ -13,52 +13,6 @@ import {
 import type { RouteModule } from "./context.js";
 
 export const commandCenterRoutes: RouteModule = (app, { config, backendDb, operations, studio }) => {
-  app.get("/api/pipeline-status", (c) => {
-    if (!commandAllowed(c.req.raw, config)) return text("unauthorized\n", 401);
-    const weekOffset = Number(c.req.query("week_offset") ?? 0) || 0;
-    return json(
-      measureMemorySync("command_center.pipeline.render", { route: "/api/pipeline-status", weekOffset }, () =>
-        trackUsageSync(backendDb, "command_center.pipeline.view", () =>
-          operations.pipeline(weekOffset, 7, 0, undefined, { includeSamples: true }),
-        ),
-      ),
-    );
-  });
-
-  app.get("/api/pipeline-status/stream", (c) => {
-    if (!commandAllowed(c.req.raw, config)) return text("unauthorized\n", 401);
-    const weekOffset = Number(c.req.query("week_offset") ?? 0) || 0;
-    return sse((send) => {
-      send(
-        "pipeline",
-        measureMemorySync("command_center.pipeline.render", { route: "/api/pipeline-status/stream", weekOffset }, () =>
-          trackUsageSync(backendDb, "command_center.pipeline.view", () =>
-            operations.pipeline(weekOffset, 7, 0, undefined, { includeSamples: true }),
-          ),
-        ),
-      );
-      return setInterval(
-        () =>
-          send(
-            "pipeline",
-            measureMemorySync("command_center.pipeline.render", { route: "/api/pipeline-status/stream", weekOffset }, () =>
-              trackUsageSync(backendDb, "command_center.pipeline.view", () =>
-                operations.pipeline(weekOffset, 7, 0, undefined, { includeSamples: true }),
-              ),
-            ),
-          ),
-        10_000,
-      );
-    });
-  });
-
-  app.get("/pipeline-status", (c) => {
-    const target = new URL("/command-center", c.req.url);
-    const weekOffset = c.req.query("week_offset");
-    if (weekOffset) target.searchParams.set("week_offset", weekOffset);
-    return Response.redirect(target, 308);
-  });
-
   app.get("/command-center", (c) => {
     const request = c.req.raw;
     const url = new URL(request.url);
@@ -109,16 +63,6 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
     return new Response(null, { status: 303, headers: { location: `/command-center?tab=studio${locale}` } });
   });
 
-  app.get("/api/command-center", (c) =>
-    commandAllowed(c.req.raw, config)
-      ? json(
-          measureMemorySync("command_center.dashboard.payload", { route: "/api/command-center" }, () =>
-            trackUsageSync(backendDb, "command_center.dashboard.payload", () => operations.dashboard()),
-          ),
-        )
-      : json({ detail: "forbidden" }, 403),
-  );
-
   app.get("/api/command-center/fingerprint", (c) =>
     commandAllowed(c.req.raw, config)
       ? json(trackUsageSync(backendDb, "command_center.fingerprint.poll", () => operations.fingerprint()))
@@ -151,25 +95,6 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
           ),
       ),
     );
-  });
-
-  app.get("/api/ops-dashboard", (c) =>
-    commandAllowed(c.req.raw, config)
-      ? json(
-          measureMemorySync("command_center.ops_dashboard.payload", { route: "/api/ops-dashboard" }, () => ({
-            pipeline: trackUsageSync(backendDb, "command_center.pipeline.view", () => operations.pipeline()),
-            ops: trackUsageSync(backendDb, "command_center.dashboard.payload", () => operations.dashboard()),
-          })),
-        )
-      : json({ detail: "forbidden" }, 403),
-  );
-
-  app.get("/api/post-debug", (c) => {
-    if (!commandAllowed(c.req.raw, config)) return json({ detail: "forbidden" }, 403);
-    const ref = c.req.query("ref");
-    if (!ref) return json({ detail: "missing ref" }, 400);
-    const payload = trackUsageSync(backendDb, "command_center.post_debug.view", () => operations.postDebug(ref));
-    return payload ? json(payload) : json({ detail: "not found" }, 404);
   });
 
   app.post("/api/command-center/action", async (c) => {

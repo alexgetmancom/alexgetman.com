@@ -19,10 +19,7 @@ const TRACKED_FEATURES = [
   // every 60 seconds. One shared key buried the render's cost under the poll's
   // call count and made the average answer no question at all.
   "command_center.dashboard.render",
-  "command_center.dashboard.payload",
   "command_center.fingerprint.poll",
-  "command_center.pipeline.view",
-  "command_center.post_debug.view",
   "command_center.action.execute",
   "studio.mcp.request",
   "telegram.update.handle",

@@ -6,7 +6,6 @@ import { createApiHandler } from "../src/api.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
-import { enqueuePublishJobTx } from "../src/publishing/queue.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 const tempDirs: string[] = [];
@@ -71,13 +70,10 @@ describe("Astro endpoint controller", () => {
     }
   });
 
-  it("protects command center JSON with legacy token sources", async () => {
+  it("does not let a URL token authorize command-center mutations", async () => {
     const backendDb = tempDb();
     try {
       const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
-      expect((await app.request("/api/command-center")).status).toBe(403);
-      expect((await app.request("/api/command-center", { headers: { "X-Command-Token": "secret" } })).status).toBe(200);
-      expect((await app.request("/api/command-center?token=secret")).status).toBe(200);
       // A URL token is readable in proxy logs and Referer headers, so it
       // authorizes reads only: a mutation has to carry a header, form field or
       // the HttpOnly cookie.
@@ -124,71 +120,6 @@ describe("Astro endpoint controller", () => {
       const payload = (await response.json()) as { html: string; total: number; loaded: number; remaining: number };
       expect(response.status).toBe(200);
       expect(payload).toEqual({ html: "", total: 0, loaded: 0, remaining: 0 });
-    } finally {
-      backendDb.close();
-    }
-  });
-
-  it("returns post debug payload for queued publication refs", async () => {
-    const backendDb = tempDb();
-    try {
-      enqueuePublishJobTx(backendDb.db, {
-        postId: 123,
-        postKey: "post:123",
-        messageId: 123,
-        target: "test_platform",
-        payload: { title: "Debug", bodyMarkdown: "Body" },
-      });
-      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
-      const response = await app.request("/api/post-debug?ref=123", { headers: { "X-Admin-Token": "secret" } });
-      expect(response.status).toBe(200);
-      const payload = (await response.json()) as { ref: { postKey: string }; jobs: unknown[] };
-      expect(payload.ref.postKey).toBe("post:123");
-      expect(payload.jobs).toHaveLength(1);
-    } finally {
-      backendDb.close();
-    }
-  });
-
-  it("keeps the legacy detailed pipeline-status wire format", async () => {
-    const backendDb = tempDb();
-    try {
-      const draftId = createDraftFromMessage(backendDb, 42, {
-        text: "Статус пайплайна",
-        textEn: "Pipeline status",
-        entities: [],
-        media: [],
-      });
-      publishDraftToQueue(backendDb, draftId);
-      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
-      const response = await app.request("/api/pipeline-status", { headers: { "X-Admin-Token": "secret" } });
-      const payload = (await response.json()) as {
-        ok: boolean;
-        updated_at: string;
-        feed: { items: number };
-        social_worker: { pipeline_db: string };
-        posts: Array<Record<string, unknown>>;
-      };
-      expect(payload.ok).toBe(true);
-      expect(payload.updated_at).toBeTruthy();
-      expect(payload.feed.items).toBe(1);
-      expect(payload.social_worker.pipeline_db).toBe("/data/pipeline.db");
-      expect(payload.posts).toHaveLength(1);
-      expect(payload.posts[0]).toMatchObject({ post_id: 1, text_en: "Pipeline status", site_ru: true, site_en: true, telegram: false });
-      expect(payload.posts[0]?.media_count).toBe(0);
-      expect(payload.posts[0]?.targets).toEqual({});
-      expect(payload.posts[0]?.metrics).toEqual({});
-    } finally {
-      backendDb.close();
-    }
-  });
-
-  it("protects pipeline JSON when the command center is configured", async () => {
-    const backendDb = tempDb();
-    try {
-      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
-      expect((await app.request("/api/pipeline-status")).status).toBe(401);
-      expect((await app.request("/api/pipeline-status", { headers: { "X-Admin-Token": "secret" } })).status).toBe(200);
     } finally {
       backendDb.close();
     }
@@ -388,24 +319,6 @@ describe("Astro endpoint controller", () => {
       expect(html).not.toContain("Health: credentials и diagnostics");
       expect(html).toContain('font:400 16px ui-sans-serif,-apple-system,"Inter"');
       expect(html).not.toContain("width: 22px; text-align: center; font-family: monospace");
-      const payload = (await (await app.request("/api/command-center?token=secret")).json()) as { credentials: Array<{ target: string }> };
-      expect(payload.credentials).toEqual([expect.objectContaining({ target: "telegram" })]);
-    } finally {
-      backendDb.close();
-    }
-  });
-
-  it("streams current pipeline snapshots as SSE", async () => {
-    const backendDb = tempDb();
-    try {
-      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
-      const response = await app.request("/api/pipeline-status/stream", { headers: { "X-Admin-Token": "secret" } });
-      expect(response.status).toBe(200);
-      expect(response.headers.get("content-type")).toContain("text/event-stream");
-      const reader = response.body?.getReader();
-      const first = await reader?.read();
-      await reader?.cancel();
-      expect(new TextDecoder().decode(first?.value)).toContain("event: pipeline");
     } finally {
       backendDb.close();
     }

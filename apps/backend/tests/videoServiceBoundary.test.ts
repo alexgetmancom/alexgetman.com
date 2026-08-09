@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import type { UnsafeBackendDb } from "../src/db/client.js";
@@ -20,7 +20,23 @@ let fixtureSequence = 0;
 function fixture(backendDb: UnsafeBackendDb, targets = ["instagram_reels"]): VideoFixture {
   const directory = mkdtempSync(join(import.meta.dir, "video-service-boundary-"));
   const source = join(directory, "clip.mp4");
-  copyFileSync(join(import.meta.dir, "../../web/public/media/26.mp4"), source);
+  const encoded = Bun.spawnSync([
+    "ffmpeg",
+    "-loglevel",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=c=black:s=320x180:d=1",
+    "-c:v",
+    "libx264",
+    "-pix_fmt",
+    "yuv420p",
+    "-an",
+    "-y",
+    source,
+  ]);
+  if (encoded.exitCode !== 0) throw new Error(`video fixture encode failed: ${encoded.stderr.toString()}`);
   const now = new Date().toISOString();
   const asset = backendDb.db
     .insert(studioMediaAssets)
