@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { isTerminalMetricError } from "../src/analytics/collection/collectors/errors.js";
 import { collectInstagramStory } from "../src/analytics/collection/collectors/meta.js";
+import { collectTelegram, collectTelegramStory } from "../src/analytics/collection/collectors/telegram.js";
 import { collectThreads } from "../src/analytics/collection/collectors/threads.js";
 import { collectX } from "../src/analytics/collection/collectors/x.js";
 import type { MetricTask } from "../src/analytics/collection/metric-schedule.js";
@@ -60,6 +61,33 @@ async function rejection(promise: Promise<unknown>): Promise<Error> {
   if (!error) throw new Error("expected the call to reject");
   return error;
 }
+
+describe("collectTelegram", () => {
+  it("rejects malformed Telegram story tasks before opening MTProto", async () => {
+    const storyTask = task({ target: "telegram_stories", externalId: "not-a-number" });
+    const storyConfig = loadConfig({
+      TELEGRAM_CHANNEL_STORIES_API_ID: "123",
+      TELEGRAM_CHANNEL_STORIES_API_HASH: "hash",
+      TELEGRAM_CHANNEL_STORIES_SESSION: "session",
+    });
+    await expect(collectTelegramStory(storyTask, storyConfig)).rejects.toThrow("invalid_telegram_story_id:not-a-number");
+    await expect(collectTelegramStory({ ...storyTask, externalId: null }, config)).rejects.toThrow(
+      "missing_telegram_story_credentials_or_id",
+    );
+  });
+
+  it("accepts Telegram links and converts compact view and reaction counts", async () => {
+    const telegramConfig = loadConfig({ CHANNEL_USERNAME: "@alexchannel" });
+    const fetchMock = (async () =>
+      new Response(
+        '<section data-post="alexchannel/42"><span class="tgme_widget_message_views">1.2K</span><i class="tgme_reaction">x</i>3</section>',
+      )) as unknown as typeof fetch;
+
+    await expect(
+      collectTelegram({ ...task({ target: "telegram", externalId: null }), url: "https://t.me/alexchannel/42" }, telegramConfig, fetchMock),
+    ).resolves.toMatchObject({ metrics: { views: 1200, likes: 3 } });
+  });
+});
 
 describe("collectX", () => {
   it("maps public_metrics onto the dashboard metric names", async () => {

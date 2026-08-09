@@ -3,8 +3,10 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { importXAnalyticsCsv } from "../src/analytics/import-x-csv.js";
+import { xActivityDashboard } from "../src/analytics/x-activity-dashboard.js";
 import { attachXActivityToPosts } from "../src/analytics/x-activity-linking.js";
 import { xAnalyticsReport } from "../src/analytics/x-activity-report.js";
+import { recordPublishedXActivity } from "../src/analytics/x-activity-store.js";
 import { xActivityItems, xActivityMetricSnapshots } from "../src/db/schema.js";
 import { type CombinedSectionInput, renderCombinedSection, xChartPost } from "../src/interfaces/web/dashboard/combined-section.js";
 import { calendarDays } from "../src/interfaces/web/dashboard/daily-reach.js";
@@ -57,6 +59,86 @@ function renderOverview(input: Omit<CombinedSectionInput, "textReach" | "videoRe
 }
 
 describe("X Activity", () => {
+  it("records a published X target idempotently and reads the newest metric snapshots", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,text,text_en,status,created_at,updated_at) VALUES ('post:1',1,'x',1,?,?,?,?,?,?)",
+        )
+        .run(now, "Русский текст", "English text", "active", now, now);
+
+      recordPublishedXActivity(backendDb, { postKey: "post:1", xPostId: "x-1", url: null, publishedAt: now });
+      recordPublishedXActivity(backendDb, {
+        postKey: "post:1",
+        xPostId: "x-1",
+        url: "https://x.com/alex/status/x-1",
+        publishedAt: new Date(Date.now() + 1_000).toISOString(),
+      });
+
+      expect(backendDb.db.select().from(xActivityItems).all()).toMatchObject([
+        { xPostId: "x-1", kind: "standalone", text: "English text", url: "https://x.com/alex/status/x-1", linkedPostKey: "post:1" },
+      ]);
+
+      const replyAt = new Date(Date.now() - 60 * 60_000).toISOString();
+      const repostAt = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+      const unknownAt = new Date(Date.now() - 3 * 60 * 60_000).toISOString();
+      backendDb.db
+        .insert(xActivityItems)
+        .values([
+          {
+            xPostId: "x-reply",
+            kind: "reply",
+            publishedAt: replyAt,
+            text: "reply",
+            url: "https://x.com/reply",
+            linkedPostKey: null,
+            firstSeenAt: now,
+            lastSeenAt: now,
+          },
+          {
+            xPostId: "x-repost",
+            kind: "repost",
+            publishedAt: repostAt,
+            text: "repost",
+            url: "https://x.com/repost",
+            linkedPostKey: null,
+            firstSeenAt: now,
+            lastSeenAt: now,
+          },
+          {
+            xPostId: "x-unknown",
+            kind: "quote",
+            publishedAt: unknownAt,
+            text: "quote",
+            url: "https://x.com/quote",
+            linkedPostKey: null,
+            firstSeenAt: now,
+            lastSeenAt: now,
+          },
+        ])
+        .run();
+      backendDb.db
+        .insert(xActivityMetricSnapshots)
+        .values([
+          { xPostId: "x-reply", metricName: "views", value: 10, sampledAt: new Date(Date.now() - 2 * 60 * 60_000).toISOString() },
+          { xPostId: "x-reply", metricName: "views", value: 25, sampledAt: replyAt },
+          { xPostId: "x-reply", metricName: "likes", value: 3, sampledAt: replyAt },
+        ])
+        .run();
+
+      expect(xActivityDashboard(backendDb, 0, 30, "UTC")).toMatchObject([
+        { xPostId: "x-1", kind: "standalone", metrics: {} },
+        { xPostId: "x-reply", kind: "reply", metrics: { views: 25, likes: 3 } },
+        { xPostId: "x-repost", kind: "repost", metrics: {} },
+        { xPostId: "x-unknown", kind: "standalone", metrics: {} },
+      ]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("imports linked posts and account-wide replies without adding editorial posts", () => {
     const backendDb = openBackendDb(":memory:");
     try {

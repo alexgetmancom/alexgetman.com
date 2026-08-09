@@ -39,6 +39,61 @@ describe("creator analytics dashboards", () => {
     });
   });
 
+  it("renders the overall creator dashboard from every enabled account source", async () => {
+    await withDb(async (backendDb) => {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(creatorProfiles)
+        .values([
+          {
+            platform: "youtube_ru",
+            dataJson: {
+              subscriberCount: 10,
+              viewCount: 2_000,
+              videoCount: 7,
+              views: 500,
+              estimatedMinutesWatched: 60,
+              subscribersGained: 4,
+              subscribersLost: 1,
+            },
+            updatedAt: now,
+          },
+          {
+            platform: "instagram_ru",
+            dataJson: {
+              followersCount: 306,
+              mediaCount: 12,
+              reach30d: 1_000,
+              views30d: 900,
+              interactions30d: 80,
+              saves30d: 20,
+              shares30d: 10,
+              reposts30d: 5,
+            },
+            updatedAt: now,
+          },
+        ])
+        .run();
+
+      const config = loadConfig({});
+      config.studio.modules.site = true;
+      config.studio.modules.text_posting = true;
+      config.studio.modules.youtube = true;
+      config.studio.modules.instagram = true;
+
+      const dashboard = creatorDashboard(backendDb, config, 0, "en");
+      expect(dashboard.text).toContain("Overall statistics");
+      expect(dashboard.text).toContain("Site: 0 material views");
+      expect(dashboard.text).toContain("Posts: 0 views · 0 interactions");
+      expect(dashboard.text).toContain("Subscribers: 10");
+      expect(dashboard.text).toContain("Lifetime views: 2000");
+      expect(dashboard.text).toContain("Watch time: 1.0 h");
+      expect(dashboard.text).toContain("Followers: 306");
+      expect(dashboard.text).toContain("Total Reels/posts: 12");
+      expect(dashboard.text).toContain("30 days: reach 1000");
+    });
+  });
+
   it("renders the compact Studio overview and keeps post and video analytics separate", async () => {
     await withDb(async (backendDb) => {
       const before = new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString();

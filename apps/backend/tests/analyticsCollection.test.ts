@@ -2,7 +2,16 @@ import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { runAnalyticsCycle } from "../src/analytics/collection/creator-cycle.js";
 import { runVideoMetricSchedule } from "../src/analytics/collection/video-metrics.js";
-import { analyticsSync, creatorProfileSnapshots, creatorProfiles, videoMetricSchedule, videoMetricSnapshots } from "../src/db/schema.js";
+import { registerChannel } from "../src/channels/registry.js";
+import {
+  analyticsSync,
+  creatorProfileSnapshots,
+  creatorProfiles,
+  postEvents,
+  socialComments,
+  videoMetricSchedule,
+  videoMetricSnapshots,
+} from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
 import { withDb } from "./helpers/db.js";
@@ -54,6 +63,44 @@ describe("creator analytics collection", () => {
       const config = loadConfig({});
       config.studio.modules.analytics = false;
       expect(await runAnalyticsCycle(config, backendDb)).toBe(0);
+    });
+  });
+
+  it("runs the X and non-native Zernio profile branches in one cycle", async () => {
+    await withDb(async (backendDb) => {
+      registerChannel(backendDb, {
+        platform: "tiktok",
+        locale: "ru",
+        provider: "zernio",
+        providerAccountId: "tiktok-account",
+      });
+      const config = loadConfig({
+        ENABLE_X_PROFILE_METRICS: "1",
+        X_CONSUMER_KEY: "consumer",
+        X_CONSUMER_SECRET: "secret",
+        X_ACCESS_TOKEN: "access",
+        X_ACCESS_TOKEN_SECRET: "access-secret",
+        ZERNIO_API_KEY: "a".repeat(16),
+      });
+      config.studio.modules.analytics = true;
+      config.studio.modules.text_posting = false;
+      config.studio.modules.video_posting = false;
+      const fetchMock = (async (input: URL | RequestInfo) => {
+        const url = String(input);
+        if (url.includes("api.x.com"))
+          return new Response(JSON.stringify({ data: { id: "x-user", username: "alex", public_metrics: { followers_count: 120 } } }));
+        if (url === "https://zernio.com/api/v1/accounts")
+          return new Response(JSON.stringify([{ _id: "tiktok-account", username: "maru_tiktok", followersCount: 42 }]));
+        throw new Error(`Unexpected profile request: ${url}`);
+      }) as unknown as typeof fetch;
+
+      expect(await runAnalyticsCycle(config, backendDb, fetchMock)).toBe(2);
+      expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "x")).get()?.dataJson).toMatchObject({
+        followersCount: 120,
+      });
+      expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "tiktok_ru")).get()?.dataJson).toMatchObject({
+        followersCount: 42,
+      });
     });
   });
 
@@ -179,6 +226,155 @@ describe("creator analytics collection", () => {
       const schedule = backendDb.db.select().from(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, targetId)).get();
       expect(schedule?.frozenAt).toBeNull();
       expect(schedule?.lastError).toBeNull();
+    });
+  });
+
+  it("freezes a terminal video metric error and records a durable event", async () => {
+    await withDb(async (backendDb) => {
+      const publishedAt = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+      const { draftId, targetId } = insertPublishedVideo(backendDb, {
+        label: "Missing Reel",
+        target: "instagram_reels",
+        publishedAt,
+        externalId: "missing-reel",
+      });
+      const config = loadConfig({ INSTAGRAM_ACCESS_TOKEN: "token", INSTAGRAM_USER_ID: "user" });
+      config.studio.modules.video_posting = true;
+      config.studio.modules.instagram = true;
+      const fetchMock = (async (input: URL | RequestInfo) => {
+        const url = String(input);
+        if (url.includes("missing-reel")) return new Response(JSON.stringify({ error: { message: "media not found" } }), { status: 404 });
+        throw new Error(`Unexpected request: ${url}`);
+      }) as unknown as typeof fetch;
+
+      expect(await runVideoMetricSchedule(config, backendDb, fetchMock)).toBe(1);
+      expect(backendDb.db.select().from(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, targetId)).get()).toMatchObject({
+        frozenAt: expect.any(String),
+        lockedBy: null,
+      });
+      expect(backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, "analytics.video_metrics.frozen")).get()).toMatchObject({
+        postKey: `publication:video:${draftId}`,
+        target: "instagram_reels",
+        severity: "warn",
+      });
+    });
+  });
+
+  it("keeps the Data API snapshot when YouTube Analytics enrichment fails", async () => {
+    await withDb(async (backendDb) => {
+      const publishedAt = new Date(Date.now() - 3 * 24 * 60 * 60_000).toISOString();
+      const { targetId } = insertPublishedVideo(backendDb, {
+        label: "Delayed Analytics",
+        target: "youtube_shorts",
+        publishedAt,
+        externalId: "delayed-analytics",
+      });
+      const config = loadConfig({ YOUTUBE_CLIENT_ID: "client", YOUTUBE_CLIENT_SECRET: "secret", YOUTUBE_REFRESH_TOKEN: "refresh" });
+      config.studio.modules.video_posting = true;
+      const fetchMock = (async (input: URL | RequestInfo) => {
+        const url = String(input);
+        if (url === "https://oauth2.googleapis.com/token") return new Response(JSON.stringify({ access_token: "access" }));
+        if (url.includes("youtube/v3/videos"))
+          return new Response(
+            JSON.stringify({
+              items: [
+                {
+                  snippet: { title: "Delayed Analytics", publishedAt },
+                  statistics: { viewCount: "80" },
+                  contentDetails: { duration: "PT8S" },
+                },
+              ],
+            }),
+          );
+        if (url.includes("youtube/v3/commentThreads"))
+          return new Response(JSON.stringify({ error: { message: "Request had insufficient authentication scopes." } }), { status: 403 });
+        if (new URL(url).hostname === "youtubeanalytics.googleapis.com")
+          return new Response(JSON.stringify({ error: { message: "analytics service unavailable" } }), { status: 503 });
+        throw new Error(`Unexpected request: ${url}`);
+      }) as unknown as typeof fetch;
+
+      await runVideoMetricSchedule(config, backendDb, fetchMock);
+      expect(
+        backendDb.db.select().from(videoMetricSnapshots).where(eq(videoMetricSnapshots.videoTargetId, targetId)).get()?.metricsJson,
+      ).toMatchObject({
+        views: 80,
+        videoDurationMs: 8_000,
+      });
+      expect(backendDb.db.select().from(videoMetricSchedule).where(eq(videoMetricSchedule.videoTargetId, targetId)).get()).toMatchObject({
+        frozenAt: null,
+        lastError: null,
+      });
+      expect(
+        backendDb.db.select().from(analyticsSync).where(eq(analyticsSync.source, "youtube_video_analytics_ru")).get()?.lastError,
+      ).toContain("503");
+    });
+  });
+
+  it("keeps native Instagram metrics when plays are unavailable and stores comments", async () => {
+    await withDb(async (backendDb) => {
+      const publishedAt = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+      const { targetId } = insertPublishedVideo(backendDb, {
+        label: "Native comments",
+        target: "instagram_reels",
+        publishedAt,
+        externalId: "native-comments",
+      });
+      const config = loadConfig({ INSTAGRAM_ACCESS_TOKEN: "token", INSTAGRAM_USER_ID: "user" });
+      config.studio.modules.video_posting = true;
+      config.studio.modules.instagram = true;
+      const fetchMock = (async (input: URL | RequestInfo) => {
+        const url = String(input);
+        if (url.includes("fields=like_count"))
+          return new Response(
+            JSON.stringify({ like_count: 4, comments_count: 2, permalink: "https://instagram.com/reel/native-comments" }),
+          );
+        if (url.includes("/insights?")) return new Response(JSON.stringify({ error: { message: "insight unavailable" } }), { status: 403 });
+        if (url.includes("/comments?"))
+          return new Response(JSON.stringify({ data: [{ id: "comment-1", text: "Nice", username: "viewer", like_count: 2 }] }));
+        throw new Error(`Unexpected request: ${url}`);
+      }) as unknown as typeof fetch;
+
+      await runVideoMetricSchedule(config, backendDb, fetchMock);
+      expect(
+        backendDb.db.select().from(videoMetricSnapshots).where(eq(videoMetricSnapshots.videoTargetId, targetId)).get()?.metricsJson,
+      ).toMatchObject({
+        views: 0,
+        likes: 4,
+        comments: 2,
+      });
+      expect(backendDb.db.select().from(socialComments).where(eq(socialComments.videoTargetId, targetId)).get()).toMatchObject({
+        platform: "instagram",
+        commentId: "comment-1",
+        text: "Nice",
+        likeCount: 2,
+      });
+    });
+  });
+
+  it("corrects a legacy video schedule without making a provider request", async () => {
+    await withDb(async (backendDb) => {
+      const publishedAt = new Date(Date.now() - 31 * 24 * 60 * 60_000).toISOString();
+      const { targetId } = insertPublishedVideo(backendDb, { target: "instagram_reels", publishedAt, externalId: "legacy-schedule" });
+      const lastCheckedAt = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+      const oldNextCheckAt = new Date(Date.now() + 10 * 24 * 60 * 60_000).toISOString();
+      backendDb.db
+        .insert(videoMetricSchedule)
+        .values({ videoTargetId: targetId, checkpointIndex: 1, lastCheckedAt, nextCheckAt: oldNextCheckAt, updatedAt: lastCheckedAt })
+        .run();
+      const config = loadConfig({});
+      config.studio.modules.video_posting = true;
+
+      expect(
+        await runVideoMetricSchedule(config, backendDb, (async () => {
+          throw new Error("provider should not be called");
+        }) as unknown as typeof fetch),
+      ).toBe(0);
+      const nextCheckAt = backendDb.db
+        .select({ nextCheckAt: videoMetricSchedule.nextCheckAt })
+        .from(videoMetricSchedule)
+        .where(eq(videoMetricSchedule.videoTargetId, targetId))
+        .get();
+      expect(nextCheckAt?.nextCheckAt).not.toBe(oldNextCheckAt);
     });
   });
 

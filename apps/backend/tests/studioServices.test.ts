@@ -88,4 +88,21 @@ describe("Studio service boundaries", () => {
       backendDb.close();
     }
   });
+
+  it("keeps every analytics operation behind the shared Studio boundary", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const analytics = createStudioServices(backendDb, loadConfig({})).analytics;
+
+      expect(analytics.postArchive(0, "en").total).toBe(0);
+      expect(typeof analytics.postMetrics(999, "en")).toBe("string");
+      expect(analytics.postMedia(999, "en")).toEqual([]);
+      expect(analytics.archiveSummary("en").posts).toBe(0);
+      expect(analytics.videoArchive(0, "en").total).toBe(0);
+      expect(typeof analytics.videoMetrics(999, "en")).toBe("string");
+      expect(await analytics.audienceAnalysis("en")).toContain("🤖");
+    } finally {
+      backendDb.close();
+    }
+  });
 });
