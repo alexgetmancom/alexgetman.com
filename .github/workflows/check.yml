@@ -164,6 +164,8 @@ jobs:
         with:
           bun-version: 1.3.14
           cache-key: bun-workspace-1.3.14-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'apps/backend/package.json', 'tools/knip/package.json', 'tools/svelte-check/package.json', 'tools/layer-checker/package.json') }}
+      - name: Install video test runtime
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
       - name: Tests with coverage threshold
         run: bun run test:coverage
 
