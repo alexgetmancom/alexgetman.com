@@ -219,7 +219,8 @@ async function waitForHealthy(deploymentTarget: ComposeTarget): Promise<void> {
       ["inspect", "--format", "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}", deploymentTarget.container],
       true,
     );
-    if (health === "unhealthy" || health === "exited" || health === "dead") throw new Error(`container state is ${health}`);
+    if (health === "unhealthy" || health === "exited" || health === "dead")
+      throw new Error(`container state is ${health}\n${await containerDiagnostics(deploymentTarget)}`);
     try {
       const response = await fetch(deploymentTarget.healthUrl, {
         signal: AbortSignal.timeout(5_000),
@@ -231,7 +232,21 @@ async function waitForHealthy(deploymentTarget: ComposeTarget): Promise<void> {
     }
     await Bun.sleep(2_000);
   }
-  throw new Error(`health check timeout: ${last}`);
+  throw new Error(`health check timeout: ${last}\n${await containerDiagnostics(deploymentTarget)}`);
+}
+
+async function containerDiagnostics(deploymentTarget: ComposeTarget): Promise<string> {
+  const [health, logs] = await Promise.all([
+    diagnosticCommand(["inspect", "--format", "{{json .State.Health}}", deploymentTarget.container]),
+    diagnosticCommand(["logs", "--tail", "40", deploymentTarget.container]),
+  ]);
+  return [`health: ${health || "unavailable"}`, `logs:\n${logs || "unavailable"}`].join("\n").slice(0, 6_000);
+}
+
+async function diagnosticCommand(args: string[]): Promise<string> {
+  const child = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  return [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
 }
 
 async function retryDeployment<T>(operation: string, run: () => Promise<T>, shouldRetry = isTransientDeploymentError): Promise<T> {
@@ -457,7 +472,10 @@ async function deploy(deploymentTarget: DeploymentTarget, image: string, release
       };
       await writeState(deploymentTarget, next);
       await notify(
-        `Deploy ${deploymentTarget.name} ${release.slice(0, 12)} failed; automatic rollback to ${previous.revision.slice(0, 12)} succeeded.`,
+        `Deploy ${deploymentTarget.name} ${release.slice(0, 12)} failed; automatic rollback to ${previous.revision.slice(0, 12)} succeeded.\n\n${message}`.slice(
+          0,
+          4_000,
+        ),
         deploymentTarget,
       );
       throw new HttpError(502, `Deploy failed and was rolled back: ${message}`);
