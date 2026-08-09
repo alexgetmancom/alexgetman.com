@@ -1,4 +1,3 @@
-import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { autoId, queueAttempts, timestamps } from "./_shared.js";
 
@@ -18,16 +17,6 @@ export const siteJobs = sqliteTable(
     index("idx_site_jobs_lock").on(table.lockedBy, table.lockedAt),
     index("idx_site_jobs_post").on(table.postId, table.status),
   ],
-);
-
-export const likes = sqliteTable(
-  "likes",
-  {
-    postId: text().notNull(),
-    ipHash: text().notNull(),
-    createdAt: text().notNull().default(sql`CURRENT_TIMESTAMP`),
-  },
-  (table) => [primaryKey({ columns: [table.postId, table.ipHash] })],
 );
 
 export const sitePageviews = sqliteTable(

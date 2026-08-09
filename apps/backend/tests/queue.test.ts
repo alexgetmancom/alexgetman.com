@@ -5,6 +5,7 @@ import { type JsonObject, postEvents, postTargets, publishJobs } from "../src/db
 import { AmbiguousPublicationError } from "../src/delivery/ambiguous-publication.js";
 import type { DeliveryAdapter, DeliveryPorts, DeliveryPublisher } from "../src/delivery/ports.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { recordAuthFailure } from "../src/observability/auth-circuit.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
 import {
   claimDuePublishJobs,
@@ -196,6 +197,52 @@ describe("publish queue", () => {
       });
       // Analytics scopes and orders published targets by this column.
       expect(target?.publishedAt).toBeString();
+    }));
+
+  it("does not call a provider while its credential circuit is open", () =>
+    withDb(async (backendDb) => {
+      const id = enqueuePublishJob(backendDb, { messageId: 1012, target: "blocked-target", payload: { title: "Queued" } });
+      recordAuthFailure(backendDb, "blocked-target");
+      recordAuthFailure(backendDb, "blocked-target");
+      recordAuthFailure(backendDb, "blocked-target");
+      let publishCalls = 0;
+
+      await runPublishCycle(
+        loadConfig({}),
+        backendDb,
+        testPorts({
+          "blocked-target": async () => {
+            publishCalls += 1;
+            return { ok: true, id: "must-not-publish" };
+          },
+        }),
+      );
+
+      expect(publishCalls).toBe(0);
+      expect(
+        backendDb.db
+          .select({ status: publishJobs.status, lastError: publishJobs.lastError })
+          .from(publishJobs)
+          .where(eq(publishJobs.jobId, id))
+          .get(),
+      ).toEqual({
+        status: "queued",
+        lastError: "auth_circuit_open: blocked-target has a failing credential, publish paused until it recovers",
+      });
+    }));
+
+  it("settles a claimed job whose target has no delivery port", () =>
+    withDb(async (backendDb) => {
+      const id = enqueuePublishJob(backendDb, { messageId: 1013, target: "missing-target", payload: { title: "Queued" } });
+
+      expect(await runPublishCycle(loadConfig({}), backendDb, {})).toBe(1);
+      expect(
+        backendDb.db
+          .select({ status: publishJobs.status, lockedBy: publishJobs.lockedBy, lastError: publishJobs.lastError })
+          .from(publishJobs)
+          .where(eq(publishJobs.jobId, id))
+          .get(),
+      ).toEqual({ status: "failed", lockedBy: null, lastError: "unsupported delivery target: missing-target" });
     }));
 
   it("serializes jobs for the same target but never lets one target block another", () =>

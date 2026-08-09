@@ -7,7 +7,7 @@ import type { BackendConfig } from "../foundation/config.js";
  * a client sends would let anyone mint a fresh identity per request. When the proxy
  * did not set it the request is genuinely unattributable and shares one bucket —
  * deliberately conservative, because the alternative (a unique identity per request)
- * would silently disable both the like guard and the public rate limit. */
+ * would silently disable the public rate limit. */
 export function clientIpHash(request: Request, config: BackendConfig): string {
   const address = request.headers.get(config.TRUSTED_CLIENT_IP_HEADER)?.trim() || "unknown";
   return crypto

@@ -14,7 +14,12 @@ describe("metrics cycle", () => {
     try {
       seedPublishedPost(backendDb, "post:1", "threads_ru");
       const checked = await runMetricsCycle(loadConfig({ MAX_METRIC_TASKS_PER_CYCLE: "10" }), backendDb, {
-        threads_ru: async () => ({ metrics: { views: 120, likes: 9 }, source: "test_api", raw: { id: 1 } }),
+        threads_ru: async () => ({
+          metrics: { views: 120, likes: 9 },
+          source: "test_api",
+          raw: { id: 1 },
+          url: "https://threads.test/new-url",
+        }),
       });
       expect(checked).toBe(1);
       expect(
@@ -36,6 +41,7 @@ describe("metrics cycle", () => {
         { rawJson: null },
         { rawJson: null },
       ]);
+      expect(backendDb.db.select({ url: postTargets.url }).from(postTargets).get()).toEqual({ url: "https://threads.test/new-url" });
       expect(
         backendDb.db.select({ checkCount: metricSchedule.checkCount, lastError: metricSchedule.lastError }).from(metricSchedule).get(),
       ).toEqual({ checkCount: 1, lastError: null });

@@ -1,6 +1,6 @@
 /** Response constructors shared by every HTTP route module. They encode the
- * wire conventions of this service — charset on every content-type, the shape
- * of a rate-limit body, how a session token becomes a cookie — so a new route
+ * wire conventions of this service — charset on every content-type and how a
+ * session token becomes a cookie — so a new route
  * inherits them instead of restating them. */
 
 export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
@@ -20,12 +20,6 @@ export function text(body: string, status = 200): Response {
 export function html(body: string): Response {
   return new Response(body, {
     headers: { "content-type": "text/html; charset=utf-8" },
-  });
-}
-
-export function rateLimited(retryAfter: number): Response {
-  return json({ detail: "rate limit exceeded" }, 429, {
-    "retry-after": String(retryAfter),
   });
 }
 

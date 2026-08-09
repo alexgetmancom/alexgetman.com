@@ -221,13 +221,6 @@ describe("Astro endpoint controller", () => {
       ).toBe(204);
       expect(backendDb.sqlite.prepare("SELECT count FROM site_pageviews WHERE path=?").get("/post/")).toEqual({ count: 1 });
 
-      const like = await app.request("/api/likes?post_id=1", { method: "POST", headers: { "x-forwarded-for": "203.0.113.1" } });
-      expect(await like.json()).toEqual({ likes: 1, user_liked: true });
-      expect(await (await app.request("/api/likes?post_id=1", { headers: { "x-forwarded-for": "203.0.113.1" } })).json()).toEqual({
-        likes: 1,
-        user_liked: true,
-      });
-
       const initialized = await app.request("/api/mcp", {
         method: "POST",
         headers: { "content-type": "application/json" },

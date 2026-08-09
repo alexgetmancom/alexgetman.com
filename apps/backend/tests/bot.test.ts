@@ -564,6 +564,30 @@ describe("Telegram controller flow", () => {
     expect(getConversationState(backendDb, 42, "post")).toBeNull();
   });
 
+  it("discards an album captured by an older conversation revision", async () => {
+    backendDb = openBackendDb(":memory:");
+    const draftId = createDraftFromMessage(backendDb, 42, {
+      text: "Russian source",
+      textEn: "English source",
+      entities: [],
+      media: [],
+    });
+    const staleRevision = persistPostState(backendDb, 42, { type: "edit_text", locale: "en" }, draftId, 99);
+    persistPostState(backendDb, 42, { type: "edit_text", locale: "ru" }, draftId, 100);
+    backendDb.sqlite
+      .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,step,step_data_json,draft_id,state_revision,text_ru,text_entities_json,media_json,notified,updated_at)
+      VALUES ('stale-revision',42,42,'group','edit_text','{"locale":"en"}',?,?,'Must not replace','[]',?,1,'2000-01-01T00:00:00.000Z')`)
+      .run(draftId, staleRevision, JSON.stringify([{ type: "photo", file_id: "old", local_path: "/imported/old.jpg" }]));
+    const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
+    const fakeBot = { api: { sendMessage } } as unknown as Bot;
+
+    expect(await finalizePendingAlbums(fakeBot, backendDb, loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" }))).toBe(0);
+    expect(backendDb.sqlite.prepare("SELECT text_en_approved FROM drafts WHERE id=?").get(draftId)).toEqual({ text_en_approved: null });
+    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM pending_albums").get()).toEqual({ count: 0 });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(getConversationState(backendDb, 42, "post")?.data).toEqual({ locale: "ru" });
+  });
+
   it("claims one pending album only once when Telegram workers overlap", async () => {
     backendDb = openBackendDb(":memory:");
     backendDb.sqlite
