@@ -40,6 +40,9 @@ export type OperationContext = {
   config: () => BackendConfig;
   db: () => BackendDb;
   fetchImpl: typeof fetch;
+  /** Which surface is running this, for the action journal. The registry is
+   * shared, so an operation cannot know it and must be told. */
+  actorType: string;
 };
 
 export type OperationDef<S extends z.ZodType = z.ZodType> = {
@@ -236,6 +239,7 @@ const operationDefs = {
         {
           action: "republish",
           ref: input.ref,
+          actor_type: context.actorType,
           ...(input.target ? { target: input.target } : {}),
           ...(input.locale ? { locale: input.locale } : {}),
         },
@@ -253,7 +257,7 @@ const operationDefs = {
     mutates: true,
     agent: false,
     note: "deletes the published post on that target before republishing it",
-    handler: (context, input) => replacePublishedMedia(context.db(), context.config(), input, context.fetchImpl),
+    handler: (context, input) => replacePublishedMedia(context.db(), context.config(), input, context.fetchImpl, context.actorType),
   }),
   reschedule: operation({
     summary: "Move a scheduled publication to another time.",
@@ -268,6 +272,7 @@ const operationDefs = {
       createOperationsService(context.db(), context.config()).command({
         action: "reschedule",
         ref: input.ref,
+        actor_type: context.actorType,
         schedule_locale: input.schedule_locale,
         at: input.at,
       }),

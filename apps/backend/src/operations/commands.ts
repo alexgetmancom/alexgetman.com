@@ -112,7 +112,7 @@ export async function runOperationCommand(
     if (input.action === "delete_republish")
       result.republish = requeueAfterRemoval(backendDb, publicationRef, result.removed as Array<Record<string, unknown>>, input.target);
   } else throw new Error(`unknown action: ${input.action}`);
-  recordOperationAction(backendDb, input.action, publicationRef, input.target ?? null, result, input.actor_type ?? "command-center");
+  recordOperationAction(backendDb, input.action, publicationRef, input.target ?? null, result, input.actor_type ?? "operations");
   return result;
 }
 

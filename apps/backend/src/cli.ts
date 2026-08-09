@@ -1,58 +1,31 @@
 import { type BackendDb, baselineDrizzleMigrations, openBackendDb } from "./db/client.js";
+import { recordDomainEvent } from "./domain/events.js";
 import { type BackendConfig, loadConfig } from "./foundation/config.js";
+import { operationInput, parseArguments } from "./operations/cli-args.js";
 import { buildOperationsGuide, formatOperationsGuide, operationsGuideUsage } from "./operations/guide.js";
-import {
-  type OperationContext,
-  operationCatalog,
-  operationDef,
-  operationJsonSchema,
-  optionFlag,
-  runOperation,
-} from "./operations/registry.js";
+import { type OperationContext, operationCatalog, operationDef, runOperation } from "./operations/registry.js";
 
-type Arguments = { command: string; values: Map<string, string>; repeated: Map<string, string[]>; flags: Set<string> };
+const CLI_ACTOR = "ops-cli";
 
-function parseArguments(argv: string[]): Arguments {
-  const command = argv[0] ?? "help";
-  const values = new Map<string, string>();
-  // Options that may appear more than once, such as one --credential per value.
-  const repeated = new Map<string, string[]>();
-  const flags = new Set<string>();
-  for (let index = 1; index < argv.length; index += 1) {
-    const token = argv[index];
-    if (!token?.startsWith("--")) continue;
-    const next = argv[index + 1];
-    if (next && !next.startsWith("--")) {
-      const name = token.slice(2);
-      values.set(name, next);
-      repeated.set(name, [...(repeated.get(name) ?? []), next]);
-      index += 1;
-    } else flags.add(token.slice(2));
+/** The same operation run over MCP journals itself in runOpsTool; run from a
+ * terminal it used to journal nothing, so the record of what changed the
+ * database depended on which wire the operator reached for. Best-effort for the
+ * reason that path gives: the mutation already happened, and a failed journal
+ * write must not be reported as a failed operation. */
+function recordCliMutation(backendDb: BackendDb | null, command: string, result: unknown): void {
+  if (!backendDb) return;
+  try {
+    recordDomainEvent(backendDb.events, {
+      ref: typeof (result as { post_key?: unknown })?.post_key === "string" ? (result as { post_key: string }).post_key : null,
+      type: "operations.cli.command",
+      severity: "info",
+      target: "cli",
+      message: `Operations CLI ${command} executed`,
+      details: { operation: command },
+    });
+  } catch (error) {
+    console.error(`operations CLI audit event failed: ${error instanceof Error ? error.message : String(error)}`);
   }
-  return { command, values, repeated, flags };
-}
-
-/** Argv against the operation's own schema: a boolean field is a bare flag, an
- * array field collects its repeats, and everything else is the last value
- * given. Coercion and validation belong to the schema, not to this parser. */
-function operationInput(name: string, args: Arguments): Record<string, unknown> {
-  const properties = (operationJsonSchema(operationDef(name) as never).properties ?? {}) as Record<string, { type?: string }>;
-  const input: Record<string, unknown> = {};
-  for (const [field, property] of Object.entries(properties)) {
-    const flag = optionFlag(field);
-    if (property.type === "boolean") {
-      if (args.flags.has(flag)) input[field] = true;
-      continue;
-    }
-    if (property.type === "array") {
-      const values = args.repeated.get(flag);
-      if (values) input[field] = values;
-      continue;
-    }
-    const value = args.values.get(flag);
-    if (value !== undefined) input[field] = value;
-  }
-  return input;
 }
 
 function printHelp(): void {
@@ -105,9 +78,11 @@ async function main(): Promise<void> {
     config: () => (opened.config ??= loadConfig({ ...process.env, PIPELINE_DB: dbPath })),
     db: () => (opened.db ??= openBackendDb(dbPath)),
     fetchImpl: fetch,
+    actorType: CLI_ACTOR,
   };
   try {
     const result = await runOperation(args.command, context, operationInput(args.command, args));
+    if (def.mutates) recordCliMutation(opened.db, args.command, result);
     const format = def.format;
     console.log(format && !args.flags.has("json") ? format(result as never) : JSON.stringify(result, null, 2));
   } finally {

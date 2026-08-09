@@ -180,6 +180,7 @@ const studioToolDefs = {
       reminder_minutes: z.number().int().min(1).max(60).optional(),
       completion_enabled: z.boolean().optional(),
     }),
+    mutates: true,
     handler: (studio, actorId, input) =>
       studio.settings.setNotifications(actorId, {
         ...(input.reminders_enabled === undefined ? {} : { remindersEnabled: input.reminders_enabled }),
@@ -198,6 +199,7 @@ const studioToolDefs = {
       enabled: z.boolean().optional(),
       weekday: z.number().int().min(0).max(6).optional(),
     }),
+    mutates: true,
     handler: (studio, _actorId, input) =>
       studio.settings.setWeeklyDigest({
         ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
@@ -653,7 +655,10 @@ async function runOpsTool(
   const input = parseArgs(def.schema, args);
   // The server owns this handle and this config; the operation borrows both and
   // must not close what it did not open.
-  const result = await def.handler({ dbPath: config.PIPELINE_DB, config: () => config, db: () => backendDb, fetchImpl: fetch }, input);
+  const result = await def.handler(
+    { dbPath: config.PIPELINE_DB, config: () => config, db: () => backendDb, fetchImpl: fetch, actorType: "ops-mcp" },
+    input,
+  );
   if (def.mutates)
     try {
       recordDomainEvent(backendDb.events, {

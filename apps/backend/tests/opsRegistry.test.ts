@@ -28,7 +28,7 @@ const HOST_ONLY = [
 ];
 
 function context(db: UnsafeBackendDb): OperationContext {
-  return { dbPath: ":memory:", config: () => loadConfig({ ADMIN_IDS: "42" }), db: () => db, fetchImpl: fetch };
+  return { dbPath: ":memory:", config: () => loadConfig({ ADMIN_IDS: "42" }), db: () => db, fetchImpl: fetch, actorType: "test" };
 }
 
 describe("operations registry", () => {

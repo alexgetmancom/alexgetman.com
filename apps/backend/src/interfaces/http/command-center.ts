@@ -207,5 +207,6 @@ async function commandAction(request: Request): Promise<CommandAction> {
     ? await request.json().catch(() => ({}))
     : Object.fromEntries((await request.formData().catch(() => new FormData())).entries());
   const parsed = commandActionSchema.safeParse(raw);
-  return parsed.success ? parsed.data : commandActionSchema.parse({});
+  // The actor is where the request arrived, never what the body claims.
+  return { ...(parsed.success ? parsed.data : commandActionSchema.parse({})), actor_type: "command-center" };
 }

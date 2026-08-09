@@ -27,6 +27,7 @@ export async function replacePublishedMedia(
   config: BackendConfig,
   input: { ref: string; locale: "ru" | "en"; file: string; target: string },
   fetchImpl: typeof fetch,
+  actorType: string,
 ): Promise<Record<string, unknown>> {
   const ref = resolvePublicationRef(backendDb, input.ref);
   if (!ref) throw new Error(`publication not found: ${input.ref}`);
@@ -47,7 +48,7 @@ export async function replacePublishedMedia(
       locale: input.locale,
       target: input.target,
       media_json: JSON.stringify(mediaItemsFromAssets([asset])),
-      actor_type: "ops-cli",
+      actor_type: actorType,
     },
     fetchImpl,
   );
