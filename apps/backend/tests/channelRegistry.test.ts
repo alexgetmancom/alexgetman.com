@@ -147,7 +147,7 @@ describe("channel registry", () => {
       config.studio.modules.site = false;
       bootstrapConfiguredChannels(backendDb, config);
       const draftId = createDraftFromMessage(backendDb, 1, { text: "x".repeat(600), entities: [], media: [] });
-      expect(() => publishDraftToQueue(backendDb, draftId)).not.toThrow();
+      publishDraftToQueue(backendDb, draftId);
       expect(backendDb.db.select({ target: publishJobs.target }).from(publishJobs).all()).toEqual([{ target: "telegram" }]);
     }));
 });

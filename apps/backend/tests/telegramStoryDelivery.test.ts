@@ -139,7 +139,7 @@ describe("telegramStoryCaptionInput", () => {
       { type: "text_link", offset: 0, length: 4, url: "https://example.com" },
     ]);
 
-    expect(typeof result).toBe("string");
+    expect(result).toBe("Read  now");
   });
 
   it("ignores an entity that is not a hidden link", () => {

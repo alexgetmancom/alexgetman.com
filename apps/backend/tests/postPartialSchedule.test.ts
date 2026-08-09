@@ -120,7 +120,7 @@ describe("partial locale scheduling", () => {
     expect(ruJobs.every((job) => job.publishAt != null && new Date(job.publishAt).getTime() <= Date.now())).toBe(true);
 
     const second = posts.scheduleAt(42, draftId, "en", new Date(Date.now() + 3_600_000));
-    expect(() => posts.schedule(42, draftId, second)).not.toThrow();
+    posts.schedule(42, draftId, second);
   });
 
   it("publishes each scheduled locale exactly once when the worker reaches both times", async () => {

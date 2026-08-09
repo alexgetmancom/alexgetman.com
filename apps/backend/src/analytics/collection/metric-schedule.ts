@@ -126,11 +126,6 @@ export function claimDueMetricTasks(
   return claimed;
 }
 
-/** Compatibility name for callers that only need the due-task projection. */
-export function dueMetricTasks(backendDb: BackendDb, config: BackendConfig, targets: readonly string[]): MetricTask[] {
-  return claimDueMetricTasks(backendDb, config, targets);
-}
-
 export function finishMetricTask(
   backendDb: BackendDb,
   task: MetricTask,

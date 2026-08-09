@@ -150,8 +150,8 @@ describe("openBackendDb", () => {
       );
       insert.run(1, "youtube_shorts", "{}", 1, now);
       expect(() => insert.run(1, "youtube_shorts", "{}", 1, now)).toThrow();
-      expect(() => insert.run(1, "youtube_shorts", "{}", null, now)).not.toThrow();
-      expect(() => insert.run(1, "youtube_shorts", "{}", null, now)).not.toThrow();
+      insert.run(1, "youtube_shorts", "{}", null, now);
+      insert.run(1, "youtube_shorts", "{}", null, now);
     } finally {
       backendDb.close();
     }

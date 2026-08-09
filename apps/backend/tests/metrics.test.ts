@@ -2,7 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import { asc, eq } from "drizzle-orm";
 import { TerminalMetricError } from "../src/analytics/collection/collectors/errors.js";
 import { createMetricCollectors, SUPPORTED_METRIC_TARGETS } from "../src/analytics/collection/collectors/index.js";
-import { dueMetricTasks, type MetricTask } from "../src/analytics/collection/metric-schedule.js";
+import { claimDueMetricTasks, type MetricTask } from "../src/analytics/collection/metric-schedule.js";
 import { runMetricsCycle } from "../src/analytics/collection/metrics-cycle.js";
 import { metricSamples, metricSchedule, postMetrics, posts, postTargets, workerState } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
@@ -126,7 +126,7 @@ describe("metrics cycle", () => {
           },
         ])
         .run();
-      expect(dueMetricTasks(backendDb, loadConfig({ MAX_METRIC_TASKS_PER_CYCLE: "1" }), ["threads_ru"])[0]?.postKey).toBe("post:old");
+      expect(claimDueMetricTasks(backendDb, loadConfig({ MAX_METRIC_TASKS_PER_CYCLE: "1" }), ["threads_ru"])[0]?.postKey).toBe("post:old");
     } finally {
       backendDb.close();
     }

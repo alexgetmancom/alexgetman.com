@@ -7,7 +7,7 @@ export const TEMPLATE_VERSION = "strata-v3";
  * cap here would truncate the headline before wrapping ever got a say. */
 const MAX_HEADLINE_CHARACTERS = 210;
 export const MAX_LINES = 8;
-export const MAX_LINE_UNITS = 10.6;
+const MAX_LINE_UNITS = 10.6;
 const ELLIPSIS = "…";
 
 export type StoryCardCopy = {
@@ -105,13 +105,6 @@ function takeUnits(value: string, limit: number): string {
 function ellipsize(line: string): string {
   const base = line.replace(/…$/, "");
   return `${takeUnits(base, MAX_LINE_UNITS - textUnits(ELLIPSIS)).trimEnd()}${ELLIPSIS}`;
-}
-
-/** Estimated drawn width of a line, in multiples of the line box. Manrope is not
- * measured here — the renderer runs in another process — so the weights are
- * per-character approximations calibrated against the rendered card. */
-export function lineUnits(value: string): number {
-  return textUnits(value);
 }
 
 function textUnits(value: string): number {

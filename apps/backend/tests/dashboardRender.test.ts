@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { OVERVIEW_SPARK_MAX, renderOverviewSparkline } from "../src/interfaces/web/dashboard/chart.js";
+import { renderOverviewSparkline } from "../src/interfaces/web/dashboard/chart.js";
 import { formatMetricValue, getMskDateString, shortPipelineText } from "../src/interfaces/web/dashboard/format.js";
 import { renderHeroCard, renderHeroMicroMetrics } from "../src/interfaces/web/dashboard/hero-section.js";
 import { formatMedia, getTargetMetric, postMetricTotals, targetCell } from "../src/interfaces/web/dashboard/metrics.js";
@@ -132,7 +132,6 @@ describe("dashboard shell", () => {
     expect(html).toContain('data-tooltip="viral · 75k"');
     expect(html).toContain("50k");
     expect(html).not.toContain("логарифмическая");
-    expect(OVERVIEW_SPARK_MAX).toBe(50_000);
   });
 });
 

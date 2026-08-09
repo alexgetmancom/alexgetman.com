@@ -304,7 +304,7 @@ describe("Telegram work queue", () => {
       await showQueue(ctx, backendDb, loadConfig({ ADMIN_IDS: "7" }));
       const buttonText = options?.reply_markup?.inline_keyboard?.[0]?.[0]?.text;
       expect(buttonText).toBeTruthy();
-      expect(() => encodeURIComponent(buttonText ?? "")).not.toThrow();
+      encodeURIComponent(buttonText ?? "");
     } finally {
       backendDb.close();
     }

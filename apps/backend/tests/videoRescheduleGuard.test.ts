@@ -74,7 +74,7 @@ describe("video reschedule guard", () => {
       description: "",
       tags: [],
     });
-    expect(() => updateVideoLabel(backendDb, draftId, "Changed")).not.toThrow();
+    updateVideoLabel(backendDb, draftId, "Changed");
     expect(backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, draftId)).get()?.metadataJson).toEqual({
       title: "Changed",
       description: "",
@@ -88,7 +88,7 @@ describe("video reschedule guard", () => {
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
     scheduleVideo(backendDb, draftId, { youtube_shorts: new Date(Date.now() + 3_600_000) }, timing, videoConfig(), 24);
 
-    expect(() => videoService(backendDb, videoConfig()).editMetadataField(42, draftId, "youtube_title", "Changed title")).not.toThrow();
+    videoService(backendDb, videoConfig()).editMetadataField(42, draftId, "youtube_title", "Changed title");
 
     expect(backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, draftId)).get()?.metadataJson).toMatchObject({
       title: "Changed title",

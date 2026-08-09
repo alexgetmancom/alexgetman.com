@@ -7,7 +7,7 @@ import { type BackendConfig, loadConfig } from "../src/foundation/config.js";
 import { importTelegramAlbumMedia } from "../src/interfaces/telegram/media-ingress.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
-function botWith(getFile: ((fileId: string) => Promise<{ file_path?: string }>) | undefined): Bot {
+function botWith(getFile: (fileId: string) => Promise<{ file_path?: string }>): Bot {
   return { api: { getFile } } as unknown as Bot;
 }
 
@@ -27,14 +27,6 @@ function withIngress<T>(
 }
 
 describe("importTelegramAlbumMedia", () => {
-  it("passes media through unchanged when the bot has no getFile (historical/test-only ingress)", async () => {
-    await withIngress(async ({ backendDb, config }) => {
-      const media = [{ type: "photo", file_id: "abc" }];
-      const result = await importTelegramAlbumMedia(botWith(undefined), backendDb, config, 1, media);
-      expect(result).toEqual(media);
-    });
-  });
-
   it("leaves items that already carry an asset_id or local_path untouched", async () => {
     await withIngress(async ({ backendDb, config }) => {
       const bot = botWith(async () => {
@@ -80,7 +72,7 @@ describe("importTelegramAlbumMedia", () => {
       expect(result).toHaveLength(2);
       for (const item of result) {
         expect(item.asset_id).toBeGreaterThan(0);
-        expect(typeof item.local_path).toBe("string");
+        expect(fs.existsSync(String(item.local_path))).toBe(true);
       }
       expect(result[0]?.mime_type).toBe("image/jpeg");
       expect(result[1]?.mime_type).toBe("video/mp4");

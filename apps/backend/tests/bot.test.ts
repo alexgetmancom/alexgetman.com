@@ -488,8 +488,8 @@ describe("Telegram controller flow", () => {
       VALUES ('album',42,42,'group','Album caption','[]',?,1,'2000-01-01T00:00:00.000Z')`)
       .run(
         JSON.stringify([
-          { type: "photo", file_id: "one" },
-          { type: "photo", file_id: "two" },
+          { type: "photo", file_id: "one", local_path: "/imported/one.jpg" },
+          { type: "photo", file_id: "two", local_path: "/imported/two.jpg" },
         ]),
       );
     const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
@@ -508,7 +508,7 @@ describe("Telegram controller flow", () => {
     backendDb.sqlite
       .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,text_ru,text_entities_json,media_json,notified,updated_at)
       VALUES ('card-fails',42,42,'group','Album caption','[]',?,1,'2000-01-01T00:00:00.000Z')`)
-      .run(JSON.stringify([{ type: "photo", file_id: "one" }]));
+      .run(JSON.stringify([{ type: "photo", file_id: "one", local_path: "/imported/one.jpg" }]));
     const sendMessage = mock(async () => {
       throw new Error("Bad Request: message is too long");
     });
@@ -536,8 +536,8 @@ describe("Telegram controller flow", () => {
       .run(
         draftId,
         JSON.stringify([
-          { type: "photo", file_id: "en-photo-1" },
-          { type: "photo", file_id: "en-photo-2" },
+          { type: "photo", file_id: "en-photo-1", local_path: "/imported/en-photo-1.jpg" },
+          { type: "photo", file_id: "en-photo-2", local_path: "/imported/en-photo-2.jpg" },
         ]),
       );
     const fakeBot = {
@@ -558,8 +558,8 @@ describe("Telegram controller flow", () => {
     expect(draft.text_en_approved).toBe("English replacement");
     expect(JSON.parse(draft.media_ru_json)).toEqual([{ type: "photo", file_id: "ru-photo" }]);
     expect(JSON.parse(draft.media_en_json)).toEqual([
-      { type: "photo", file_id: "en-photo-1" },
-      { type: "photo", file_id: "en-photo-2" },
+      { type: "photo", file_id: "en-photo-1", local_path: "/imported/en-photo-1.jpg" },
+      { type: "photo", file_id: "en-photo-2", local_path: "/imported/en-photo-2.jpg" },
     ]);
     expect(getConversationState(backendDb, 42, "post")).toBeNull();
   });
@@ -571,8 +571,8 @@ describe("Telegram controller flow", () => {
       VALUES ('once',42,42,'group','new_post','Album caption','[]',?,1,'2000-01-01T00:00:00.000Z')`)
       .run(
         JSON.stringify([
-          { type: "photo", file_id: "one" },
-          { type: "photo", file_id: "two" },
+          { type: "photo", file_id: "one", local_path: "/imported/one.jpg" },
+          { type: "photo", file_id: "two", local_path: "/imported/two.jpg" },
         ]),
       );
     const fakeBot = {
@@ -593,7 +593,7 @@ describe("Telegram controller flow", () => {
     backendDb.sqlite
       .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,step,text_ru,text_entities_json,media_json,notified,updated_at)
       VALUES ('stale-claim',42,42,'group','new_post','Album caption','[]',?,2,'2000-01-01T00:00:00.000Z')`)
-      .run(JSON.stringify([{ type: "photo", file_id: "one" }]));
+      .run(JSON.stringify([{ type: "photo", file_id: "one", local_path: "/imported/one.jpg" }]));
     const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
     const fakeBot = { api: { sendMessage } } as unknown as Bot;
 
@@ -607,7 +607,7 @@ describe("Telegram controller flow", () => {
     db.sqlite
       .prepare(`INSERT INTO pending_albums(id,actor_id,chat_id,media_group_id,step,step_data_json,draft_id,text_ru,text_entities_json,media_json,notified,attempt_count,updated_at)
       VALUES ('doomed',42,42,'group','edit_text','{"locale":"ru"}',4242,'Caption','[]',?,1,0,'2000-01-01T00:00:00.000Z')`)
-      .run(JSON.stringify([{ type: "photo", file_id: "one" }]));
+      .run(JSON.stringify([{ type: "photo", file_id: "one", local_path: "/imported/one.jpg" }]));
     const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
     const fakeBot = { api: { sendMessage } } as unknown as Bot;
     const config = loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" });

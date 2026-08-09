@@ -4,7 +4,7 @@ import type { StudioLocale } from "../../../foundation/locale.js";
 import { formatMetricValue } from "./format.js";
 
 /** Compact daily bars for the editorial overview. */
-export const OVERVIEW_SPARK_MAX = 50_000;
+const OVERVIEW_SPARK_MAX = 50_000;
 
 /**
  * `fresh` is the part of `value` earned by publications of that same day, drawn

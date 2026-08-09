@@ -13,7 +13,6 @@ export async function importTelegramAlbumMedia(
   actorId: number,
   media: Record<string, unknown>[],
 ): Promise<Record<string, unknown>[]> {
-  if (typeof bot.api.getFile !== "function") return media; // compatibility for historical/test-only ingress.
   const studioMedia = createStudioServices(backendDb, config).media;
   return Promise.all(media.map((item) => importTelegramMediaItem(bot, studioMedia, config, actorId, item)));
 }

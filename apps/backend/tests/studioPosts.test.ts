@@ -191,7 +191,7 @@ describe("Studio post commands", () => {
     expect(() => posts.toggleTarget(42, draftId, "telegram")).toThrow("err.post-locked");
     expect(() => posts.publish(42, draftId)).toThrow("err.post-locked");
     expect(() => posts.cancel(42, draftId)).toThrow("err.post-locked");
-    expect(() => posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null })).not.toThrow();
+    posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null });
   });
 
   it("does not duplicate final jobs when a settled post is rescheduled", () => {
@@ -209,7 +209,7 @@ describe("Studio post commands", () => {
     backendDb.db.update(drafts).set({ status: "published" }).where(eq(drafts.id, draftId)).run();
 
     const nextAt = new Date(Date.now() + 10 * 60_000);
-    expect(() => posts.schedule(42, draftId, { ruAt: nextAt, enAt: nextAt })).not.toThrow();
+    posts.schedule(42, draftId, { ruAt: nextAt, enAt: nextAt });
     expect(backendDb.db.select({ jobId: publishJobs.jobId }).from(publishJobs).where(eq(publishJobs.postId, postId)).all()).toEqual(
       socialBefore,
     );

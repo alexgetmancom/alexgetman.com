@@ -13,7 +13,7 @@ import { backfillTextStoryCards } from "../src/operations/story-card-backfill.js
 import { localizeTargetPayload } from "../src/publishing/payload.js";
 import { createPublicationPlan } from "../src/publishing/publication-plan.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
-import { buildStoryCardCopy, lineUnits, MAX_LINE_UNITS, MAX_LINES, TEMPLATE_VERSION } from "../src/story-cards/copy.js";
+import { buildStoryCardCopy, MAX_LINES, TEMPLATE_VERSION } from "../src/story-cards/copy.js";
 import { discardDraftStoryCards, readyStoryCardMedia, setStoryPublishMode, storyCardsForDraft } from "../src/story-cards/store.js";
 import { emojiAssetFile, STORY_CARD_EMOJI_LEFT, STORY_CARD_EMOJI_SIZE, storyCardEmojiTop } from "../src/story-cards/svg.js";
 import { runStoryCardCycle } from "../src/story-cards/worker.js";
@@ -48,7 +48,9 @@ describe("text Story cards", () => {
   it("breaks a word that is wider than one line instead of overflowing the card", () => {
     const copy = buildStoryCardCopy(`Ссылка ${"a".repeat(120)} внутри поста.`);
     expect(copy.lines.length).toBeGreaterThan(1);
-    for (const line of copy.lines) expect(lineUnits(line.replace(/…$/, ""))).toBeLessThanOrEqual(MAX_LINE_UNITS);
+    const fullWordSegments = copy.lines.filter((line) => /^a+$/u.test(line));
+    expect(fullWordSegments).toHaveLength(6);
+    for (const line of fullWordSegments) expect(line).toHaveLength(19);
   });
 
   // The renderer's schema and the copy rules must agree by construction: they were
