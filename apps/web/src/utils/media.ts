@@ -56,8 +56,10 @@ function toVisualMedia(path: string, media: SiteMedia | undefined): PostVisualMe
   return poster ? { type, path, poster } : { type, path };
 }
 
-export function postOgImagePath(item: FeedItem, locale: FeedLocale = "en"): string {
-  return item.post_id ? `/og/posts/post-${item.post_id}-${locale === "ru" ? "ru" : "en"}.jpg` : "/social-image.jpg";
+export function postSocialImagePath(item: FeedItem, locale: FeedLocale = "en"): string {
+  const visual = postVisualMedia(item, locale);
+  const path = visual?.type === "video" ? visual.poster : visual?.path;
+  return path ? `/${normalizePublicPath(path)}` : "/social-image.jpg";
 }
 
 export function responsiveImageSrcSet(publicPath: string | null | undefined): string | undefined {

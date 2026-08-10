@@ -273,8 +273,7 @@ type StudioVideoDraftRecord = {
   actorId: number;
   locale: string;
   label: string;
-  assetKey: string;
-  studioMediaAssetId: number | null;
+  studioMediaAssetId: number;
   status: string;
   scheduledAt: string | null;
   reminderSentAt: string | null;

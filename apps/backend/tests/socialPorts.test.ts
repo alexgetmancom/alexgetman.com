@@ -47,7 +47,7 @@ mock.module("../src/delivery/social/telegram.js", () => ({
 mock.module("../src/delivery/social/threads.js", () => ({
   publishToThreads: async (...args: Parameters<typeof real.publishToThreads>) => {
     if (!intercepting) return real.publishToThreads(...args);
-    calls.push({ target: "threads", payload: args[0], token: args[1].THREADS_ACCESS_TOKEN });
+    calls.push({ target: "threads", payload: args[0], token: args[1].THREADS_RU_ACCESS_TOKEN });
     return { ok: true, id: "t" };
   },
 }));
@@ -100,11 +100,9 @@ const { loadConfig } = await import("../src/foundation/config.js");
 
 const config = loadConfig({
   CONTROLLER_BOT_TOKEN: "bot",
-  CHANNEL_USERNAME: "alexgetmancom",
-  THREADS_ACCESS_TOKEN: "threads-shared",
+  TELEGRAM_CHANNEL_USERNAME: "alexgetmancom",
+  THREADS_RU_ACCESS_TOKEN: "threads-shared",
   THREADS_EN_ACCESS_TOKEN: "threads-en",
-  INSTAGRAM_ACCESS_TOKEN: "ig-shared",
-  INSTAGRAM_USER_ID: "ig-shared-user",
   INSTAGRAM_EN_ACCESS_TOKEN: "ig-en",
   INSTAGRAM_EN_USER_ID: "ig-en-user",
   INSTAGRAM_RU_ACCESS_TOKEN: "ig-ru",

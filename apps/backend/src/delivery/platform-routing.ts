@@ -3,7 +3,7 @@ import type { BackendConfig } from "../foundation/config.js";
 
 /** Resolves the configuration seen by one durable delivery target. */
 export function platformConfig(target: string, config: BackendConfig): BackendConfig {
-  if (target === "threads_en") return { ...config, THREADS_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN };
+  if (target === "threads_en") return { ...config, THREADS_RU_ACCESS_TOKEN: config.THREADS_EN_ACCESS_TOKEN };
   return config;
 }
 

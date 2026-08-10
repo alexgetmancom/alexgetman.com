@@ -21,6 +21,7 @@ type AppRuntime = {
 };
 
 let runtime: AppRuntime | undefined;
+const FFMPEG_MAX_CONCURRENCY = 2;
 
 // Astro bundles API routes into a separate module graph from apps/web/server.ts.
 // A module-local singleton therefore starts the workers twice in one Bun
@@ -36,7 +37,7 @@ export function startRuntime(): AppRuntime {
   if (runtime) return runtime;
   const config = loadConfig(Bun.env);
   configureLogging(config.LOG_LEVEL);
-  configureFfmpegConcurrency(config.FFMPEG_MAX_CONCURRENCY);
+  configureFfmpegConcurrency(FFMPEG_MAX_CONCURRENCY);
   const backendDb = openBackendDb(config.PIPELINE_DB);
   const studio = createStudioServices(backendDb, config);
   const bot = createBot(config, backendDb);

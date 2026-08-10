@@ -96,11 +96,11 @@ afterAll(() => {
 
 function videoConfig(directory: string, overrides: Record<string, string> = {}) {
   const config = loadConfig({
-    YOUTUBE_CLIENT_ID: "client",
-    YOUTUBE_CLIENT_SECRET: "secret",
-    YOUTUBE_REFRESH_TOKEN: "refresh",
-    INSTAGRAM_ACCESS_TOKEN: "EAAB-token",
-    INSTAGRAM_USER_ID: "ig-user",
+    YOUTUBE_RU_CLIENT_ID: "client",
+    YOUTUBE_RU_CLIENT_SECRET: "secret",
+    YOUTUBE_RU_REFRESH_TOKEN: "refresh",
+    INSTAGRAM_RU_ACCESS_TOKEN: "EAAB-token",
+    INSTAGRAM_RU_USER_ID: "ig-user",
     PUBLIC_MEDIA_BASE_URL: "https://alexgetman.com/media",
     ...overrides,
   });

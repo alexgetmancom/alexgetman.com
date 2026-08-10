@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
 import { alertDedup, channelConnections, credentialChecks, postEvents, publishJobs, siteJobs, workerState } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { expectedWorkerNames } from "../src/foundation/runtime/worker-state.js";
 import { renderDashboard } from "../src/interfaces/web/dashboard.js";
 import { runObservabilityCycle } from "../src/observability/cycle.js";
 import { healthReport } from "../src/observability/health.js";
@@ -245,12 +246,10 @@ describe("runtime health", () => {
 const READY_ENV = {
   CONTROLLER_ADMIN_IDS: "42",
   CONTROLLER_BOT_TOKEN: "token",
-  YOUTUBE_CLIENT_ID: "id",
-  YOUTUBE_CLIENT_SECRET: "secret",
-  YOUTUBE_REFRESH_TOKEN: "refresh",
-  INSTAGRAM_ACCESS_TOKEN: "token",
-  INSTAGRAM_USER_ID: "user",
-  THREADS_ACCESS_TOKEN: "token",
+  YOUTUBE_RU_CLIENT_ID: "id",
+  YOUTUBE_RU_CLIENT_SECRET: "secret",
+  YOUTUBE_RU_REFRESH_TOKEN: "refresh",
+  THREADS_RU_ACCESS_TOKEN: "token",
   THREADS_EN_ACCESS_TOKEN: "token",
   X_CONSUMER_KEY: "key",
   X_CONSUMER_SECRET: "secret",
@@ -276,6 +275,14 @@ function insertCredential(backendDb: ReturnType<typeof openBackendDb>, target: s
 
 function insertWorker(backendDb: ReturnType<typeof openBackendDb>, name: string, state: Record<string, boolean | string>): void {
   backendDb.db.insert(workerState).values({ name, stateJson: state, updatedAt: checkedAt }).run();
+}
+
+function insertExpectedWorkers(
+  backendDb: ReturnType<typeof openBackendDb>,
+  config: ReturnType<typeof loadConfig>,
+  overrides: Record<string, Record<string, boolean | string>> = {},
+): void {
+  for (const name of expectedWorkerNames(config)) insertWorker(backendDb, name, overrides[name] ?? { phase: "idle" });
 }
 
 function insertAlertEvent(backendDb: ReturnType<typeof openBackendDb>, severity: string, ackedAt: string | null): void {
@@ -307,7 +314,7 @@ describe("healthReport", () => {
       setHealthChannels(backendDb, ["telegram"]);
       insertCredential(backendDb, "telegram", "ready");
       insertCredential(backendDb, "threads_ru", "missing");
-      insertWorker(backendDb, "publisher", { ok: true });
+      insertExpectedWorkers(backendDb, config);
 
       const report = healthReport(config, backendDb);
       expect(report.ok).toBe(true);
@@ -329,8 +336,9 @@ describe("healthReport", () => {
     try {
       setHealthChannels(backendDb, ["x"]);
       insertCredential(backendDb, "x", "ready");
-      insertWorker(backendDb, "publisher", { ok: true });
-      const report = healthReport(loadConfig(READY_ENV), backendDb);
+      const config = loadConfig(READY_ENV);
+      insertExpectedWorkers(backendDb, config);
+      const report = healthReport(config, backendDb);
 
       expect(report.ok).toBe(true);
       expect(report.pendingAlerts).toBe(0);
@@ -360,8 +368,9 @@ describe("healthReport", () => {
     try {
       setHealthChannels(backendDb, ["x"]);
       insertCredential(backendDb, "x", "ready");
-      insertWorker(backendDb, "publisher", { ok: false, lastError: "stalled" });
-      expect(healthReport(loadConfig(READY_ENV), backendDb).ok).toBe(false);
+      const config = loadConfig(READY_ENV);
+      insertExpectedWorkers(backendDb, config, { queue: { ok: false, lastError: "stalled" } });
+      expect(healthReport(config, backendDb).ok).toBe(false);
     } finally {
       backendDb.close();
     }
@@ -370,8 +379,9 @@ describe("healthReport", () => {
     try {
       setHealthChannels(clean, ["x"]);
       insertCredential(clean, "x", "ready");
-      insertWorker(clean, "collector", { phase: "idle" });
-      expect(healthReport(loadConfig(READY_ENV), clean).ok).toBe(true);
+      const config = loadConfig(READY_ENV);
+      insertExpectedWorkers(clean, config);
+      expect(healthReport(config, clean).ok).toBe(true);
     } finally {
       clean.close();
     }
@@ -431,12 +441,13 @@ describe("healthReport", () => {
     }
   });
 
-  it("treats an empty database as ok rather than throwing on a missing count row", () => {
+  it("reports every expected worker missing in an empty database", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       backendDb.db.delete(channelConnections).run();
       const report = healthReport(loadConfig(READY_ENV), backendDb);
-      expect(report).toMatchObject({ ok: true, pendingAlerts: 0, credentials: [], workers: [] });
+      expect(report).toMatchObject({ ok: false, pendingAlerts: 0, credentials: [], workers: [] });
+      expect(report.missingWorkers).toEqual(expectedWorkerNames(loadConfig(READY_ENV)));
     } finally {
       backendDb.close();
     }

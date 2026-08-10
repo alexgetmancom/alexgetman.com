@@ -25,14 +25,14 @@ import { loadConfig } from "../src/foundation/config.js";
  */
 
 const config = loadConfig({
-  YOUTUBE_CLIENT_ID: "client",
-  YOUTUBE_CLIENT_SECRET: "secret",
-  YOUTUBE_REFRESH_TOKEN: "refresh",
+  YOUTUBE_RU_CLIENT_ID: "client",
+  YOUTUBE_RU_CLIENT_SECRET: "secret",
+  YOUTUBE_RU_REFRESH_TOKEN: "refresh",
   YOUTUBE_EN_CLIENT_ID: "client-en",
   YOUTUBE_EN_CLIENT_SECRET: "secret-en",
   YOUTUBE_EN_REFRESH_TOKEN: "refresh-en",
-  INSTAGRAM_ACCESS_TOKEN: "EAAB-facebook-token",
-  INSTAGRAM_USER_ID: "ig-user",
+  INSTAGRAM_RU_ACCESS_TOKEN: "EAAB-facebook-token",
+  INSTAGRAM_RU_USER_ID: "ig-user",
 });
 const instagramCredentials = { accessToken: "EAAB-facebook-token", userId: "ig-user" };
 

@@ -14,21 +14,29 @@ export function healthReport(config: BackendConfig, backendDb: BackendDb) {
     .from(credentialChecks)
     .all()
     .filter((credential) => activeCapabilityTargets.has(credential.target));
-  const workers = unsafeDb(backendDb).db.select().from(workerState).all();
+  const expectedWorkers = expectedWorkerNames(config);
+  const expectedWorkerSet = new Set(expectedWorkers);
+  const workers = unsafeDb(backendDb)
+    .db.select()
+    .from(workerState)
+    .all()
+    .filter((worker) => expectedWorkerSet.has(worker.name));
   const observedWorkers = new Set(workers.map((worker) => worker.name));
-  const missingWorkers = expectedWorkerNames(config).filter((name) => !observedWorkers.has(name));
+  const missingWorkers = expectedWorkers.filter((name) => !observedWorkers.has(name));
   const [pending] = unsafeDb(backendDb)
     .db.select({ count: sql<number>`count(*)` })
     .from(postEvents)
     .where(and(inArray(postEvents.severity, ["warn", "error"]), isNull(postEvents.ackedAt)))
     .all();
   const credentialsOk = credentials.every((check) => check.status === "ready");
-  const workersOk = workers.every(
-    (worker) =>
-      worker.stateJson.ok !== false &&
-      worker.stateJson.scheduler_error == null &&
-      !workerLiveness(worker.stateJson, worker.updatedAt).stale,
-  );
+  const workersOk =
+    missingWorkers.length === 0 &&
+    workers.every(
+      (worker) =>
+        worker.stateJson.ok !== false &&
+        worker.stateJson.scheduler_error == null &&
+        !workerLiveness(worker.stateJson, worker.updatedAt).stale,
+    );
   const capabilitiesOk = capabilities.every((capability) => capability.status === "ready");
   return {
     ok: credentialsOk && workersOk && capabilitiesOk,

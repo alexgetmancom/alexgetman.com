@@ -88,7 +88,7 @@ as an unknown digest are not retried.
 ## Enabling text posting for a second Studio
 
 Text posting is off for Maru because a Studio publishes to its own channel, and
-until that channel is named there is nothing safe to publish to. `CHANNEL_USERNAME`
+until that channel is named there is nothing safe to publish to. `TELEGRAM_CHANNEL_USERNAME`
 carries a default that is a real, live username — the first Studio's — so a
 second Studio that enables `text_posting` without setting it would publish into
 someone else's channel. The application now refuses to start in production in
@@ -98,7 +98,7 @@ To enable it, both files change together:
 
 ```dotenv
 # /home/deploy/maru/secrets.env
-CHANNEL_USERNAME=marux_play
+TELEGRAM_CHANNEL_USERNAME=marux_play
 ```
 
 ```yaml

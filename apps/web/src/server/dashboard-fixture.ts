@@ -7,6 +7,7 @@ import {
   postTargets,
   publishJobs,
   siteJobs,
+  studioMediaAssets,
   videoDrafts,
   videoMetricSnapshots,
   videoTargets,
@@ -14,6 +15,7 @@ import {
   xActivityItems,
   xActivityMetricSnapshots,
 } from "../../../backend/src/db/schema.js";
+import type { RawBackendDb } from "../../../backend/src/db/unsafe.js";
 import { daysAgo, fixtureDayWindow, fixtureSampleAt, fixtureSampleSlots, HOUR_MS, hoursAgo, iso } from "./fixture-utils.js";
 import { fullFixtureDayCounts, PARITY_HISTORY_DAYS } from "./site-fixture.js";
 
@@ -197,11 +199,34 @@ function fullVideoPlans(options: FullDashboardFixtureOptions, now: Date): VideoF
   return plans;
 }
 
+function fixtureVideoAsset(rawDb: RawBackendDb, createdAt: string): number {
+  return rawDb.db
+    .insert(studioMediaAssets)
+    .values({
+      actorId: 1,
+      kind: "video",
+      mimeType: "video/mp4",
+      filename: "fixture.mp4",
+      localPath: "/tmp/fixture.mp4",
+      byteSize: 1,
+      sha256: "fixture-video",
+      source: "fixture",
+      createdAt,
+    })
+    .onConflictDoUpdate({
+      target: [studioMediaAssets.actorId, studioMediaAssets.sha256],
+      set: { createdAt },
+    })
+    .returning({ id: studioMediaAssets.id })
+    .get().id;
+}
+
 export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDashboard {
   const backendDb = openBackendDb(options.dbPath);
   const rawDb = unsafeDb(backendDb);
   const now = new Date();
   const nowIso = iso(now);
+  const videoAssetId = fixtureVideoAsset(rawDb, nowIso);
   let targetRows = 0;
   let sampleRows = 0;
 
@@ -381,7 +406,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
           publishedAt: iso(hoursAgo(plan.hoursAgo)),
           targets: plan.targets.map((target) => ({ ...target })),
         }));
-    for (const [index, plan] of videoPlans.entries()) {
+    for (const plan of videoPlans) {
       const publishedAt = plan.publishedAt;
       const draft = rawDb.db
         .insert(videoDrafts)
@@ -389,7 +414,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
           actorId: 1,
           locale: plan.locale,
           label: plan.label,
-          assetKey: `fixture-video-${index + 1}`,
+          studioMediaAssetId: videoAssetId,
           status: "published",
           scheduledAt: publishedAt,
           createdAt: publishedAt,
@@ -586,6 +611,7 @@ export function seedOverviewParityFixture(options: { dbPath: string; postIds: nu
   const rawDb = unsafeDb(backendDb);
   const now = new Date();
   const nowIso = iso(now);
+  const videoAssetId = fixtureVideoAsset(rawDb, nowIso);
   let targetRows = 0;
   let sampleRows = 0;
 
@@ -673,7 +699,7 @@ export function seedOverviewParityFixture(options: { dbPath: string; postIds: nu
       .values({ name: "metrics", stateJson: { lastRunAt: nowIso, status: "idle" }, updatedAt: nowIso })
       .run();
 
-    for (const [index, plan] of PARITY_VIDEO.entries()) {
+    for (const plan of PARITY_VIDEO) {
       const publishedAt = iso(hoursAgo(plan.hoursAgo));
       const draft = rawDb.db
         .insert(videoDrafts)
@@ -681,7 +707,7 @@ export function seedOverviewParityFixture(options: { dbPath: string; postIds: nu
           actorId: 1,
           locale: plan.locale,
           label: plan.label,
-          assetKey: `parity-video-${index + 1}`,
+          studioMediaAssetId: videoAssetId,
           status: "published",
           scheduledAt: publishedAt,
           createdAt: publishedAt,
@@ -754,7 +780,7 @@ export function seedOverviewParityFixture(options: { dbPath: string; postIds: nu
         actorId: 1,
         locale: "ru",
         label: "Архивный ролик",
-        assetKey: "parity-video-history",
+        studioMediaAssetId: videoAssetId,
         status: "published",
         scheduledAt: iso(historyPublishedAt),
         createdAt: iso(historyPublishedAt),

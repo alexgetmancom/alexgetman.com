@@ -24,7 +24,7 @@ describe("toPlayerPosts", () => {
     const [post] = toPlayerPosts([
       homePost({
         image: "media/posts/1-en-0.jpg",
-        fallbackImage: "og/posts/post-1-en.jpg",
+        fallbackImage: "social-image.jpg",
         mediaType: "video",
         gallery: [{ type: "image", path: "media/posts/1-en-0.jpg" }],
         audioUrl: "media/posts/1-en-0.mp3",
@@ -36,7 +36,7 @@ describe("toPlayerPosts", () => {
     ]);
 
     expect(post.image).toBe("/media/posts/1-en-0.jpg");
-    expect(post.fallbackImage).toBe("/og/posts/post-1-en.jpg");
+    expect(post.fallbackImage).toBe("/social-image.jpg");
     expect(post.mediaType).toBe("video");
     expect(post.gallery).toEqual([{ type: "image", path: "/media/posts/1-en-0.jpg", poster: null }]);
     expect(post.audioUrl).toBe("media/posts/1-en-0.mp3");

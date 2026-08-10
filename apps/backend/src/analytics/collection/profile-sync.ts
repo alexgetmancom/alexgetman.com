@@ -313,7 +313,7 @@ export async function syncCommunityProfiles(
   const interval = config.CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS;
   const ownerPrefix = owner ?? `community:${crypto.randomUUID()}`;
   // A controller bot is not itself a Telegram publishing channel. In a
-  // video-only Studio (such as Maru) CHANNEL_USERNAME may merely fall back to
+  // video-only Studio (such as Maru) TELEGRAM_CHANNEL_USERNAME may merely fall back to
   // the legacy default, so collecting it would leak another creator's audience
   // into this dashboard.
   if (
@@ -322,16 +322,16 @@ export async function syncCommunityProfiles(
     claimSync(backendDb, "telegram_profile", interval, `${ownerPrefix}:telegram`)
   )
     jobs.push(syncTelegramProfile(config, backendDb, fetchImpl, `${ownerPrefix}:telegram`));
-  if (config.THREADS_ACCESS_TOKEN && claimSync(backendDb, "threads_profile", interval, `${ownerPrefix}:threads`))
+  if (config.THREADS_RU_ACCESS_TOKEN && claimSync(backendDb, "threads_profile", interval, `${ownerPrefix}:threads`))
     jobs.push(syncThreadsProfile(config, backendDb, fetchImpl, `${ownerPrefix}:threads`));
   await Promise.all(jobs);
 }
 
-/** CHANNEL_USERNAME may or may not carry a leading "@" depending on how it was
+/** TELEGRAM_CHANNEL_USERNAME may or may not carry a leading "@" depending on how it was
  * configured; this normalizes to the bare handle for account labels and
  * chat_id construction below. */
 function channelHandle(config: BackendConfig): string {
-  return config.CHANNEL_USERNAME.replace(/^@/, "");
+  return config.TELEGRAM_CHANNEL_USERNAME.replace(/^@/, "");
 }
 
 async function syncTelegramProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch, owner?: string): Promise<void> {
@@ -399,7 +399,7 @@ function telegramChannelMetrics(stats: TelegramBroadcastStats): Record<string, n
 }
 
 async function syncThreadsProfile(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch, owner?: string): Promise<void> {
-  const token = config.THREADS_ACCESS_TOKEN;
+  const token = config.THREADS_RU_ACCESS_TOKEN;
   if (!token) return;
   await synced(
     backendDb,

@@ -2,15 +2,13 @@ import { existsSync } from "node:fs";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 
-export function videoSourcePath(backendDb: BackendDb, source: { studioMediaAssetId: number | null }): string | null {
-  if (source.studioMediaAssetId == null) throw new Error("Video draft has no Studio media asset");
+export function videoSourcePath(backendDb: BackendDb, source: { studioMediaAssetId: number }): string | null {
   const asset = backendDb.studioMediaAssets.get(source.studioMediaAssetId);
   return asset?.kind === "video" && existsSync(asset.localPath) ? asset.localPath : null;
 }
 
-export function videoPublicUrl(backendDb: BackendDb, config: BackendConfig, source: { studioMediaAssetId: number | null }): string {
+export function videoPublicUrl(backendDb: BackendDb, config: BackendConfig, source: { studioMediaAssetId: number }): string {
   const base = config.PUBLIC_BASE_URL.replace(/\/$/, "");
-  if (source.studioMediaAssetId == null) throw new Error("Video draft has no Studio media asset");
   // The public media route is content-addressed by sha256 so the unguessable
   // digest, not the enumerable asset id, is what grants read access.
   const asset = backendDb.studioMediaAssets.get(source.studioMediaAssetId);

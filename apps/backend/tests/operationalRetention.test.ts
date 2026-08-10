@@ -1,5 +1,4 @@
 import { describe, expect, it } from "bun:test";
-import { loadConfig } from "../src/foundation/config.js";
 import { pruneOperationalHistory } from "../src/operations/maintenance.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
@@ -38,7 +37,7 @@ describe("operational retention", () => {
         )
         .run(old, old);
 
-      const result = pruneOperationalHistory(backendDb, loadConfig({}), now);
+      const result = pruneOperationalHistory(backendDb, now);
 
       expect(result).toEqual({ postEvents: 2, opsActions: 1, sitePageviews: 1, runtimeUsage: 1, total: 5 });
       expect(backendDb.sqlite.prepare("SELECT message FROM post_events ORDER BY id").all()).toEqual([{ message: "old warning" }]);

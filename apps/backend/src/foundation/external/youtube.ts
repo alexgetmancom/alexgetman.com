@@ -12,9 +12,9 @@ export function youtubeCredentials(config: BackendConfig, locale: VideoLocale) {
         refreshToken: config.YOUTUBE_EN_REFRESH_TOKEN,
       }
     : {
-        clientId: config.YOUTUBE_CLIENT_ID,
-        clientSecret: config.YOUTUBE_CLIENT_SECRET,
-        refreshToken: config.YOUTUBE_REFRESH_TOKEN,
+        clientId: config.YOUTUBE_RU_CLIENT_ID,
+        clientSecret: config.YOUTUBE_RU_CLIENT_SECRET,
+        refreshToken: config.YOUTUBE_RU_REFRESH_TOKEN,
       };
 }
 

@@ -8,6 +8,7 @@ import { AmbiguousPublicationError, ambiguousExternalMutation } from "./ambiguou
 
 type YouTubeVideo = { id: string };
 type YouTubeVideoList = { items?: Array<{ id?: string }> };
+const VIDEO_UPLOAD_TIMEOUT_MS = 30 * 60_000;
 
 /** Every mutable field of `videos.status` this project ever sets. `videos.update`
  * clears any field of the selected part that the request omits, so a status edit
@@ -80,7 +81,7 @@ export async function prepareYouTubeVideo(
   if (!init.ok) throw new Error(`YouTube upload session failed: ${init.status} ${await init.text()}`);
   const location = init.headers.get("location");
   if (!location) throw new Error("YouTube did not return an upload location.");
-  const video = await uploadYouTubeResumable(location, file, config.VIDEO_UPLOAD_TIMEOUT_SECONDS * 1000);
+  const video = await uploadYouTubeResumable(location, file, VIDEO_UPLOAD_TIMEOUT_MS);
   return { id: video.id, url: `https://www.youtube.com/watch?v=${video.id}` };
 }
 

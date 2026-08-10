@@ -8,6 +8,7 @@ import { setTelegramPostCard, setTelegramPostProgressCard, setTelegramVideoCard 
 import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";
 import { refreshVideoControlCard, sendStudioCompletion, sendStudioReminder } from "../src/interfaces/telegram/video-notifications.js";
 import { withDb } from "./helpers/db.js";
+import { createTestVideoAsset } from "./helpers/video.js";
 
 const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
 
@@ -78,7 +79,7 @@ describe("Telegram event consumer", () => {
           actorId: 42,
           locale: "en",
           label: "Shared launch",
-          assetKey: "asset",
+          studioMediaAssetId: createTestVideoAsset(backendDb, 42),
           status: "draft",
           createdAt: now,
           updatedAt: now,
@@ -140,7 +141,7 @@ describe("Telegram event consumer", () => {
           actorId: 42,
           locale: "en",
           label: "Shared launch",
-          assetKey: "asset",
+          studioMediaAssetId: createTestVideoAsset(backendDb, 42),
           status: "published",
           createdAt: now,
           updatedAt: now,

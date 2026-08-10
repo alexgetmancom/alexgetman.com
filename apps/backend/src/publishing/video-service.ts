@@ -30,7 +30,6 @@ export function createVideoDraft(
     .values({
       actorId,
       locale,
-      assetKey: `studio-asset-${studioMediaAssetId}`,
       studioMediaAssetId,
       status: "editing",
       retentionUntil,

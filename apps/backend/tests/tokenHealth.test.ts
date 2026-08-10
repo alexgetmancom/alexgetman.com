@@ -34,7 +34,7 @@ describe("token health probes", () => {
         if (href.includes("debug_token")) return jsonResponse({ data: { expires_at: Math.floor(soon.getTime() / 1000) } });
         return jsonResponse({ id: "123" });
       });
-      const config = loadConfig({ INSTAGRAM_ACCESS_TOKEN: "EAAtoken", INSTAGRAM_USER_ID: "123" });
+      const config = loadConfig({ INSTAGRAM_RU_ACCESS_TOKEN: "EAAtoken", INSTAGRAM_RU_USER_ID: "123" });
 
       await checkTokenHealth(config, backendDb, fetchMock as unknown as typeof fetch);
 
@@ -61,9 +61,9 @@ describe("token health probes", () => {
         return jsonResponse({});
       });
       const config = loadConfig({
-        YOUTUBE_CLIENT_ID: "client-id",
-        YOUTUBE_CLIENT_SECRET: "client-secret",
-        YOUTUBE_REFRESH_TOKEN: "refresh-token",
+        YOUTUBE_RU_CLIENT_ID: "client-id",
+        YOUTUBE_RU_CLIENT_SECRET: "client-secret",
+        YOUTUBE_RU_REFRESH_TOKEN: "refresh-token",
       });
 
       await checkTokenHealth(config, backendDb, fetchMock as unknown as typeof fetch);
@@ -84,8 +84,8 @@ describe("token health probes", () => {
         return jsonResponse({ id: String(url).includes("en-user") ? "en-user" : "ru-user" });
       });
       const config = loadConfig({
-        INSTAGRAM_ACCESS_TOKEN: "EAAtoken",
-        INSTAGRAM_USER_ID: "ru-user",
+        INSTAGRAM_RU_ACCESS_TOKEN: "EAAtoken",
+        INSTAGRAM_RU_USER_ID: "ru-user",
         INSTAGRAM_EN_ACCESS_TOKEN: "IGtoken",
         INSTAGRAM_EN_USER_ID: "en-user",
       });

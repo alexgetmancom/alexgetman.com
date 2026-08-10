@@ -10,8 +10,9 @@ export const videoDrafts = sqliteTable(
     actorId: integer().notNull(),
     locale: text().notNull().default("ru"),
     label: text().notNull().default(""),
-    assetKey: text().notNull(),
-    studioMediaAssetId: integer().references(() => studioMediaAssets.id),
+    studioMediaAssetId: integer()
+      .notNull()
+      .references(() => studioMediaAssets.id),
     status: text().notNull().default("draft"),
     scheduledAt: text(),
     reminderSentAt: text(),

@@ -12,7 +12,7 @@ import { loadConfig } from "../src/foundation/config.js";
  */
 
 const config = loadConfig({
-  THREADS_ACCESS_TOKEN: "threads-token",
+  THREADS_RU_ACCESS_TOKEN: "threads-token",
   THREADS_RETRY_DELAY_MS: "1",
   THREADS_CONTAINER_TIMEOUT_SECONDS: "1",
 });
@@ -51,7 +51,7 @@ describe("publishToThreads", () => {
     const result = await publishToThreads({ text: "hi" }, loadConfig({}), (() => {
       throw new Error("must not call Threads");
     }) as unknown as typeof fetch);
-    expect(result).toEqual({ skipped: true, reason: "missing THREADS_ACCESS_TOKEN" });
+    expect(result).toEqual({ skipped: true, reason: "missing THREADS_RU_ACCESS_TOKEN" });
   });
 
   it("publishes a text post and rewrites the permalink onto threads.com", async () => {

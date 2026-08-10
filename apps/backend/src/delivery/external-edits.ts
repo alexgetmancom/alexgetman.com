@@ -37,7 +37,7 @@ export async function editPublishedTargets(
           const method = Number(post?.mediaCount ?? 0) > 0 ? "editMessageCaption" : "editMessageText";
           const field = Number(post?.mediaCount ?? 0) > 0 ? "caption" : "text";
           return await postJson(fetchImpl, `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/bot${token}/${method}`, row.target, {
-            chat_id: post?.chatId || config.CHANNEL_USERNAME,
+            chat_id: post?.chatId || config.TELEGRAM_CHANNEL_USERNAME,
             message_id: Number(row.externalId),
             [field]: edit.textRu,
           });

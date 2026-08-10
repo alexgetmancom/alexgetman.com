@@ -17,6 +17,7 @@ import {
 import { createOperationsService } from "../src/operations/service.js";
 import { registerTestChannels, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { createTestVideoAsset } from "./helpers/video.js";
 
 const hoursAgo = (hours: number): string => new Date(Date.now() - hours * 3_600_000).toISOString();
 
@@ -41,7 +42,7 @@ function seedVideo(backendDb: ReturnType<typeof openBackendDb>, publishedAt = ho
       actorId: 1,
       locale: "ru",
       label: "Seedance 2.5",
-      assetKey: "asset-1",
+      studioMediaAssetId: createTestVideoAsset(backendDb),
       status: "published",
       createdAt: publishedAt,
       updatedAt: publishedAt,
@@ -123,7 +124,7 @@ function seedHistoricalVideo(backendDb: ReturnType<typeof openBackendDb>): void 
       actorId: 1,
       locale: "ru",
       label: "Historical clip",
-      assetKey: "historical-asset",
+      studioMediaAssetId: createTestVideoAsset(backendDb),
       status: "published",
       createdAt: publishedAt,
       updatedAt: publishedAt,
@@ -226,7 +227,7 @@ function seedCrosspostedVideo(backendDb: ReturnType<typeof openBackendDb>): void
       actorId: 1,
       locale: "ru",
       label: "Один ролик, две площадки",
-      assetKey: "asset-cross",
+      studioMediaAssetId: createTestVideoAsset(backendDb),
       status: "published",
       createdAt: publishedAt,
       updatedAt: publishedAt,
@@ -358,7 +359,7 @@ describe("unified overview video read model", () => {
           actorId: 1,
           locale: "ru",
           label: "Instagram reel",
-          assetKey: "asset-reel",
+          studioMediaAssetId: createTestVideoAsset(backendDb),
           status: "published",
           createdAt: publishedAt,
           updatedAt: publishedAt,

@@ -129,7 +129,7 @@ describe("Astro endpoint controller", () => {
     try {
       const app = createApiApp(
         loadConfig({
-          CLIENT_IP_HASH_SALT: "salt",
+          CLIENT_IP_HASH_SALT: "test-salt-value!",
           TRUSTED_CLIENT_IP_HEADER: "x-real-ip",
         }),
         backendDb,

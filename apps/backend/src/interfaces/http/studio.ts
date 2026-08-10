@@ -9,6 +9,7 @@ import type { RouteModule } from "./context.js";
 import { isMediaUploadTooLarge, MediaUploadTooLargeError, streamUploadToFile } from "./media-upload.js";
 
 let activeMediaUploads = 0;
+const MAX_ACTIVE_MEDIA_UPLOADS = 2;
 
 export const studioRoutes: RouteModule = (app, { config, backendDb, engagement, studio }) => {
   // The MCP transport is a privileged Studio surface, same as POST /api/mcp:
@@ -36,7 +37,7 @@ export const studioRoutes: RouteModule = (app, { config, backendDb, engagement, 
     const request = c.req.raw;
     const actorId = mcpStudioActor(request, config);
     if (!actorId) return text("forbidden\n", 403);
-    if (activeMediaUploads >= config.STUDIO_UPLOAD_CONCURRENCY) {
+    if (activeMediaUploads >= MAX_ACTIVE_MEDIA_UPLOADS) {
       return json({ error: "Too many media uploads are active; retry shortly." }, 429, { "retry-after": "30" });
     }
     activeMediaUploads += 1;

@@ -19,7 +19,7 @@ import {
 } from "../src/interfaces/telegram/control-cards.js";
 import { replaceVideoTargets } from "../src/publishing/video-service.js";
 import { openBackendDb } from "./helpers/open-db.js";
-import { createTestVideoDraft } from "./helpers/video.js";
+import { createTestVideoAsset, createTestVideoDraft } from "./helpers/video.js";
 
 function callbackContext(messageId: number): Context {
   return { callbackQuery: { message: { message_id: messageId } } } as unknown as Context;
@@ -221,7 +221,14 @@ describe("Telegram card freshness", () => {
       const now = new Date().toISOString();
       const draftId = unsafeDb(backendDb)
         .db.insert(videoDrafts)
-        .values({ actorId: 42, locale: "ru", assetKey: "clip.mp4", status: "editing", createdAt: now, updatedAt: now })
+        .values({
+          actorId: 42,
+          locale: "ru",
+          studioMediaAssetId: createTestVideoAsset(backendDb, 42),
+          status: "editing",
+          createdAt: now,
+          updatedAt: now,
+        })
         .returning({ id: videoDrafts.id })
         .get()?.id;
       if (!draftId) throw new Error("video draft missing");

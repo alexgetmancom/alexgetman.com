@@ -34,7 +34,7 @@ const analyticsSources: Record<string, string> = {
 
 const requirements: Record<string, readonly string[]> = {
   telegram: ["CONTROLLER_BOT_TOKEN"],
-  threads_ru: ["THREADS_ACCESS_TOKEN"],
+  threads_ru: ["THREADS_RU_ACCESS_TOKEN"],
   threads_en: ["THREADS_EN_ACCESS_TOKEN"],
   x: ["X_CONSUMER_KEY", "X_CONSUMER_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRET"],
   telegram_stories: ["TELEGRAM_CHANNEL_STORIES_API_ID", "TELEGRAM_CHANNEL_STORIES_API_HASH", "TELEGRAM_CHANNEL_STORIES_SESSION"],

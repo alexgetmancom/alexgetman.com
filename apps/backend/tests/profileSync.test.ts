@@ -74,8 +74,8 @@ describe("creator profile sync boundary", () => {
     await withDb(async (backendDb) => {
       const config = loadConfig({
         CONTROLLER_BOT_TOKEN: "bot-token",
-        THREADS_ACCESS_TOKEN: "threads-token",
-        CHANNEL_USERNAME: "@alexchannel",
+        THREADS_RU_ACCESS_TOKEN: "threads-token",
+        TELEGRAM_CHANNEL_USERNAME: "@alexchannel",
       });
       config.studio.modules.text_posting = true;
       const fetchMock = (async (input: URL | RequestInfo) => {

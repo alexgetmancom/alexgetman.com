@@ -10,6 +10,15 @@ import { knowledgeEntities, postEntityLinks } from "../src/db/schema.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
+function insertVideoAsset(backendDb: ReturnType<typeof openBackendDb>): void {
+  const now = new Date().toISOString();
+  backendDb.sqlite
+    .query(
+      "INSERT INTO studio_media_assets(id,actor_id,kind,mime_type,filename,local_path,byte_size,sha256,source,created_at) VALUES (1,1,'video','video/mp4','test.mp4','/tmp/test.mp4',1,'test','test',?)",
+    )
+    .run(now);
+}
+
 describe("openBackendDb", () => {
   it("enables WAL, busy timeout and foreign keys", () => {
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-backend-"));
@@ -98,9 +107,12 @@ describe("openBackendDb", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
+      insertVideoAsset(backendDb);
       backendDb.sqlite
-        .prepare("INSERT INTO video_drafts (actor_id, label, asset_key, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
-        .run(1, "", "asset", "draft", now, now);
+        .prepare(
+          "INSERT INTO video_drafts (actor_id, label, studio_media_asset_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(1, "", 1, "draft", now, now);
       backendDb.sqlite
         .prepare(
           "INSERT INTO video_targets (video_draft_id, target, metadata_json, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -134,9 +146,12 @@ describe("openBackendDb", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
+      insertVideoAsset(backendDb);
       backendDb.sqlite
-        .prepare("INSERT INTO video_drafts (actor_id, label, asset_key, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
-        .run(1, "", "asset", "draft", now, now);
+        .prepare(
+          "INSERT INTO video_drafts (actor_id, label, studio_media_asset_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(1, "", 1, "draft", now, now);
       backendDb.sqlite
         .prepare(
           "INSERT INTO video_targets (video_draft_id, target, metadata_json, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",

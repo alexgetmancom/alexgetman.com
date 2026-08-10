@@ -184,7 +184,7 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
       if (removed) log("info", "pruned expired media cache", { removed });
     }),
     startWorkerLoop("operational-retention", 24 * 60 * 60 * 1000, async () => {
-      const result = withMaintenanceLock(backendDb, () => pruneOperationalHistory(backendDb, config));
+      const result = withMaintenanceLock(backendDb, () => pruneOperationalHistory(backendDb));
       if (result.total) log("info", "pruned operational history", result);
     }),
     startWorkerLoop("observability", config.OBSERVABILITY_INTERVAL_SECONDS * 1000, async () => {

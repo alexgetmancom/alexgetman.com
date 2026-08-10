@@ -57,6 +57,13 @@
       "when": 1786304000000,
       "tag": "0007_persist_site_media_paths",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1786305000000,
+      "tag": "0008_require_video_studio_assets",
+      "breakpoints": true
     }
   ]
 }

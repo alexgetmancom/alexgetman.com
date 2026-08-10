@@ -122,8 +122,8 @@ describe("story publishers", () => {
       return new Response(JSON.stringify(responses.shift()), { status: 200 });
     }) as unknown as typeof fetch;
     const config = loadConfig({
-      INSTAGRAM_ACCESS_TOKEN: "IG-token",
-      INSTAGRAM_USER_ID: "ig-user",
+      INSTAGRAM_RU_ACCESS_TOKEN: "IG-token",
+      INSTAGRAM_RU_USER_ID: "ig-user",
     });
 
     const result = await publishInstagramStory(
@@ -167,8 +167,8 @@ describe("story publishers", () => {
       return new Response(JSON.stringify(responses.shift()), { status: 200 });
     }) as unknown as typeof fetch;
     const config = loadConfig({
-      INSTAGRAM_ACCESS_TOKEN: "IG-token",
-      INSTAGRAM_USER_ID: "ig-user",
+      INSTAGRAM_RU_ACCESS_TOKEN: "IG-token",
+      INSTAGRAM_RU_USER_ID: "ig-user",
     });
 
     const result = await publishInstagramStory(
@@ -201,8 +201,8 @@ describe("story publishers", () => {
       return new Response(JSON.stringify(responses.shift()), { status: 200 });
     }) as unknown as typeof fetch;
     const config = loadConfig({
-      INSTAGRAM_ACCESS_TOKEN: "IG-token",
-      INSTAGRAM_USER_ID: "ig-user",
+      INSTAGRAM_RU_ACCESS_TOKEN: "IG-token",
+      INSTAGRAM_RU_USER_ID: "ig-user",
     });
 
     const failure = await publishInstagramStory(

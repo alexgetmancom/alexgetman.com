@@ -44,7 +44,7 @@ const config = {
   token: required("DEPLOY_AGENT_TOKEN"),
   repository: Bun.env.DEPLOY_IMAGE_REPOSITORY ?? "ghcr.io/alexgetmancom/alexgetman-backend",
   defaultTarget: Bun.env.DEPLOY_DEFAULT_TARGET ?? "alex",
-  notificationToken: Bun.env.DEPLOY_NOTIFICATION_BOT_TOKEN ?? Bun.env.CONTROLLER_BOT_TOKEN ?? Bun.env.TELEGRAM_BOT_TOKEN,
+  notificationToken: Bun.env.DEPLOY_NOTIFICATION_BOT_TOKEN ?? Bun.env.CONTROLLER_BOT_TOKEN,
   notificationChatId: Bun.env.DEPLOY_NOTIFICATION_CHAT_ID,
   notificationApiBaseUrl: Bun.env.DEPLOY_NOTIFICATION_API_BASE_URL ?? "http://127.0.0.1:8081",
   retry: {

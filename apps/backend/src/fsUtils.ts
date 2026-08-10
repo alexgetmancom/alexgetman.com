@@ -30,19 +30,6 @@ export function atomicWriteText(filePath: string, content: string): void {
   }
 }
 
-export async function atomicWriteJson(filePath: string, value: unknown): Promise<void> {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const temp = tempPath(filePath);
-  try {
-    await Bun.write(temp, `${JSON.stringify(value, null, 2)}\n`);
-    fs.chmodSync(temp, 0o664);
-    fs.renameSync(temp, filePath);
-  } catch (error) {
-    fs.rmSync(temp, { force: true });
-    throw error;
-  }
-}
-
 export function parseObject(value: unknown): Record<string, unknown> | null {
   const object = jsonObject(value);
   return Object.keys(object).length > 0 ? object : null;

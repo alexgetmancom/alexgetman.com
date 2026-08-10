@@ -1,13 +1,11 @@
 import crypto from "node:crypto";
-import fs from "node:fs";
-import { and, asc, count, desc, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
-import { postEvents, postLocales, postMetrics, postTargets, publicationSources, siteJobs } from "../db/schema.js";
+import { postEvents, postLocales, publicationSources, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { log } from "../foundation/logger.js";
 import { withJobHeartbeat } from "../foundation/runtime/job-heartbeat.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
-import { atomicWriteJson, parseObject } from "../fsUtils.js";
+import { parseObject } from "../fsUtils.js";
 import { trackUsageAsync } from "../observability/usage.js";
 import { invalidatePublicSiteFeed } from "../public/site-read-model.js";
 import { nextRetryAt } from "../publishing/errors.js";
@@ -52,7 +50,7 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
       },
       () =>
         trackUsageAsync(backendDb, "publishing.site.materialize", () =>
-          renderFeedFiles(
+          materializeSitePosts(
             config,
             backendDb,
             fetch,
@@ -113,96 +111,19 @@ export function recoverStaleSiteJobs(backendDb: BackendDb, maxLockAgeSeconds = S
     .all().length;
 }
 
-export async function renderFeedFiles(
+export async function materializeSitePosts(
   config: BackendConfig,
   backendDb: BackendDb,
   fetchImpl: typeof fetch = fetch,
-  materializePostIds?: ReadonlySet<number>,
+  postIds?: ReadonlySet<number>,
 ): Promise<void> {
-  const startedAt = Date.now();
-  let loadMs = 0;
-  let mediaMs = 0;
-  let decorateMs = 0;
-  let writeMs = 0;
-  let sourceCount = 0;
-  let outputCount = 0;
-  let outputBytes = 0;
-  let success = false;
-  let failure: unknown;
-  try {
-    let phaseStartedAt = Date.now();
-    const targetUrls = siteTargetUrlsByPostKey(backendDb);
-    const previousItems = previousFeedItems(config);
-    const sources = sourceItems(backendDb);
-    sourceCount = sources.length;
-    loadMs = Date.now() - phaseStartedAt;
-
-    phaseStartedAt = Date.now();
-    let items: Awaited<ReturnType<typeof prepareFeedItem>>[];
-    try {
-      items = await Promise.all(
-        sources.map((item) => {
-          const postId = Number(item.post_id ?? 0);
-          const existing = materializePostIds && !materializePostIds.has(postId) ? previousItems.get(postId) : undefined;
-          return prepareFeedItem(config, item, targetUrls, fetchImpl, existing);
-        }),
-      );
-    } finally {
-      mediaMs = Date.now() - phaseStartedAt;
-    }
-
-    phaseStartedAt = Date.now();
-    const views = viewsByPostKey(backendDb);
-    for (const item of items.filter((value): value is Record<string, unknown> => value != null)) {
-      item.views = views.get(String(item.id ?? "")) ?? Number(item.views ?? 0);
-    }
-    const ordered = items
-      .filter((value): value is Record<string, unknown> => value != null)
-      .sort((a, b) => String(b.date ?? b.created_at ?? "").localeCompare(String(a.date ?? a.created_at ?? "")));
-    persistMaterializedSiteMedia(backendDb, ordered);
-    outputCount = ordered.length;
-    decorateMs = Date.now() - phaseStartedAt;
-
-    phaseStartedAt = Date.now();
-    try {
-      await atomicWriteJson(config.FEED_JSON, { updated_at: new Date().toISOString(), channel: config.CHANNEL_USERNAME, items: ordered });
-      const targetCounts = unsafeDb(backendDb)
-        .db.select({ target: postTargets.target, status: postTargets.status, count: count() })
-        .from(postTargets)
-        .groupBy(postTargets.target, postTargets.status)
-        .all();
-      await atomicWriteJson(config.SITE_CONTENT_METRICS_JSON, {
-        updated_at: new Date().toISOString(),
-        total: ordered.reduce((sum, item) => sum + Number(item.views ?? 0), 0),
-        posts: ordered.length,
-        targets: targetCounts,
-      });
-      outputBytes = fs.statSync(config.FEED_JSON).size + fs.statSync(config.SITE_CONTENT_METRICS_JSON).size;
-    } finally {
-      writeMs = Date.now() - phaseStartedAt;
-    }
-    success = true;
-  } catch (error) {
-    failure = error;
-    throw error;
-  } finally {
-    log(success ? "info" : "warn", "operation timing", {
-      operation: "publishing.site.materialize",
-      success,
-      totalMs: Date.now() - startedAt,
-      loadMs,
-      mediaMs,
-      decorateMs,
-      writeMs,
-      sourceCount,
-      outputCount,
-      outputBytes,
-      materializedPosts: materializePostIds?.size ?? sourceCount,
-      ...(failure === undefined ? {} : { error: failure instanceof Error ? failure.message : String(failure) }),
-    });
-  }
+  const sources = sourceItems(backendDb).filter((source) => !postIds || postIds.has(Number(source.post_id)));
+  const items = await Promise.all(sources.map((source) => prepareSiteMedia(config, source, fetchImpl)));
+  persistMaterializedSiteMedia(
+    backendDb,
+    items.filter((item): item is Record<string, unknown> => item != null),
+  );
 }
-
 function persistMaterializedSiteMedia(backendDb: BackendDb, items: Record<string, unknown>[]): void {
   const now = new Date().toISOString();
   unsafeDb(backendDb).db.transaction((tx) => {
@@ -357,43 +278,10 @@ function siteLocaleStates(backendDb: BackendDb): Map<number, SiteLocaleState> {
   return states;
 }
 
-function previousFeedItems(config: BackendConfig): Map<number, Record<string, unknown>> {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(config.FEED_JSON, "utf8")) as { items?: unknown };
-    if (!Array.isArray(parsed.items)) return new Map();
-    return new Map(
-      parsed.items.flatMap((item) => {
-        if (!item || typeof item !== "object") return [];
-        const record = item as Record<string, unknown>;
-        const postId = Number(record.post_id ?? 0);
-        return postId ? [[postId, record] as const] : [];
-      }),
-    );
-  } catch {
-    return new Map();
-  }
-}
-
-function siteTargetUrlsByPostKey(backendDb: BackendDb): Map<string, Array<{ target: string; url: string | null }>> {
-  const rows = unsafeDb(backendDb)
-    .db.select({ postKey: postTargets.postKey, target: postTargets.target, url: postTargets.url })
-    .from(postTargets)
-    .all();
-  const byPostKey = new Map<string, Array<{ target: string; url: string | null }>>();
-  for (const row of rows) {
-    const values = byPostKey.get(row.postKey) ?? [];
-    values.push({ target: row.target, url: row.url });
-    byPostKey.set(row.postKey, values);
-  }
-  return byPostKey;
-}
-
-async function prepareFeedItem(
+async function prepareSiteMedia(
   config: BackendConfig,
   source: Record<string, unknown>,
-  targetUrlsByPostKey: Map<string, Array<{ target: string; url: string | null }>>,
   fetchImpl: typeof fetch,
-  existing?: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
   const postId = Number(source.post_id ?? 0);
   if (!postId) return null;
@@ -403,63 +291,20 @@ async function prepareFeedItem(
   const hasEn = Boolean(source.has_en ?? targets.site_en) && isDue(source.publish_at_en, now);
   if (!hasRu && !hasEn) return null;
   const mediaRuSource = nonEmptyMedia(source.media ?? source.media_ru) ?? source.site_media_ru;
-  const mediaRu = hasRu
-    ? (existingMedia(existing, "media") ?? (await materializeSiteMedia(config, postId, "ru", mediaRuSource, fetchImpl)))
-    : [];
+  const mediaRu = hasRu ? await materializeSiteMedia(config, postId, "ru", mediaRuSource, fetchImpl) : [];
   const mediaEnSource = nonEmptyMedia(source.media_en ?? source.media ?? source.media_ru) ?? source.site_media_en ?? mediaRuSource;
-  const mediaEn = hasEn
-    ? (existingMedia(existing, "media_en") ?? (await materializeSiteMedia(config, postId, "en", mediaEnSource, fetchImpl)))
-    : [];
-  const targetUrls = targetUrlsByPostKey.get(`post:${postId}`) ?? [];
-  const url =
-    targetUrls.find((target) => target.target === "site_en" || target.target === "site_ru")?.url ??
-    targetUrls.find((target) => target.url)?.url;
-  return {
-    ...source,
-    id: `post:${postId}`,
-    post_id: postId,
-    url: url ?? source.url,
-    date: source.date ?? source.publish_at_ru ?? source.publish_at_en ?? new Date().toISOString(),
-    text: source.text_ru ?? source.text ?? "",
-    text_ru: source.text_ru ?? source.text ?? "",
-    text_en: source.text_en ?? "",
-    has_ru: hasRu,
-    has_en: hasEn,
-    media: mediaRu,
-    media_en: mediaEn,
-    image: mediaRu.find((item) => item.type === "image")?.path ?? null,
-    image_en: mediaEn.find((item) => item.type === "image")?.path ?? null,
-  };
+  const mediaEn = hasEn ? await materializeSiteMedia(config, postId, "en", mediaEnSource, fetchImpl) : [];
+  return { post_id: postId, has_ru: hasRu, has_en: hasEn, media: mediaRu, media_en: mediaEn };
 }
 
 function nonEmptyMedia(value: unknown): unknown[] | null {
   return Array.isArray(value) && value.length > 0 ? value : null;
 }
 
-/** Reuses the previous feed's already materialized media for a post outside this
- * cycle's job set. An empty result is deliberately treated as "nothing to reuse"
- * rather than "no media": a post whose earlier build produced no files must be
- * re-materialized on the next cycle, not pinned to empty forever. */
-function existingMedia(existing: Record<string, unknown> | undefined, key: "media" | "media_en"): Record<string, unknown>[] | null {
-  const media = existing?.[key];
-  if (!Array.isArray(media)) return null;
-  const items = media.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object");
-  return items.length > 0 ? items : null;
-}
-
 function isDue(value: unknown, now: number): boolean {
   if (typeof value !== "string" || !value) return true;
   const time = new Date(value).getTime();
   return Number.isNaN(time) || time <= now;
-}
-
-function viewsByPostKey(backendDb: BackendDb): Map<string, number> {
-  const rows = unsafeDb(backendDb)
-    .db.select({ postKey: postMetrics.postKey, value: postMetrics.value })
-    .from(postMetrics)
-    .where(and(eq(postMetrics.target, "telegram"), eq(postMetrics.metricName, "views")))
-    .all();
-  return new Map(rows.map((row) => [row.postKey, Number(row.value ?? 0)]));
 }
 
 function insertSiteEvent(

@@ -20,18 +20,13 @@ const envSchema = z
     DATA_DIR: z.string().default("/data"),
     STUDIO_CONFIG: z.string().default("studio.yaml"),
     PIPELINE_DB: z.string().default("/data/pipeline.db"),
-    FEED_JSON: z.string().default("/data/feed.json"),
-    SITE_CONTENT_METRICS_JSON: z.string().default("/data/content-metrics.json"),
     TELEGRAM_API_BASE_URL: z.string().default("http://bot-api:8081"),
-    TELEGRAM_BOT_TOKEN: z.string().optional(),
     CONTROLLER_BOT_TOKEN: z.string().optional(),
-    CLIENT_IP_HASH_SALT: z.string().optional(),
+    CLIENT_IP_HASH_SALT: z.string().min(16).default("development-only"),
     // Defaulted, not optional: every production nginx vhost sets X-Real-IP, and
     // when this was unset the whole internet collapsed onto one visitor identity
     // (see engagement/identity.ts), making the public rate limit one global budget.
     TRUSTED_CLIENT_IP_HEADER: z.enum(["x-real-ip", "cf-connecting-ip"]).default("x-real-ip"),
-    PUBLIC_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3600).default(60),
-    PUBLIC_RATE_LIMIT_PAGEVIEWS: z.coerce.number().int().min(1).max(10_000).default(240),
     COMMAND_CENTER_TOKEN: z.string().optional(),
     COMMAND_CENTER_URL: z.string().default("https://alexgetman.com/command-center"),
     MCP_STUDIO_TOKEN: z.string().min(16).optional(),
@@ -59,7 +54,7 @@ const envSchema = z
           .map((part) => Number(part.trim()))
           .filter((value) => Number.isSafeInteger(value) && value > 0),
       ),
-    CHANNEL_USERNAME: z.string().default("alexgetmancom"),
+    TELEGRAM_CHANNEL_USERNAME: z.string().default("alexgetmancom"),
     METRICS_REFRESH_INTERVAL_SECONDS: z.coerce.number().int().positive().default(10),
     /** Refreshes account-level followers and aggregate platform insights. */
     CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS: z.coerce
@@ -70,14 +65,10 @@ const envSchema = z
     // The public t.me page answers in about 90ms or not at all, and a failed
     // check simply returns in 15 minutes. Ten seconds of waiting bought nothing
     // and dominated the average collection time.
-    TELEGRAM_METRICS_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(4),
     MAX_METRIC_TASKS_PER_CYCLE: z.coerce.number().int().positive().default(30),
     METRIC_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
     OBSERVABILITY_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),
     ALERT_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(3600),
-    RUNTIME_RESTART_WINDOW_SECONDS: z.coerce.number().int().positive().default(1800),
-    RUNTIME_RESTART_ALERT_THRESHOLD: z.coerce.number().int().min(2).default(3),
-    MEMORY_ALERT_PERCENT: z.coerce.number().int().min(1).max(100).default(85),
     WORKER_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
     IDLE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(5),
     // Refuse material post edits shortly before delivery so one locale cannot
@@ -98,7 +89,6 @@ const envSchema = z
     PUBLISH_BACKOFF_BASE_SECONDS: z.coerce.number().int().positive().default(60),
     PUBLISH_BACKOFF_MAX_SECONDS: z.coerce.number().int().positive().default(3600),
     FFMPEG_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(600),
-    FFMPEG_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(2).default(2),
     /** Where optional heavy media transforms execute. Remote workers are
      * deliberately opt-in so a stock self-hosted Studio keeps working. */
     MEDIA_PROCESSOR_PROVIDER: z.enum(["local", "remote_http"]).default("local"),
@@ -116,30 +106,22 @@ const envSchema = z
     // pipeline/database disk mounted at /data.
     STUDIO_MEDIA_DIR: z.string().default("/data/video-media"),
     STUDIO_MEDIA_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
-    STUDIO_UPLOAD_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
-    POST_EVENTS_RETENTION_DAYS: z.coerce.number().int().min(30).max(3_650).default(365),
-    OPS_ACTIONS_RETENTION_DAYS: z.coerce.number().int().min(30).max(3_650).default(365),
-    SITE_PAGEVIEWS_RETENTION_DAYS: z.coerce.number().int().min(30).max(3_650).default(730),
-    RUNTIME_USAGE_RETENTION_DAYS: z.coerce.number().int().min(30).max(3_650).default(365),
     VIDEO_MEDIA_DIR: z.string().default("/data/video-media"),
     VIDEO_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
     // Video jobs heartbeat (see video-worker.ts's withJobHeartbeat) at a tighter
     // interval than the social pipeline, so this lock timeout only has to be a
     // few missed heartbeats wide to safely detect a crash.
     VIDEO_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(120),
-    VIDEO_UPLOAD_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(1800),
     // How many times reconciliation may ask a provider whether an ambiguous
     // publication exists before it stops polling and waits for an operator.
     // Higher than the publish budget on purpose: these are reads, and a
     // platform can take a while to expose a freshly created object.
     RECONCILE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(8),
-    VIDEO_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(30),
     // VIDEO_PREPARE_LEAD_MINUTES / VIDEO_REMINDER_MINUTES / VIDEO_MEDIA_RETENTION_HOURS
     // are owned by studio.yaml (see loadConfig); they are not env-configurable.
     SITE_PUBLIC_DIR: z.string().default("/data/site"),
-    THREADS_ACCESS_TOKEN: z.string().optional(),
+    THREADS_RU_ACCESS_TOKEN: z.string().optional(),
     THREADS_EN_ACCESS_TOKEN: z.string().optional(),
-    THREADS_METRICS: z.string().default("views,likes,replies,reposts,quotes"),
     THREADS_CONTAINER_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(180),
     THREADS_RETRY_DELAY_MS: z.coerce.number().int().min(1).max(30_000).default(2_000),
     X_CONSUMER_KEY: z.string().optional(),
@@ -148,17 +130,15 @@ const envSchema = z
     X_ACCESS_TOKEN_SECRET: z.string().optional(),
     ENABLE_X_METRICS: booleanFlag(false),
     ENABLE_X_PROFILE_METRICS: booleanFlag(true),
-    INSTAGRAM_ACCESS_TOKEN: z.string().optional(),
-    INSTAGRAM_USER_ID: z.string().optional(),
     INSTAGRAM_EN_ACCESS_TOKEN: z.string().optional(),
     INSTAGRAM_EN_USER_ID: z.string().optional(),
     INSTAGRAM_RU_ACCESS_TOKEN: z.string().optional(),
     INSTAGRAM_RU_USER_ID: z.string().optional(),
     INSTAGRAM_GRAPH_API_VERSION: z.string().default("v23.0"),
     ZERNIO_API_KEY: z.string().min(16).optional(),
-    YOUTUBE_CLIENT_ID: z.string().optional(),
-    YOUTUBE_CLIENT_SECRET: z.string().optional(),
-    YOUTUBE_REFRESH_TOKEN: z.string().optional(),
+    YOUTUBE_RU_CLIENT_ID: z.string().optional(),
+    YOUTUBE_RU_CLIENT_SECRET: z.string().optional(),
+    YOUTUBE_RU_REFRESH_TOKEN: z.string().optional(),
     YOUTUBE_EN_CLIENT_ID: z.string().optional(),
     YOUTUBE_EN_CLIENT_SECRET: z.string().optional(),
     YOUTUBE_EN_REFRESH_TOKEN: z.string().optional(),
@@ -199,10 +179,7 @@ const envSchema = z
     // Heartbeat/lock/timeout values are only meaningful in relation to each
     // other, and every field-level check above passes on a combination that
     // makes the watchdog steal jobs from a worker that is still running.
-    for (const [heartbeatKey, lockKey] of [
-      ["PUBLISH_HEARTBEAT_INTERVAL_SECONDS", "PUBLISH_LOCK_TIMEOUT_SECONDS"],
-      ["VIDEO_HEARTBEAT_INTERVAL_SECONDS", "VIDEO_LOCK_TIMEOUT_SECONDS"],
-    ] as const) {
+    for (const [heartbeatKey, lockKey] of [["PUBLISH_HEARTBEAT_INTERVAL_SECONDS", "PUBLISH_LOCK_TIMEOUT_SECONDS"]] as const) {
       // Two missed heartbeats must still fit inside the lock window; at exactly
       // one interval, ordinary scheduling jitter is enough to expire the lock.
       if (env[heartbeatKey] * 2 >= env[lockKey]) {
@@ -254,16 +231,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
     throw new Error("NODE_ENV=production is required when DEPLOYMENT_ENV=production");
   if (parsed.DEPLOYMENT_ENV === "production") {
     if (!parsed.COMMAND_CENTER_TOKEN) throw new Error("COMMAND_CENTER_TOKEN is required in production");
+    if (!env.CLIENT_IP_HASH_SALT) throw new Error("CLIENT_IP_HASH_SALT is required in production");
   }
   const studio = loadStudioConfig(parsed.STUDIO_CONFIG);
   // The channel default exists for the first deployment and is a hazard for
   // every one after it: a second Studio that enables text posting without
   // naming its own channel would publish into the first Studio's, because the
   // default is a real, live username. Development keeps the convenience.
-  if (parsed.NODE_ENV === "production" && studio.modules.text_posting && !env.CHANNEL_USERNAME)
-    throw new Error("CHANNEL_USERNAME must be set explicitly when text posting is enabled");
+  if (parsed.NODE_ENV === "production" && studio.modules.text_posting && !env.TELEGRAM_CHANNEL_USERNAME)
+    throw new Error("TELEGRAM_CHANNEL_USERNAME must be set explicitly when text posting is enabled");
   if (studio.modules.youtube && studio.modules.video_posting) {
-    for (const key of ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"] as const) {
+    for (const key of ["YOUTUBE_RU_CLIENT_ID", "YOUTUBE_RU_CLIENT_SECRET", "YOUTUBE_RU_REFRESH_TOKEN"] as const) {
       if (!parsed[key]) throw new Error(`${key} is required when YouTube video publishing is enabled`);
     }
   }
@@ -283,7 +261,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
     VIDEO_MEDIA_RETENTION_HOURS: studio.video.retention_hours,
     TIMEZONE: studio.timezone,
     TIMEZONE_LABEL: studio.timezoneLabel,
-    controllerBotToken: parsed.CONTROLLER_BOT_TOKEN ?? parsed.TELEGRAM_BOT_TOKEN,
+    controllerBotToken: parsed.CONTROLLER_BOT_TOKEN,
     commandCenterToken: parsed.COMMAND_CENTER_TOKEN,
     studio,
   };

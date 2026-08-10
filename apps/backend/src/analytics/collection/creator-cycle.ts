@@ -72,7 +72,7 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
     );
   const community = [
     ...(config.controllerBotToken ? ["telegram_profile"] : []),
-    ...(config.THREADS_ACCESS_TOKEN ? ["threads_profile"] : []),
+    ...(config.THREADS_RU_ACCESS_TOKEN ? ["threads_profile"] : []),
   ];
   if (community.length > 0)
     profiles += await step(backendDb, "community", "analytics.creator_profile.sync", () =>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { FeedItem } from "../../../backend/src/public/site-read-model";
-import { postImagePath, postMediaGallery, postOgImagePath, postVisualMedia } from "./media";
+import { postImagePath, postMediaGallery, postSocialImagePath, postVisualMedia } from "./media";
 
 function feedItem(overrides: Partial<FeedItem> = {}): FeedItem {
   return {
@@ -127,13 +127,18 @@ describe("postImagePath", () => {
   });
 });
 
-describe("postOgImagePath", () => {
-  it("builds a deterministic per-post, per-locale path", () => {
-    expect(postOgImagePath(feedItem({ post_id: 42 }), "ru")).toBe("/og/posts/post-42-ru.jpg");
-    expect(postOgImagePath(feedItem({ post_id: 42 }), "en")).toBe("/og/posts/post-42-en.jpg");
+describe("postSocialImagePath", () => {
+  it("uses the post image when one exists", () => {
+    expect(postSocialImagePath(feedItem({ media: [{ type: "image", path: "media/post.jpg" }] }), "ru")).toBe("/media/post.jpg");
   });
 
-  it("falls back to the generic social image when there is no post id", () => {
-    expect(postOgImagePath(feedItem({ post_id: 0 }), "en")).toBe("/social-image.jpg");
+  it("uses the poster instead of a video file", () => {
+    expect(postSocialImagePath(feedItem({ media_en: [{ type: "video", path: "media/post.mp4", poster: "media/post.jpg" }] }), "en")).toBe(
+      "/media/post.jpg",
+    );
+  });
+
+  it("falls back to the generic social image without visual media", () => {
+    expect(postSocialImagePath(feedItem(), "en")).toBe("/social-image.jpg");
   });
 });

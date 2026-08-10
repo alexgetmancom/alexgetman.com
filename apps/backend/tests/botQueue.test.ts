@@ -7,6 +7,7 @@ import type { StudioQueueSnapshot } from "../src/studio/services/queue.js";
 import { queueService } from "../src/studio/services/queue.js";
 import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { createTestVideoAsset } from "./helpers/video.js";
 
 describe("Telegram work queue", () => {
   it("separates upcoming work, unfinished drafts and actual failed targets", () => {
@@ -75,7 +76,14 @@ describe("Telegram work queue", () => {
         .run();
       const video = backendDb.db
         .insert(videoDrafts)
-        .values({ actorId: 7, assetKey: "video", label: "Черновик видео", status: "editing", createdAt: now, updatedAt: now })
+        .values({
+          actorId: 7,
+          studioMediaAssetId: createTestVideoAsset(backendDb, 7),
+          label: "Черновик видео",
+          status: "editing",
+          createdAt: now,
+          updatedAt: now,
+        })
         .returning({ id: videoDrafts.id })
         .get();
       if (!video) throw new Error("video draft missing");
@@ -103,7 +111,7 @@ describe("Telegram work queue", () => {
         .values(
           Array.from({ length: 100 }, (_, index) => ({
             actorId: 7,
-            assetKey: `published-${index}`,
+            studioMediaAssetId: createTestVideoAsset(backendDb, 7),
             label: `Published video ${index}`,
             status: "published",
             createdAt: now,
@@ -116,7 +124,7 @@ describe("Telegram work queue", () => {
         .insert(videoDrafts)
         .values({
           actorId: 7,
-          assetKey: "scheduled-video",
+          studioMediaAssetId: createTestVideoAsset(backendDb, 7),
           label: "Recent scheduled video",
           status: "scheduled",
           scheduledAt,
@@ -268,7 +276,7 @@ describe("Telegram work queue", () => {
         .insert(videoDrafts)
         .values({
           actorId: 7,
-          assetKey: "video",
+          studioMediaAssetId: createTestVideoAsset(backendDb, 7),
           label: `${"x".repeat(29)}${"😀".repeat(9)}`,
           status: "scheduled",
           scheduledAt,

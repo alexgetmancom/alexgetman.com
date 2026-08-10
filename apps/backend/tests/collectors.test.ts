@@ -14,9 +14,9 @@ const config = loadConfig({
   X_CONSUMER_SECRET: "cs",
   X_ACCESS_TOKEN: "at",
   X_ACCESS_TOKEN_SECRET: "ats",
-  THREADS_ACCESS_TOKEN: "ru-token",
+  THREADS_RU_ACCESS_TOKEN: "ru-token",
   THREADS_EN_ACCESS_TOKEN: "en-token",
-  INSTAGRAM_ACCESS_TOKEN: "shared-token",
+  INSTAGRAM_RU_ACCESS_TOKEN: "shared-token",
   INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
 });
 
@@ -78,7 +78,7 @@ describe("collectTelegram", () => {
   });
 
   it("accepts Telegram links and converts compact view and reaction counts", async () => {
-    const telegramConfig = loadConfig({ CHANNEL_USERNAME: "@alexchannel" });
+    const telegramConfig = loadConfig({ TELEGRAM_CHANNEL_USERNAME: "@alexchannel" });
     const fetchMock = (async () =>
       new Response(
         '<section data-post="alexchannel/42"><span class="tgme_widget_message_views">1.2K</span><i class="tgme_reaction">x</i>3</section>',
@@ -162,12 +162,13 @@ describe("collectThreads", () => {
     expect(calls[1]?.url).toContain("access_token=ru-token");
   });
 
-  it("falls back to the Russian token when no English one is configured", async () => {
-    const ruOnly = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", THREADS_ACCESS_TOKEN: "ru-token" });
+  it("refuses an English target when only the Russian token is configured", async () => {
+    const ruOnly = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", THREADS_RU_ACCESS_TOKEN: "ru-token" });
     const { fetch: impl, calls } = recordingFetch(() => json({ data: [] }));
-    await collectThreads(task({ target: "threads_en", url: "https://x.test/p" }), ruOnly, impl);
-
-    expect(calls[0]?.url).toContain("access_token=ru-token");
+    await expect(collectThreads(task({ target: "threads_en", url: "https://x.test/p" }), ruOnly, impl)).rejects.toThrow(
+      "missing_threads_token_or_id",
+    );
+    expect(calls).toHaveLength(0);
   });
 
   it("fetches the permalink only when the task has no URL, and rewrites threads.net", async () => {
@@ -263,11 +264,10 @@ describe("collectInstagramStory", () => {
     expect(fb.calls[0]?.url).toStartWith("https://graph.facebook.com/");
   });
 
-  it("uses the Russian locale token instead of the unprefixed Russian token", async () => {
+  it("uses the Russian locale token", async () => {
     const perLocale = loadConfig({
       CONTROLLER_ADMIN_IDS: "42",
       CONTROLLER_BOT_TOKEN: "t",
-      INSTAGRAM_ACCESS_TOKEN: "shared",
       INSTAGRAM_RU_ACCESS_TOKEN: "ru-only",
     });
     const { fetch: impl, calls } = recordingFetch(() => json({ data: [] }));

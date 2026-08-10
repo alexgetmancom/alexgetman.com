@@ -24,7 +24,11 @@ const withDb = <T>(run: (backendDb: UnsafeBackendDb) => T | Promise<T>) =>
 describe("creator analytics collection", () => {
   it("retains live YouTube channel counters when the Analytics API is unavailable", async () => {
     await withDb(async (backendDb) => {
-      const config = loadConfig({ YOUTUBE_CLIENT_ID: "client", YOUTUBE_CLIENT_SECRET: "secret", YOUTUBE_REFRESH_TOKEN: "refresh" });
+      const config = loadConfig({
+        YOUTUBE_RU_CLIENT_ID: "client",
+        YOUTUBE_RU_CLIENT_SECRET: "secret",
+        YOUTUBE_RU_REFRESH_TOKEN: "refresh",
+      });
       config.studio.modules.analytics = true;
       config.studio.modules.video_posting = true;
       config.studio.modules.youtube = true;
@@ -112,8 +116,6 @@ describe("creator analytics collection", () => {
   it("syncs native Instagram profile snapshots with the matching locale credentials", async () => {
     await withDb(async (backendDb) => {
       const config = loadConfig({
-        INSTAGRAM_ACCESS_TOKEN: "shared-token",
-        INSTAGRAM_USER_ID: "shared-user",
         INSTAGRAM_RU_ACCESS_TOKEN: "ru-token",
         INSTAGRAM_RU_USER_ID: "ru-user",
         INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
@@ -161,8 +163,8 @@ describe("creator analytics collection", () => {
         locale: "en",
       });
       const config = loadConfig({
-        INSTAGRAM_ACCESS_TOKEN: "token",
-        INSTAGRAM_USER_ID: "user",
+        INSTAGRAM_RU_ACCESS_TOKEN: "token",
+        INSTAGRAM_RU_USER_ID: "user",
         INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
         INSTAGRAM_EN_USER_ID: "en-user",
       });
@@ -198,7 +200,11 @@ describe("creator analytics collection", () => {
         publishedAt,
         externalId: "youtube-scope-test",
       });
-      const config = loadConfig({ YOUTUBE_CLIENT_ID: "client", YOUTUBE_CLIENT_SECRET: "secret", YOUTUBE_REFRESH_TOKEN: "refresh" });
+      const config = loadConfig({
+        YOUTUBE_RU_CLIENT_ID: "client",
+        YOUTUBE_RU_CLIENT_SECRET: "secret",
+        YOUTUBE_RU_REFRESH_TOKEN: "refresh",
+      });
       config.studio.modules.video_posting = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
@@ -243,7 +249,7 @@ describe("creator analytics collection", () => {
         publishedAt,
         externalId: "missing-reel",
       });
-      const config = loadConfig({ INSTAGRAM_ACCESS_TOKEN: "token", INSTAGRAM_USER_ID: "user" });
+      const config = loadConfig({ INSTAGRAM_RU_ACCESS_TOKEN: "token", INSTAGRAM_RU_USER_ID: "user" });
       config.studio.modules.video_posting = true;
       config.studio.modules.instagram = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
@@ -274,7 +280,11 @@ describe("creator analytics collection", () => {
         publishedAt,
         externalId: "delayed-analytics",
       });
-      const config = loadConfig({ YOUTUBE_CLIENT_ID: "client", YOUTUBE_CLIENT_SECRET: "secret", YOUTUBE_REFRESH_TOKEN: "refresh" });
+      const config = loadConfig({
+        YOUTUBE_RU_CLIENT_ID: "client",
+        YOUTUBE_RU_CLIENT_SECRET: "secret",
+        YOUTUBE_RU_REFRESH_TOKEN: "refresh",
+      });
       config.studio.modules.video_posting = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
@@ -324,7 +334,7 @@ describe("creator analytics collection", () => {
         publishedAt,
         externalId: "native-comments",
       });
-      const config = loadConfig({ INSTAGRAM_ACCESS_TOKEN: "token", INSTAGRAM_USER_ID: "user" });
+      const config = loadConfig({ INSTAGRAM_RU_ACCESS_TOKEN: "token", INSTAGRAM_RU_USER_ID: "user" });
       config.studio.modules.video_posting = true;
       config.studio.modules.instagram = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
@@ -392,7 +402,11 @@ describe("creator analytics collection", () => {
         publishedAt,
         externalId: "youtube-analytics-test",
       });
-      const config = loadConfig({ YOUTUBE_CLIENT_ID: "client", YOUTUBE_CLIENT_SECRET: "secret", YOUTUBE_REFRESH_TOKEN: "refresh" });
+      const config = loadConfig({
+        YOUTUBE_RU_CLIENT_ID: "client",
+        YOUTUBE_RU_CLIENT_SECRET: "secret",
+        YOUTUBE_RU_REFRESH_TOKEN: "refresh",
+      });
       config.studio.modules.video_posting = true;
       const requested: string[] = [];
       const fetchMock = (async (input: URL | RequestInfo) => {
@@ -480,7 +494,11 @@ describe("creator analytics collection", () => {
           targetIds.map((videoTargetId) => ({ videoTargetId, nextCheckAt: new Date(Date.now() - 1_000).toISOString(), updatedAt: now })),
         )
         .run();
-      const config = loadConfig({ YOUTUBE_CLIENT_ID: "client", YOUTUBE_CLIENT_SECRET: "secret", YOUTUBE_REFRESH_TOKEN: "revoked" });
+      const config = loadConfig({
+        YOUTUBE_RU_CLIENT_ID: "client",
+        YOUTUBE_RU_CLIENT_SECRET: "secret",
+        YOUTUBE_RU_REFRESH_TOKEN: "revoked",
+      });
       config.studio.modules.video_posting = true;
       let refreshRequests = 0;
       const fetchMock = (async (input: URL | RequestInfo) => {

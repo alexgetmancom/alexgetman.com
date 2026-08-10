@@ -5,13 +5,15 @@ import type { MetricTask } from "../metric-schedule.js";
 import { TerminalMetricError } from "./errors.js";
 import type { MetricResult } from "./types.js";
 
+const TELEGRAM_METRICS_TIMEOUT_MS = 4_000;
+
 export async function collectTelegram(task: MetricTask, config: BackendConfig, fetchImpl: typeof fetch): Promise<MetricResult> {
-  const channel = config.CHANNEL_USERNAME.replace(/^@/, "");
+  const channel = config.TELEGRAM_CHANNEL_USERNAME.replace(/^@/, "");
   const messageId = task.externalId ?? telegramMessageIdFromUrl(task.url, channel);
   if (!messageId || !/^\d+$/.test(messageId)) throw new TerminalMetricError(`invalid_telegram_message_id:${messageId ?? "missing"}`);
   const html = await requestText(fetchImpl, `https://t.me/${channel}/${messageId}?embed=1&mode=tme`, {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; alexgetman-backend/1.0)" },
-    signal: AbortSignal.timeout(config.TELEGRAM_METRICS_TIMEOUT_SECONDS * 1000),
+    signal: AbortSignal.timeout(TELEGRAM_METRICS_TIMEOUT_MS),
   });
   // `posts.message_id` is a local Studio reference for newly-created drafts.
   // The public channel URL and the metrics page use Delivery's external ID.
@@ -40,7 +42,7 @@ export async function collectTelegramStory(task: MetricTask, config: BackendConf
   const instance = createChannelStoryClient(config);
   await instance.connect();
   try {
-    const story = (await instance.getStoriesById(config.CHANNEL_USERNAME.replace(/^@/, ""), Number(task.externalId)))[0];
+    const story = (await instance.getStoriesById(config.TELEGRAM_CHANNEL_USERNAME.replace(/^@/, ""), Number(task.externalId)))[0];
     if (!story) throw new TerminalMetricError(`telegram_story_not_found:${task.externalId}`);
     const interactions = story.interactions;
     const reactions = Number(interactions?.reactionsCount ?? 0);

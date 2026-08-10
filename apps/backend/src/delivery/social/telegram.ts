@@ -19,7 +19,7 @@ export async function publishToTelegram(
 ): Promise<PublishResult> {
   const token = config.controllerBotToken;
   if (!token) return { skipped: true, reason: "missing Telegram bot token" };
-  const chatId = `@${config.CHANNEL_USERNAME.replace(/^@/, "")}`;
+  const chatId = `@${config.TELEGRAM_CHANNEL_USERNAME.replace(/^@/, "")}`;
   const text = payloadText(payload);
   const media = payloadMedia(payload);
   const entities = Array.isArray(payload.entities) ? payload.entities : undefined;

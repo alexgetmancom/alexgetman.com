@@ -111,7 +111,7 @@ export function formatPipelinePosts(
       typeof row.telegram_url === "string" && row.telegram_url
         ? row.telegram_url
         : telegramMessageId
-          ? `https://t.me/${config.CHANNEL_USERNAME.replace(/^@/, "")}/${telegramMessageId}`
+          ? `https://t.me/${config.TELEGRAM_CHANNEL_USERNAME.replace(/^@/, "")}/${telegramMessageId}`
           : null;
     const result: Record<string, unknown> = {
       post_id: postId,

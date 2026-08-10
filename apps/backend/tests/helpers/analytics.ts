@@ -1,5 +1,6 @@
 import type { UnsafeBackendDb } from "../../src/db/client.js";
 import { videoDrafts, videoTargets } from "../../src/db/schema.js";
+import { createTestVideoAsset } from "./video.js";
 
 export type PublishedVideoOptions = {
   label?: string;
@@ -22,7 +23,7 @@ export function insertPublishedVideo(backendDb: UnsafeBackendDb, options: Publis
     .values({
       actorId: 1,
       locale: options.locale ?? "ru",
-      assetKey: "asset",
+      studioMediaAssetId: createTestVideoAsset(backendDb),
       label: options.label ?? "Video",
       status: "published",
       createdAt: options.publishedAt,

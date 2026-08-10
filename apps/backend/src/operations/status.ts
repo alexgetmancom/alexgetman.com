@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { gitRevision } from "../foundation/runtime/git.js";
-import { workerLiveness } from "../foundation/runtime/worker-state.js";
+import { expectedWorkerNames, workerLiveness } from "../foundation/runtime/worker-state.js";
 
 type StatusCountRow = {
   status: string;
@@ -26,20 +26,24 @@ function total(counts: Record<string, number>): number {
   return Object.values(counts).reduce((sum, count) => sum + count, 0);
 }
 
-function workers(backendDb: BackendDb) {
-  return (
-    unsafeDb(backendDb).sqlite.query("SELECT name,state_json,updated_at FROM worker_state ORDER BY name").all() as WorkerStateRow[]
-  ).map((row) => {
-    const state = JSON.parse(row.state_json) as Record<string, import("../db/schema.js").JsonValue>;
-    return {
-      name: row.name,
-      ok: state.ok !== false,
-      lastRunAt: typeof state.last_run_at === "string" ? state.last_run_at : row.updated_at,
-      lastError:
-        typeof state.scheduler_error === "string" ? state.scheduler_error : typeof state.last_error === "string" ? state.last_error : null,
-      ...workerLiveness(state, row.updated_at),
-    };
-  });
+function workers(backendDb: BackendDb, expectedNames: ReadonlySet<string>) {
+  return (unsafeDb(backendDb).sqlite.query("SELECT name,state_json,updated_at FROM worker_state ORDER BY name").all() as WorkerStateRow[])
+    .filter((row) => expectedNames.has(row.name))
+    .map((row) => {
+      const state = JSON.parse(row.state_json) as Record<string, import("../db/schema.js").JsonValue>;
+      return {
+        name: row.name,
+        ok: state.ok !== false,
+        lastRunAt: typeof state.last_run_at === "string" ? state.last_run_at : row.updated_at,
+        lastError:
+          typeof state.scheduler_error === "string"
+            ? state.scheduler_error
+            : typeof state.last_error === "string"
+              ? state.last_error
+              : null,
+        ...workerLiveness(state, row.updated_at),
+      };
+    });
 }
 
 function countRows(backendDb: BackendDb, table: string): number {
@@ -49,7 +53,10 @@ function countRows(backendDb: BackendDb, table: string): number {
 
 /** Compact health-oriented status shared by text-first and video-first Studios. */
 export function compactOperationsStatus(config: BackendConfig, backendDb: BackendDb) {
-  const workerRows = workers(backendDb);
+  const expectedWorkers = expectedWorkerNames(config);
+  const workerRows = workers(backendDb, new Set(expectedWorkers));
+  const observedWorkers = new Set(workerRows.map((worker) => worker.name));
+  const missingWorkers = expectedWorkers.filter((name) => !observedWorkers.has(name));
   const postTargetCounts = statusCounts(backendDb, "post_targets");
   const publishJobCounts = statusCounts(backendDb, "publish_jobs");
   const siteJobCounts = statusCounts(backendDb, "site_jobs");
@@ -82,7 +89,8 @@ export function compactOperationsStatus(config: BackendConfig, backendDb: Backen
     )
     .get() as { count: number };
   const unhealthy =
-    workerRows.some((worker) => !worker.ok) ||
+    missingWorkers.length > 0 ||
+    workerRows.some((worker) => !worker.ok || worker.stale) ||
     (postTargetCounts.failed ?? 0) > 0 ||
     (postTargetCounts.verification_required ?? 0) > 0 ||
     (siteJobCounts.failed ?? 0) > 0 ||
@@ -100,6 +108,7 @@ export function compactOperationsStatus(config: BackendConfig, backendDb: Backen
       exists: fs.existsSync(config.PIPELINE_DB),
     },
     workers: workerRows,
+    missingWorkers,
     posts: {
       total: countRows(backendDb, "posts"),
       targets: { total: total(postTargetCounts), byStatus: postTargetCounts },

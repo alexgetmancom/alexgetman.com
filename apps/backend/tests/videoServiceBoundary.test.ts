@@ -60,8 +60,8 @@ function fixture(backendDb: UnsafeBackendDb, targets = ["instagram_reels"]): Vid
   replaceVideoTargets(backendDb, draftId, targets as ("youtube_shorts" | "instagram_reels")[]);
   const config = loadConfig({
     CONTROLLER_ADMIN_IDS: "42",
-    INSTAGRAM_ACCESS_TOKEN: "instagram-token",
-    INSTAGRAM_USER_ID: "instagram-user",
+    INSTAGRAM_RU_ACCESS_TOKEN: "instagram-token",
+    INSTAGRAM_RU_USER_ID: "instagram-user",
     STUDIO_MEDIA_DIR: directory,
     VIDEO_MEDIA_DIR: directory,
   });

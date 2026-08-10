@@ -20,6 +20,14 @@ import { compactOperationsStatus } from "../src/operations/status.js";
 import { publicationTimeline } from "../src/operations/timeline.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
+function insertVideoAsset(backendDb: ReturnType<typeof openBackendDb>): void {
+  backendDb.sqlite
+    .query(
+      "INSERT INTO studio_media_assets(id,actor_id,kind,mime_type,filename,local_path,byte_size,sha256,source,created_at) VALUES (1,1,'video','video/mp4','test.mp4','/tmp/test.mp4',1,'test','test',?)",
+    )
+    .run(new Date().toISOString());
+}
+
 describe("TypeScript operations tooling", () => {
   it("builds a durable publication timeline with parsed details and durations", () => {
     const backendDb = openBackendDb(":memory:");
@@ -176,7 +184,8 @@ describe("TypeScript operations tooling", () => {
 
       const status = compactOperationsStatus(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb);
 
-      expect(status.ok).toBe(true);
+      expect(status.ok).toBe(false);
+      expect(status.missingWorkers).toContain("story-cards");
       expect(status.posts).toEqual({
         total: 1,
         targets: { total: 1, byStatus: { published: 1 } },
@@ -204,9 +213,10 @@ describe("TypeScript operations tooling", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
+      insertVideoAsset(backendDb);
       backendDb.sqlite
         .prepare(
-          "INSERT INTO video_drafts(id,actor_id,label,asset_key,status,created_at,updated_at) VALUES (1,1,'video','asset','partial',?,?)",
+          "INSERT INTO video_drafts(id,actor_id,label,studio_media_asset_id,status,created_at,updated_at) VALUES (1,1,'video',1,'partial',?,?)",
         )
         .run(now, now);
       backendDb.sqlite
@@ -239,13 +249,16 @@ describe("TypeScript operations tooling", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
+      insertVideoAsset(backendDb);
       for (const [id, status] of [
         [1, "draft"],
         [2, "cancelled"],
         [3, "partial"],
       ] as const) {
         backendDb.sqlite
-          .query("INSERT INTO video_drafts(id,actor_id,label,asset_key,status,created_at,updated_at) VALUES (?,1,'test','asset',?,?,?)")
+          .query(
+            "INSERT INTO video_drafts(id,actor_id,label,studio_media_asset_id,status,created_at,updated_at) VALUES (?,1,'test',1,?,?,?)",
+          )
           .run(id, status, now, now);
         backendDb.sqlite
           .query(
@@ -266,9 +279,10 @@ describe("TypeScript operations tooling", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
+      insertVideoAsset(backendDb);
       backendDb.sqlite
         .query(
-          "INSERT INTO video_drafts(id,actor_id,label,asset_key,status,created_at,updated_at) VALUES (1,1,'test','asset','published',?,?)",
+          "INSERT INTO video_drafts(id,actor_id,label,studio_media_asset_id,status,created_at,updated_at) VALUES (1,1,'test',1,'published',?,?)",
         )
         .run(now, now);
       backendDb.sqlite
@@ -304,6 +318,7 @@ describe("TypeScript operations tooling", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
+      insertVideoAsset(backendDb);
       backendDb.sqlite
         .query(
           "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,last_error,created_at,updated_at) VALUES (1,'post:1',1,'x','verification_required','socket closed',?,?)",
@@ -316,7 +331,7 @@ describe("TypeScript operations tooling", () => {
         .run(now);
       backendDb.sqlite
         .query(
-          "INSERT INTO video_drafts(id,actor_id,label,asset_key,status,created_at,updated_at) VALUES (1,1,'video','asset','partial',?,?)",
+          "INSERT INTO video_drafts(id,actor_id,label,studio_media_asset_id,status,created_at,updated_at) VALUES (1,1,'video',1,'partial',?,?)",
         )
         .run(now, now);
       backendDb.sqlite

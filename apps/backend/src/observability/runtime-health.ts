@@ -6,6 +6,9 @@ import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 
 const RUNTIME_STATE_KEY = "runtime";
+const RESTART_WINDOW_SECONDS = 30 * 60;
+const RESTART_ALERT_THRESHOLD = 3;
+const MEMORY_ALERT_PERCENT = 85;
 
 /** Identifies this process. A different value in the persisted state means the
  * process was replaced — deploy, manual restart, healthcheck kill or OOM. */
@@ -60,9 +63,9 @@ export function recordProcessRestart(config: BackendConfig, backendDb: BackendDb
     return false;
   }
 
-  const windowStart = Date.now() - config.RUNTIME_RESTART_WINDOW_SECONDS * 1000;
+  const windowStart = Date.now() - RESTART_WINDOW_SECONDS * 1000;
   const restartsAt = [...previous.restartsAt, bootedAt].filter((at) => Date.parse(at) >= windowStart).slice(-20);
-  const looping = restartsAt.length >= config.RUNTIME_RESTART_ALERT_THRESHOLD;
+  const looping = restartsAt.length >= RESTART_ALERT_THRESHOLD;
   writeRuntimeState(backendDb, { bootId: BOOT_ID, bootedAt, restartsAt });
 
   const previousUptimeSeconds = previous.bootedAt ? Math.round((Date.parse(bootedAt) - Date.parse(previous.bootedAt)) / 1000) : null;
@@ -71,7 +74,7 @@ export function recordProcessRestart(config: BackendConfig, backendDb: BackendDb
     severity: looping ? "error" : "info",
     target: "runtime",
     message: looping
-      ? `Backend restarted ${restartsAt.length} times in the last ${Math.round(config.RUNTIME_RESTART_WINDOW_SECONDS / 60)} minutes`
+      ? `Backend restarted ${restartsAt.length} times in the last ${Math.round(RESTART_WINDOW_SECONDS / 60)} minutes`
       : `Backend restarted (previous process ran ${previousUptimeSeconds ?? "?"}s)`,
     details: { bootedAt, previousBootedAt: previous.bootedAt, previousUptimeSeconds, restartsInWindow: restartsAt.length },
     // Only the escalated event needs suppression; a plain restart is not
@@ -116,7 +119,7 @@ export function recordMemoryPressure(
   if (!limitBytes) return false;
   const rss = process.memoryUsage().rss;
   const usedPercent = Math.round((rss / limitBytes) * 100);
-  if (usedPercent < config.MEMORY_ALERT_PERCENT) return false;
+  if (usedPercent < MEMORY_ALERT_PERCENT) return false;
   const toMb = (bytes: number) => Math.round(bytes / 1024 / 1024);
   return recordDomainEvent(backendDb.events, {
     type: "runtime.memory.pressure",

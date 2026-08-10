@@ -127,9 +127,7 @@ try {
     "-e",
     "SITE_PUBLIC_DIR=/data/site",
     "-e",
-    "FEED_JSON=/data/feed.json",
     "-e",
-    "SITE_CONTENT_METRICS_JSON=/data/content-metrics.json",
     "-e",
     "MEDIA_CACHE_DIR=/data/media-cache",
     "-e",
@@ -141,7 +139,7 @@ try {
     "-e",
     "PORT=8788",
     "-e",
-    "CHANNEL_USERNAME=alexgetmancom",
+    "TELEGRAM_CHANNEL_USERNAME=alexgetmancom",
     image,
   ]);
   if (created.code !== 0) throw new Error(`docker create failed: ${created.out}`);

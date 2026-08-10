@@ -1,6 +1,6 @@
 import type { FeedItem } from "../server/public-site";
 import { entityUrl } from "./entity-url";
-import { postOgImagePath, postVisualMedia } from "./media";
+import { postSocialImagePath, postVisualMedia } from "./media";
 
 const SITE_ORIGIN = "https://alexgetman.com";
 
@@ -21,7 +21,7 @@ export function buildPostSchema({ item, locale, pageTitle, description, canonica
   const author = locale === "ru" ? "Алекс Гетман" : "Alex Getman";
   const authorUrl = locale === "ru" ? `${SITE_ORIGIN}/ru/` : `${SITE_ORIGIN}/`;
   const inLanguage = locale === "ru" ? "ru-RU" : "en-US";
-  const ogImage = postOgImagePath(item, locale);
+  const ogImage = postSocialImagePath(item, locale);
   const visualMedia = postVisualMedia(item, locale);
   const primaryVideo = visualMedia?.type === "video" ? visualMedia : null;
   const sourceUrls = item.sources.map((source) => source.url);

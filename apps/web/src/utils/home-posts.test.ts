@@ -97,19 +97,19 @@ describe("toHomePost", () => {
     expect(post.posterSrc).toContain("1-en-0-poster-960.webp");
   });
 
-  it("falls back to the OG image when no post media file exists on disk", () => {
-    touch("og/posts/post-1-en.jpg");
+  it("falls back to the generic social image when post media is missing on disk", () => {
+    touch("social-image.jpg");
     const post = toHomePost(feedItem({ image_en: "media/posts/1-en-0.jpg" /* not touched: missing on disk */ }), "en");
 
     expect(post.mediaType).toBe("image");
-    expect(post.image).toBe("og/posts/post-1-en.jpg");
+    expect(post.image).toBe("social-image.jpg");
   });
 
-  it("has no image at all when neither post media nor the OG image exist", () => {
+  it("uses the checked-in generic image when post media is missing", () => {
     const post = toHomePost(feedItem({ image_en: "media/posts/1-en-0.jpg" }), "en");
 
-    expect(post.mediaType).toBeNull();
-    expect(post.image).toBeNull();
+    expect(post.mediaType).toBe("image");
+    expect(post.image).toBe("social-image.jpg");
   });
 
   it("drops gallery entries whose file is missing on disk", () => {

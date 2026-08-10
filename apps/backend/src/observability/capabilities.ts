@@ -9,8 +9,8 @@ type CapabilityReportEntry = { target: string; required: readonly string[]; miss
 
 const serviceRequirements: Record<string, readonly string[]> = {
   controller_bot: ["CONTROLLER_BOT_TOKEN", "CONTROLLER_ADMIN_IDS"],
-  youtube_shorts: ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"],
-  instagram_reels: ["INSTAGRAM_ACCESS_TOKEN", "INSTAGRAM_USER_ID"],
+  youtube_shorts: ["YOUTUBE_RU_CLIENT_ID", "YOUTUBE_RU_CLIENT_SECRET", "YOUTUBE_RU_REFRESH_TOKEN"],
+  instagram_reels: ["INSTAGRAM_RU_ACCESS_TOKEN", "INSTAGRAM_RU_USER_ID"],
 };
 
 /** Read-only readiness report shared by diagnostics, observability and future agents. */
@@ -71,10 +71,10 @@ function registeredRequirements(config: BackendConfig, backendDb: BackendDb): Ma
 
 function videoTargetRequirements(target: string, provider: string): readonly string[] {
   if (provider === "zernio") return ["ZERNIO_API_KEY"];
-  if (target === "youtube_shorts") return ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"];
+  if (target === "youtube_shorts") return ["YOUTUBE_RU_CLIENT_ID", "YOUTUBE_RU_CLIENT_SECRET", "YOUTUBE_RU_REFRESH_TOKEN"];
   if (target === "youtube_shorts_en") return ["YOUTUBE_EN_CLIENT_ID", "YOUTUBE_EN_CLIENT_SECRET", "YOUTUBE_EN_REFRESH_TOKEN"];
   return target === "instagram_reels"
-    ? ["INSTAGRAM_ACCESS_TOKEN", "INSTAGRAM_USER_ID"]
+    ? ["INSTAGRAM_RU_ACCESS_TOKEN", "INSTAGRAM_RU_USER_ID"]
     : ["INSTAGRAM_EN_ACCESS_TOKEN", "INSTAGRAM_EN_USER_ID"];
 }
 

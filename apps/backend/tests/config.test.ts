@@ -20,13 +20,14 @@ describe("loadConfig", () => {
         NODE_ENV: "production",
         DEPLOYMENT_ENV: "production",
         COMMAND_CENTER_TOKEN: "b".repeat(16),
-        CHANNEL_USERNAME: "example",
+        CLIENT_IP_HASH_SALT: "s".repeat(16),
+        TELEGRAM_CHANNEL_USERNAME: "example",
       }).NODE_ENV,
     ).toBe("production");
   });
 
   it("uses controller token as primary bot token", () => {
-    const config = loadConfig({ CONTROLLER_BOT_TOKEN: "controller", TELEGRAM_BOT_TOKEN: "telegram" });
+    const config = loadConfig({ CONTROLLER_BOT_TOKEN: "controller" });
     expect(config.controllerBotToken).toBe("controller");
   });
 

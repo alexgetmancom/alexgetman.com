@@ -23,7 +23,7 @@ export async function publishToThreads(
   sleepImpl: SleepImplementation = defaultSleep,
   nowImpl: NowImplementation = Date.now,
 ): Promise<PublishResult> {
-  if (!config.THREADS_ACCESS_TOKEN) return { skipped: true, reason: "missing THREADS_ACCESS_TOKEN" };
+  if (!config.THREADS_RU_ACCESS_TOKEN) return { skipped: true, reason: "missing THREADS_RU_ACCESS_TOKEN" };
   // One post by default: the text is written to fit 500 characters and preflight
   // refuses the draft otherwise, so there is nothing to continue into. A chain is
   // only built when the author waived the rule for this draft and saw the cost.
@@ -209,7 +209,7 @@ async function callThreads(
   method: "GET" | "POST" = "POST",
 ): Promise<ThreadsResponse> {
   const url = new URL(`https://graph.threads.net/v1.0/${endpoint}`);
-  const body = formBody({ ...payload, access_token: config.THREADS_ACCESS_TOKEN });
+  const body = formBody({ ...payload, access_token: config.THREADS_RU_ACCESS_TOKEN });
   if (method === "GET") {
     for (const [key, value] of body.entries()) url.searchParams.append(key, value);
     return requestJson<ThreadsResponse>(fetchImpl, url.toString());

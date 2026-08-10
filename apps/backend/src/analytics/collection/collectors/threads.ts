@@ -5,15 +5,16 @@ import type { MetricTask } from "../metric-schedule.js";
 import { terminalIfMissingRemoteObject } from "./errors.js";
 import type { MetricResult } from "./types.js";
 
+const THREADS_METRICS = "views,likes,replies,reposts,quotes";
+
 export async function collectThreads(task: MetricTask, config: BackendConfig, fetchImpl: typeof fetch): Promise<MetricResult> {
-  const token =
-    task.target === "threads_en" ? (config.THREADS_EN_ACCESS_TOKEN ?? config.THREADS_ACCESS_TOKEN) : config.THREADS_ACCESS_TOKEN;
+  const token = task.target === "threads_en" ? config.THREADS_EN_ACCESS_TOKEN : config.THREADS_RU_ACCESS_TOKEN;
   if (!token || task.externalIds.length === 0) throw new Error("missing_threads_token_or_id");
   const totals: Record<string, number> = {};
   const parts: JsonValue[] = [];
   for (const id of task.externalIds) {
     const url = new URL(`https://graph.threads.net/v1.0/${id}/insights`);
-    url.searchParams.set("metric", config.THREADS_METRICS);
+    url.searchParams.set("metric", THREADS_METRICS);
     url.searchParams.set("access_token", token);
     let result: { data?: Array<{ name?: string; values?: Array<{ value?: number }> }> };
     try {

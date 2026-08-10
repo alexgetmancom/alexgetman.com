@@ -3,7 +3,7 @@ import path from "node:path";
 import type { HomePost } from "../components/home-news/types";
 import type { FeedItem } from "../server/public-site";
 import { formatRelativeTime } from "./dates";
-import { postMediaGallery, postOgImagePath, responsiveImageSrcSet, responsiveVariantFor } from "./media";
+import { postMediaGallery, postSocialImagePath, responsiveImageSrcSet, responsiveVariantFor } from "./media";
 import { hasPublishedLocale } from "./public-feed";
 import { categoryLabel, categorySlugFromBadge, getSmartBadge } from "./taxonomy";
 import { excerptAfterTitle, getFirstSentence } from "./text";
@@ -56,9 +56,9 @@ export function toHomePost(item: FeedItem, locale: "en" | "ru"): HomePost {
   const visualMedia = gallery[0] ?? null;
   const visualPath = existingSiteImage(visualMedia?.path);
   const posterPath = existingSiteImage(visualMedia?.poster);
-  const fallbackOgPath = existingSiteImage(postOgImagePath(item, locale));
-  const image = visualPath || fallbackOgPath;
-  const mediaType = visualPath ? visualMedia?.type || "image" : fallbackOgPath ? "image" : null;
+  const fallbackImagePath = existingSiteImage(postSocialImagePath(item, locale)) || existingSiteImage("/social-image.jpg");
+  const image = visualPath || fallbackImagePath;
+  const mediaType = visualPath ? visualMedia?.type || "image" : fallbackImagePath ? "image" : null;
   const slug = locale === "ru" ? item.slug_ru : item.slug_en;
 
   return {
@@ -70,14 +70,16 @@ export function toHomePost(item: FeedItem, locale: "en" | "ru"): HomePost {
     date: item.date,
     relativeDate: formatRelativeTime(item.date, locale),
     image,
-    fallbackImage: posterPath || fallbackOgPath,
+    fallbackImage: posterPath || fallbackImagePath,
     mediaType,
     gallery: gallery.filter((media) => existingSiteImage(media.path)),
     audioUrl: audioUrlFor(item, locale),
     spotifyUrl: spotifyUrlFor(item, locale),
     imageSrcSet:
-      visualPath && mediaType === "image" ? responsiveImageSrcSet(visualMedia?.path) : responsiveImageSrcSet(posterPath || fallbackOgPath),
-    posterSrc: mediaType === "video" ? responsiveVariantFor(posterPath || fallbackOgPath, 960) : undefined,
+      visualPath && mediaType === "image"
+        ? responsiveImageSrcSet(visualMedia?.path)
+        : responsiveImageSrcSet(posterPath || fallbackImagePath),
+    posterSrc: mediaType === "video" ? responsiveVariantFor(posterPath || fallbackImagePath, 960) : undefined,
     views: Number(item.views || 0),
     categorySlug,
     category: categoryLabel(categorySlug, locale),

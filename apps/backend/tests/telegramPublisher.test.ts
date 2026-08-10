@@ -16,7 +16,7 @@ import { loadConfig } from "../src/foundation/config.js";
 const config = loadConfig({
   CONTROLLER_BOT_TOKEN: "bot-token",
   TELEGRAM_API_BASE_URL: "https://telegram.local/",
-  CHANNEL_USERNAME: "alexgetmancom",
+  TELEGRAM_CHANNEL_USERNAME: "alexgetmancom",
 });
 
 type Call = { method: string; json?: Record<string, unknown>; form?: FormData };
@@ -35,7 +35,7 @@ function recorder(reply: (method: string) => unknown = () => ({ ok: true, result
 
 describe("publishToTelegram", () => {
   it("skips instead of failing when no bot token is configured", async () => {
-    const result = await publishToTelegram({ text: "hi" }, loadConfig({ CHANNEL_USERNAME: "alexgetmancom" }), (() => {
+    const result = await publishToTelegram({ text: "hi" }, loadConfig({ TELEGRAM_CHANNEL_USERNAME: "alexgetmancom" }), (() => {
       throw new Error("must not call Telegram");
     }) as unknown as typeof fetch);
     expect(result).toEqual({ skipped: true, reason: "missing Telegram bot token" });

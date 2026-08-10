@@ -51,11 +51,11 @@ describe("requiredDataDirectories", () => {
     // `bun run --filter @alexgetman/backend test` (cwd apps/backend).
     const config = loadConfig({
       STUDIO_CONFIG: join(import.meta.dir, "../../../studio.video-only.example.yaml"),
-      YOUTUBE_CLIENT_ID: "test",
-      YOUTUBE_CLIENT_SECRET: "test",
-      YOUTUBE_REFRESH_TOKEN: "test",
-      INSTAGRAM_ACCESS_TOKEN: "test",
-      INSTAGRAM_USER_ID: "test",
+      YOUTUBE_RU_CLIENT_ID: "test",
+      YOUTUBE_RU_CLIENT_SECRET: "test",
+      YOUTUBE_RU_REFRESH_TOKEN: "test",
+      INSTAGRAM_RU_ACCESS_TOKEN: "test",
+      INSTAGRAM_RU_USER_ID: "test",
       DATA_DIR: join(root, "data"),
       MEDIA_CACHE_DIR: join(root, "media-cache"),
       STUDIO_MEDIA_DIR: join(root, "video-media"),

@@ -16,6 +16,9 @@ import { getVideoDraft, refreshVideoDraftStatus, type VideoJob } from "../publis
 import type { InstagramMetadata, VideoMetadata, YouTubeMetadata } from "../publishing/video-types.js";
 import { isAmbiguousPublicationError } from "./ambiguous-publication.js";
 import { verifyInstagramPublication } from "./social/instagram.js";
+
+const VIDEO_HEARTBEAT_INTERVAL_SECONDS = 30;
+
 import {
   InstagramContainerInvalidError,
   InstagramContainerProcessingError,
@@ -42,7 +45,7 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
     try {
       await trackUsageAsync(backendDb, "publishing.video.job", async () => {
         await withJobHeartbeat(
-          config.VIDEO_HEARTBEAT_INTERVAL_SECONDS,
+          VIDEO_HEARTBEAT_INTERVAL_SECONDS,
           () => {
             try {
               unsafeDb(backendDb).db.update(videoJobs).set({ lockedAt: new Date().toISOString() }).where(activeVideoJob(job)).run();

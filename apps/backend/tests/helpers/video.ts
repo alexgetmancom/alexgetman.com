@@ -13,6 +13,10 @@ export function createTestVideoDraft(
   locale: VideoLocale = "ru",
 ): number {
   if (typeof source === "number") return createVideoDraft(backendDb, actorId, source, retentionHours, locale);
+  return createVideoDraft(backendDb, actorId, createTestVideoAsset(backendDb, actorId, source), retentionHours, locale);
+}
+
+export function createTestVideoAsset(backendDb: BackendDb, actorId = 1, source = "/tmp/test-video.mp4"): number {
   const asset = unsafeDb(backendDb)
     .db.insert(studioMediaAssets)
     .values({
@@ -29,6 +33,5 @@ export function createTestVideoDraft(
     .returning({ id: studioMediaAssets.id })
     .get();
   if (!asset) throw new Error("Test video asset was not created");
-  const studioMediaAssetId = asset.id;
-  return createVideoDraft(backendDb, actorId, studioMediaAssetId, retentionHours, locale);
+  return asset.id;
 }

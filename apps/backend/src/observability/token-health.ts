@@ -88,7 +88,7 @@ const probes: Probe[] = [
   },
   {
     target: "youtube_shorts",
-    configured: (c) => Boolean(c.YOUTUBE_CLIENT_ID && c.YOUTUBE_CLIENT_SECRET && c.YOUTUBE_REFRESH_TOKEN),
+    configured: (c) => Boolean(c.YOUTUBE_RU_CLIENT_ID && c.YOUTUBE_RU_CLIENT_SECRET && c.YOUTUBE_RU_REFRESH_TOKEN),
     run: async (config, fetchImpl) => {
       const token = await youtubeAccessToken(config, fetchImpl);
       await requestJson(fetchImpl, "https://www.googleapis.com/youtube/v3/channels?part=id&mine=true", {
@@ -119,11 +119,11 @@ const probes: Probe[] = [
   },
   {
     target: "threads_ru",
-    configured: (c) => Boolean(c.THREADS_ACCESS_TOKEN),
+    configured: (c) => Boolean(c.THREADS_RU_ACCESS_TOKEN),
     run: async (config, fetchImpl) => {
       await requestJson(
         fetchImpl,
-        `https://graph.threads.net/v1.0/me?fields=id&access_token=${encodeURIComponent(config.THREADS_ACCESS_TOKEN as string)}`,
+        `https://graph.threads.net/v1.0/me?fields=id&access_token=${encodeURIComponent(config.THREADS_RU_ACCESS_TOKEN as string)}`,
       );
       return null;
     },
@@ -141,12 +141,12 @@ const probes: Probe[] = [
   },
   {
     target: "instagram_reels",
-    configured: (c) => Boolean(c.INSTAGRAM_ACCESS_TOKEN && c.INSTAGRAM_USER_ID),
+    configured: (c) => Boolean(c.INSTAGRAM_RU_ACCESS_TOKEN && c.INSTAGRAM_RU_USER_ID),
     run: (config, fetchImpl) => {
-      const token = config.INSTAGRAM_ACCESS_TOKEN as string;
+      const token = config.INSTAGRAM_RU_ACCESS_TOKEN as string;
       const host = instagramGraphHost(token);
       const version = config.INSTAGRAM_GRAPH_API_VERSION;
-      return graphMeCheck("instagram_reels", host, version, config.INSTAGRAM_USER_ID as string, token, fetchImpl);
+      return graphMeCheck("instagram_reels", host, version, config.INSTAGRAM_RU_USER_ID as string, token, fetchImpl);
     },
   },
   {

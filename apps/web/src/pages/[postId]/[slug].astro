@@ -3,7 +3,7 @@ import HomeNewsPage from "../../components/HomeNewsPage.astro";
 import Layout from "../../layouts/Layout.astro";
 import { findFeedItem } from "../../server/public-site";
 import { sortedHomePosts } from "../../utils/home-posts";
-import { postOgImagePath } from "../../utils/media";
+import { postSocialImagePath } from "../../utils/media";
 import { buildPostSchema } from "../../utils/post-schema";
 import { excerptAfterTitle, getFirstSentence } from "../../utils/text";
 
@@ -25,7 +25,7 @@ const pageTitle = selectedPost?.title || getFirstSentence(postText) || `Post ${p
 const postDescription =
   excerptAfterTitle(postText, pageTitle, 158) || "AI news, automation notes and developer updates by Alex Getman on alexgetman.com.";
 const localUrl = `https://alexgetman.com/${postId}/${slug}/`;
-const ogImage = postOgImagePath(item, "en");
+const ogImage = postSocialImagePath(item, "en");
 const schema = buildPostSchema({ item, locale: "en", pageTitle, description: postDescription, canonicalUrl: localUrl });
 
 const labels = {

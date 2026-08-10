@@ -61,13 +61,13 @@ async function removeTarget(target: string, ids: string[], config: BackendConfig
       await requestJson(fetchImpl, `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/bot${config.controllerBotToken}/deleteMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: config.CHANNEL_USERNAME, message_id: Number(id) }),
+        body: JSON.stringify({ chat_id: config.TELEGRAM_CHANNEL_USERNAME, message_id: Number(id) }),
       });
     return;
   }
   if (target === "threads_en" || target === "threads_ru") {
-    const token = target === "threads_en" ? config.THREADS_EN_ACCESS_TOKEN : config.THREADS_ACCESS_TOKEN;
-    if (!token) throw new Error(`missing ${target === "threads_en" ? "THREADS_EN_ACCESS_TOKEN" : "THREADS_ACCESS_TOKEN"}`);
+    const token = target === "threads_en" ? config.THREADS_EN_ACCESS_TOKEN : config.THREADS_RU_ACCESS_TOKEN;
+    if (!token) throw new Error(`missing ${target === "threads_en" ? "THREADS_EN_ACCESS_TOKEN" : "THREADS_RU_ACCESS_TOKEN"}`);
     for (const id of ids)
       await requestJson(fetchImpl, `https://graph.threads.net/v1.0/${encodeURIComponent(id)}?access_token=${encodeURIComponent(token)}`, {
         method: "DELETE",

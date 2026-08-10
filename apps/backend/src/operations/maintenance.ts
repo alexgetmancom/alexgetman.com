@@ -49,19 +49,14 @@ type OperationalRetentionResult = {
   total: number;
 };
 
-type OperationalRetentionConfig = Pick<
-  BackendConfig,
-  "POST_EVENTS_RETENTION_DAYS" | "OPS_ACTIONS_RETENTION_DAYS" | "SITE_PAGEVIEWS_RETENTION_DAYS" | "RUNTIME_USAGE_RETENTION_DAYS"
->;
-
 const RETENTION_BATCH_SIZE = 2_000;
+const POST_EVENTS_RETENTION_DAYS = 365;
+const OPS_ACTIONS_RETENTION_DAYS = 365;
+const SITE_PAGEVIEWS_RETENTION_DAYS = 730;
+const RUNTIME_USAGE_RETENTION_DAYS = 365;
 
 /** Deletes derived operational history while preserving unresolved alerts. */
-export function pruneOperationalHistory(
-  backendDb: BackendDb,
-  config: OperationalRetentionConfig,
-  now = new Date(),
-): OperationalRetentionResult {
+export function pruneOperationalHistory(backendDb: BackendDb, now = new Date()): OperationalRetentionResult {
   const cutoff = (days: number) => new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
   const cutoffDay = (days: number) => cutoff(days).slice(0, 10);
   const deleteBatched = (statement: string, ...params: string[]): number => {
@@ -79,14 +74,11 @@ export function pruneOperationalHistory(
     `DELETE FROM post_events
      WHERE created_at < ?
        AND NOT (severity IN ('warn', 'error') AND acked_at IS NULL)`,
-    cutoff(config.POST_EVENTS_RETENTION_DAYS),
+    cutoff(POST_EVENTS_RETENTION_DAYS),
   );
-  const opsActionsDeleted = deleteBatched("DELETE FROM ops_actions WHERE created_at < ?", cutoff(config.OPS_ACTIONS_RETENTION_DAYS));
-  const sitePageviewsDeleted = deleteBatched("DELETE FROM site_pageviews WHERE day < ?", cutoffDay(config.SITE_PAGEVIEWS_RETENTION_DAYS));
-  const runtimeUsageDeleted = deleteBatched(
-    "DELETE FROM runtime_usage WHERE bucket_day < ?",
-    cutoffDay(config.RUNTIME_USAGE_RETENTION_DAYS),
-  );
+  const opsActionsDeleted = deleteBatched("DELETE FROM ops_actions WHERE created_at < ?", cutoff(OPS_ACTIONS_RETENTION_DAYS));
+  const sitePageviewsDeleted = deleteBatched("DELETE FROM site_pageviews WHERE day < ?", cutoffDay(SITE_PAGEVIEWS_RETENTION_DAYS));
+  const runtimeUsageDeleted = deleteBatched("DELETE FROM runtime_usage WHERE bucket_day < ?", cutoffDay(RUNTIME_USAGE_RETENTION_DAYS));
   return {
     postEvents: postEventsDeleted,
     opsActions: opsActionsDeleted,

@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { publicationSources, publications, siteJobs } from "../src/db/schema.js";
-import { renderFeedFiles, runSiteJobCycle } from "../src/delivery/site-jobs.js";
+import { postLocales, publicationSources, publications, siteJobs } from "../src/db/schema.js";
+import { materializeSitePosts, runSiteJobCycle } from "../src/delivery/site-jobs.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
@@ -19,14 +19,14 @@ afterEach(() => {
 });
 
 describe("site jobs", () => {
-  it("renders feed and metrics JSON from publication sources", async () => {
+  it("persists materialized media in the public read model", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-"));
-    const feedJson = path.join(tempDir, "feed.json");
-    const metricsJson = path.join(tempDir, "content-metrics.json");
-    const config = loadConfig({ FEED_JSON: feedJson, SITE_CONTENT_METRICS_JSON: metricsJson, SITE_PUBLIC_DIR: tempDir });
+    const config = loadConfig({ SITE_PUBLIC_DIR: tempDir });
     backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
     backendDb.db.insert(publications).values({ postId: 1, status: "published", createdAt: now, updatedAt: now }).run();
+    backendDb.db.insert(postLocales).values({ postId: 1, locale: "ru", slug: "ru", siteEnabled: 1, updatedAt: now }).run();
+    backendDb.db.insert(postLocales).values({ postId: 1, locale: "en", slug: "en", siteEnabled: 1, updatedAt: now }).run();
     backendDb.db
       .insert(publicationSources)
       .values({
@@ -48,23 +48,16 @@ describe("site jobs", () => {
         updatedAt: now,
       })
       .run();
-
-    await renderFeedFiles(config, backendDb);
-
-    const feed = JSON.parse(fs.readFileSync(feedJson, "utf8")) as Record<string, unknown>;
-    const metrics = JSON.parse(fs.readFileSync(metricsJson, "utf8")) as Record<string, unknown>;
-    expect(feed).toMatchObject({ channel: "alexgetmancom" });
-    expect(feed.items as unknown[]).toHaveLength(1);
-    expect(metrics.posts).toBe(1);
+    await materializeSitePosts(config, backendDb);
+    expect(backendDb.db.select({ locale: postLocales.locale, media: postLocales.mediaJson }).from(postLocales).all()).toEqual([
+      { locale: "ru", media: [] },
+      { locale: "en", media: [] },
+    ]);
   });
 
   it("claims and completes queued site jobs", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-"));
-    const config = loadConfig({
-      FEED_JSON: path.join(tempDir, "feed.json"),
-      SITE_CONTENT_METRICS_JSON: path.join(tempDir, "content-metrics.json"),
-      SITE_PUBLIC_DIR: tempDir,
-    });
+    const config = loadConfig({ SITE_PUBLIC_DIR: tempDir });
     backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
     backendDb.db
@@ -80,11 +73,7 @@ describe("site jobs", () => {
 
   it("publishes the EN site job while a later RU site job remains queued", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-"));
-    const config = loadConfig({
-      FEED_JSON: path.join(tempDir, "feed.json"),
-      SITE_CONTENT_METRICS_JSON: path.join(tempDir, "content-metrics.json"),
-      SITE_PUBLIC_DIR: tempDir,
-    });
+    const config = loadConfig({ SITE_PUBLIC_DIR: tempDir });
     backendDb = openBackendDb(":memory:");
     const now = new Date(Date.now() - 1_000).toISOString();
     const later = new Date(Date.now() + 60 * 60_000).toISOString();
@@ -126,11 +115,7 @@ describe("site jobs", () => {
 
   it("does not re-materialize a locale after its site target was cancelled", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-"));
-    const config = loadConfig({
-      FEED_JSON: path.join(tempDir, "feed.json"),
-      SITE_CONTENT_METRICS_JSON: path.join(tempDir, "content-metrics.json"),
-      SITE_PUBLIC_DIR: tempDir,
-    });
+    const config = loadConfig({ SITE_PUBLIC_DIR: tempDir });
     backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
     backendDb.db
@@ -141,6 +126,13 @@ describe("site jobs", () => {
         createdAt: now,
         updatedAt: now,
       })
+      .run();
+    backendDb.db
+      .insert(postLocales)
+      .values([
+        { postId: 7, locale: "ru", slug: "ru", mediaJson: [{ type: "image", path: "keep.jpg" }], siteEnabled: 1, updatedAt: now },
+        { postId: 7, locale: "en", slug: "en", siteEnabled: 1, updatedAt: now },
+      ])
       .run();
     backendDb.db
       .insert(siteJobs)
@@ -165,10 +157,10 @@ describe("site jobs", () => {
       })
       .run();
 
-    await renderFeedFiles(config, backendDb);
-
-    const feed = JSON.parse(fs.readFileSync(config.FEED_JSON, "utf8")) as { items: Array<Record<string, unknown>> };
-    expect(feed.items).toHaveLength(1);
-    expect(feed.items[0]).toMatchObject({ has_ru: false, has_en: true });
+    await materializeSitePosts(config, backendDb);
+    expect(backendDb.db.select({ locale: postLocales.locale, media: postLocales.mediaJson }).from(postLocales).all()).toEqual([
+      { locale: "ru", media: [{ type: "image", path: "keep.jpg" }] },
+      { locale: "en", media: [] },
+    ]);
   });
 });

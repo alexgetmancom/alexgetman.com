@@ -155,11 +155,8 @@ describe("Studio MCP", () => {
         },
         authorization,
       );
-      expect(
-        backendDb.sqlite.prepare("SELECT actor_id, asset_key, studio_media_asset_id, locale FROM video_drafts WHERE id=1").get(),
-      ).toEqual({
+      expect(backendDb.sqlite.prepare("SELECT actor_id, studio_media_asset_id, locale FROM video_drafts WHERE id=1").get()).toEqual({
         actor_id: 42,
-        asset_key: "studio-asset-1",
         studio_media_asset_id: 1,
         locale: "en",
       });

@@ -1,6 +1,6 @@
 import type { APIContext } from "astro";
 import { loadFeedItems } from "../server/public-site";
-import { postOgImagePath, postVisualMedia } from "../utils/media";
+import { postSocialImagePath, postVisualMedia } from "../utils/media";
 import { excerptAfterTitle, getFirstSentence } from "../utils/text";
 
 export const prerender = false;
@@ -20,7 +20,7 @@ function videoBlockFor(item: ReturnType<typeof loadFeedItems>[number], locale: "
   const text = locale === "ru" ? item.text || "" : item.text_en || item.text || "";
   const title = getFirstSentence(text) || `Post ${item.post_id}`;
   const description = excerptAfterTitle(text, title, 2048) || title;
-  const thumbnail = media.poster ? `${siteUrl}/${media.poster}` : `${siteUrl}${postOgImagePath(item, locale)}`;
+  const thumbnail = media.poster ? `${siteUrl}/${media.poster}` : `${siteUrl}${postSocialImagePath(item, locale)}`;
   const contentLoc = `${siteUrl}/${media.path}`;
   return `\n    <video:video>\n      <video:thumbnail_loc>${xmlEscape(thumbnail)}</video:thumbnail_loc>\n      <video:title>${xmlEscape(title)}</video:title>\n      <video:description>${xmlEscape(description)}</video:description>\n      <video:content_loc>${xmlEscape(contentLoc)}</video:content_loc>\n      <video:publication_date>${lastmod(item.date)}</video:publication_date>\n    </video:video>`;
 }
