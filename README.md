@@ -124,8 +124,10 @@ interface. The `studio` plugin in this repository packages that transport togeth
 that uses it, so an operator installs it once and supplies their own endpoint and token — nothing
 about this repository's own deployment is baked into it.
 
-[plugin/README.md](plugin/README.md) is the setup guide: the routes to expose, the credential to
-set, the install commands, and a starting prompt for the agent that will operate the Studio.
+Setup is not done by hand: [plugin/setup-prompt.md](plugin/setup-prompt.md) is a prompt you paste
+into your own agent, which then exposes the routes, generates the credential, restarts the
+deployment, installs the plugin and verifies the connection. See
+[plugin/README.md](plugin/README.md) for what the plugin is and how to teach it your voice.
 
 ## Container permissions
 

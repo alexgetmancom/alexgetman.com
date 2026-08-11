@@ -134,8 +134,9 @@ block is an allowlist that ends in `return 404`, so each route it should answer 
 [nginx/production/marux.ru.conf](nginx/production/marux.ru.conf) explicitly.
 
 The operator's machine installs the `studio` plugin, which carries both the MCP server and the
-skill that drives it. [../plugin/README.md](../plugin/README.md) is the whole setup path, including
-the starting prompt to give that agent.
+skill that drives it. That setup is driven by an agent rather than by hand:
+[../plugin/setup-prompt.md](../plugin/setup-prompt.md) is the prompt, and
+[../plugin/README.md](../plugin/README.md) describes the plugin itself.
 
 ## Optional remote worker targets
 

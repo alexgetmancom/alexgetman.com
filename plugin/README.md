@@ -1,69 +1,27 @@
 # The `studio` plugin
 
 Operate a deployment from a machine that has no checkout of this repository. The MCP transport at
-`/api/mcp` is the entire interface — there is no database access, no SSH, and no source tree on that
-machine. The plugin packages that transport together with the skill that drives it, so one install
-gives an agent the whole Studio: writing, publishing, scheduling, analytics and delivery
-diagnostics.
+`/api/mcp` is the entire interface — no database access, no SSH, no source tree on that machine.
+The plugin packages that transport together with the skill that drives it, so one install gives an
+agent the whole Studio: writing, publishing, scheduling, analytics and delivery diagnostics.
 
 Nothing about any particular deployment is baked in. You supply your own endpoint and token.
 
-## Before you install
+## Setting it up
 
-The deployment has to be reachable and has to know the credential.
+Don't do it by hand. Open [setup-prompt.md](setup-prompt.md), copy the whole file, and paste it
+into your agent. It asks you for the few things it cannot discover — your domain, how you reach the
+server, your Telegram user id — then exposes the routes, generates the credential, restarts the
+deployment, installs the plugin here and proves the connection works before reporting back.
 
-1. **Expose two routes.** `/api/mcp` is the transport; `/api/studio/media` receives uploads, because
-   a post with a picture or a video sends the file separately from the command. Both refuse a
-   request without the bearer token, so they are safe to expose — but a reverse proxy that
-   allowlists paths will 404 them until you name them. See
-   [deploy/nginx/production/marux.ru.conf](../deploy/nginx/production/marux.ru.conf) for a worked
-   example of an allowlist that ends in `return 404`.
+It is written to refuse the dangerous shortcuts: it backs up before editing, never prints your
+token, and never publishes anything to test itself.
 
-2. **Set the credential.** In the deployment's `secrets.env`:
+## Teaching it your voice
 
-   ```dotenv
-   MCP_STUDIO_TOKEN=<32 random bytes, hex>
-   MCP_STUDIO_ACTOR_ID=<the Telegram user id the work belongs to>
-   ```
-
-   Generate the token with `openssl rand -hex 32`. Both must be set together — the application
-   refuses to start with one of them. The actor id must appear in `STUDIO_ACTOR_IDS`, or in
-   `CONTROLLER_ADMIN_IDS` when that is the roster; an actor in the roster sees the whole roster's
-   work, so several people share one Studio while new work is attributed to whoever created it.
-
-3. **Recreate the container** and confirm:
-
-   ```bash
-   bun run --filter @alexgetman/backend ops doctor
-   ```
-
-   `checks.studioTransportConfigured` must be `true`.
-
-## Install
-
-On the operator's machine:
-
-```shell
-/plugin marketplace add alexgetmancom/alexgetman.com
-/plugin install studio@alexgetman
-```
-
-Enabling it asks for the two values. The token is marked sensitive, so it goes to secure storage
-rather than `settings.json`, and is substituted into the `Authorization` header at connection time.
-
-One install points at one deployment. A second Studio is a second machine, or a second install
-scope — not a second entry in the marketplace.
-
-Confirm the connection with `/mcp`: the `studio` server should be listed, and asking the agent
-"what can this Studio do?" should produce a real answer from `studio_capabilities` rather than a
-guess.
-
-## The prompt to start with
-
-The skill already tells the agent how to behave — when to publish, when to stop at a draft, which
-tool to reach for. It does not know anything about *your* editorial voice, and that is what is
-worth writing down. Paste something like this into the agent's own `AGENTS.md` or `CLAUDE.md` on
-that machine, edited to fit:
+The skill already tells the agent *how to behave* — when to publish, when to stop at a draft, which
+tool to reach for. What it cannot know is what your channel sounds like. Put that on the operating
+machine, in that agent's own `AGENTS.md` or `CLAUDE.md`:
 
 ```markdown
 # My channel
@@ -80,9 +38,9 @@ Before writing, read the last few posts so the new one does not repeat one of th
 
 Then talk to it normally:
 
-- "Post this: <news>" — writes, validates, publishes.
-- "Let's prepare a post about <topic> for tomorrow morning" — drafts and schedules.
-- "Why didn't yesterday's post reach X?" — reads the delivery state and reports the missing target.
+- "Post this: `<news>`" — writes, validates, publishes.
+- "Let's prepare a post about `<topic>` for tomorrow morning" — drafts and schedules.
+- "Why didn't yesterday's post reach X?" — reads the delivery state and names the missing target.
 - "How did last week's posts do?" — reads analytics.
 
 ## When something does not work
@@ -91,7 +49,7 @@ Then talk to it normally:
 | :--- | :--- |
 | `401` from `/api/mcp` | The token does not match, or the deployment has no `MCP_STUDIO_TOKEN` set |
 | `404` from `/api/mcp` | The proxy never routed it — the allowlist does not name the path |
-| Tools connect, but the workspace looks empty | `MCP_STUDIO_ACTOR_ID` points at an actor with no work; check it is the right id |
+| Tools connect, but the workspace looks empty | `MCP_STUDIO_ACTOR_ID` points at an actor with no work |
 | A post publishes without its media | The file was never uploaded, or `/api/studio/media` is not exposed |
 
-Start any deeper investigation by asking the agent to run `ops_guide`, then `ops_audit`.
+Ask the agent to run `ops_guide`, then `ops_audit`, before digging further.
