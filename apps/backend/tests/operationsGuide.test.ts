@@ -20,7 +20,7 @@ afterAll(() => {
 describe("operations guide", () => {
   it("routes an unavailable local database to production", () => {
     const previousTarget = process.env.OPS_SSH_TARGET;
-    delete process.env.OPS_SSH_TARGET;
+    process.env.OPS_SSH_TARGET = "";
     const guide = buildOperationsGuide(join(temporaryDirectory(), "missing.db"));
     if (previousTarget === undefined) delete process.env.OPS_SSH_TARGET;
     else process.env.OPS_SSH_TARGET = previousTarget;

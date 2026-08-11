@@ -78,11 +78,37 @@ export function buildOperationsGuide(databasePath = process.env.PIPELINE_DB ?? "
       command,
     },
     production: {
-      configured: Boolean(process.env.OPS_SSH_TARGET?.trim()),
+      configured: productionLauncherConfigured(),
     },
     catalog,
     commands: operationCatalog(),
   };
+}
+
+function productionLauncherConfigured(): boolean {
+  if (Object.hasOwn(process.env, "OPS_SSH_TARGET")) return Boolean(process.env.OPS_SSH_TARGET?.trim());
+
+  const packageEnvPath = path.resolve(process.cwd(), ".env.local");
+  const rootEnvPath = path.resolve(process.cwd(), "../../.env.local");
+  return [packageEnvPath, rootEnvPath].some(hasConfiguredSshTarget);
+}
+
+function hasConfiguredSshTarget(filePath: string): boolean {
+  try {
+    const contents = fs.readFileSync(filePath, "utf8");
+    for (const line of contents.split(/\r?\n/)) {
+      const match = line.match(/^\s*OPS_SSH_TARGET\s*=\s*(.*?)\s*(?:#.*)?$/);
+      if (!match) continue;
+      const value = match[1]
+        ?.trim()
+        .replace(/^("|')(.*)\1$/, "$2")
+        .trim();
+      return Boolean(value);
+    }
+  } catch {
+    return false;
+  }
+  return false;
 }
 
 export function formatOperationsGuide(guide: OperationsGuide): string {
