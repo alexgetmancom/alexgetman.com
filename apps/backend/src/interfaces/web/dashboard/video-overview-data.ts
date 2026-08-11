@@ -295,37 +295,62 @@ function videoSnapshots(
   const bucketFactor = 86_400 / bucketSeconds;
   const samples = unsafeDb(backendDb)
     .sqlite.prepare(
-      `WITH bucketed AS (
-           SELECT id, video_target_id AS targetId,
-                  ROW_NUMBER() OVER (
-                    PARTITION BY video_target_id, CAST((julianday(sampled_at) - julianday(?)) * ? AS INTEGER)
-                    ORDER BY sampled_at DESC, id DESC
-                  ) AS bucketRank
+      `WITH candidates AS (
+           SELECT id, video_target_id AS targetId, sampled_at AS sampledAt,
+                  CASE WHEN sampled_at >= ?
+                       THEN CAST((julianday(sampled_at) - julianday(?)) * ? AS INTEGER)
+                  END AS bucket
+             FROM video_metric_snapshots
+            WHERE video_target_id IN (${placeholders}) AND sampled_at <= ?
+         ),
+         rangeTimes AS (
+           SELECT targetId, bucket, MAX(sampledAt) AS sampledAt
+             FROM candidates
+            WHERE bucket IS NOT NULL
+            GROUP BY targetId, bucket
+         ),
+         rangeIds AS (
+           SELECT MAX(candidate.id) AS id
+             FROM candidates AS candidate
+             JOIN rangeTimes AS range
+               ON range.targetId = candidate.targetId
+              AND range.bucket = candidate.bucket
+              AND range.sampledAt = candidate.sampledAt
+            GROUP BY range.targetId, range.bucket
+         ),
+         bounds AS (
+           SELECT targetId,
+                  MAX(CASE WHEN sampledAt < ? THEN sampledAt END) AS baselineAt,
+                  MAX(sampledAt) AS latestAt
+             FROM candidates
+            GROUP BY targetId
+         ),
+         boundIds AS (
+           SELECT MAX(candidate.id) AS id
+             FROM candidates AS candidate
+             JOIN bounds AS bound
+               ON bound.targetId = candidate.targetId
+              AND (candidate.sampledAt = bound.baselineAt OR candidate.sampledAt = bound.latestAt)
+            GROUP BY candidate.targetId, candidate.sampledAt
+         ),
+         latestTimes AS (
+           SELECT video_target_id AS targetId, MAX(sampled_at) AS sampledAt
              FROM video_metric_snapshots
             WHERE video_target_id IN (${placeholders})
-              AND sampled_at >= ? AND sampled_at <= ?
+            GROUP BY video_target_id
          ),
-         selected AS (
-           SELECT id FROM bucketed WHERE bucketRank = 1
-         ),
-         baseline AS (
-           SELECT id, video_target_id AS targetId,
-                  ROW_NUMBER() OVER (PARTITION BY video_target_id ORDER BY sampled_at DESC, id DESC) AS rowNumber
-             FROM video_metric_snapshots
-            WHERE video_target_id IN (${placeholders}) AND sampled_at < ?
-         ),
-         latest AS (
-           SELECT id, video_target_id AS targetId,
-                  ROW_NUMBER() OVER (PARTITION BY video_target_id ORDER BY sampled_at DESC, id DESC) AS rowNumber
-             FROM video_metric_snapshots
-            WHERE video_target_id IN (${placeholders})
+         latestIds AS (
+           SELECT MAX(snapshot.id) AS id
+             FROM video_metric_snapshots AS snapshot
+             JOIN latestTimes AS latest
+               ON latest.targetId = snapshot.video_target_id
+              AND latest.sampledAt = snapshot.sampled_at
+            GROUP BY snapshot.video_target_id, snapshot.sampled_at
          ),
          wanted AS (
-           SELECT id FROM selected
-           UNION
-           SELECT id FROM baseline WHERE rowNumber = 1
-           UNION
-           SELECT id FROM latest WHERE rowNumber = 1
+           SELECT id FROM rangeIds WHERE id IS NOT NULL
+           UNION SELECT id FROM boundIds WHERE id IS NOT NULL
+           UNION SELECT id FROM latestIds WHERE id IS NOT NULL
          )
          SELECT video_target_id AS targetId,
                 sampled_at AS sampledAt,
@@ -338,18 +363,16 @@ function videoSnapshots(
                 COALESCE(json_extract(metrics_json, '$.completionRate'), json_extract(metrics_json, '$.completion_rate'), json_extract(metrics_json, '$.completionPercentage'), json_extract(metrics_json, '$.completion_percentage')) AS completionRate,
                 COALESCE(json_extract(metrics_json, '$.videoDurationMs'), json_extract(metrics_json, '$.durationMs')) AS videoDurationMs
            FROM video_metric_snapshots AS sample
-          WHERE video_target_id IN (${placeholders}) AND id IN (SELECT id FROM wanted)
+          WHERE id IN (SELECT id FROM wanted)
           ORDER BY targetId ASC, sampledAt ASC, id ASC`,
     )
     .all(
       start.toISOString(),
+      start.toISOString(),
       bucketFactor,
       ...rows.map((row) => row.id),
-      start.toISOString(),
       end.toISOString(),
-      ...rows.map((row) => row.id),
       start.toISOString(),
-      ...rows.map((row) => row.id),
       ...rows.map((row) => row.id),
     ) as Array<{
     targetId: number;
