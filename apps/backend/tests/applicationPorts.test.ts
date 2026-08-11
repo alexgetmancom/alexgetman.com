@@ -5,6 +5,7 @@ import { settingsService } from "../src/studio/services/settings.js";
 describe("application persistence ports", () => {
   it("runs the settings service without SQLite", () => {
     let weeklyDigest: Parameters<ApplicationPorts["studioSettings"]["saveWeeklyDigest"]>[0] | undefined;
+    let newsDigest: Parameters<ApplicationPorts["studioSettings"]["saveNewsDigest"]>[0] | undefined;
     let notifications: Parameters<ApplicationPorts["studioSettings"]["saveNotifications"]>[0] | undefined;
     let timezone: Parameters<ApplicationPorts["studioSettings"]["saveTimezone"]>[0] | undefined;
     let currentTimezone: string | null = null;
@@ -28,6 +29,10 @@ describe("application persistence ports", () => {
         saveWeeklyDigest: (input) => {
           weeklyDigest = input;
         },
+        newsDigest: () => null,
+        saveNewsDigest: (input) => {
+          newsDigest = input;
+        },
         saveNotifications: (input) => {
           notifications = input;
         },
@@ -50,6 +55,13 @@ describe("application persistence ports", () => {
     expect(settings.timezone(42, "Europe/Moscow")).toBe("America/New_York");
     expect(settings.setWeeklyDigest({ enabled: true, weekday: 2 })).toEqual({ enabled: true, weekday: 2 });
     expect(weeklyDigest).toEqual({ enabled: 1, weekday: 2, updatedAt: "2026-01-02T03:04:05.000Z" });
+    expect(settings.setNewsDigest({ enabled: true, hour: 8, minute: 30, prompt: "news" })).toEqual({
+      enabled: true,
+      hour: 8,
+      minute: 30,
+      prompt: "news",
+    });
+    expect(newsDigest).toEqual({ enabled: 1, hour: 8, minute: 30, prompt: "news", updatedAt: "2026-01-02T03:04:05.000Z" });
     expect(settings.setNotifications(42, { remindersEnabled: false, reminderMinutes: 15 })).toEqual({
       remindersEnabled: false,
       reminderMinutes: 15,

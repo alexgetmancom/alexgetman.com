@@ -20,6 +20,8 @@ services:
       PIPELINE_DB: /data/pipeline.db
       MEDIA_CACHE_DIR: /data/media-cache
       VIDEO_MEDIA_DIR: /data/video-media
+      GROK_HOME: /home/deploy/.grok
+      GROK_CLI_PATH: /home/deploy/.grok/bin/grok
       NODE_ENV: production
       DEPLOYMENT_ENV: production
       # This is a media-only public endpoint for Meta to fetch Reels source
@@ -35,6 +37,7 @@ services:
       - ${MARU_MEDIA_CACHE_DIR_HOST:-./media-cache}:/data/media-cache
       - ${MARU_VIDEO_MEDIA_DIR_HOST:-./video-media}:/data/video-media
       - ${MARU_BOT_API_DATA_DIR:-/home/deploy/alexgetman-runtime/bot-api-data}:/var/lib/telegram-bot-api:ro
+      - /home/deploy/.grok:/home/deploy/.grok
     ports:
       - "127.0.0.1:8789:8788"
     # The deploy agent remains host-private; this alias is required for the

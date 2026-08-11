@@ -212,6 +212,8 @@ export type StudioSettingsStore = {
   timezone(actorId: number): string | null;
   weeklyDigest(): StudioWeeklyDigestSettingsRecord | null;
   saveWeeklyDigest(input: { enabled: number; weekday: number; updatedAt: string }): void;
+  newsDigest(): StudioNewsDigestSettingsRecord | null;
+  saveNewsDigest(input: { enabled: number; hour: number; minute: number; prompt: string; updatedAt: string }): void;
   saveNotifications(input: {
     actorId: number;
     remindersEnabled: number;
@@ -237,6 +239,15 @@ type StudioWeeklyDigestSettingsRecord = {
   id: number;
   enabled: number;
   weekday: number;
+  updatedAt: string;
+};
+
+type StudioNewsDigestSettingsRecord = {
+  id: number;
+  enabled: number;
+  hour: number;
+  minute: number;
+  prompt: string;
   updatedAt: string;
 };
 

@@ -18,6 +18,16 @@ export const studioWeeklyDigestSettings = sqliteTable("studio_weekly_digest_sett
   updatedAt: text().notNull(),
 });
 
+/** One daily Grok news digest policy per Studio instance, shared by every administrator. */
+export const studioNewsDigestSettings = sqliteTable("studio_news_digest_settings", {
+  id: integer().primaryKey().default(1),
+  enabled: integer().notNull().default(0),
+  hour: integer().notNull().default(10),
+  minute: integer().notNull().default(0),
+  prompt: text().notNull().default(""),
+  updatedAt: text().notNull(),
+});
+
 /** Durable, interface-neutral scheduled notification work. */
 export const studioNotificationJobs = sqliteTable(
   "studio_notification_jobs",

@@ -9,6 +9,7 @@ import { deliverPendingAlerts } from "../../observability/alerts.js";
 import { sendWeeklyAnalyticsSummary } from "./analytics-summary.js";
 import { sendDailyEditorialInbox } from "./editorial-inbox.js";
 import { consumeTelegramEvents } from "./event-consumer.js";
+import { sendDailyNewsDigest } from "./news-digest.js";
 
 /** Telegram is an event consumer and ingress adapter, never a domain worker dependency. */
 export function startTelegramWorkers(config: BackendConfig, backendDb: BackendDb, bot: Bot | null): ScheduledLoop[] {
@@ -26,7 +27,8 @@ export function startTelegramWorkers(config: BackendConfig, backendDb: BackendDb
       });
       const weeklySummary = await sendWeeklyAnalyticsSummary(config, backendDb, bot);
       const editorialInbox = await sendDailyEditorialInbox(config, backendDb, bot);
-      log("debug", "telegram interface loop tick", { events, alerts, weeklySummary, editorialInbox });
+      const newsDigest = await sendDailyNewsDigest(config, backendDb, bot);
+      log("debug", "telegram interface loop tick", { events, alerts, weeklySummary, editorialInbox, newsDigest: newsDigest.status });
     }),
     startLoop("telegram-analytics-dashboard", 60 * 60 * 1000, async () => {
       const refreshed = await refreshTelegramAnalyticsDashboards(bot, backendDb, config);

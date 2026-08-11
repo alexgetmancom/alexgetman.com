@@ -44,6 +44,11 @@ function readWeeklyDigest(backendDb: SettingsDependencies) {
   return { enabled: row?.enabled !== 0, weekday: row?.weekday ?? 0 };
 }
 
+function readNewsDigest(backendDb: SettingsDependencies) {
+  const row = backendDb.studioSettings.newsDigest();
+  return { enabled: row?.enabled === 1, hour: row?.hour ?? 10, minute: row?.minute ?? 0, prompt: row?.prompt?.trim() ?? "" };
+}
+
 /** Owner settings commands used by Telegram today and any future Studio adapter. */
 export function settingsService(backendDb: SettingsDependencies) {
   return {
@@ -70,6 +75,9 @@ export function settingsService(backendDb: SettingsDependencies) {
     weeklyDigest() {
       return readWeeklyDigest(backendDb);
     },
+    newsDigest() {
+      return readNewsDigest(backendDb);
+    },
     setWeeklyDigest(input: Partial<{ enabled: boolean; weekday: number }>) {
       if (input.weekday != null && (!Number.isInteger(input.weekday) || input.weekday < 0 || input.weekday > 6))
         throw new StudioError("err.weekday-range");
@@ -78,6 +86,28 @@ export function settingsService(backendDb: SettingsDependencies) {
       backendDb.studioSettings.saveWeeklyDigest({
         enabled: Number(next.enabled),
         weekday: next.weekday,
+        updatedAt: backendDb.clock.now().toISOString(),
+      });
+      return next;
+    },
+    setNewsDigest(input: Partial<{ enabled: boolean; hour: number; minute: number; prompt: string }>) {
+      if (input.hour != null && (!Number.isInteger(input.hour) || input.hour < 0 || input.hour > 23))
+        throw new StudioError("err.news-digest-hour-range");
+      if (input.minute != null && (!Number.isInteger(input.minute) || input.minute < 0 || input.minute > 59))
+        throw new StudioError("err.news-digest-minute-range");
+      if (input.prompt != null && input.prompt.trim().length > 10_000) throw new StudioError("err.news-digest-prompt-length");
+      const current = readNewsDigest(backendDb);
+      const next = {
+        enabled: input.enabled ?? current.enabled,
+        hour: input.hour ?? current.hour,
+        minute: input.minute ?? current.minute,
+        prompt: input.prompt == null ? current.prompt : input.prompt.trim(),
+      };
+      backendDb.studioSettings.saveNewsDigest({
+        enabled: Number(next.enabled),
+        hour: next.hour,
+        minute: next.minute,
+        prompt: next.prompt,
         updatedAt: backendDb.clock.now().toISOString(),
       });
       return next;

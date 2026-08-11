@@ -112,6 +112,22 @@ describe("buildSettingsMenu", () => {
     expect(labels.some((text) => /analytics/i.test(text))).toBe(false);
   });
 
+  it("keeps the news digest under notifications", async () => {
+    backendDb = openBackendDb(":memory:");
+    const config = loadConfig({});
+
+    const labels = await settingsMenuLabels(config, backendDb, "settings-notifications-category");
+    expect(labels).toContain("📰 News digest");
+  });
+
+  it("renders the news digest controls with a back button", async () => {
+    backendDb = openBackendDb(":memory:");
+    const config = loadConfig({});
+
+    const labels = await settingsMenuLabels(config, backendDb, "settings-news-digest");
+    expect(labels).toEqual(["◻️ News digest", "🕒 Delivery time: 10:00", "✏️ Change prompt", "▶️ Send now", "← Notifications"]);
+  });
+
   it("offers the manual analytics inputs no platform API provides", async () => {
     backendDb = openBackendDb(":memory:");
     const config = loadConfig({});

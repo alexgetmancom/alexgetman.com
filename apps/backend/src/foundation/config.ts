@@ -34,6 +34,8 @@ const envSchema = z
     DEEPSEEK_API_KEY: z.string().optional(),
     /** Moscow hour at which the editor receives one AI-generated opportunity inbox. */
     EDITORIAL_INBOX_HOUR_MSK: z.coerce.number().int().min(0).max(23).default(10),
+    GROK_CLI_PATH: z.string().default("grok"),
+    GROK_CLI_TIMEOUT_SECONDS: z.coerce.number().int().positive().max(3_600).default(900),
     CONTROLLER_ADMIN_IDS: z
       .string()
       .default("")

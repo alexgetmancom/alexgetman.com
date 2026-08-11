@@ -1,14 +1,15 @@
 import fs from "node:fs";
 import { Menu, type MenuFlavor } from "@grammyjs/menu";
-import type { Context } from "grammy";
+import type { Bot, Context } from "grammy";
 import { importManualAnalytics, manualThreadsFollowers } from "../analytics/import-manual-analytics.js";
 import { importXAnalyticsCsv } from "../analytics/import-x-csv.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { t } from "../foundation/i18n/index.js";
+import { describeError, t } from "../foundation/i18n/index.js";
 import { STUDIO_LOCALE_NAMES, STUDIO_LOCALES, type StudioLocale } from "../foundation/locale.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
 import { downloadTelegramFile } from "../interfaces/telegram/file-download.js";
+import { sendDailyNewsDigest } from "../interfaces/telegram/news-digest.js";
 import type { StudioZernioAccount } from "../studio/services/channels.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
@@ -22,6 +23,8 @@ const ANALYTICS_MENU_ID = "settings-analytics";
 const GENERAL_MENU_ID = "settings-general";
 const NOTIFICATION_SETTINGS_MENU_ID = "settings-notifications";
 const WEEKLY_DIGEST_MENU_ID = "settings-weekly-digest";
+const NEWS_DIGEST_MENU_ID = "settings-news-digest";
+const NEWS_DIGEST_TIME_MENU_ID = "settings-news-digest-time";
 const YOUTUBE_SIGNATURE_MENU_ID = "settings-youtube";
 const LANGUAGE_MENU_ID = "settings-language";
 const CHANNELS_MENU_ID = "settings-channels";
@@ -31,6 +34,8 @@ const X_IMPORT_MENU_ID = "settings-x-import";
 type ZernioAccount = StudioZernioAccount;
 const discoveredAccounts = new Map<number, { locale: "ru" | "en"; accounts: ZernioAccount[] }>();
 const pendingTimezones = new Set<number>();
+const pendingNewsDigestPrompts = new Set<number>();
+const pendingNewsDigestTimes = new Set<number>();
 const pendingThreadsFollowers = new Map<number, "ru" | "en">();
 const pendingXImports = new Set<number>();
 
@@ -65,6 +70,8 @@ export async function handleSettingsMessage(
   if (await collectXAnalyticsCsv(ctx, backendDb, config, actorId, settingsMenu)) return true;
   if (await collectThreadsFollowers(ctx, backendDb, actorId, text, settingsMenu)) return true;
   if (await collectTimezone(ctx, backendDb, config, actorId, text, settingsMenu)) return true;
+  if (await collectNewsDigestTime(ctx, backendDb, config, actorId, text, settingsMenu)) return true;
+  if (await collectNewsDigestPrompt(ctx, backendDb, config, actorId, text, settingsMenu)) return true;
   if (!createStudioServices(backendDb, config).settings.saveYoutubeSignature(actorId, text)) return false;
   const locale = settingsService(backendDb).locale(actorId);
   await ctx.reply(t(locale, "settings.youtube-saved"));
@@ -75,7 +82,7 @@ export async function handleSettingsMessage(
   return true;
 }
 
-export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): Menu<Context> {
+export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, bot: Bot | null = null): Menu<Context> {
   const channels = new Menu<Context>(CHANNELS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
     const locale = settingsService(backendDb).locale(actorId);
@@ -171,6 +178,75 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(t(locale, "settings.category-notifications-body"));
     });
+  });
+
+  const newsDigestTime = new Menu<Context>(NEWS_DIGEST_TIME_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
+    const settings = createStudioServices(backendDb, config).settings.newsDigest();
+    for (let hour = 0; hour < 24; hour += 1) {
+      const label = `${settings.hour === hour && settings.minute === 0 ? "● " : ""}${formatTime(hour, 0)}`;
+      range.text(label, async (ctx) => {
+        createStudioServices(backendDb, config).settings.setNewsDigest({ hour, minute: 0 });
+        await ctx.answerCallbackQuery({ text: t(locale, "settings.news-digest-time-set", { time: formatTime(hour, 0) }) });
+        await ctx.editMessageText(newsDigestTimeText(backendDb, config, locale), { parse_mode: "Markdown" });
+      });
+      if (hour % 4 === 3) range.row();
+    }
+    range
+      .text(t(locale, "settings.news-digest-time-custom"), async (ctx) => {
+        pendingNewsDigestTimes.add(Number(ctx.from?.id));
+        await ctx.answerCallbackQuery();
+        await ctx.reply(t(locale, "settings.news-digest-time-input-prompt"));
+      })
+      .row()
+      .back(t(locale, "settings.back-to-news-digest"), async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(newsDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
+      });
+  });
+
+  const newsDigest = new Menu<Context>(NEWS_DIGEST_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const actorId = Number(ctx.from?.id);
+    const locale = settingsService(backendDb).locale(actorId);
+    const settings = createStudioServices(backendDb, config).settings.newsDigest();
+    range
+      .text(`${settings.enabled ? "✅" : "◻️"} ${t(locale, "settings.news-digest-enabled")}`, async (ctx) => {
+        createStudioServices(backendDb, config).settings.setNewsDigest({ enabled: !settings.enabled });
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(newsDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
+      })
+      .row()
+      .submenu(
+        `${t(locale, "settings.news-digest-time")}: ${formatTime(settings.hour, settings.minute)}`,
+        NEWS_DIGEST_TIME_MENU_ID,
+        async (ctx) => {
+          await ctx.answerCallbackQuery();
+          await ctx.editMessageText(newsDigestTimeText(backendDb, config, locale), { parse_mode: "Markdown" });
+        },
+      )
+      .row()
+      .text(t(locale, "settings.news-digest-prompt-edit"), async (ctx) => {
+        pendingNewsDigestPrompts.add(actorId);
+        await ctx.answerCallbackQuery();
+        await ctx.reply(t(locale, "settings.news-digest-prompt-input"));
+      })
+      .row()
+      .text(t(locale, "settings.news-digest-send-now"), async (ctx) => {
+        if (!bot) {
+          await ctx.answerCallbackQuery({ text: t(locale, "settings.news-digest-unavailable"), show_alert: true });
+          return;
+        }
+        await ctx.answerCallbackQuery({ text: t(locale, "settings.news-digest-send-started") });
+        const result = await sendDailyNewsDigest(config, backendDb, bot, new Date(), { force: true });
+        if (result.status === "failed") await ctx.reply(t(locale, "settings.news-digest-send-failed", { error: result.error }));
+        else if (result.status === "missing_prompt") await ctx.reply(t(locale, "settings.news-digest-prompt-missing"));
+        else if (result.status === "already_sent") await ctx.reply(t(locale, "settings.news-digest-already-sent"));
+      })
+      .row()
+      .back(t(locale, "settings.back-to-notifications"), async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(t(locale, "settings.category-notifications-body"));
+      });
   });
 
   const youtubeSignature = new Menu<Context>(YOUTUBE_SIGNATURE_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
@@ -300,6 +376,11 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
         await ctx.editMessageText(weeklyDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
       })
       .row()
+      .submenu(t(locale, "settings.news-digest"), NEWS_DIGEST_MENU_ID, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(newsDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
+      })
+      .row()
       .back(t(locale, "settings.back-to-settings"), backToSettings(backendDb));
   });
 
@@ -375,6 +456,8 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb): 
   publishing.register(youtubeSignature);
   notificationsCategory.register(notificationSettings);
   notificationsCategory.register(weeklyDigest);
+  notificationsCategory.register(newsDigest);
+  newsDigest.register(newsDigestTime);
   analytics.register(threadsFollowers);
   analytics.register(xImport);
   general.register(language);
@@ -546,6 +629,81 @@ function weeklyDigestText(backendDb: BackendDb, config: BackendConfig, locale: S
     status: settings.enabled ? t(locale, "settings.on") : t(locale, "settings.off"),
     day: weekdayLabel(locale, settings.weekday),
   });
+}
+
+function newsDigestText(backendDb: BackendDb, config: BackendConfig, locale: StudioLocale): string {
+  const settings = createStudioServices(backendDb, config).settings.newsDigest();
+  return t(locale, "settings.news-digest-body", {
+    status: settings.enabled ? t(locale, "settings.on") : t(locale, "settings.off"),
+    time: formatTime(settings.hour, settings.minute),
+    timezone: config.TIMEZONE_LABEL,
+    prompt: settings.prompt ? t(locale, "settings.news-digest-prompt-set") : t(locale, "settings.news-digest-prompt-missing"),
+  });
+}
+
+function newsDigestTimeText(backendDb: BackendDb, config: BackendConfig, locale: StudioLocale): string {
+  const settings = createStudioServices(backendDb, config).settings.newsDigest();
+  return t(locale, "settings.news-digest-time-body", {
+    time: formatTime(settings.hour, settings.minute),
+    timezone: config.TIMEZONE_LABEL,
+  });
+}
+
+function formatTime(hour: number, minute: number): string {
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+async function collectNewsDigestPrompt(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  text: string,
+  settingsMenu: Menu<Context>,
+): Promise<boolean> {
+  if (!pendingNewsDigestPrompts.has(actorId)) return false;
+  pendingNewsDigestPrompts.delete(actorId);
+  if (isNavigationMessage(text)) return false;
+  const locale = settingsService(backendDb).locale(actorId);
+  try {
+    createStudioServices(backendDb, config).settings.setNewsDigest({ prompt: text === "-" ? "" : text });
+    await ctx.reply(t(locale, "settings.news-digest-prompt-saved"));
+    await ctx.reply(newsDigestText(backendDb, config, locale), {
+      parse_mode: "Markdown",
+      reply_markup: settingsMenu.at(NEWS_DIGEST_MENU_ID),
+    });
+  } catch (error) {
+    await ctx.reply(describeError(locale, error));
+  }
+  return true;
+}
+
+async function collectNewsDigestTime(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  text: string,
+  settingsMenu: Menu<Context>,
+): Promise<boolean> {
+  if (!pendingNewsDigestTimes.has(actorId)) return false;
+  pendingNewsDigestTimes.delete(actorId);
+  if (isNavigationMessage(text)) return false;
+  const locale = settingsService(backendDb).locale(actorId);
+  const match = /^(\d{1,2}):(\d{2})$/u.exec(text);
+  const hour = match ? Number(match[1]) : NaN;
+  const minute = match ? Number(match[2]) : NaN;
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    await ctx.reply(t(locale, "err.news-digest-time-invalid"));
+    return true;
+  }
+  createStudioServices(backendDb, config).settings.setNewsDigest({ hour, minute });
+  await ctx.reply(t(locale, "settings.news-digest-time-set", { time: formatTime(hour, minute) }));
+  await ctx.reply(newsDigestTimeText(backendDb, config, locale), {
+    parse_mode: "Markdown",
+    reply_markup: settingsMenu.at(NEWS_DIGEST_TIME_MENU_ID),
+  });
+  return true;
 }
 
 /**

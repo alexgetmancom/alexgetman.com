@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { StudioSettingsStore } from "../../application/ports.js";
-import { botSettings, botUiSettings, studioNotificationSettings, studioWeeklyDigestSettings } from "../schema.js";
+import { botSettings, botUiSettings, studioNewsDigestSettings, studioNotificationSettings, studioWeeklyDigestSettings } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite adapter for owner and Studio-wide settings. */
@@ -24,12 +24,26 @@ export function createStudioSettingsStore(db: BackendDatabase): StudioSettingsSt
       return db.select().from(studioWeeklyDigestSettings).where(eq(studioWeeklyDigestSettings.id, 1)).get() ?? null;
     },
 
+    newsDigest() {
+      return db.select().from(studioNewsDigestSettings).where(eq(studioNewsDigestSettings.id, 1)).get() ?? null;
+    },
+
     saveWeeklyDigest(input) {
       db.insert(studioWeeklyDigestSettings)
         .values({ id: 1, enabled: input.enabled, weekday: input.weekday, updatedAt: input.updatedAt })
         .onConflictDoUpdate({
           target: studioWeeklyDigestSettings.id,
           set: { enabled: input.enabled, weekday: input.weekday, updatedAt: input.updatedAt },
+        })
+        .run();
+    },
+
+    saveNewsDigest(input) {
+      db.insert(studioNewsDigestSettings)
+        .values({ id: 1, enabled: input.enabled, hour: input.hour, minute: input.minute, prompt: input.prompt, updatedAt: input.updatedAt })
+        .onConflictDoUpdate({
+          target: studioNewsDigestSettings.id,
+          set: { enabled: input.enabled, hour: input.hour, minute: input.minute, prompt: input.prompt, updatedAt: input.updatedAt },
         })
         .run();
     },

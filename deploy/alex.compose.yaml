@@ -51,6 +51,8 @@ services:
       OBSERVABILITY_INTERVAL_SECONDS: "300"
       REMOTE_MEDIA_PATH: /media/threads
       PUBLIC_MEDIA_BASE_URL: https://alexgetman.com/media/threads
+      GROK_HOME: /home/deploy/.grok
+      GROK_CLI_PATH: /home/deploy/.grok/bin/grok
       MEDIA_CACHE_DIR: /data/media-cache
       VIDEO_MEDIA_DIR: /data/video-media
       NODE_ENV: production
@@ -63,6 +65,7 @@ services:
       - ${ALEX_MEDIA_CACHE_DIR_HOST:-./media-cache}:/data/media-cache
       - ${ALEX_VIDEO_MEDIA_DIR_HOST:-./video-media}:/data/video-media
       - ./bot-api-data:/var/lib/telegram-bot-api:ro
+      - /home/deploy/.grok:/home/deploy/.grok
       - ${ALEX_THREADS_MEDIA_DIR_HOST:-/home/deploy/ialexey-web/media/threads}:/media/threads
       - ${ALEX_SITE_MEDIA_DIR_HOST:-/home/deploy/ialexey-web/media}:/data/site/media
     ports:

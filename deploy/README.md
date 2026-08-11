@@ -54,6 +54,12 @@ socket and can only request a rollback using a private bearer-authenticated rout
    DEPLOY_AGENT_HOST_GATEWAY=<agent_default gateway>
    ```
 
+   The backend containers also use the host's existing Grok CLI installation. Keep
+   `/home/deploy/.grok` present on the host and signed in; the compose files mount
+   that directory into both Studio containers and pass its absolute CLI path to the
+   backend. The mount is writable because Grok refreshes its credentials and keeps
+   headless-run state there.
+
    The existing `threads` directory is already a bind mount to the second disk.
    Moving the public site-media root itself requires changing the web server's
    mount/alias too, so it intentionally remains separate from cache migration.
