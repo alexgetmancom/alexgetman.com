@@ -55,7 +55,7 @@
         "COMMAND_CENTER_URL": "http://localhost:4322/command-center",
         "STUDIO_CONFIG": "studio.unified.example.yaml",
         "CONTROLLER_BOT_TOKEN": "mock",
-        "THREADS_ACCESS_TOKEN": "mock",
+        "THREADS_RU_ACCESS_TOKEN": "mock",
         "THREADS_EN_ACCESS_TOKEN": "mock",
         "X_CONSUMER_KEY": "mock",
         "X_CONSUMER_SECRET": "mock",
