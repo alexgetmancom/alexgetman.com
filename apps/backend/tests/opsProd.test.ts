@@ -75,7 +75,7 @@ describe("production operations launcher", () => {
     expect(result.stderr).toContain("OPS_SSH_TARGET is required");
   });
 
-  it("uses the default container and ships local files", async () => {
+  it("defaults to the alex deployment and ships local files", async () => {
     const directory = mkdtempSync(join(tmpdir(), "alexgetman-ops-file-"));
     const localFile = join(directory, "analytics.csv");
     writeFileSync(localFile, "csv contents");
@@ -83,7 +83,6 @@ describe("production operations launcher", () => {
     try {
       const { result, calls } = await runWithFakeSsh(["import-x-analytics", "--file", localFile, "--sampled-at", "2026-08-11T00:00:00Z"], {
         OPS_SSH_TARGET: "deploy@example.test",
-        OPS_CONTAINER: undefined,
       });
 
       expect(result.code).toBe(0);
@@ -101,15 +100,26 @@ describe("production operations launcher", () => {
     }
   });
 
-  it("uses an explicitly configured container", async () => {
-    const { result, calls } = await runWithFakeSsh(["audit"], {
+  it("routes --as to the named deployment's container", async () => {
+    const { result, calls } = await runWithFakeSsh(["--as", "maru", "audit"], {
       OPS_SSH_TARGET: "deploy@example.test",
-      OPS_CONTAINER: "backend",
     });
 
     expect(result.code).toBe(0);
+    expect(result.stderr).toContain("ops:prod → maru (maru-backend)");
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.args[1]).toContain("'backend'");
+    expect(calls[0]?.args[1]).toContain("'maru-backend'");
     expect(calls[0]?.args[1]).not.toContain("alexgetman-backend");
+    expect(calls[0]?.args[1]).not.toContain("--as");
+  });
+
+  it("refuses an unknown deployment before SSH", async () => {
+    const { result, calls } = await runWithFakeSsh(["--as", "nobody", "audit"], {
+      OPS_SSH_TARGET: "deploy@example.test",
+    });
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("alex, maru");
+    expect(calls).toHaveLength(0);
   });
 });

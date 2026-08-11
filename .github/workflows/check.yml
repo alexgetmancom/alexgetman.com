@@ -74,7 +74,7 @@ jobs:
                 backend_image=true
                 deployment=true
                 ;;
-              apps/backend/compose.yaml | deploy/maru.compose.yaml)
+              deploy/alex.compose.yaml | deploy/maru.compose.yaml)
                 runtime_config=true
                 deployment=true
                 ;;
@@ -479,7 +479,7 @@ jobs:
           ssh "${ssh_opts[@]}" "$remote" "install -d -m 0700 '$release_files'"
           release_paths=()
           if [ "$RUNTIME_CONFIG_CHANGED" = "true" ]; then
-            release_paths+=(apps/backend/compose.yaml deploy/maru.compose.yaml)
+            release_paths+=(deploy/alex.compose.yaml deploy/maru.compose.yaml)
           fi
           if [ "$DEPLOY_AGENT_CHANGED" = "true" ]; then
             release_paths+=(deploy/deploy-agent.ts deploy/retry.ts)
@@ -491,7 +491,7 @@ jobs:
             tar -cf - "${release_paths[@]}" | ssh "${ssh_opts[@]}" "$remote" "tar -xf - -C '$release_files'"
           fi
           if [ "$RUNTIME_CONFIG_CHANGED" = "true" ]; then
-            ssh "${ssh_opts[@]}" "$remote" "set -e; cp '$release_files/apps/backend/compose.yaml' $runtime/compose.yaml.next; docker compose --env-file $runtime/deploy-image.env -f $runtime/compose.yaml.next config --quiet; mv $runtime/compose.yaml.next $runtime/compose.yaml"
+            ssh "${ssh_opts[@]}" "$remote" "set -e; cp '$release_files/deploy/alex.compose.yaml' $runtime/compose.yaml.next; docker compose --env-file $runtime/deploy-image.env -f $runtime/compose.yaml.next config --quiet; mv $runtime/compose.yaml.next $runtime/compose.yaml"
           fi
           if [ "$DEPLOY_AGENT_CHANGED" = "true" ]; then
             ssh "${ssh_opts[@]}" "$remote" "set -e; install -m 0644 '$release_files/deploy/deploy-agent.ts' /home/deploy/repos/alexgetman.com/deploy/deploy-agent.ts; install -m 0644 '$release_files/deploy/retry.ts' /home/deploy/repos/alexgetman.com/deploy/retry.ts; sudo systemctl restart alexgetman-deploy-agent; for attempt in 1 2 3 4 5; do curl --fail --silent http://127.0.0.1:9899/healthz && exit 0; sleep 1; done; exit 1"

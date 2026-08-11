@@ -1,0 +1,26 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "studio",
+  "version": "1.0.0",
+  "description": "Operate a self-hosted Studio deployment over MCP: write, publish and schedule posts and video, read analytics, and diagnose delivery.",
+  "author": { "name": "Alex Getman", "url": "https://alexgetman.com" },
+  "homepage": "https://github.com/alexgetmancom/alexgetman.com",
+  "repository": "https://github.com/alexgetmancom/alexgetman.com",
+  "license": "MIT",
+  "keywords": ["publishing", "telegram", "analytics", "self-hosted", "studio"],
+  "userConfig": {
+    "studio_url": {
+      "type": "string",
+      "title": "Studio MCP endpoint",
+      "description": "The deployment's MCP URL, for example https://your-domain.example/api/mcp",
+      "required": true
+    },
+    "studio_token": {
+      "type": "string",
+      "title": "Studio token",
+      "description": "MCP_STUDIO_TOKEN from that deployment's secrets. Stored in secure storage, never in settings.json.",
+      "sensitive": true,
+      "required": true
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "studio": {
+      "type": "sse",
+      "url": "${user_config.studio_url}",
+      "headers": { "Authorization": "Bearer ${user_config.studio_token}" }
+    }
+  }
+}

@@ -42,6 +42,33 @@ describe("production nginx topology", () => {
     expect(maru).toContain("TRUSTED_CLIENT_IP_HEADER: x-real-ip");
     expect(maruNginx).toContain("location = /healthz");
     expect(maruNginx).toContain("location = /readyz");
-    expect(maruNginx.match(/proxy_pass http:\/\/127\.0\.0\.1:8789;/g)).toHaveLength(6);
+    expect(maruNginx.match(/proxy_pass http:\/\/127\.0\.0\.1:8789;/g)).toHaveLength(8);
+  });
+
+  it("keeps both accounts on one authentication story and one release path", () => {
+    // Two Studios, one system: the dashboard is reached with the application's
+    // token on both, and neither compose file may drift out of the release the
+    // workflow ships. A rename that misses the workflow deploys nothing and
+    // says nothing.
+    const commandCenter = read("deploy/nginx/production/alexgetman-command-center.conf");
+    const workflow = read(".github/workflows/check.yml");
+
+    expect(commandCenter).not.toContain("auth_basic");
+    expect(read("deploy/nginx/production/marux.ru.conf")).not.toContain("auth_basic");
+    for (const compose of ["deploy/alex.compose.yaml", "deploy/maru.compose.yaml"]) {
+      expect(read(compose)).toContain("container_name:");
+      expect(workflow).toContain(compose);
+    }
+  });
+
+  it("exposes the Studio transport the second account is operated through", () => {
+    // Maru's agent runs on her own machine and reaches this Studio over MCP
+    // alone. The default of this server block is `return 404`, so a route that
+    // is not named here is not merely unauthorized — it does not exist.
+    const maruNginx = read("deploy/nginx/production/marux.ru.conf");
+
+    expect(maruNginx).toContain("location = /api/mcp");
+    expect(maruNginx).toContain("location = /api/studio/media");
+    expect(maruNginx).toContain("proxy_request_buffering off;");
   });
 });

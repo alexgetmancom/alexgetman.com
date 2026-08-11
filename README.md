@@ -102,19 +102,34 @@ For a self-hosted production route, put the SSH destination in the ignored
 
 ```env
 OPS_SSH_TARGET=deploy@your-server.example
-# OPS_CONTAINER=backend
 ```
 
 Then use the same launcher for every production command:
 
 ```bash
 bun run ops:prod doctor
-bun run ops:prod audit
+bun run ops:prod --as maru audit
 ```
 
-The default container name is `alexgetman-backend`; set `OPS_CONTAINER` only when
-the server uses another name. The SSH key stays in the user's normal SSH agent or
+One host can run several Studios, each in its own container, so the launcher
+takes the deployment by name — `--as` selects it, its absence means `alex`, and
+the resolved deployment is printed on stderr. The names are the table at the top
+of `scripts/ops-prod.ts`. The SSH key stays in the user's normal SSH agent or
 `~/.ssh` and is never read from the repository.
+
+## Operating it from another machine
+
+A deployment can be driven from a machine that has no checkout at all: `/api/mcp` is the whole
+interface. The [`studio` plugin](plugin/) in this repository packages that transport together with
+the skill that uses it, so an operator installs it once and supplies their own endpoint and token:
+
+```shell
+/plugin marketplace add alexgetmancom/alexgetman.com
+/plugin install studio@alexgetman
+```
+
+Nothing about this repository's own deployment is baked into it. See
+[deploy/README.md](deploy/README.md) for the routes a self-hosted server must expose.
 
 ## Container permissions
 

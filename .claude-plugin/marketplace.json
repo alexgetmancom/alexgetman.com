@@ -1,0 +1,12 @@
+{
+  "name": "alexgetman",
+  "description": "Plugins for operating a self-hosted alexgetman.com publishing system.",
+  "owner": { "name": "Alex Getman", "url": "https://alexgetman.com" },
+  "plugins": [
+    {
+      "name": "studio",
+      "source": "./plugin",
+      "description": "Operate a self-hosted Studio deployment over MCP from any machine."
+    }
+  ]
+}

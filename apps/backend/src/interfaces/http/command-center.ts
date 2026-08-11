@@ -1,3 +1,4 @@
+import { allowPublicRequest } from "../../engagement/rate-limit.js";
 import { commandAllowed, sameOriginCommandLogin } from "../../foundation/http-auth.js";
 import { html, json, loginRedirect, queryTokenRedirect, text } from "../../foundation/http-response.js";
 import { parseStudioLocale } from "../../foundation/locale.js";
@@ -12,7 +13,11 @@ import {
 } from "../web/dashboard.js";
 import type { RouteModule } from "./context.js";
 
-export const commandCenterRoutes: RouteModule = (app, { config, backendDb, operations, studio }) => {
+/** Enough for a mistyped token on a phone, far too few to search a secret. */
+const LOGIN_ATTEMPT_LIMIT = 10;
+const LOGIN_ATTEMPT_WINDOW_SECONDS = 300;
+
+export const commandCenterRoutes: RouteModule = (app, { config, backendDb, engagement, operations, studio }) => {
   app.get("/command-center", (c) => {
     const request = c.req.raw;
     const url = new URL(request.url);
@@ -46,8 +51,25 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, opera
     if (!sameOriginCommandLogin(request, config)) return text("forbidden\n", 403);
     const form = await request.formData().catch(() => new FormData());
     const token = form.get("token");
-    if (typeof token !== "string" || !commandAllowed(request, config, token))
+    // The token is the only thing guarding the dashboard from the open
+    // internet, and it is submitted here in a loop-friendly form post, so
+    // guessing has to cost wall-clock time. Only a *failed* attempt spends
+    // budget: behind a proxy that does not set the trusted client header every
+    // caller hashes to one key, and counting successes there would let a
+    // stranger's guessing lock the owner out of their own dashboard.
+    if (typeof token !== "string" || !commandAllowed(request, config, token)) {
+      const attempt = allowPublicRequest(
+        `command-login:${engagement.clientKey(request)}`,
+        LOGIN_ATTEMPT_LIMIT,
+        LOGIN_ATTEMPT_WINDOW_SECONDS,
+      );
+      if (!attempt.allowed)
+        return new Response("too many attempts\n", {
+          status: 429,
+          headers: { "content-type": "text/plain; charset=utf-8", "retry-after": String(attempt.retryAfter) },
+        });
       return html(renderCommandCenterLogin(parseStudioLocale(form.get("locale")), true));
+    }
     return loginRedirect("/command-center", "command_token", token);
   });
 

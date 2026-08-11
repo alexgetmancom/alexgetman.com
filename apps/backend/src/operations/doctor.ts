@@ -8,6 +8,8 @@ type DoctorConfig = Pick<
   | "YOUTUBE_RU_REFRESH_TOKEN"
   | "INSTAGRAM_RU_ACCESS_TOKEN"
   | "INSTAGRAM_RU_USER_ID"
+  | "MCP_STUDIO_TOKEN"
+  | "MCP_STUDIO_ACTOR_ID"
   | "studio"
 >;
 
@@ -22,6 +24,10 @@ export function doctorChecks(config: DoctorConfig, dataDirectories: DataDirector
   const checks = {
     ...requiredChecks,
     commandCenterTokenConfigured: Boolean(config.COMMAND_CENTER_TOKEN),
+    // A Studio operated from its own machine reaches this deployment over MCP
+    // only, and both halves must be present: the token authorizes nothing
+    // without the actor it resolves to, and work belongs to that actor.
+    studioTransportConfigured: Boolean(config.MCP_STUDIO_TOKEN && config.MCP_STUDIO_ACTOR_ID),
   };
   return { requiredChecks, checks };
 }

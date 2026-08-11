@@ -24,6 +24,11 @@ socket and can only request a rollback using a private bearer-authenticated rout
    working, for example `BACKEND_IMAGE=ghcr.io/alexgetmancom/alexgetman-backend@sha256:...`.
    Never seed it with `latest`; rollback is deliberately refused without a digest.
 
+   Both compose files are committed — [alex.compose.yaml](alex.compose.yaml) and
+   [maru.compose.yaml](maru.compose.yaml) — and CI copies them to the paths above
+   whenever they change, validating each with `docker compose config` before the
+   move. Edit them here, never on the host.
+
 2. Copy `deploy-agent.env.example` to `/etc/alexgetman/deploy-agent.env`, fill the
    token/chat values, and set mode `0600`. Set `DEPLOY_AGENT_HOST` to the gateway
    address of the Docker network used by the backends (obtain it with
@@ -116,6 +121,31 @@ two halves to compare. Verify with `ops channels`, which must list
 The site module stays off: a Studio can publish text to Telegram without
 publishing a website.
 
+## Operating a Studio from its own machine
+
+A Studio can be operated from a machine that has no checkout: the MCP transport at `/api/mcp` is
+the whole interface, authorized by `MCP_STUDIO_TOKEN` and resolving to `MCP_STUDIO_ACTOR_ID`, so
+work lands in the same workspace the owner sees in the Telegram bot. `ops doctor` reports
+`studioTransportConfigured` when both are set. Media travels separately, as a raw body to
+`/api/studio/media`.
+
+That machine installs the `studio` plugin from this repository, which carries both the MCP server
+and the skill that drives it:
+
+```shell
+/plugin marketplace add alexgetmancom/alexgetman.com
+/plugin install studio@alexgetman
+```
+
+Enabling it prompts for the endpoint and the token, and the token goes to secure storage rather
+than `settings.json`. One install points at one deployment, so a second Studio is a second machine
+or a second scope — not a second entry here. The skill deliberately carries no command catalog:
+`tools/list` and `studio_capabilities` describe the deployment and stay correct across releases.
+
+Both routes are on the public site of the first Studio already. The second Studio's nginx server
+block is an allowlist that ends in `return 404`, so each route it should answer is named in
+[nginx/production/marux.ru.conf](nginx/production/marux.ru.conf) explicitly.
+
 ## Optional remote worker targets
 
 Remote workers run the same deploy-agent protocol with a different `service` and
@@ -133,23 +163,24 @@ recreate and health-check, so rollback always restores its own previous image.
 ## Read-only runtime diagnostics
 
 The production image includes the bundled backend operations CLI. From a checkout,
-configure the ignored root `.env.local` file and use the single production launcher:
+put the SSH destination in the ignored root `.env.local` file and use the single
+production launcher:
 
 ```env
 OPS_SSH_TARGET=deploy@your-server.example
-# OPS_CONTAINER=backend
 ```
 
 ```bash
 bun run ops:prod status
-bun run ops:prod doctor
 bun run ops:prod audit
-bun run ops:prod usage --days 30 --unused-days 90
+bun run ops:prod --as maru status
 ```
 
-The default container name is `alexgetman-backend`; set `OPS_CONTAINER` only when
-the server uses another name. The launcher executes the bundled CLI as `bun`, the
-same unprivileged user used by the application.
+Each Studio is a container of its own, so the launcher takes the deployment by
+name: no `--as` means `alex`, and every run prints the deployment and container
+it resolved to on stderr. The names live in `scripts/ops-prod.ts`; a third Studio
+is one line there. The launcher executes the bundled CLI as `bun`, the same
+unprivileged user used by the application.
 
 Use only the read-only commands above for routine diagnostics. Commands such as
 `backup`, `restore`, and `metrics-backfill --apply` mutate state and require an

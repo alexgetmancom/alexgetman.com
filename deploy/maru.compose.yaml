@@ -5,7 +5,7 @@ services:
     image: ${BACKEND_IMAGE:?set an immutable backend image digest}
     pull_policy: always
     container_name: maru-backend
-    # No `command:` — see apps/backend/compose.yaml: the image entrypoint owns
+    # No `command:` — see deploy/alex.compose.yaml: the image entrypoint owns
     # startup, and Bun flags such as --smol only work from the ENTRYPOINT.
     restart: unless-stopped
     security_opt:

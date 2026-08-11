@@ -82,6 +82,35 @@ describe("Astro endpoint controller", () => {
     }
   });
 
+  it("stops a run of command-center login guesses", async () => {
+    const backendDb = tempDb();
+    try {
+      const config = loadConfig({ COMMAND_CENTER_TOKEN: "secret" });
+      const app = createApiApp(config, backendDb);
+      const origin = new URL(config.COMMAND_CENTER_URL).origin;
+      const guess = () => {
+        const body = new FormData();
+        body.set("token", "wrong");
+        return app.request("/command-center", { method: "POST", body, headers: { origin } });
+      };
+
+      // No HTTP Basic stands in front of this form any more, so the limiter is
+      // the only thing making a guess cost wall-clock time.
+      const statuses: number[] = [];
+      for (let attempt = 0; attempt < 12; attempt += 1) statuses.push((await guess()).status);
+      expect(statuses.at(-1)).toBe(429);
+
+      // The owner is not collateral damage: a correct token still signs in
+      // while a stranger's guesses are being refused on the same bucket.
+      const correct = new FormData();
+      correct.set("token", "secret");
+      const signIn = await app.request("/command-center", { method: "POST", body: correct, headers: { origin } });
+      expect(signIn.status).toBe(303);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("serves a stable compact command-center fingerprint", async () => {
     const backendDb = tempDb();
     try {

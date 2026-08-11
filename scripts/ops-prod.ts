@@ -1,8 +1,33 @@
 import { basename } from "node:path";
 
+/** The host runs one container per Studio. Naming the deployment is how a
+ * command says which one it means; there is no ambient default beyond `alex`. */
+const DEPLOYMENTS = {
+  alex: "alexgetman-backend",
+  maru: "maru-backend",
+} as const;
+type Deployment = keyof typeof DEPLOYMENTS;
+const DEPLOYMENT_NAMES = Object.keys(DEPLOYMENTS).join(", ");
+const USAGE = `usage: bun run ops:prod [--as ${DEPLOYMENT_NAMES}] <command> [arguments]`;
+
 const argv = process.argv.slice(2);
 if (argv.length === 0) {
-  console.error("usage: bun run ops:prod <command> [arguments]");
+  console.error(USAGE);
+  process.exit(1);
+}
+
+let deployment: Deployment = "alex";
+if (argv[0] === "--as") {
+  const requested = argv[1] ?? "";
+  if (!isDeployment(requested)) {
+    console.error(`--as takes a deployment name: ${DEPLOYMENT_NAMES}`);
+    process.exit(1);
+  }
+  deployment = requested;
+  argv.splice(0, 2);
+}
+if (argv.length === 0 || argv.includes("--as")) {
+  console.error(USAGE);
   process.exit(1);
 }
 
@@ -12,7 +37,11 @@ if (!sshTarget) {
   process.exit(1);
 }
 
-const container = process.env.OPS_CONTAINER?.trim() || "alexgetman-backend";
+const container = DEPLOYMENTS[deployment];
+
+/** Reading an answer about the wrong Studio is the failure this guards, and it
+ * is invisible without a banner. stderr keeps stdout parseable as JSON. */
+console.error(`ops:prod → ${deployment} (${container})`);
 
 /** A path argument names a file on this Mac, and the command runs in a
  * container that cannot see it. Ship it in, run against the copy, remove it. */
@@ -54,6 +83,10 @@ async function run(command: string[], stdinFile?: string): Promise<number> {
     stderr: "inherit",
   });
   return await child.exited;
+}
+
+function isDeployment(value: string): value is Deployment {
+  return value in DEPLOYMENTS;
 }
 
 function remoteCommand(parts: readonly string[]): string {
