@@ -39,7 +39,7 @@ export async function sendDailyNewsDigest(
 
   const key = `news_digest:${date.day}`;
   const owner = "telegram:news-digest";
-  if (!claimSync(backendDb, key, 24 * 60 * 60, owner)) return { status: "already_sent" };
+  if (!options.force && !claimSync(backendDb, key, 24 * 60 * 60, owner)) return { status: "already_sent" };
 
   try {
     const markdown = await runGrok(config, settings.prompt, options.spawn ?? (Bun.spawn as unknown as GrokSpawn));
@@ -57,11 +57,11 @@ export async function sendDailyNewsDigest(
       }
     }
     if (delivered === 0) throw new Error("Telegram rejected the news digest for every administrator");
-    markSynced(backendDb, key, null, owner);
+    if (!options.force) markSynced(backendDb, key, null, owner);
     return { status: "sent" };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    markSynced(backendDb, key, message.slice(0, 500), owner);
+    if (!options.force) markSynced(backendDb, key, message.slice(0, 500), owner);
     log("warn", "daily news digest failed", { error: message });
     return { status: "failed", error: message };
   }

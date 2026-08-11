@@ -63,7 +63,8 @@ describe("daily news digest", () => {
 
       expect(await sendDailyNewsDigest(config, backendDb, bot, now, { spawn })).toEqual({ status: "disabled" });
       expect(await sendDailyNewsDigest(config, backendDb, bot, now, { force: true, spawn })).toEqual({ status: "sent" });
-      expect(runs).toBe(1);
+      expect(await sendDailyNewsDigest(config, backendDb, bot, now, { force: true, spawn })).toEqual({ status: "sent" });
+      expect(runs).toBe(2);
     });
   });
 
