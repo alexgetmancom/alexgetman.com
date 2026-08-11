@@ -21,6 +21,26 @@ export type NewsDigestRunResult =
   | { status: "disabled" | "not_due" | "missing_prompt" | "already_sent" }
   | { status: "failed"; error: string };
 
+const NEWS_DIGEST_JSON_SCHEMA = JSON.stringify({
+  type: "object",
+  properties: {
+    markdown: { type: "string", minLength: 1, pattern: "^1\\." },
+  },
+  required: ["markdown"],
+  additionalProperties: false,
+});
+const NEWS_DIGEST_OUTPUT_INSTRUCTIONS =
+  'Return exactly one JSON object with a "markdown" string. The markdown value must begin immediately with item 1 as `1.`. Do not output progress updates, search status, reasoning, an introduction, a conclusion, or any text outside that JSON object.';
+const NEWS_DIGEST_RETRY_INSTRUCTIONS =
+  "Your previous response was rejected because its markdown did not begin immediately with `1.`. This is the final attempt: return exactly one JSON object with a markdown value that starts with `1.` and contains only the requested news items.";
+
+class NewsDigestFormatError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NewsDigestFormatError";
+  }
+}
+
 /** Runs one shared daily Grok report and delivers it as a Markdown document. */
 export async function sendDailyNewsDigest(
   config: BackendConfig,
@@ -68,10 +88,39 @@ export async function sendDailyNewsDigest(
 }
 
 async function runGrok(config: BackendConfig, prompt: string, spawn: GrokSpawn): Promise<string> {
-  const child = spawn([config.GROK_CLI_PATH, "--no-leader", "--output-format", "plain", "--always-approve", "--single", prompt], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  let formatError: NewsDigestFormatError | undefined;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const attemptPrompt = `${prompt.trim()}\n\n${NEWS_DIGEST_OUTPUT_INSTRUCTIONS}${attempt === 1 ? `\n\n${NEWS_DIGEST_RETRY_INSTRUCTIONS}` : ""}`;
+      return await runGrokAttempt(config, attemptPrompt, spawn);
+    } catch (error) {
+      if (!(error instanceof NewsDigestFormatError) || attempt === 1) throw error;
+      formatError = error;
+    }
+  }
+  throw formatError ?? new Error("Grok CLI did not produce a news digest");
+}
+
+async function runGrokAttempt(config: BackendConfig, prompt: string, spawn: GrokSpawn): Promise<string> {
+  const child = spawn(
+    [
+      config.GROK_CLI_PATH,
+      "--no-leader",
+      "--reasoning-effort",
+      "low",
+      "--output-format",
+      "json",
+      "--json-schema",
+      NEWS_DIGEST_JSON_SCHEMA,
+      "--always-approve",
+      "--single",
+      prompt,
+    ],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
   let timedOut = false;
   const timeout = setTimeout(() => {
     timedOut = true;
@@ -85,12 +134,38 @@ async function runGrok(config: BackendConfig, prompt: string, spawn: GrokSpawn):
     ]);
     if (timedOut) throw new Error(`Grok CLI timed out after ${config.GROK_CLI_TIMEOUT_SECONDS} seconds`);
     if (exitCode !== 0) throw new Error(`Grok CLI exited with code ${exitCode}: ${stderr.trim().slice(0, 500)}`);
-    const markdown = stdout.trim();
-    if (!markdown) throw new Error(`Grok CLI returned an empty response${stderr.trim() ? `: ${stderr.trim().slice(0, 500)}` : ""}`);
-    return `${markdown}\n`;
+    let response: unknown;
+    try {
+      response = JSON.parse(stdout);
+    } catch {
+      throw new NewsDigestFormatError("Grok CLI returned invalid JSON");
+    }
+    if (!response || typeof response !== "object" || !("text" in response) || typeof response.text !== "string") {
+      throw new NewsDigestFormatError("Grok CLI JSON response did not contain text");
+    }
+    const markdown = extractMarkdown(response.text);
+    if (markdown === null) throw new NewsDigestFormatError("Grok CLI did not return structured news markdown");
+    if (!markdown.startsWith("1.")) throw new NewsDigestFormatError("Grok news markdown must start with 1.");
+    return `${markdown.trimEnd()}\n`;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function extractMarkdown(text: string): string | null {
+  const value = text.trim();
+  for (let index = value.lastIndexOf("{"); index >= 0; index = value.lastIndexOf("{", index - 1)) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(value.slice(index));
+    } catch {
+      continue;
+    }
+    if (parsed && typeof parsed === "object" && "markdown" in parsed && typeof parsed.markdown === "string") {
+      return parsed.markdown;
+    }
+  }
+  return null;
 }
 
 function zonedDate(timeZone: string, now: Date): { day: string; hour: number; minute: number } {
