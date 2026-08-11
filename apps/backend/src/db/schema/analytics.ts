@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { autoId, type JsonObject, type JsonValue, json } from "./_shared.js";
 
@@ -14,7 +15,10 @@ export const postMetrics = sqliteTable(
     error: text(),
     rawJson: json<JsonValue | null>(),
   },
-  (table) => [primaryKey({ columns: [table.postKey, table.target, table.metricName] })],
+  (table) => [
+    primaryKey({ columns: [table.postKey, table.target, table.metricName] }),
+    index("idx_post_metrics_sampled_at").on(table.sampledAt),
+  ],
 );
 
 export const metricSamples = sqliteTable(
@@ -51,7 +55,13 @@ export const metricSchedule = sqliteTable(
     lockedAt: text(),
     updatedAt: text().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.postKey, table.target] }), index("idx_metric_schedule_lock").on(table.lockedBy, table.lockedAt)],
+  (table) => [
+    primaryKey({ columns: [table.postKey, table.target] }),
+    index("idx_metric_schedule_lock").on(table.lockedBy, table.lockedAt),
+    index("idx_metric_schedule_error_updated_at")
+      .on(table.updatedAt)
+      .where(sql`${table.lastError} IS NOT NULL AND ${table.lastError} <> ''`),
+  ],
 );
 
 export const analyticsRollups = sqliteTable("analytics_rollups", {
@@ -71,11 +81,15 @@ export const analyticsSync = sqliteTable("analytics_sync", {
   lockedAt: text(),
 });
 
-export const creatorProfiles = sqliteTable("creator_profiles", {
-  platform: text().primaryKey(),
-  dataJson: json<JsonObject>().notNull(),
-  updatedAt: text().notNull(),
-});
+export const creatorProfiles = sqliteTable(
+  "creator_profiles",
+  {
+    platform: text().primaryKey(),
+    dataJson: json<JsonObject>().notNull(),
+    updatedAt: text().notNull(),
+  },
+  (table) => [index("idx_creator_profiles_updated_at").on(table.updatedAt)],
+);
 
 /** Immutable daily audience observations. creatorProfiles remains the latest
  * read model, while this table is the Analytics history. */
@@ -116,6 +130,7 @@ export const xActivityItems = sqliteTable(
   (table) => [
     index("idx_x_activity_items_published").on(table.publishedAt),
     index("idx_x_activity_items_linked_post").on(table.linkedPostKey),
+    index("idx_x_activity_items_last_seen_at").on(table.lastSeenAt),
   ],
 );
 

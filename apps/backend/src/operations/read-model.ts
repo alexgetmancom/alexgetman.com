@@ -324,7 +324,6 @@ function fetchMetricSamples(
     .all(start, bucketSeconds, ...postKeys, start, end, firstBucket) as PipelineSampleRow[];
 }
 
-/** Stable revision for the pipeline read model. It must not be request time. */
 /** The newest metric samples with the post they belong to. Both the pipeline
  * read model and the Command Center payload report this same list, and it was
  * written out twice, identically. */
@@ -346,22 +345,4 @@ export function recentPostMetrics(backendDb: BackendDb) {
     .orderBy(desc(postMetrics.sampledAt), asc(postMetrics.postKey), asc(postMetrics.target), asc(postMetrics.metricName))
     .limit(100)
     .all();
-}
-
-export function pipelineUpdatedAt(backendDb: BackendDb): string | null {
-  const row = unsafeDb(backendDb)
-    .sqlite.prepare(
-      `SELECT MAX(value) AS value
-         FROM (
-           SELECT MAX(updated_at) AS value FROM posts
-           UNION ALL SELECT MAX(updated_at) FROM post_targets
-           UNION ALL SELECT MAX(sampled_at) FROM post_metrics
-           UNION ALL SELECT MAX(sampled_at) FROM metric_samples
-           UNION ALL SELECT MAX(updated_at) FROM publish_jobs
-           UNION ALL SELECT MAX(updated_at) FROM site_jobs
-           UNION ALL SELECT MAX(updated_at) FROM metric_schedule WHERE last_error IS NOT NULL AND last_error <> ''
-         )`,
-    )
-    .get() as { value: string | null };
-  return row.value ?? null;
 }

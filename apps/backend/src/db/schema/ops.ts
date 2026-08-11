@@ -14,7 +14,10 @@ export const postEvents = sqliteTable(
     createdAt: text().notNull(),
     ackedAt: text(),
   },
-  (table) => [index("idx_post_events_lookup").on(table.postKey, table.target, table.createdAt)],
+  (table) => [
+    index("idx_post_events_lookup").on(table.postKey, table.target, table.createdAt),
+    index("idx_post_events_created_at").on(table.createdAt),
+  ],
 );
 
 export const opsActions = sqliteTable(
@@ -74,17 +77,21 @@ export const maintenanceLocks = sqliteTable("maintenance_locks", {
   createdAt: text().notNull(),
 });
 
-export const credentialChecks = sqliteTable("credential_checks", {
-  target: text().primaryKey(),
-  status: text().notNull(),
-  requiredEnvJson: text().notNull(),
-  missingEnvJson: text().notNull(),
-  expiresAt: text(),
-  lastCheckedAt: text().notNull(),
-  nextCheckAt: text(),
-  lastError: text(),
-  detailsJson: text(),
-});
+export const credentialChecks = sqliteTable(
+  "credential_checks",
+  {
+    target: text().primaryKey(),
+    status: text().notNull(),
+    requiredEnvJson: text().notNull(),
+    missingEnvJson: text().notNull(),
+    expiresAt: text(),
+    lastCheckedAt: text().notNull(),
+    nextCheckAt: text(),
+    lastError: text(),
+    detailsJson: text(),
+  },
+  (table) => [index("idx_credential_checks_last_checked_at").on(table.lastCheckedAt)],
+);
 
 export const platformCapabilities = sqliteTable(
   "platform_capabilities",

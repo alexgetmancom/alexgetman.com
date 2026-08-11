@@ -3,7 +3,7 @@ import { type BackendDb, unsafeDb } from "../db/client.js";
 import { credentialChecks, drafts, opsActions, postEvents, postTargets, publishJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { capabilityReport } from "../observability/capabilities.js";
-import { pipelineUpdatedAt, recentPostMetrics } from "./read-model.js";
+import { recentPostMetrics } from "./read-model.js";
 
 export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb) {
   const queue = unsafeDb(backendDb)
@@ -162,27 +162,31 @@ type CommandCenterFingerprint = {
 };
 
 export function commandCenterFingerprint(backendDb: BackendDb): CommandCenterFingerprint {
-  const revisions = unsafeDb(backendDb)
+  return unsafeDb(backendDb)
     .sqlite.prepare(
       `SELECT
+         (SELECT MAX(value) FROM (
+           SELECT MAX(updated_at) AS value FROM posts
+           UNION ALL SELECT MAX(updated_at) FROM post_targets
+           UNION ALL SELECT MAX(sampled_at) FROM post_metrics
+           UNION ALL SELECT MAX(sampled_at) FROM metric_samples
+           UNION ALL SELECT MAX(updated_at) FROM publish_jobs
+           UNION ALL SELECT MAX(updated_at) FROM site_jobs
+           UNION ALL SELECT MAX(updated_at) FROM metric_schedule WHERE last_error IS NOT NULL AND last_error <> ''
+         )) AS pipelineUpdatedAt,
          (SELECT MAX(updated_at) FROM publish_jobs) AS latestJobUpdatedAt,
          (SELECT MAX(created_at) FROM post_events) AS latestEventAt,
          (SELECT MAX(value) FROM (
            SELECT MAX(updated_at) AS value FROM video_drafts
            UNION ALL SELECT MAX(sampled_at) FROM video_metric_snapshots
-         )) AS videoRevision`,
+         )) AS videoRevision,
+         (SELECT MAX(value) FROM (
+           SELECT MAX(last_seen_at) AS value FROM x_activity_items
+           UNION ALL SELECT MAX(sampled_at) FROM x_activity_metric_snapshots
+           UNION ALL SELECT MAX(sampled_at) FROM creator_profile_snapshots
+           UNION ALL SELECT MAX(updated_at) FROM creator_profiles
+           UNION ALL SELECT MAX(last_checked_at) FROM credential_checks
+         )) AS analyticsRevision`,
     )
-    .get() as Omit<CommandCenterFingerprint, "pipelineUpdatedAt" | "analyticsRevision">;
-  const analytics = unsafeDb(backendDb)
-    .sqlite.prepare(
-      `SELECT MAX(value) AS analyticsRevision FROM (
-         SELECT MAX(last_seen_at) AS value FROM x_activity_items
-         UNION ALL SELECT MAX(sampled_at) FROM x_activity_metric_snapshots
-         UNION ALL SELECT MAX(sampled_at) FROM creator_profile_snapshots
-         UNION ALL SELECT MAX(updated_at) FROM creator_profiles
-         UNION ALL SELECT MAX(last_checked_at) FROM credential_checks
-       )`,
-    )
-    .get() as { analyticsRevision: string | null };
-  return { pipelineUpdatedAt: pipelineUpdatedAt(backendDb), ...revisions, analyticsRevision: analytics.analyticsRevision ?? null };
+    .get() as CommandCenterFingerprint;
 }

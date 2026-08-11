@@ -29,6 +29,7 @@ export const publishJobs = sqliteTable(
     index("idx_publish_jobs_due").on(table.status, table.publishAt, table.nextAttemptAt, table.createdAt),
     index("idx_publish_jobs_lock").on(table.lockedBy, table.lockedAt),
     index("idx_publish_jobs_post").on(table.postId, table.target, table.status),
+    index("idx_publish_jobs_updated_at").on(table.updatedAt),
   ],
 );
 
@@ -50,13 +51,17 @@ export const publicationSources = sqliteTable("publication_sources", {
   ...timestamps(),
 });
 
-export const publications = sqliteTable("publications", {
-  postId: autoId(),
-  draftId: integer(),
-  status: text().notNull().default("draft"),
-  telegramMessageId: integer(),
-  ...timestamps(),
-});
+export const publications = sqliteTable(
+  "publications",
+  {
+    postId: autoId(),
+    draftId: integer(),
+    status: text().notNull().default("draft"),
+    telegramMessageId: integer(),
+    ...timestamps(),
+  },
+  (table) => [index("idx_publications_created_at").on(table.createdAt)],
+);
 
 export const drafts = sqliteTable("drafts", {
   id: autoId(),

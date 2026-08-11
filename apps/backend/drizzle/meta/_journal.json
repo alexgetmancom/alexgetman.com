@@ -64,6 +64,13 @@
       "when": 1786305000000,
       "tag": "0008_require_video_studio_assets",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1786450000000,
+      "tag": "0009_dashboard_revision_indexes",
+      "breakpoints": true
     }
   ]
 }
