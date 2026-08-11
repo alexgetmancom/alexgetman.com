@@ -291,65 +291,58 @@ function videoSnapshots(
 ): Map<number, VideoSnapshot[]> {
   const snapshots = new Map<number, VideoSnapshot[]>();
   if (!rows.length) return snapshots;
-  const placeholders = rows.map(() => "?").join(",");
   const bucketFactor = 86_400 / bucketSeconds;
+  // The range is the only part that needs bucketing. Baseline and lifetime
+  // latest are point lookups against (video_target_id, sampled_at); including
+  // their entire pre-range history in a materialized CTE made a 30-day chart
+  // pay for every old snapshot on every render.
   const samples = unsafeDb(backendDb)
     .sqlite.prepare(
-      `WITH candidates AS (
-           SELECT id, video_target_id AS targetId, sampled_at AS sampledAt,
-                  CASE WHEN sampled_at >= ?
-                       THEN CAST((julianday(sampled_at) - julianday(?)) * ? AS INTEGER)
-                  END AS bucket
-             FROM video_metric_snapshots
-            WHERE video_target_id IN (${placeholders}) AND sampled_at <= ?
+      `WITH targetIds(targetId) AS (VALUES ${rows.map(() => "(?)").join(",")}),
+         rangeSamples AS (
+           SELECT sample.id, sample.video_target_id AS targetId, sample.sampled_at AS sampledAt,
+                  CAST((julianday(sample.sampled_at) - julianday(?)) * ? AS INTEGER) AS bucket
+             FROM video_metric_snapshots AS sample
+               JOIN targetIds AS target ON target.targetId = sample.video_target_id
+            WHERE sample.sampled_at >= ? AND sample.sampled_at <= ?
          ),
          rangeTimes AS (
            SELECT targetId, bucket, MAX(sampledAt) AS sampledAt
-             FROM candidates
-            WHERE bucket IS NOT NULL
+             FROM rangeSamples
             GROUP BY targetId, bucket
          ),
          rangeIds AS (
            SELECT MAX(candidate.id) AS id
-             FROM candidates AS candidate
+             FROM rangeSamples AS candidate
              JOIN rangeTimes AS range
                ON range.targetId = candidate.targetId
               AND range.bucket = candidate.bucket
               AND range.sampledAt = candidate.sampledAt
             GROUP BY range.targetId, range.bucket
          ),
-         bounds AS (
-           SELECT targetId,
-                  MAX(CASE WHEN sampledAt < ? THEN sampledAt END) AS baselineAt,
-                  MAX(sampledAt) AS latestAt
-             FROM candidates
-            GROUP BY targetId
-         ),
-         boundIds AS (
-           SELECT MAX(candidate.id) AS id
-             FROM candidates AS candidate
-             JOIN bounds AS bound
-               ON bound.targetId = candidate.targetId
-              AND (candidate.sampledAt = bound.baselineAt OR candidate.sampledAt = bound.latestAt)
-            GROUP BY candidate.targetId, candidate.sampledAt
-         ),
-         latestTimes AS (
-           SELECT video_target_id AS targetId, MAX(sampled_at) AS sampledAt
-             FROM video_metric_snapshots
-            WHERE video_target_id IN (${placeholders})
-            GROUP BY video_target_id
+         baselineIds AS (
+           SELECT (
+             SELECT sample.id
+               FROM video_metric_snapshots AS sample
+              WHERE sample.video_target_id = target.targetId AND sample.sampled_at < ?
+              ORDER BY sample.sampled_at DESC, sample.id DESC
+              LIMIT 1
+           ) AS id
+             FROM targetIds AS target
          ),
          latestIds AS (
-           SELECT MAX(snapshot.id) AS id
-             FROM video_metric_snapshots AS snapshot
-             JOIN latestTimes AS latest
-               ON latest.targetId = snapshot.video_target_id
-              AND latest.sampledAt = snapshot.sampled_at
-            GROUP BY snapshot.video_target_id, snapshot.sampled_at
+           SELECT (
+             SELECT sample.id
+               FROM video_metric_snapshots AS sample
+              WHERE sample.video_target_id = target.targetId
+              ORDER BY sample.sampled_at DESC, sample.id DESC
+              LIMIT 1
+           ) AS id
+             FROM targetIds AS target
          ),
          wanted AS (
            SELECT id FROM rangeIds WHERE id IS NOT NULL
-           UNION SELECT id FROM boundIds WHERE id IS NOT NULL
+           UNION SELECT id FROM baselineIds WHERE id IS NOT NULL
            UNION SELECT id FROM latestIds WHERE id IS NOT NULL
          )
          SELECT video_target_id AS targetId,
@@ -367,13 +360,12 @@ function videoSnapshots(
           ORDER BY targetId ASC, sampledAt ASC, id ASC`,
     )
     .all(
-      start.toISOString(),
+      ...rows.map((row) => row.id),
       start.toISOString(),
       bucketFactor,
-      ...rows.map((row) => row.id),
+      start.toISOString(),
       end.toISOString(),
       start.toISOString(),
-      ...rows.map((row) => row.id),
     ) as Array<{
     targetId: number;
     sampledAt: string;
