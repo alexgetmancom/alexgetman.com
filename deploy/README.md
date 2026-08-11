@@ -129,22 +129,13 @@ work lands in the same workspace the owner sees in the Telegram bot. `ops doctor
 `studioTransportConfigured` when both are set. Media travels separately, as a raw body to
 `/api/studio/media`.
 
-That machine installs the `studio` plugin from this repository, which carries both the MCP server
-and the skill that drives it:
-
-```shell
-/plugin marketplace add alexgetmancom/alexgetman.com
-/plugin install studio@alexgetman
-```
-
-Enabling it prompts for the endpoint and the token, and the token goes to secure storage rather
-than `settings.json`. One install points at one deployment, so a second Studio is a second machine
-or a second scope — not a second entry here. The skill deliberately carries no command catalog:
-`tools/list` and `studio_capabilities` describe the deployment and stay correct across releases.
-
 Both routes are on the public site of the first Studio already. The second Studio's nginx server
 block is an allowlist that ends in `return 404`, so each route it should answer is named in
 [nginx/production/marux.ru.conf](nginx/production/marux.ru.conf) explicitly.
+
+The operator's machine installs the `studio` plugin, which carries both the MCP server and the
+skill that drives it. [../plugin/README.md](../plugin/README.md) is the whole setup path, including
+the starting prompt to give that agent.
 
 ## Optional remote worker targets
 

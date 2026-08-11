@@ -120,16 +120,12 @@ of `scripts/ops-prod.ts`. The SSH key stays in the user's normal SSH agent or
 ## Operating it from another machine
 
 A deployment can be driven from a machine that has no checkout at all: `/api/mcp` is the whole
-interface. The [`studio` plugin](plugin/) in this repository packages that transport together with
-the skill that uses it, so an operator installs it once and supplies their own endpoint and token:
+interface. The `studio` plugin in this repository packages that transport together with the skill
+that uses it, so an operator installs it once and supplies their own endpoint and token — nothing
+about this repository's own deployment is baked into it.
 
-```shell
-/plugin marketplace add alexgetmancom/alexgetman.com
-/plugin install studio@alexgetman
-```
-
-Nothing about this repository's own deployment is baked into it. See
-[deploy/README.md](deploy/README.md) for the routes a self-hosted server must expose.
+[plugin/README.md](plugin/README.md) is the setup guide: the routes to expose, the credential to
+set, the install commands, and a starting prompt for the agent that will operate the Studio.
 
 ## Container permissions
 
