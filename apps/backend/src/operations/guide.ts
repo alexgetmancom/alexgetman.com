@@ -16,8 +16,7 @@ type OperationsGuide = {
   route: "local" | "production";
   next: {
     reason: string;
-    localCommand: string;
-    productionCommand: string;
+    command: string;
   };
   catalog: {
     /** Which build the `commands` below came from. */
@@ -28,9 +27,7 @@ type OperationsGuide = {
     command: string;
   };
   production: {
-    sshAlias: "tw-nl";
-    containers: { alex: "alexgetman-backend"; maru: "maru-backend" };
-    execUser: "bun";
+    configured: boolean;
   };
   commands: readonly OperationCatalogEntry[];
 };
@@ -52,9 +49,8 @@ function probeLocalOperations(databasePath: string): LocalOperationsProbe {
 
 export function buildOperationsGuide(databasePath = process.env.PIPELINE_DB ?? "/data/pipeline.db"): OperationsGuide {
   const local = probeLocalOperations(databasePath);
-  const localCommand = "bun run --filter @alexgetman/backend ops <command>";
-  const productionCommand = "bun run ops:prod --account <alex|maru> <command>";
   const route = local.state === "available" ? "local" : "production";
+  const command = route === "local" ? "bun run --filter @alexgetman/backend ops <command>" : "bun run ops:prod <command>";
   // The catalog is compiled into this process. On the local route that is the
   // binary being run, so it is the truth. On the production route it is not:
   // the container runs whatever revision was last deployed, and between a
@@ -68,7 +64,7 @@ export function buildOperationsGuide(databasePath = process.env.PIPELINE_DB ?? "
       route === "local"
         ? "The local route runs this build, so these are the commands it accepts."
         : "The production container runs its last deployed revision, which may not accept every command listed here.",
-    command: route === "local" ? localCommand.replace("<command>", "guide --json") : productionCommand.replace("<command>", "guide --json"),
+    command: command.replace("<command>", "guide --json"),
   } as const;
   return {
     version: 1,
@@ -79,13 +75,10 @@ export function buildOperationsGuide(databasePath = process.env.PIPELINE_DB ?? "
         route === "local"
           ? "The local database is available; run the requested read-only command locally first."
           : "The local database is unavailable; do not repair local /data and continue with the production route.",
-      localCommand,
-      productionCommand,
+      command,
     },
     production: {
-      sshAlias: "tw-nl",
-      containers: { alex: "alexgetman-backend", maru: "maru-backend" },
-      execUser: "bun",
+      configured: Boolean(process.env.OPS_SSH_TARGET?.trim()),
     },
     catalog,
     commands: operationCatalog(),
@@ -108,18 +101,13 @@ export function formatOperationsGuide(guide: OperationsGuide): string {
     `Recommended route: ${routeLabel}`,
     "",
     guide.next.reason,
-    `Local command: ${guide.next.localCommand}`,
-    `Production command: ${guide.next.productionCommand}`,
+    `Next command: ${guide.next.command}`,
+    `Production launcher: ${guide.production.configured ? "configured" : "not configured"}`,
     "",
     guide.catalog.authoritative
       ? "Catalog: this build."
       : `Catalog below is THIS WORKING TREE, not the deployed one. ${guide.catalog.reason}`,
     guide.catalog.authoritative ? "" : `Read the deployed catalog with: ${guide.catalog.command}`,
-    "",
-    "Production access:",
-    "  SSH alias: tw-nl",
-    "  Containers: alexgetman-backend, maru-backend",
-    "  Exec user: bun",
     "",
     "Commands:",
     ...commandLines,

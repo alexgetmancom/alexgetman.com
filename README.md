@@ -97,6 +97,25 @@ read-only diagnostics are documented in [deploy/README.md](deploy/README.md).
 `AGENTS.md` is the working runbook for agents: follow it before inspecting or
 changing production state.
 
+For a self-hosted production route, put the SSH destination in the ignored
+`.env.local` file at the repository root:
+
+```env
+OPS_SSH_TARGET=deploy@your-server.example
+# OPS_CONTAINER=backend
+```
+
+Then use the same launcher for every production command:
+
+```bash
+bun run ops:prod doctor
+bun run ops:prod audit
+```
+
+The default container name is `alexgetman-backend`; set `OPS_CONTAINER` only when
+the server uses another name. The SSH key stays in the user's normal SSH agent or
+`~/.ssh` and is never read from the repository.
+
 ## Container permissions
 
 The image starts as root and drops to the unprivileged `bun` user (uid/gid 1000)

@@ -19,17 +19,35 @@ afterAll(() => {
 
 describe("operations guide", () => {
   it("routes an unavailable local database to production", () => {
+    const previousTarget = process.env.OPS_SSH_TARGET;
+    delete process.env.OPS_SSH_TARGET;
     const guide = buildOperationsGuide(join(temporaryDirectory(), "missing.db"));
+    if (previousTarget === undefined) delete process.env.OPS_SSH_TARGET;
+    else process.env.OPS_SSH_TARGET = previousTarget;
 
     expect(guide.local.state).toBe("missing");
     expect(guide.route).toBe("production");
-    expect(guide.next.productionCommand).toBe("bun run ops:prod --account <alex|maru> <command>");
+    expect(guide.next.command).toBe("bun run ops:prod <command>");
+    expect(guide.production.configured).toBe(false);
     expect(formatOperationsGuide(guide)).toContain("do not repair local /data");
+    expect(formatOperationsGuide(guide)).toContain("Production launcher: not configured");
     // The container runs its last deployed revision, so this build's catalog is
     // a claim about the local tree, not about the route being recommended.
     expect(guide.catalog.authoritative).toBe(false);
-    expect(guide.catalog.command).toBe("bun run ops:prod --account <alex|maru> guide --json");
+    expect(guide.catalog.command).toBe("bun run ops:prod guide --json");
     expect(formatOperationsGuide(guide)).toContain("not the deployed one");
+  });
+
+  it("reports a configured production launcher without exposing its route", () => {
+    const previousTarget = process.env.OPS_SSH_TARGET;
+    process.env.OPS_SSH_TARGET = "deploy@example.test";
+    const guide = buildOperationsGuide(join(temporaryDirectory(), "missing.db"));
+    if (previousTarget === undefined) delete process.env.OPS_SSH_TARGET;
+    else process.env.OPS_SSH_TARGET = previousTarget;
+
+    expect(guide.production.configured).toBe(true);
+    expect(JSON.stringify(guide)).not.toContain("deploy@example.test");
+    expect(formatOperationsGuide(guide)).not.toContain("deploy@example.test");
   });
 
   it("keeps the local route when the database file is available", () => {
@@ -40,6 +58,7 @@ describe("operations guide", () => {
 
     expect(guide.local.state).toBe("available");
     expect(guide.route).toBe("local");
+    expect(guide.next.command).toBe("bun run --filter @alexgetman/backend ops <command>");
     expect(guide.commands.find((command) => command.name === "publication-repair")).toMatchObject({
       mutates: true,
       usage: "publication-repair [--ref post:160] [--apply]",

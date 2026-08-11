@@ -41,8 +41,9 @@ open unrelated files to translate them.
 # Workflow
 
 Work on `main`. No branches, no PRs. Typecheck, tests, and a production build before every push.
-CI/CD deploys `alex` from `main`. The `maru` container is deployed by hand — an unchanged Maru
-revision after a push is expected; never deploy it unless asked.
+CI/CD deploys the primary production revision from `main`. Secondary container revisions are
+deployed by hand; an unchanged secondary revision after a push is expected, and must not be
+deployed unless asked.
 
 # Persistence boundaries
 
@@ -59,13 +60,14 @@ Start any worker, queue, configuration, publication, or error investigation with
 truth for whether the local route is usable. If it reports `local.state` as `missing` or `unusable`,
 do not repair `/data` or seed a local database — use the production command it prints. Its command
 catalog describes **this working tree**: when it routes you to production, read the deployed catalog
-with `ops:prod --account <acc> guide --json`, because the container runs its last deployed revision
+with `bun run ops:prod guide --json`, because the container runs its last deployed revision
 and a command committed but not yet deployed comes back as `unknown command`. `guide.catalog` says
 which case you are in.
 
-Production is `ssh tw-nl`, containers `alexgetman-backend` and `maru-backend`, and direct execution
-needs `docker exec -u bun <container> bun /app/ops/cli.js <command>` because the entrypoint starts as
-root. For a missing publication start with `audit`; it covers both the text and video pipelines. When the
+Production access is configured locally in the ignored `.env.local` file with `OPS_SSH_TARGET` and,
+optionally, `OPS_CONTAINER`. Use `bun run ops:prod <command>` for every production operation; it
+executes the bundled CLI as the container's unprivileged runtime user. For a missing publication start
+with `audit`; it covers both the text and video pipelines. When the
 complaint is "post X did not go to Y", `recent` is the whole diagnosis: it names the last posts by
 headline, their targets, and the targets each one is missing — then `retry --ref <ref> --target <y>`,
 which reports the targets in scope and needs `--apply` to queue them. Every command that reaches an
@@ -86,8 +88,8 @@ line for anything moving the database file, writing credentials, or reading a ho
 
 Handed an X Analytics CSV, import it without asking:
 
-    bun run ops:prod --account alex import-x-analytics --file <path> --sampled-at <file mtime, ISO UTC>
-    bun run ops:prod --account alex x-analytics
+    bun run ops:prod import-x-analytics --file <path> --sampled-at <file mtime, ISO UTC>
+    bun run ops:prod x-analytics
 
 `ops:prod` copies a local `--file`/`--x-file` into the container and removes it afterwards, so a Mac
 path is the right argument. `--sampled-at` is the export's own timestamp — the file's mtime, never

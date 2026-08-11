@@ -132,18 +132,24 @@ recreate and health-check, so rollback always restores its own previous image.
 
 ## Read-only runtime diagnostics
 
-The production image includes the bundled backend operations CLI, so status can be
-inspected without a checkout on the host. The container's own process runs as
-`bun`, but it starts as root so its entrypoint can fix bind-mount ownership on a
-fresh volume before dropping privileges — `docker exec` bypasses that entrypoint
-and defaults to root, so always pass `-u bun` for diagnostics:
+The production image includes the bundled backend operations CLI. From a checkout,
+configure the ignored root `.env.local` file and use the single production launcher:
 
-```text
-docker exec -u bun alexgetman-backend bun /app/ops/cli.js status
-docker exec -u bun alexgetman-backend bun /app/ops/cli.js doctor
-docker exec -u bun alexgetman-backend bun /app/ops/cli.js audit
-docker exec -u bun alexgetman-backend bun /app/ops/cli.js usage --days 30 --unused-days 90
+```env
+OPS_SSH_TARGET=deploy@your-server.example
+# OPS_CONTAINER=backend
 ```
+
+```bash
+bun run ops:prod status
+bun run ops:prod doctor
+bun run ops:prod audit
+bun run ops:prod usage --days 30 --unused-days 90
+```
+
+The default container name is `alexgetman-backend`; set `OPS_CONTAINER` only when
+the server uses another name. The launcher executes the bundled CLI as `bun`, the
+same unprivileged user used by the application.
 
 Use only the read-only commands above for routine diagnostics. Commands such as
 `backup`, `restore`, and `metrics-backfill --apply` mutate state and require an
