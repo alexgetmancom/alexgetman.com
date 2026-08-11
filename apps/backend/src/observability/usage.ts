@@ -47,9 +47,34 @@ type UsageReport = {
   features: Array<UsageAggregate & { averageDurationMs: number; unused: boolean; daysSinceLastSeen: number | null }>;
 };
 
-/** Records one operation without allowing telemetry failures to change the
- * operation being observed. It is safe to call while another SQLite transaction
- * is active because it only executes the upsert statement. */
+type BufferedUsage = {
+  featureKey: string;
+  bucketDay: string;
+  calls: number;
+  successes: number;
+  failures: number;
+  totalDurationMs: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+};
+
+type UsageBuffer = {
+  pending: Map<string, BufferedUsage>;
+  lastFlushedAt: number;
+};
+
+const USAGE_FLUSH_INTERVAL_MS = 60_000;
+const usageBuffers = new WeakMap<BackendDb, UsageBuffer>();
+
+function usageBufferFor(backendDb: BackendDb): UsageBuffer {
+  const existing = usageBuffers.get(backendDb);
+  if (existing) return existing;
+  const created = { pending: new Map(), lastFlushedAt: Date.now() } satisfies UsageBuffer;
+  usageBuffers.set(backendDb, created);
+  return created;
+}
+
+/** Buffers one operation so request latency never includes a telemetry write. */
 export function recordUsage(backendDb: BackendDb, featureKey: string, success: boolean, durationMs: number, now = new Date()): void {
   if (!featureKeyPattern.test(featureKey)) {
     log("warn", "invalid runtime usage feature key", { featureKey });
@@ -57,22 +82,66 @@ export function recordUsage(backendDb: BackendDb, featureKey: string, success: b
   }
   const timestamp = now.toISOString();
   const bucketDay = timestamp.slice(0, 10);
+  const buffer = usageBufferFor(backendDb);
+  const key = `${featureKey}\u0000${bucketDay}`;
+  const current = buffer.pending.get(key);
+  if (current) {
+    current.calls += 1;
+    current.successes += success ? 1 : 0;
+    current.failures += success ? 0 : 1;
+    current.totalDurationMs += Math.max(0, Math.round(durationMs));
+    if (timestamp < current.firstSeenAt) current.firstSeenAt = timestamp;
+    if (timestamp > current.lastSeenAt) current.lastSeenAt = timestamp;
+  } else {
+    buffer.pending.set(key, {
+      featureKey,
+      bucketDay,
+      calls: 1,
+      successes: success ? 1 : 0,
+      failures: success ? 0 : 1,
+      totalDurationMs: Math.max(0, Math.round(durationMs)),
+      firstSeenAt: timestamp,
+      lastSeenAt: timestamp,
+    });
+  }
+  if (Date.now() - buffer.lastFlushedAt >= USAGE_FLUSH_INTERVAL_MS) flushUsage(backendDb);
+}
+
+/** Persists the accumulated telemetry in one transaction. Runtime usage is
+ * diagnostic data, so a failed flush is retained for the next attempt. */
+export function flushUsage(backendDb: BackendDb): void {
+  const buffer = usageBuffers.get(backendDb);
+  if (!buffer || buffer.pending.size === 0) return;
+  const entries = [...buffer.pending.values()];
   try {
-    unsafeDb(backendDb)
-      .sqlite.prepare(
+    unsafeDb(backendDb).sqlite.transaction(() => {
+      const upsert = unsafeDb(backendDb).sqlite.prepare(
         `INSERT INTO runtime_usage
           (feature_key, bucket_day, calls, successes, failures, total_duration_ms, first_seen_at, last_seen_at)
-         VALUES (?, ?, 1, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(feature_key, bucket_day) DO UPDATE SET
-           calls = runtime_usage.calls + 1,
+           calls = runtime_usage.calls + excluded.calls,
            successes = runtime_usage.successes + excluded.successes,
            failures = runtime_usage.failures + excluded.failures,
            total_duration_ms = runtime_usage.total_duration_ms + excluded.total_duration_ms,
            last_seen_at = excluded.last_seen_at`,
-      )
-      .run(featureKey, bucketDay, success ? 1 : 0, success ? 0 : 1, Math.max(0, Math.round(durationMs)), timestamp, timestamp);
+      );
+      for (const entry of entries)
+        upsert.run(
+          entry.featureKey,
+          entry.bucketDay,
+          entry.calls,
+          entry.successes,
+          entry.failures,
+          entry.totalDurationMs,
+          entry.firstSeenAt,
+          entry.lastSeenAt,
+        );
+    })();
+    for (const entry of entries) buffer.pending.delete(`${entry.featureKey}\u0000${entry.bucketDay}`);
+    buffer.lastFlushedAt = Date.now();
   } catch (error) {
-    log("warn", "runtime usage record failed", { featureKey, error: error instanceof Error ? error.message : String(error) });
+    log("warn", "runtime usage flush failed", { error: error instanceof Error ? error.message : String(error) });
   }
 }
 
@@ -114,6 +183,7 @@ function positiveDays(value: number | undefined, fallback: number): number {
 
 /** Returns a windowed report and includes known operations with zero calls. */
 export function usageReport(backendDb: BackendDb, options: { days?: number; unusedDays?: number; now?: Date } = {}): UsageReport {
+  flushUsage(backendDb);
   const now = options.now ?? new Date();
   const windowDays = positiveDays(options.days, 30);
   const unusedDays = positiveDays(options.unusedDays, 90);

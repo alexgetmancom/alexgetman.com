@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { recordUsage, trackUsageAsync, trackUsageSync, usageReport } from "../src/observability/usage.js";
+import { flushUsage, recordUsage, trackUsageAsync, trackUsageSync, usageReport } from "../src/observability/usage.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 describe("runtime usage telemetry", () => {
@@ -12,6 +12,7 @@ describe("runtime usage telemetry", () => {
           throw new Error("provider failed");
         }),
       ).rejects.toThrow("provider failed");
+      flushUsage(backendDb);
 
       const row = backendDb.sqlite
         .prepare("SELECT calls, successes, failures, total_duration_ms FROM runtime_usage WHERE feature_key=?")

@@ -56,6 +56,14 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
   };
   sqlite.run("PRAGMA journal_mode = WAL");
   sqlite.run(`PRAGMA busy_timeout = ${timeout}`);
+  // Read latency under concurrent writes is dominated by the writers' fsyncs
+  // and by page reads missing a tiny cache. In WAL mode NORMAL keeps commits
+  // durable across process crashes and only risks the last commits on a host
+  // power loss, which is the right trade for this workload.
+  sqlite.run("PRAGMA synchronous = NORMAL");
+  sqlite.run("PRAGMA cache_size = -65536"); // 64 MB per connection
+  sqlite.run("PRAGMA mmap_size = 268435456"); // 256 MB
+  sqlite.run("PRAGMA wal_autocheckpoint = 4000"); // ~16 MB, off the read path more often
   const db = drizzle(sqlite, { schema, casing: "snake_case" });
   // The baseline creates children before their parents, so foreign keys stay
   // off until it has run.

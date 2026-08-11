@@ -15,6 +15,7 @@ import { recordWorkerHeartbeat } from "../foundation/runtime/worker-state.js";
 import { type ScheduledLoop, startLoop } from "../foundation/scheduler.js";
 import { runNotificationCycle } from "../notifications/jobs.js";
 import { runObservabilityCycle } from "../observability/cycle.js";
+import { flushUsage } from "../observability/usage.js";
 import { pruneOperationalHistory, withMaintenanceLock } from "../operations/maintenance.js";
 import { recoverStalePublishJobs } from "../publishing/queue.js";
 import { recoverStoryCardJobs, runStoryCardCycle } from "../story-cards/worker.js";
@@ -45,60 +46,85 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
   // locks behind. Do not wait the ordinary 15-minute crash TTL before the new
   // process can resume the same targets; the short grace still avoids racing a
   // request that was only just interrupted at the provider boundary.
-  const recoveredAtStartup = recoverStalePublishJobs(backendDb, config, PUBLISH_RESTART_LOCK_GRACE_SECONDS);
-  if (recoveredAtStartup) log("warn", "recovered interrupted publishing locks on worker startup", { recovered: recoveredAtStartup });
-  const recoveredSiteAtStartup = recoverStaleSiteJobs(backendDb, SITE_JOB_RESTART_LOCK_GRACE_SECONDS);
-  if (recoveredSiteAtStartup)
-    log("warn", "recovered interrupted site build locks on worker startup", { recovered: recoveredSiteAtStartup });
-  const recoveredStoryCardsAtStartup = recoverStoryCardJobs(backendDb);
-  if (recoveredStoryCardsAtStartup)
-    log("warn", "recovered interrupted Story card locks on worker startup", { recovered: recoveredStoryCardsAtStartup });
+  if (config.studio.modules.text_posting) {
+    const recoveredAtStartup = recoverStalePublishJobs(backendDb, config, PUBLISH_RESTART_LOCK_GRACE_SECONDS);
+    if (recoveredAtStartup) log("warn", "recovered interrupted publishing locks on worker startup", { recovered: recoveredAtStartup });
+  }
+  if (config.studio.modules.site) {
+    const recoveredSiteAtStartup = recoverStaleSiteJobs(backendDb, SITE_JOB_RESTART_LOCK_GRACE_SECONDS);
+    if (recoveredSiteAtStartup)
+      log("warn", "recovered interrupted site build locks on worker startup", { recovered: recoveredSiteAtStartup });
+  }
+  if (config.studio.modules.text_posting) {
+    const recoveredStoryCardsAtStartup = recoverStoryCardJobs(backendDb);
+    if (recoveredStoryCardsAtStartup)
+      log("warn", "recovered interrupted Story card locks on worker startup", { recovered: recoveredStoryCardsAtStartup });
+  }
   const startWorkerLoop = (name: string, intervalMs: number, task: () => void | Promise<void>) => {
     const heartbeatIntervalMs = config.WORKER_HEARTBEAT_INTERVAL_SECONDS * 1000;
+    let publishStartupHeartbeat = true;
     return startLoop(name, intervalMs, task, {
-      onStart: () => recordWorkerHeartbeat(backendDb, name, { phase: "running", heartbeat_interval_ms: heartbeatIntervalMs }),
-      onHeartbeat: () => recordWorkerHeartbeat(backendDb, name, { phase: "running", heartbeat_interval_ms: heartbeatIntervalMs }),
+      onStart: () => {
+        if (!publishStartupHeartbeat) return;
+        publishStartupHeartbeat = false;
+        recordWorkerHeartbeat(backendDb, name, { phase: "running", heartbeat_interval_ms: heartbeatIntervalMs });
+      },
+      onHeartbeat: () => {
+        flushUsage(backendDb);
+        recordWorkerHeartbeat(backendDb, name, { heartbeat_interval_ms: heartbeatIntervalMs });
+      },
       heartbeatIntervalMs,
-      onFinish: (error) =>
+      onFinish: (error) => {
+        if (!error) return;
+        publishStartupHeartbeat = true;
         recordWorkerHeartbeat(
           backendDb,
           name,
-          { phase: error ? "failed" : "idle", heartbeat_interval_ms: heartbeatIntervalMs },
-          error instanceof Error ? error.message : error == null ? null : String(error),
-        ),
+          { phase: "failed", heartbeat_interval_ms: heartbeatIntervalMs },
+          error instanceof Error ? error.message : String(error),
+        );
+      },
     });
   };
   return [
-    startWorkerLoop("story-cards", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
-      const startedAt = Date.now();
-      const claimed = await runStoryCardCycle(config, backendDb);
-      if (claimed)
-        log("info", "operation timing", {
-          operation: "content.story_card.cycle",
-          success: true,
-          totalMs: Date.now() - startedAt,
-          claimed,
-        });
-    }),
-    startWorkerLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
-      const startedAt = Date.now();
-      const claimed = await runPublishCycle(config, backendDb);
-      if (claimed)
-        log("info", "operation timing", {
-          operation: "publishing.social.cycle",
-          success: true,
-          totalMs: Date.now() - startedAt,
-          claimed,
-        });
-    }),
-    startWorkerLoop("publish-watchdog", WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
-      const recovered = runPublishWatchdog(config, backendDb);
-      if (recovered) log("warn", "recovered stale publishing locks", { recovered });
-    }),
-    startWorkerLoop("publication-reconciliation", Math.max(60, config.IDLE_POLL_INTERVAL_SECONDS) * 1000, async () => {
-      const result = await runPublicationReconciliation(backendDb, config);
-      log("debug", "publication reconciliation loop tick", result);
-    }),
+    ...(config.studio.modules.text_posting
+      ? [
+          startWorkerLoop("story-cards", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
+            const startedAt = Date.now();
+            const claimed = await runStoryCardCycle(config, backendDb);
+            if (claimed)
+              log("info", "operation timing", {
+                operation: "content.story_card.cycle",
+                success: true,
+                totalMs: Date.now() - startedAt,
+                claimed,
+              });
+          }),
+          startWorkerLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
+            const startedAt = Date.now();
+            const claimed = await runPublishCycle(config, backendDb);
+            if (claimed)
+              log("info", "operation timing", {
+                operation: "publishing.social.cycle",
+                success: true,
+                totalMs: Date.now() - startedAt,
+                claimed,
+              });
+          }),
+          startWorkerLoop("publish-watchdog", WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
+            const recovered = runPublishWatchdog(config, backendDb);
+            if (recovered) log("warn", "recovered stale publishing locks", { recovered });
+          }),
+        ]
+      : []),
+    ...(config.studio.modules.text_posting || config.studio.modules.video_posting
+      ? [
+          startWorkerLoop("publication-reconciliation", Math.max(60, config.IDLE_POLL_INTERVAL_SECONDS) * 1000, async () => {
+            const result = await runPublicationReconciliation(backendDb, config);
+            log("debug", "publication reconciliation loop tick", result);
+          }),
+        ]
+      : []),
     startWorkerLoop("notifications", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
       const delivered = runNotificationCycle(backendDb);
       log("debug", "notification loop tick", { delivered });

@@ -52,6 +52,35 @@ describe("core worker runtime", () => {
         ).toEqual({ name: "observability" });
       } finally {
         for (const loop of loops) loop.stop();
+        await wait(50);
+      }
+    });
+  });
+
+  it("does not start text and site workers for a video-only Studio", async () => {
+    await withDb(async (backendDb) => {
+      const config = loadConfig({ WORKER_HEARTBEAT_INTERVAL_SECONDS: "60" });
+      config.studio.modules.text_posting = false;
+      config.studio.modules.site = false;
+      config.studio.modules.video_posting = true;
+      config.studio.modules.analytics = true;
+      const loops = startCoreWorkers(config, backendDb);
+
+      try {
+        expect(loops.map((loop) => loop.name)).toEqual([
+          "publication-reconciliation",
+          "notifications",
+          "video",
+          "metrics",
+          "creator-analytics",
+          "metric-retention",
+          "media-cache",
+          "operational-retention",
+          "observability",
+        ]);
+      } finally {
+        for (const loop of loops) loop.stop();
+        await wait(50);
       }
     });
   });
