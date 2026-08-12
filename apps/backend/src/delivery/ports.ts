@@ -4,7 +4,7 @@ import type { ClaimedPublishJob } from "../publishing/queue.js";
 /** Provider mutation owned by one delivery adapter. */
 export type DeliveryPublisher = (job: ClaimedPublishJob) => Promise<PublishResult>;
 
-export type DeliveryEdit = (input: {
+type DeliveryEdit = (input: {
   externalId: string;
   text: string;
   chatId?: string | number;

@@ -34,7 +34,7 @@ export async function runFfmpeg(args: string[], timeoutSeconds = 600): Promise<v
 /** Shared by every ffprobe caller: a stuck or hostile input must not hang the
  * request/job that triggered inspection, and a malformed response must not
  * surface as an unrelated JSON.parse crash. */
-export async function runFfprobe<T = unknown>(args: string[], timeoutSeconds = 30): Promise<T> {
+async function runFfprobe<T = unknown>(args: string[], timeoutSeconds = 30): Promise<T> {
   const child = Bun.spawn(["ffprobe", ...args], { stdout: "pipe", stderr: "pipe" });
   let timedOut = false;
   const timer = setTimeout(() => {
