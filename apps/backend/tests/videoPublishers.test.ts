@@ -12,6 +12,7 @@ import {
   publishInstagramReel,
 } from "../src/delivery/video-publishers.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { classifyPublishError, retryAfterSecondsFromError } from "../src/publishing/errors.js";
 
 /**
  * These publishers reach for the global fetch rather than taking one, so the
@@ -186,15 +187,34 @@ describe("prepareYouTubeVideo", () => {
     }
   });
 
-  it("reports the session failure body instead of a bare status", async () => {
+  it("classifies a rejected upload session as an auth failure", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "youtube-upload-"));
     try {
       const file = path.join(dir, "clip.mp4");
       fs.writeFileSync(file, Buffer.alloc(16));
       install(() => new Response("quotaExceeded", { status: 403 }));
-      await expect(prepareYouTubeVideo(config, file, { title: "t", description: "d", tags: [] }, "2026-08-01T10:00:00Z")).rejects.toThrow(
-        /403 quotaExceeded/,
+      const error = await prepareYouTubeVideo(config, file, { title: "t", description: "d", tags: [] }, "2026-08-01T10:00:00Z").catch(
+        (cause: unknown) => cause,
       );
+      expect(error).toBeInstanceOf(Error);
+      expect(String(error)).toMatch(/403: quotaExceeded/);
+      expect(classifyPublishError(error)).toBe("auth");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("carries YouTube's retry delay into the worker policy", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "youtube-upload-"));
+    try {
+      const file = path.join(dir, "clip.mp4");
+      fs.writeFileSync(file, Buffer.alloc(16));
+      install(() => new Response("slow down", { status: 429, headers: { "Retry-After": "120" } }));
+      const error = await prepareYouTubeVideo(config, file, { title: "t", description: "d", tags: [] }, "2026-08-01T10:00:00Z").catch(
+        (cause: unknown) => cause,
+      );
+      expect(classifyPublishError(error)).toBe("transient");
+      expect(retryAfterSecondsFromError(error)).toBe(120);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

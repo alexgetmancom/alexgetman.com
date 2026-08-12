@@ -3,6 +3,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { type InstagramCredentials, instagramGraphHost } from "../foundation/external/instagram.js";
 import { type VideoLocale, youtubeAccessToken } from "../foundation/external/youtube.js";
 import { ExternalTransportError, externalFetch, formBody, requestJson } from "../foundation/http.js";
+import { httpPublishError } from "../publishing/errors.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../publishing/video-types.js";
 import { AmbiguousPublicationError, ambiguousExternalMutation } from "./ambiguous-publication.js";
 
@@ -52,7 +53,8 @@ export async function prepareYouTubeVideo(
 ): Promise<{ id: string; url: string }> {
   const token = await youtubeAccessToken(config, fetch, locale);
   const file = Bun.file(filePath);
-  const init = await fetch(
+  const init = await externalFetch(
+    fetch,
     "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status,recordingDetails",
     {
       method: "POST",
@@ -78,7 +80,7 @@ export async function prepareYouTubeVideo(
       }),
     },
   );
-  if (!init.ok) throw new Error(`YouTube upload session failed: ${init.status} ${await init.text()}`);
+  if (!init.ok) throw httpPublishError(init, await init.text(), "YouTube upload session");
   const location = init.headers.get("location");
   if (!location) throw new Error("YouTube did not return an upload location.");
   const video = await uploadYouTubeResumable(location, file, VIDEO_UPLOAD_TIMEOUT_MS);
@@ -95,7 +97,7 @@ async function uploadYouTubeResumable(location: string, file: Bun.BunFile, uploa
   // response, so this provider does not need a manual verification state.
   const status = await queryYouTubeUploadStatus(location, file.size);
   if (status.ok) return (await status.json()) as YouTubeVideo;
-  if (status.status !== 308) throw new Error(`YouTube upload status failed: ${status.status} ${await status.text()}`);
+  if (status.status !== 308) throw httpPublishError(status, await status.text(), "YouTube upload status");
   const committed = Number(status.headers.get("range")?.match(/bytes=0-(\d+)/)?.[1] ?? -1) + 1;
   if (committed >= file.size) {
     // Every byte arrived but the final representation is still converging.
@@ -131,7 +133,7 @@ async function putYouTubeBytes(location: string, body: Blob, start: number, tota
     },
     uploadTimeoutMs,
   );
-  if (!response.ok) throw new Error(`YouTube upload failed: ${response.status} ${await response.text()}`);
+  if (!response.ok) throw httpPublishError(response, await response.text(), "YouTube upload");
   return (await response.json()) as YouTubeVideo;
 }
 
