@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { XActivityDashboardItem } from "../src/analytics/x-activity-dashboard.js";
 import { creatorProfileSnapshots, videoDrafts, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { type CombinedSectionInput, renderCombinedSection, xChartPost } from "../src/interfaces/web/dashboard/combined-section.js";
+import { type CombinedSectionInput, renderCombinedSection } from "../src/interfaces/web/dashboard/combined-section.js";
 import { calendarDays } from "../src/interfaces/web/dashboard/daily-reach.js";
 import { renderHeroCard } from "../src/interfaces/web/dashboard/hero-section.js";
 import { buildOverviewData, loadDashboardReadModel } from "../src/interfaces/web/dashboard/overview-data.js";
@@ -14,6 +14,7 @@ import {
   setVideoOverviewCacheRange,
   videoOverview,
 } from "../src/interfaces/web/dashboard/video-overview.js";
+import { xActivityPost } from "../src/interfaces/web/dashboard/x-activity-posts.js";
 import { createOperationsService } from "../src/operations/service.js";
 import { registerTestChannels, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
@@ -201,7 +202,7 @@ function renderOverview(input: Omit<CombinedSectionInput, "textReach" | "videoRe
     {
       ...input,
       videoReach: input.video.dailyByDay,
-      textReach: textOverviewOf([...posts, ...items.map(xChartPost)], [], days, "UTC"),
+      textReach: textOverviewOf([...posts, ...items.map(xActivityPost)], [], days, "UTC"),
     },
     "ru",
   );

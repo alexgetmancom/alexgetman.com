@@ -1,9 +1,8 @@
-import fs from "node:fs";
 import type { Bot } from "grammy";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { createStudioServices, type StudioServices } from "../../studio/services/index.js";
-import { downloadTelegramFile } from "./file-download.js";
+import { importTelegramAsset } from "./media-import.js";
 
 /** Converts Telegram transport file ids into Content-owned assets before a draft is written. */
 export async function importTelegramAlbumMedia(
@@ -31,18 +30,11 @@ async function importTelegramMediaItem(
   if (!file.file_path) throw new Error("Telegram did not return a media file path.");
   const type = String(item.type ?? "photo").toLowerCase();
   const extension = type === "video" ? ".mp4" : ".jpg";
-  const downloaded = await downloadTelegramFile(config, file.file_path, extension);
-  let asset: Awaited<ReturnType<StudioServices["media"]["importFile"]>>;
-  try {
-    asset = await studioMedia.importFile(actorId, {
-      filename: `telegram-${fileId}${extension}`,
-      contentType: type === "video" ? "video/mp4" : "image/jpeg",
-      localPath: downloaded.path,
-      source: "telegram_upload",
-    });
-  } finally {
-    if (downloaded.temporary) await fs.promises.rm(downloaded.path, { force: true });
-  }
+  const asset = await importTelegramAsset(studioMedia, config, actorId, file.file_path, {
+    extension,
+    filename: `telegram-${fileId}${extension}`,
+    contentType: type === "video" ? "video/mp4" : "image/jpeg",
+  });
   return {
     ...item,
     asset_id: asset.id,

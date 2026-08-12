@@ -1,4 +1,3 @@
-import type { XActivityDashboardItem } from "../../analytics/x-activity-dashboard.js";
 import { xActivityDashboard } from "../../analytics/x-activity-dashboard.js";
 import { AUDIENCE_VIEWS, type AudienceView } from "../../botTargets.js";
 import type { BackendDb } from "../../db/client.js";
@@ -17,8 +16,9 @@ import { renderPeriodControls } from "./dashboard/period-controls.js";
 import { renderDashboardShell } from "./dashboard/shell.js";
 import { type PublicationDetailsResult, renderPublicationDetails } from "./dashboard/table.js";
 import { dashboardThemeToggleHtml } from "./dashboard/theme.js";
-import type { OpsPayload, PipelinePost } from "./dashboard/types.js";
+import type { OpsPayload } from "./dashboard/types.js";
 import { createVideoOverviewCache, invalidateVideoOverviewCache } from "./dashboard/video-overview.js";
+import { additionalXActivityPosts } from "./dashboard/x-activity-posts.js";
 import { renderStudioSection } from "./studio.js";
 
 type DashboardTab = "posts" | "studio";
@@ -278,8 +278,7 @@ export function renderDashboardPublicationDetails(
     : null;
   const posts = targetIds ? (filterPipeline(data, targetIds)?.posts ?? []) : (data?.posts ?? []);
   const xItems = wantsText && requestedView === "x" ? xActivityDashboard(backendDb, weekOffset, periodDays, config.TIMEZONE) : [];
-  const representedPostKeys = new Set(posts.map((post) => post.post_key).filter((key): key is string => Boolean(key)));
-  const xPosts = xItems.filter((item) => !item.linkedPostKey || !representedPostKeys.has(item.linkedPostKey)).map(xActivityPipelinePost);
+  const xPosts = additionalXActivityPosts(posts, xItems);
   const videos = wantsVideo ? videoOverviewForPeriod(backendDb, weekOffset, periodDays, config, requestedVideoView).items : [];
   const locale = parseStudioLocale(requestedLocale);
   return renderPublicationDetails(
@@ -308,22 +307,6 @@ function commandCenterAttentionState(attention: CommandCenterAttention): boolean
 function dashboardTargetIds(requestedView: string | undefined): string[] | undefined {
   if (requestedView && AUDIENCE_VIEWS.includes(requestedView as AudienceView)) return [requestedView];
   return undefined;
-}
-
-function xActivityPipelinePost(item: XActivityDashboardItem): PipelinePost {
-  return {
-    post_key: `x-activity:${item.xPostId}`,
-    date: item.publishedAt,
-    text_en: item.text,
-    targets: { x: { status: "published", url: item.url } },
-    metrics: {
-      x: {
-        views: { value: Number(item.metrics.views ?? 0) },
-        likes: { value: Number(item.metrics.interactions ?? 0) },
-        replies: { value: Number(item.metrics.replies ?? 0) },
-      },
-    },
-  };
 }
 
 export function renderCommandCenterLogin(locale: StudioLocale, error = false): string {

@@ -28,6 +28,7 @@ import { renderOverviewPublicationList } from "./table.js";
 import { type TextOverview, textDailyReach } from "./text-overview.js";
 import type { PipelineData, PipelinePost } from "./types.js";
 import type { VideoOverview } from "./video-overview.js";
+import { additionalXActivityPosts } from "./x-activity-posts.js";
 
 /**
  * The unified overview: text and video on one screen, under one period.
@@ -85,7 +86,7 @@ const VIDEO_COLOR = "var(--series-video)";
 export function renderCombinedSection(input: CombinedSectionInput, locale: StudioLocale): string {
   const { periodDays } = input;
   const posts = input.data?.posts ?? [];
-  const extraX = additionalXItems(posts, input.xItems);
+  const extraX = additionalXActivityPosts(posts, input.xItems);
 
   // Both halves stay on screen whatever is filtered: a filter narrows its own
   // half, it does not take the other one away.
@@ -145,7 +146,7 @@ function renderOverviewColumn(
   input: CombinedSectionInput,
   hero: TextHeroMetrics,
   posts: PipelinePost[],
-  extraX: XActivityDashboardItem[],
+  extraX: PipelinePost[],
   single: boolean,
   locale: StudioLocale,
 ): string;
@@ -154,7 +155,7 @@ function renderOverviewColumn(
   input: CombinedSectionInput,
   hero: VideoHeroMetrics,
   posts: PipelinePost[],
-  extraX: XActivityDashboardItem[],
+  extraX: PipelinePost[],
   single: boolean,
   locale: StudioLocale,
 ): string;
@@ -163,7 +164,7 @@ function renderOverviewColumn(
   input: CombinedSectionInput,
   hero: TextHeroMetrics | VideoHeroMetrics,
   posts: PipelinePost[],
-  extraX: XActivityDashboardItem[],
+  extraX: PipelinePost[],
   single: boolean,
   locale: StudioLocale,
 ): string {
@@ -181,7 +182,7 @@ function renderOverviewColumn(
   const moreUrl = `/api/command-center/publication-details?${moreParams.toString()}`;
   const publicationMarkup =
     kind === "text"
-      ? renderOverviewPublicationList(locale, input.textView === "x" ? [...posts, ...currentX.map(xChartPost)] : posts, textTargetIds, [], {
+      ? renderOverviewPublicationList(locale, input.textView === "x" ? [...posts, ...currentX] : posts, textTargetIds, [], {
           limit: 4,
           moreUrl,
         })
@@ -535,31 +536,4 @@ function medianDailyVideoTotals(video: VideoOverview, days: number): Totals {
     daily.set(key, bucket);
   }
   return medianOfDays([...daily.values()], days);
-}
-
-function additionalXItems(posts: PipelinePost[], items: XActivityDashboardItem[]): XActivityDashboardItem[] {
-  const representedPostKeys = new Set(posts.map((post) => post.post_key).filter((key): key is string => Boolean(key)));
-  return items.filter((item) => !item.linkedPostKey || !representedPostKeys.has(item.linkedPostKey));
-}
-
-/** Standalone X activity in the shape the publication list and the reach
- * adapters already understand. */
-export function xChartPost(item: XActivityDashboardItem): PipelinePost {
-  return {
-    post_key: `x-activity:${item.xPostId}`,
-    date: item.publishedAt,
-    text_en: item.text,
-    targets: { x: { status: "published", url: item.url } },
-    metrics: {
-      x: {
-        views: { value: metric(item, "views") },
-        likes: { value: metric(item, "interactions") },
-        replies: { value: metric(item, "replies") },
-      },
-    },
-  };
-}
-
-function metric(item: XActivityDashboardItem, name: string): number {
-  return Number(item.metrics[name] ?? 0);
 }

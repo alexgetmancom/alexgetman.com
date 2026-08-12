@@ -3,8 +3,8 @@ import { targetLocale } from "../botTargets.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { postTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { requestJson } from "../foundation/http.js";
-import { deleteDiscordMessage } from "./social/discord.js";
+import { createPlatformAdapters } from "./platform-adapters.js";
+import type { DeliveryRemove } from "./ports.js";
 
 type RemovalOptions = { postKey: string; target?: string; locale?: "ru" | "en" };
 
@@ -25,6 +25,7 @@ export async function removePublishedTargets(
     .filter((row) => !options.target || row.target === options.target)
     .filter((row) => !options.locale || targetLocale(row.target) === options.locale);
   const results: Array<Record<string, unknown>> = [];
+  const adapters = createPlatformAdapters(config, fetchImpl);
   for (const row of rows) {
     try {
       const ids = row.externalIdsJson?.length ? row.externalIdsJson : row.externalId ? [row.externalId] : [];
@@ -32,7 +33,9 @@ export async function removePublishedTargets(
         results.push({ target: row.target, ok: false, skipped: true, error: "missing external id" });
         continue;
       }
-      const { deleted, remaining, error } = await removeTarget(row.target, ids, config, fetchImpl);
+      const remove = adapters[row.target]?.remove;
+      if (!remove) throw new Error(`remote deletion is not supported for ${row.target}`);
+      const { deleted, remaining, error } = await removeTarget(ids, remove);
       const now = new Date().toISOString();
       // Only the row that still names the objects just deleted. Between the read
       // above and this write the target can have been requeued and published
@@ -89,8 +92,7 @@ type RemovalOutcome = { deleted: string[]; remaining: string[]; error?: string }
 /** Deletes every id it was given, rather than stopping at the first failure:
  * the ones behind it are the tail of a split post, and abandoning them leaves a
  * publication half-visible with no record of which half. */
-async function removeTarget(target: string, ids: string[], config: BackendConfig, fetchImpl: typeof fetch): Promise<RemovalOutcome> {
-  const remove = removeOne(target, config, fetchImpl);
+async function removeTarget(ids: string[], remove: DeliveryRemove): Promise<RemovalOutcome> {
   const deleted: string[] = [];
   const remaining: string[] = [];
   let error: string | undefined;
@@ -104,27 +106,4 @@ async function removeTarget(target: string, ids: string[], config: BackendConfig
     }
   }
   return { deleted, remaining, ...(error ? { error } : {}) };
-}
-
-function removeOne(target: string, config: BackendConfig, fetchImpl: typeof fetch): (id: string) => Promise<unknown> {
-  if (target === "telegram") {
-    if (!config.controllerBotToken) throw new Error("missing CONTROLLER_BOT_TOKEN");
-    const token = config.controllerBotToken;
-    return (id) =>
-      requestJson(fetchImpl, `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/bot${token}/deleteMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: config.TELEGRAM_CHANNEL_USERNAME, message_id: Number(id) }),
-      });
-  }
-  if (target === "threads_en" || target === "threads_ru") {
-    const token = target === "threads_en" ? config.THREADS_EN_ACCESS_TOKEN : config.THREADS_RU_ACCESS_TOKEN;
-    if (!token) throw new Error(`missing ${target === "threads_en" ? "THREADS_EN_ACCESS_TOKEN" : "THREADS_RU_ACCESS_TOKEN"}`);
-    return (id) =>
-      requestJson(fetchImpl, `https://graph.threads.net/v1.0/${encodeURIComponent(id)}?access_token=${encodeURIComponent(token)}`, {
-        method: "DELETE",
-      });
-  }
-  if (target === "discord") return (id) => deleteDiscordMessage(id, config, fetchImpl);
-  throw new Error(`remote deletion is not supported for ${target}`);
 }

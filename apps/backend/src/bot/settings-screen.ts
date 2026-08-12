@@ -5,10 +5,10 @@ import { importManualAnalytics, manualThreadsFollowers } from "../analytics/impo
 import { importXAnalyticsCsv } from "../analytics/import-x-csv.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { materializeTelegramFile } from "../foundation/external/telegram-files.js";
 import { describeError, t } from "../foundation/i18n/index.js";
 import { STUDIO_LOCALE_NAMES, STUDIO_LOCALES, type StudioLocale } from "../foundation/locale.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
-import { downloadTelegramFile } from "../interfaces/telegram/file-download.js";
 import { sendDailyNewsDigest } from "../interfaces/telegram/news-digest.js";
 import type { StudioZernioAccount } from "../studio/services/channels.js";
 import { createStudioServices } from "../studio/services/index.js";
@@ -589,7 +589,7 @@ async function collectXAnalyticsCsv(
     await ctx.reply(t(locale, "settings.x-import-failed", { error: "no file path" }));
     return true;
   }
-  const downloaded = await downloadTelegramFile(config, apiFile.file_path, ".csv");
+  const downloaded = await materializeTelegramFile(config, { filePath: apiFile.file_path }, { extension: ".csv" });
   try {
     const result = importXAnalyticsCsv(backendDb, downloaded.path, messageSampledAt(ctx), document.file_name ?? undefined);
     await ctx.reply(

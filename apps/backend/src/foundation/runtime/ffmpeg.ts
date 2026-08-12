@@ -57,6 +57,58 @@ export async function runFfprobe<T = unknown>(args: string[], timeoutSeconds = 3
   }
 }
 
+export type MediaMetadata = {
+  width: number;
+  height: number;
+  durationSeconds: number;
+  videoCodec: string;
+  audioCodec: string | null;
+  fps: number;
+  audioBitrate: number | null;
+};
+
+/** Canonical ffprobe projection for every video workflow. Callers decide
+ * whether a probe failure is fatal or whether transport metadata is enough. */
+export async function probeMediaMetadata(filePath: string, timeoutSeconds = 30): Promise<MediaMetadata> {
+  const data = await runFfprobe<{
+    format?: { duration?: string };
+    streams?: Array<{
+      codec_type?: string;
+      codec_name?: string;
+      width?: number;
+      height?: number;
+      duration?: string;
+      avg_frame_rate?: string;
+      bit_rate?: string;
+    }>;
+  }>(
+    [
+      "-v",
+      "error",
+      "-show_entries",
+      "format=duration:stream=codec_type,codec_name,width,height,duration,avg_frame_rate,bit_rate",
+      "-of",
+      "json",
+      filePath,
+    ],
+    timeoutSeconds,
+  );
+  const video = data.streams?.find((stream) => stream.codec_type === "video");
+  const audio = data.streams?.find((stream) => stream.codec_type === "audio");
+  if (!video?.width || !video.height) throw new Error("media_probe_failed: ffprobe did not find a video stream");
+  const [numerator = 0, denominator = 1] = (video.avg_frame_rate ?? "0/1").split("/").map(Number);
+  const audioBitrate = Number(audio?.bit_rate);
+  return {
+    width: Number(video.width),
+    height: Number(video.height),
+    durationSeconds: Math.max(0, Number(data.format?.duration ?? video.duration ?? 0)),
+    videoCodec: video.codec_name ?? "video",
+    audioCodec: audio?.codec_name ?? null,
+    fps: denominator ? numerator / denominator : 0,
+    audioBitrate: Number.isFinite(audioBitrate) && audioBitrate > 0 ? audioBitrate : null,
+  };
+}
+
 /** Keep an actionable terminal reason instead of persisting megabytes of ffmpeg
  * progress frames. Exit 137 is the Linux OOM-kill convention. */
 export function formatFfmpegFailure(exitCode: number, stderr: string): string {

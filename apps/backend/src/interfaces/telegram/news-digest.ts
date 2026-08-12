@@ -5,6 +5,7 @@ import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import { log } from "../../foundation/logger.js";
+import { zonedDateTimeParts } from "../../foundation/time.js";
 import { settingsService } from "../../studio/services/settings.js";
 
 type GrokProcess = {
@@ -45,7 +46,7 @@ export async function sendDailyNewsDigest(
   if (!options.force && !settings.enabled) return { status: "disabled" };
   if (!settings.prompt) return { status: "missing_prompt" };
 
-  const date = zonedDate(config.TIMEZONE, now);
+  const date = zonedDateTimeParts(now, config.TIMEZONE);
   if (!options.force && date.hour * 60 + date.minute < settings.hour * 60 + settings.minute) return { status: "not_due" };
 
   const key = `news_digest:${date.day}`;
@@ -155,22 +156,4 @@ function readMarkdown(response: object): string | null {
     }
   }
   return null;
-}
-
-function zonedDate(timeZone: string, now: Date): { day: string; hour: number; minute: number } {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    })
-      .formatToParts(now)
-      .filter((part) => part.type !== "literal")
-      .map((part) => [part.type, part.value]),
-  ) as Record<string, string>;
-  return { day: `${parts.year}-${parts.month}-${parts.day}`, hour: Number(parts.hour), minute: Number(parts.minute) };
 }

@@ -1,13 +1,14 @@
 import { TARGET_GROUPS, targetInGroup } from "../botTargets.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { instagramCredentialsForLocale } from "../foundation/external/instagram.js";
+import { requestJson } from "../foundation/http.js";
 import { isCapabilityReady } from "../observability/capabilities.js";
 import type { PublishResult } from "../publishing/errors.js";
 import { platformProfile } from "../publishing/platform-profiles.js";
 import type { ClaimedPublishJob } from "../publishing/queue.js";
 import { platformTargetConfigs } from "./platform-routing.js";
-import type { DeliveryPorts, DeliveryPublisher } from "./ports.js";
-import { publishToDiscord, verifyDiscordMessage } from "./social/discord.js";
+import type { DeliveryAdapter, DeliveryPorts, DeliveryPublisher } from "./ports.js";
+import { deleteDiscordMessage, editDiscordMessage, publishToDiscord, verifyDiscordMessage } from "./social/discord.js";
 import { publishInstagramStory, verifyInstagramPublication } from "./social/instagram.js";
 import { publishToTelegram } from "./social/telegram.js";
 import { publishToThreads, verifyThreadsPost } from "./social/threads.js";
@@ -16,7 +17,11 @@ import { publishToX, verifyXPost } from "./social/x.js";
 type PreparePlatformJob = (job: ClaimedPublishJob, config: BackendConfig) => Promise<ClaimedPublishJob>;
 
 /** Builds provider adapters from target routing and shared preparation policy. */
-export function createPlatformAdapters(config: BackendConfig, fetchImpl: typeof fetch, prepare: PreparePlatformJob): DeliveryPorts {
+export function createPlatformAdapters(
+  config: BackendConfig,
+  fetchImpl: typeof fetch = fetch,
+  prepare: PreparePlatformJob = async (job) => job,
+): DeliveryPorts {
   const targetConfigs = platformTargetConfigs(config);
   const publishers: Record<string, DeliveryPublisher> = {
     telegram: (job) => publishToTelegram(job.payload, config, fetchImpl),
@@ -43,17 +48,79 @@ export function createPlatformAdapters(config: BackendConfig, fetchImpl: typeof 
     publishers[target] = (job) =>
       import("./social/telegramStories.js").then(({ publishTelegramStory }) => publishTelegramStory(job.payload, config));
 
+  const mutations = platformMutations(config, fetchImpl);
   return Object.fromEntries(
-    Object.entries(publishers).map(([target, publish]) => [
-      target,
-      {
+    Object.entries(publishers).map(([target, publish]) => {
+      const adapter: DeliveryAdapter = {
         publish,
         validate: async () => validatePlatformTarget(target, targetConfigs[target] ?? config),
         prepare: async (job) => (target === "telegram" ? job : prepare(job, targetConfigs[target] ?? config)),
         verify: async (_job, result) => verifyPlatformPublication(target, result, targetConfigs[target] ?? config, fetchImpl),
-      },
-    ]),
+        ...mutations[target],
+      };
+      return [target, adapter];
+    }),
   ) as DeliveryPorts;
+}
+
+function platformMutations(config: BackendConfig, fetchImpl: typeof fetch): Partial<Record<string, Partial<DeliveryAdapter>>> {
+  const telegramToken = config.controllerBotToken;
+  const telegram: Partial<DeliveryAdapter> = {
+    edit: async ({ externalId, text, chatId, mediaCount }) => {
+      if (!telegramToken) return { ok: false, skipped: true, error: "missing CONTROLLER_BOT_TOKEN" };
+      const method = mediaCount > 0 ? "editMessageCaption" : "editMessageText";
+      const field = mediaCount > 0 ? "caption" : "text";
+      const response = await requestJson<Record<string, unknown>>(
+        fetchImpl,
+        `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/bot${telegramToken}/${method}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: chatId || config.TELEGRAM_CHANNEL_USERNAME, message_id: Number(externalId), [field]: text }),
+        },
+      );
+      return { ok: response.ok !== false, response };
+    },
+    remove: (id) => {
+      if (!telegramToken) throw new Error("missing CONTROLLER_BOT_TOKEN");
+      return requestJson(fetchImpl, `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/bot${telegramToken}/deleteMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: config.TELEGRAM_CHANNEL_USERNAME, message_id: Number(id) }),
+      });
+    },
+  };
+  const discord: Partial<DeliveryAdapter> = {
+    edit: async ({ externalId, text, externalIdCount }) => {
+      if (externalIdCount > 1) return { ok: false, skipped: true, error: "discord_post_is_split" };
+      const limit = platformProfile("discord")?.limits?.text ?? 2000;
+      if (text.length > limit) return { ok: false, skipped: true, error: "edit_exceeds_discord_limit" };
+      return { ok: true, response: await editDiscordMessage(externalId, text, config, fetchImpl) };
+    },
+    remove: (id) => deleteDiscordMessage(id, config, fetchImpl),
+  };
+  return {
+    telegram,
+    ...Object.fromEntries(TARGET_GROUPS.discord.map((target) => [target, discord])),
+    ...Object.fromEntries(
+      TARGET_GROUPS.threads.map((target) => {
+        const token = target === "threads_en" ? config.THREADS_EN_ACCESS_TOKEN : config.THREADS_RU_ACCESS_TOKEN;
+        return [
+          target,
+          {
+            remove: (id: string) => {
+              if (!token) throw new Error(`missing ${target === "threads_en" ? "THREADS_EN_ACCESS_TOKEN" : "THREADS_RU_ACCESS_TOKEN"}`);
+              return requestJson(
+                fetchImpl,
+                `https://graph.threads.net/v1.0/${encodeURIComponent(id)}?access_token=${encodeURIComponent(token)}`,
+                { method: "DELETE" },
+              );
+            },
+          },
+        ];
+      }),
+    ),
+  };
 }
 
 export async function verifyPlatformPublication(

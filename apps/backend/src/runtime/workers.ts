@@ -40,6 +40,16 @@ export function runPublishWatchdog(config: BackendConfig, backendDb: BackendDb):
   return recoverStalePublishJobs(backendDb, config);
 }
 
+async function runTimedCycle(
+  operation: string,
+  countName: "claimed" | "checked" | "completed",
+  cycle: () => Promise<number>,
+): Promise<void> {
+  const startedAt = Date.now();
+  const count = await cycle();
+  if (count) log("info", "operation timing", { operation, success: true, totalMs: Date.now() - startedAt, [countName]: count });
+}
+
 /** Starts domain workers only. It deliberately has no Telegram or HTTP dependency. */
 export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): ScheduledLoop[] {
   // Deployment/server restarts terminate the old process but leave its durable
@@ -90,26 +100,10 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
     ...(config.studio.modules.text_posting
       ? [
           startWorkerLoop("story-cards", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
-            const startedAt = Date.now();
-            const claimed = await runStoryCardCycle(config, backendDb);
-            if (claimed)
-              log("info", "operation timing", {
-                operation: "content.story_card.cycle",
-                success: true,
-                totalMs: Date.now() - startedAt,
-                claimed,
-              });
+            await runTimedCycle("content.story_card.cycle", "claimed", () => runStoryCardCycle(config, backendDb));
           }),
           startWorkerLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
-            const startedAt = Date.now();
-            const claimed = await runPublishCycle(config, backendDb);
-            if (claimed)
-              log("info", "operation timing", {
-                operation: "publishing.social.cycle",
-                success: true,
-                totalMs: Date.now() - startedAt,
-                claimed,
-              });
+            await runTimedCycle("publishing.social.cycle", "claimed", () => runPublishCycle(config, backendDb));
           }),
           startWorkerLoop("publish-watchdog", WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
             const recovered = runPublishWatchdog(config, backendDb);
@@ -132,15 +126,7 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
     ...(config.studio.modules.video_posting
       ? [
           startWorkerLoop("video", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
-            const startedAt = Date.now();
-            const claimed = await runVideoCycle(config, backendDb);
-            if (claimed)
-              log("info", "operation timing", {
-                operation: "publishing.video.cycle",
-                success: true,
-                totalMs: Date.now() - startedAt,
-                claimed,
-              });
+            await runTimedCycle("publishing.video.cycle", "claimed", () => runVideoCycle(config, backendDb));
           }),
         ]
       : []),
@@ -149,26 +135,10 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
           // Two independent collectors on one schedule. They do not share a
           // failure: a provider outage on one must not silently stop the other.
           startWorkerLoop("metrics", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
-            const startedAt = Date.now();
-            const checked = await runMetricsCycle(config, backendDb);
-            if (checked)
-              log("info", "operation timing", {
-                operation: "analytics.metrics.cycle",
-                success: true,
-                totalMs: Date.now() - startedAt,
-                checked,
-              });
+            await runTimedCycle("analytics.metrics.cycle", "checked", () => runMetricsCycle(config, backendDb));
           }),
           startWorkerLoop("creator-analytics", PROFILE_POLL_INTERVAL_SECONDS * 1000, async () => {
-            const startedAt = Date.now();
-            const creators = await runAnalyticsCycle(config, backendDb);
-            if (creators)
-              log("info", "operation timing", {
-                operation: "analytics.creator_cycle",
-                success: true,
-                totalMs: Date.now() - startedAt,
-                completed: creators,
-              });
+            await runTimedCycle("analytics.creator_cycle", "completed", () => runAnalyticsCycle(config, backendDb));
           }),
           // Retention is a housekeeping concern, not a collection one: it used
           // to run on every metrics tick (10s by default), scanning
@@ -185,15 +155,7 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
     ...(config.studio.modules.site
       ? [
           startWorkerLoop("site", SITE_JOB_POLL_INTERVAL_SECONDS * 1000, async () => {
-            const startedAt = Date.now();
-            const claimed = await runSiteJobCycle(config, backendDb);
-            if (claimed)
-              log("info", "operation timing", {
-                operation: "publishing.site.cycle",
-                success: true,
-                totalMs: Date.now() - startedAt,
-                claimed,
-              });
+            await runTimedCycle("publishing.site.cycle", "claimed", () => runSiteJobCycle(config, backendDb));
           }),
         ]
       : []),

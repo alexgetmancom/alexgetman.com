@@ -1,18 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { BackendConfig } from "../foundation/config.js";
-import { requestJson } from "../foundation/http.js";
-import { runFfmpeg, runFfprobe } from "../foundation/runtime/ffmpeg.js";
+import { materializeTelegramFile } from "../foundation/external/telegram-files.js";
+import { probeMediaMetadata, runFfmpeg } from "../foundation/runtime/ffmpeg.js";
 import { videoBounds } from "../publishing/platform-profiles.js";
-import { copyFileAtomically, writeResponseAtomically } from "./site-media-storage.js";
+import { copyFileAtomically } from "./site-media-storage.js";
 import { mediaExtension, type PublishMediaItem } from "./social/payload.js";
-
-type TelegramFileResponse = {
-  ok?: boolean;
-  result?: {
-    file_path?: string;
-  };
-};
 
 export async function prepareMediaItems(
   config: BackendConfig,
@@ -117,45 +110,12 @@ async function ensureLocalMedia(config: BackendConfig, item: PublishMediaItem, c
     return target;
   }
   if (!item.fileId) throw new Error("media item has neither localPath nor fileId");
-  const fileUrl = await getTelegramFileUrl(config, item.fileId, item.token, fetchImpl);
-  if (fileUrl.startsWith("file://")) {
-    const source = fileUrl.slice("file://".length);
-    await copyIfMissing(source, target);
-    return target;
-  }
-  const response = await fetchImpl(fileUrl);
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Telegram file download failed: ${response.status} ${body}`);
-  }
-  await writeResponseAtomically(target, response);
+  await materializeTelegramFile(config, { fileId: item.fileId, ...(item.token ? { token: item.token } : {}) }, { target, fetchImpl });
   return target;
 }
 
-async function getTelegramFileUrl(
-  config: BackendConfig,
-  fileId: string,
-  token: string | undefined,
-  fetchImpl: typeof fetch,
-): Promise<string> {
-  const botToken = token || config.controllerBotToken;
-  if (!botToken) throw new Error("missing Telegram bot token for media download");
-  const apiBase = config.TELEGRAM_API_BASE_URL.replace(/\/$/, "");
-  const info = await requestJson<TelegramFileResponse>(fetchImpl, `${apiBase}/bot${botToken}/getFile`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ file_id: fileId }),
-  });
-  const filePath = info.result?.file_path;
-  if (!info.ok || !filePath) throw new Error(`Telegram getFile failed for ${fileId}`);
-  if (path.isAbsolute(filePath)) {
-    return `file://${filePath}`;
-  }
-  return `${apiBase}/file/bot${botToken}/${filePath}`;
-}
-
 async function normalizeVideoForPublicUpload(config: BackendConfig, inputPath: string, cacheKey: string, target?: string): Promise<string> {
-  const { width, height } = await probeVideoDimensions(inputPath);
+  const { width, height } = await probeMediaMetadata(inputPath);
   const bounds = target ? videoBounds(target, width, height) : null;
   if (!bounds) return inputPath;
   const { maxWidth, maxHeight } = bounds;
@@ -199,23 +159,6 @@ async function normalizeVideoForPublicUpload(config: BackendConfig, inputPath: s
         ];
   await runFfmpeg(args, config.FFMPEG_TIMEOUT_SECONDS);
   return outputPath;
-}
-
-async function probeVideoDimensions(inputPath: string): Promise<{ width: number; height: number }> {
-  const data = await runFfprobe<{ streams?: Array<{ width?: number; height?: number }> }>([
-    "-v",
-    "error",
-    "-select_streams",
-    "v:0",
-    "-show_entries",
-    "stream=width,height",
-    "-of",
-    "json",
-    inputPath,
-  ]);
-  const stream = data.streams?.[0];
-  if (!stream?.width || !stream.height) throw new Error("ffprobe did not find a video stream");
-  return { width: Number(stream.width), height: Number(stream.height) };
 }
 
 async function mediaCacheKey(item: PublishMediaItem, index: number): Promise<string> {

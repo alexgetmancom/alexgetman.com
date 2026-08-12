@@ -9,17 +9,16 @@ import {
   siteMediaVerticalFilename,
 } from "../content/site-media-naming.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { materializeTelegramFile } from "../foundation/external/telegram-files.js";
 import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
-import { mediaTransformKey } from "./media-idempotency.js";
+import { processVerticalMediaRemotely } from "./remote-media-processor.js";
 import {
   copyFileAtomically,
   deduplicateSiteMediaFile,
   removeDeduplicatedSiteMediaFile,
   sha256File,
   temporaryPath,
-  writeResponseAtomically,
 } from "./site-media-storage.js";
-import { VERTICAL_MEDIA_TRANSFORM, verticalMediaRecipe } from "./vertical-media-recipe.js";
 
 type SiteMedia = Record<string, unknown> & {
   type?: string;
@@ -157,35 +156,15 @@ async function materializeVerticalViewerMedia(
     }
     return;
   }
-  if (!config.MEDIA_PROCESSOR_URL || !config.MEDIA_PROCESSOR_TOKEN) throw new Error("site_vertical_media_requires_remote_processor");
-  const stat = await fs.promises.stat(source);
-  // Production site media shares the exact short-form render with Instagram
-  // Stories. The processor also emits Telegram's size-budgeted variant from
-  // the same prepared frames, so equal source bytes trigger one ffmpeg run.
-  const idempotencyKey = await mediaTransformKey(source, verticalMediaRecipe(kind));
-  const base = config.MEDIA_PROCESSOR_URL.replace(/\/$/, "");
-  const response = await fetchImpl(`${base}/v1/transforms/ffmpeg`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${config.MEDIA_PROCESSOR_TOKEN}`,
-      "content-length": String(stat.size),
-      "x-studio-transform": VERTICAL_MEDIA_TRANSFORM,
-      "x-studio-media-kind": kind === "video" ? "video" : "image",
-      "x-studio-idempotency-key": idempotencyKey,
-    },
-    body: options.maxUploadKbps ? throttledFileStream(source, options.maxUploadKbps) : Bun.file(source),
-    signal: AbortSignal.timeout(config.MEDIA_PROCESSOR_TIMEOUT_SECONDS * 1000),
+  await processVerticalMediaRemotely({
+    config,
+    source,
+    kind,
+    variants: [{ name: "standard", output }],
+    timeoutMs: config.MEDIA_PROCESSOR_TIMEOUT_SECONDS * 1000,
+    fetchImpl,
+    ...(options.maxUploadKbps ? { uploadBody: throttledFileStream(source, options.maxUploadKbps) } : {}),
   });
-  if (!response.ok) throw new Error(`site_vertical_media_failed: ${response.status} ${(await response.text()).slice(0, 800)}`);
-  const manifest = (await response.json()) as { outputs?: { standard?: unknown } };
-  if (!manifest.outputs?.standard) throw new Error("site_vertical_media_failed: missing standard output");
-  const download = await fetchImpl(`${base}/v1/transforms/ffmpeg/${idempotencyKey}/standard`, {
-    headers: { authorization: `Bearer ${config.MEDIA_PROCESSOR_TOKEN}` },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!download.ok) throw new Error(`site_vertical_media_download_failed: ${download.status}`);
-  await writeResponseAtomically(output, download);
-  await fs.promises.chmod(output, 0o664);
 }
 
 /** Bulk archive work crosses the VPS ↔ home-VM link. Throttle only that
@@ -267,24 +246,7 @@ async function copyOrDownload(config: BackendConfig, item: SiteMedia, target: st
   }
   const fileId = stringValue(item.file_id) || stringValue(item.fileId);
   if (!fileId) throw new Error("site media has no file_id or local path");
-  const token = config.controllerBotToken;
-  if (!token) throw new Error("missing Telegram token for site media");
-  const base = config.TELEGRAM_API_BASE_URL.replace(/\/$/, "");
-  const infoResponse = await fetchImpl(`${base}/bot${token}/getFile`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ file_id: fileId }),
-  });
-  const info = (await infoResponse.json()) as { ok?: boolean; result?: { file_path?: string } };
-  if (!infoResponse.ok || !info.ok || !info.result?.file_path) throw new Error(`Telegram getFile failed for ${fileId}`);
-  const filePath = info.result.file_path;
-  if (path.isAbsolute(filePath)) {
-    await copyFileAtomically(filePath, target);
-    return;
-  }
-  const response = await fetchImpl(`${base}/file/bot${token}/${filePath}`);
-  if (!response.ok) throw new Error(`Telegram file download failed: ${response.status}`);
-  await writeResponseAtomically(target, response);
+  await materializeTelegramFile(config, { fileId }, { target, fetchImpl });
 }
 
 async function isCurrentCopy(source: string, target: string): Promise<boolean> {

@@ -1,0 +1,34 @@
+---
+import Layout from "../layouts/Layout.astro";
+import type { HubDefinition } from "../server/hubs";
+import type { FeedItem } from "../server/public-site";
+import { getFirstSentence } from "../utils/text";
+
+type Props = { locale: "en" | "ru"; hub: string; definition: HubDefinition; posts: FeedItem[] };
+const { locale, hub, definition, posts } = Astro.props;
+const russian = locale === "ru";
+const url = `https://alexgetman.com/${russian ? "ru/" : ""}${hub}/`;
+const englishUrl = `https://alexgetman.com/${hub}/`;
+const russianUrl = `https://alexgetman.com/ru/${hub}/`;
+---
+
+<Layout
+  title={`${definition.title} | ${russian ? "Алекс Гетман" : "Alex Getman"}`}
+  description={russian ? `Новости и контекст про ${definition.title}.` : `Latest news and context about ${definition.title}.`}
+  canonicalUrl={url}
+  lang={locale}
+  siteName={russian ? "Алекс Гетман" : "Alex Getman"}
+  alternateLinks={[
+    { hreflang: "en", href: englishUrl },
+    { hreflang: "ru", href: russianUrl },
+    { hreflang: "x-default", href: englishUrl },
+  ]}
+>
+  <main class="hub">
+    <h1>{definition.title}</h1>
+    <p>{definition.intro[locale]}</p>
+    <h2>{russian ? "Последние обновления" : "Latest updates"}</h2>
+    <ol>{posts.map((post) => <li><a href={`/${russian ? "ru/" : ""}${post.post_id}/${russian ? post.slug_ru : post.slug_en}/`}>{getFirstSentence(russian ? post.text : post.text_en) || `${russian ? "Пост" : "Post"} ${post.post_id}`}</a></li>)}</ol>
+  </main>
+</Layout>
+<style>.hub { max-width: 720px; margin: 0 auto; padding: 5rem 1.5rem; } ol { padding-left: 1.2rem; line-height: 1.6; } a { color: inherit; }</style>

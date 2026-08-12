@@ -6,7 +6,7 @@ import type { DashboardMetricName, PipelinePost } from "./types.js";
 
 const DASHBOARD_METRICS = ["views", "likes", "replies", "reposts"] as const satisfies readonly DashboardMetricName[];
 
-function getTargetStatus(post: PipelinePost, target: string): string | null {
+export function getTargetStatus(post: PipelinePost, target: string): string | null {
   const record = post.targets?.[target];
   if (record?.status && record.status !== "unknown") return record.status;
   if (target === "telegram" && post.telegram_url) return "published";

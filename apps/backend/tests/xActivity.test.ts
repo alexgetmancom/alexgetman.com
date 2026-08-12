@@ -8,10 +8,11 @@ import { attachXActivityToPosts } from "../src/analytics/x-activity-linking.js";
 import { xAnalyticsReport } from "../src/analytics/x-activity-report.js";
 import { recordPublishedXActivity } from "../src/analytics/x-activity-store.js";
 import { xActivityItems, xActivityMetricSnapshots } from "../src/db/schema.js";
-import { type CombinedSectionInput, renderCombinedSection, xChartPost } from "../src/interfaces/web/dashboard/combined-section.js";
+import { type CombinedSectionInput, renderCombinedSection } from "../src/interfaces/web/dashboard/combined-section.js";
 import { calendarDays } from "../src/interfaces/web/dashboard/daily-reach.js";
 import { textOverviewOf } from "../src/interfaces/web/dashboard/text-overview.js";
 import { emptyVideoOverview } from "../src/interfaces/web/dashboard/video-overview.js";
+import { xActivityPost } from "../src/interfaces/web/dashboard/x-activity-posts.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 const HEADERS = [
@@ -52,7 +53,7 @@ function renderOverview(input: Omit<CombinedSectionInput, "textReach" | "videoRe
     {
       ...input,
       videoReach: input.video.dailyByDay,
-      textReach: textOverviewOf([...posts, ...items.map(xChartPost)], [], days, "UTC"),
+      textReach: textOverviewOf([...posts, ...items.map(xActivityPost)], [], days, "UTC"),
     },
     "ru",
   );

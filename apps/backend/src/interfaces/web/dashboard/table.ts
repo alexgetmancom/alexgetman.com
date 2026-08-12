@@ -3,7 +3,7 @@ import { t } from "../../../foundation/i18n/index.js";
 import type { StudioLocale } from "../../../foundation/locale.js";
 import { ORDERED_TARGETS, PLATFORM_ICONS, platformKey, VIDEO_PLATFORM_ICON_KEYS } from "./assets.js";
 import { formatMetricValue, shortPipelineText } from "./format.js";
-import { getTargetMetric, postMetricTotals } from "./metrics.js";
+import { getTargetMetric, getTargetStatus, postMetricTotals } from "./metrics.js";
 import { getTargetUrl } from "./target-url.js";
 import type { PipelinePost } from "./types.js";
 import type { VideoContentItem } from "./video-overview.js";
@@ -102,7 +102,7 @@ type PublicationPlatform = {
 };
 
 function textPublicationPlatforms(post: PipelinePost, targetIds: string[]): PublicationPlatform[] {
-  return ORDERED_TARGETS.filter((target) => targetIds.includes(target.id) && targetStatus(post, target.id) === "published").map(
+  return ORDERED_TARGETS.filter((target) => targetIds.includes(target.id) && getTargetStatus(post, target.id) === "published").map(
     (target) => ({
       name: target.label.replace(/\s(?:RU|EN)$/i, ""),
       locale: target.locale.toUpperCase(),
@@ -240,7 +240,7 @@ function platformBreakdown(results: PlatformResult[], locale: StudioLocale): str
 }
 
 function textPlatformResults(post: PipelinePost, targetIds: string[]): PlatformResult[] {
-  return ORDERED_TARGETS.filter((target) => targetIds.includes(target.id) && targetStatus(post, target.id) === "published").map(
+  return ORDERED_TARGETS.filter((target) => targetIds.includes(target.id) && getTargetStatus(post, target.id) === "published").map(
     (target) => ({
       icon: PLATFORM_ICONS[platformKey(target.id)] ?? "",
       locale: target.locale,
@@ -273,15 +273,6 @@ function platformMetrics(result: PlatformResult, locale: StudioLocale): string {
   return result.url
     ? `<a class="post-platform" href="${escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">${content}</a>`
     : `<div class="post-platform">${content}</div>`;
-}
-
-function targetStatus(post: PipelinePost, target: string): string | null {
-  const status = post.targets?.[target]?.status;
-  if (status && status !== "unknown") return status;
-  if (target === "telegram" && post.telegram_url) return "published";
-  if (target === "site_ru" && post.site_ru) return "published";
-  if (target === "site_en" && post.site_en) return "published";
-  return null;
 }
 
 function total(post: PipelinePost, targetIds: string[]) {

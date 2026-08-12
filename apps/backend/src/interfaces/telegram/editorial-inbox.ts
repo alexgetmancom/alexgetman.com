@@ -8,6 +8,7 @@ import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 import { log } from "../../foundation/logger.js";
 import { truncateUnicode } from "../../foundation/text.js";
+import { zonedDateTimeParts } from "../../foundation/time.js";
 import { settingsService } from "../../studio/services/settings.js";
 
 type ChatCompletion = { choices?: Array<{ message?: { content?: string } }> };
@@ -33,7 +34,7 @@ export async function sendDailyEditorialInbox(
   fetchImpl: typeof fetch = fetch,
 ): Promise<boolean> {
   if (!bot || !config.DEEPSEEK_API_KEY || config.CONTROLLER_ADMIN_IDS.length === 0) return false;
-  const date = zonedDate(config.TIMEZONE, now);
+  const date = zonedDateTimeParts(now, config.TIMEZONE);
   if (date.hour < config.EDITORIAL_INBOX_HOUR_MSK) return false;
   const key = `editorial_inbox:${date.day}`;
 
@@ -130,23 +131,6 @@ export async function sendDailyEditorialInbox(
     log("warn", "daily editorial inbox failed", { error: String(error) });
     return false;
   }
-}
-
-function zonedDate(timeZone: string, now: Date): { day: string; hour: number } {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      hourCycle: "h23",
-    })
-      .formatToParts(now)
-      .filter((part) => part.type !== "literal")
-      .map((part) => [part.type, part.value]),
-  ) as Record<string, string>;
-  return { day: `${parts.year}-${parts.month}-${parts.day}`, hour: Number(parts.hour) };
 }
 
 function editorialItems(value: string): Required<Pick<Opportunity, "kind" | "title" | "reason" | "posts">>[] {

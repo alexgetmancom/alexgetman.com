@@ -1,0 +1,71 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { loadFeedItems } from "../server/public-site";
+import { sortedHomePosts } from "../utils/home-posts";
+import { socialProfileUrls } from "../utils/profiles";
+import HomeNewsPage from "./HomeNewsPage.astro";
+
+type Props = { locale: "en" | "ru" };
+const { locale } = Astro.props;
+const russian = locale === "ru";
+const posts = sortedHomePosts(loadFeedItems(), locale);
+const title = russian ? "Алекс Гетман — новости ИИ, моделей и AI-продуктов" : "Alex Getman — AI news, models and product updates";
+const description = russian
+  ? "Свежие новости ИИ: новые модели, продукты и обновления OpenAI, ChatGPT Codex, Claude, Gemini и других. Релизы, тесты, цены, лимиты и комментарии."
+  : "Fresh AI news on new models, product updates and releases from OpenAI, ChatGPT Codex, Claude, Gemini and more — with benchmarks, pricing, limits and commentary.";
+const siteName = russian ? "Алекс Гетман" : "Alex Getman";
+const canonicalUrl = russian ? "https://alexgetman.com/ru/" : "https://alexgetman.com/";
+const schema = JSON.stringify({
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Person",
+      "@id": "https://alexgetman.com/#person",
+      name: siteName,
+      ...(russian ? { alternateName: "Alex Getman" } : {}),
+      url: canonicalUrl,
+      image: "https://alexgetman.com/avatar.png",
+      sameAs: socialProfileUrls(locale),
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://alexgetman.com/#website",
+      url: canonicalUrl,
+      name: siteName,
+      description,
+      inLanguage: russian ? "ru-RU" : "en-US",
+      publisher: { "@id": "https://alexgetman.com/#person" },
+    },
+    {
+      "@type": "CollectionPage",
+      "@id": `${canonicalUrl}#home`,
+      url: canonicalUrl,
+      name: title,
+      description,
+      inLanguage: russian ? "ru-RU" : "en-US",
+      isPartOf: { "@id": "https://alexgetman.com/#website" },
+    },
+  ],
+});
+---
+
+<Layout
+  title={title}
+  description={description}
+  schema={schema}
+  canonicalUrl={canonicalUrl}
+  lang={locale}
+  siteName={siteName}
+  rssHref={russian ? "/ru/feed.xml" : "/feed.xml"}
+  socialImage="/brand-social-wide-20260720.jpg"
+  socialImageWidth={1200}
+  socialImageHeight={630}
+  alternateLinks={[
+    { hreflang: "en", href: "https://alexgetman.com/" },
+    { hreflang: "ru", href: "https://alexgetman.com/ru/" },
+    { hreflang: "x-default", href: "https://alexgetman.com/" },
+  ]}
+  immersiveHome
+>
+  <HomeNewsPage posts={posts} labels={{ empty: russian ? "Русские посты появятся здесь после публикации." : "English posts will appear here after publication approval." }} locale={locale} />
+</Layout>

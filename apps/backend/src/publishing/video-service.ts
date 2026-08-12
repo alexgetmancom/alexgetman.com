@@ -8,7 +8,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { instagramCredentialsForLocale } from "../foundation/external/instagram.js";
 import { youtubeCredentials } from "../foundation/external/youtube.js";
-import { runFfprobe } from "../foundation/runtime/ffmpeg.js";
+import { probeMediaMetadata } from "../foundation/runtime/ffmpeg.js";
 import { isZernioRouteReady, registeredVideoDeliveryRoute } from "./delivery-provider.js";
 import { assertFutureSchedule } from "./schedule.js";
 import { isVideoTargetEditable, isVideoTargetMetadataEditable, isVideoTargetSchedulable } from "./state.js";
@@ -294,44 +294,22 @@ export async function validateVideoDraft(config: BackendConfig, backendDb: Backe
 }
 
 async function probeVideo(source: string, size: number): Promise<VideoTechnicalCheck> {
-  let data: {
-    format?: { duration?: string };
-    streams?: Array<{
-      codec_type?: string;
-      codec_name?: string;
-      width?: number;
-      height?: number;
-      avg_frame_rate?: string;
-    }>;
-  };
+  let metadata: Awaited<ReturnType<typeof probeMediaMetadata>>;
   try {
-    data = await runFfprobe([
-      "-v",
-      "error",
-      "-show_entries",
-      "format=duration:stream=codec_type,codec_name,width,height,avg_frame_rate",
-      "-of",
-      "json",
-      source,
-    ]);
-  } catch {
+    metadata = await probeMediaMetadata(source);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("did not find a video stream")) throw new StudioError("err.no-video-stream");
     throw new StudioError("err.ffprobe-failed");
   }
-  const video = data.streams?.find((stream) => stream.codec_type === "video");
-  const audio = data.streams?.find((stream) => stream.codec_type === "audio");
-  if (!video?.width || !video.height) throw new StudioError("err.no-video-stream");
-  const [a = 0, b = 1] = (video.avg_frame_rate ?? "0/1").split("/").map(Number);
-  const fps = b ? a / b : 0;
-  const seconds = Math.max(0, Math.round(Number(data.format?.duration ?? 0)));
   return {
-    width: video.width,
-    height: video.height,
-    seconds,
-    videoCodec: video.codec_name ?? "video",
-    audioCodec: audio?.codec_name ?? null,
-    fps,
+    width: metadata.width,
+    height: metadata.height,
+    seconds: Math.round(metadata.durationSeconds),
+    videoCodec: metadata.videoCodec,
+    audioCodec: metadata.audioCodec,
+    fps: metadata.fps,
     sizeBytes: size,
-    aspectOk: Math.abs(video.width / video.height - 9 / 16) <= 0.02,
+    aspectOk: Math.abs(metadata.width / metadata.height - 9 / 16) <= 0.02,
   };
 }
 

@@ -1,61 +1,14 @@
 ---
-import HomeNewsPage from "../../../components/HomeNewsPage.astro";
-import Layout from "../../../layouts/Layout.astro";
+import LocalizedPostPage from "../../../components/LocalizedPostPage.astro";
 import { findFeedItem } from "../../../server/public-site";
-import { sortedHomePosts } from "../../../utils/home-posts";
-import { postSocialImagePath } from "../../../utils/media";
-import { buildPostSchema } from "../../../utils/post-schema";
-import { excerptAfterTitle, getFirstSentence } from "../../../utils/text";
 
 export const prerender = false;
-
 const { postId, slug } = Astro.params;
 const found = findFeedItem(postId);
 const item = found?.slug_ru === slug ? found : undefined;
 if (!item) {
-  // Same id, different slug: the post was renamed, so send the reader on.
   if (found?.has_ru && found.slug_ru) return Astro.redirect(`/ru/${found.post_id}/${found.slug_ru}/`, 301);
   return new Response("Not found\n", { status: 404 });
 }
-const russianPosts = sortedHomePosts([item], "ru");
-const selectedPost = russianPosts.find((post) => String(post.id) === String(postId));
-const siteAuthor = "Алекс Гетман";
-const postText = item.text || "";
-const pageTitle = selectedPost?.title || getFirstSentence(postText) || `Публикация ${postId}`;
-const postDescription =
-  excerptAfterTitle(postText, pageTitle, 158) || "Новости ИИ, заметки об автоматизации и разработке от Алекса Гетмана на alexgetman.com.";
-const localUrl = `https://alexgetman.com/ru/${postId}/${slug}/`;
-const ogImage = postSocialImagePath(item, "ru");
-const schema = buildPostSchema({ item, locale: "ru", pageTitle, description: postDescription, canonicalUrl: localUrl });
-
-const labels = {
-  empty: "Русские посты появятся здесь после публикации.",
-};
 ---
-
-<Layout
-  title={`${pageTitle} | ${siteAuthor}`}
-  description={postDescription}
-  schema={schema}
-  canonicalUrl={localUrl}
-  lang="ru"
-  siteName={siteAuthor}
-  rssHref="/ru/feed.xml"
-  socialImage={ogImage}
-  socialImageWidth={1200}
-  socialImageHeight={630}
-  ogType="article"
-  alternateLinks={[
-    ...(item.has_en ? [{ hreflang: 'en', href: `https://alexgetman.com/${postId}/${item.slug_en}/` }] : []),
-    { hreflang: 'ru', href: localUrl },
-    ...(item.has_en ? [{ hreflang: 'x-default', href: `https://alexgetman.com/${postId}/${item.slug_en}/` }] : [])
-  ]}
-  immersiveHome
->
-  <HomeNewsPage
-    posts={russianPosts}
-    labels={labels}
-    locale="ru"
-    initialPostId={postId}
-  />
-</Layout>
+<LocalizedPostPage locale="ru" item={item} postId={String(postId)} slug={String(slug)} />

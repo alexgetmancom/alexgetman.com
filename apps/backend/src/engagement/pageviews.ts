@@ -1,11 +1,12 @@
 import { eq, or } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { posts } from "../db/schema.js";
+import { zonedCalendarDay } from "../foundation/time.js";
 
 export function recordPageview(backendDb: BackendDb, rawPath: string, timeZone = "UTC"): string {
   const path = normalizeMetricPath(rawPath);
   const now = new Date();
-  const day = zonedDay(now, timeZone);
+  const day = zonedCalendarDay(now, timeZone);
   const candidates = path.endsWith("/") ? [path, path.slice(0, -1)] : [path, `${path}/`];
   const [firstCandidate, secondCandidate] = candidates;
   if (!firstCandidate || !secondCandidate) return path;
@@ -52,20 +53,16 @@ export function metricsSummary(
     .sqlite.prepare("SELECT day, sum(count) AS total, max(updated_at) AS updated_at FROM site_pageviews GROUP BY day ORDER BY day DESC")
     .all() as Array<{ day: string; total: number; updated_at: string | null }>;
   const now = new Date();
-  const today = zonedDay(now, timeZone);
+  const today = zonedCalendarDay(now, timeZone);
   // Calendar window, not "the 7 most recent rows": days with no traffic have no
   // row at all, and slicing would silently stretch the window across a gap.
-  const weekStart = zonedDay(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000), timeZone);
+  const weekStart = zonedCalendarDay(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000), timeZone);
   return {
     total: rows.reduce((sum, row) => sum + Number(row.total), 0),
     today: Number(rows.find((row) => row.day === today)?.total ?? 0),
     last7: rows.filter((row) => row.day >= weekStart).reduce((sum, row) => sum + Number(row.total), 0),
     updated_at: rows[0]?.updated_at ?? null,
   };
-}
-
-function zonedDay(now: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
 function normalizeMetricPath(value: string): string {

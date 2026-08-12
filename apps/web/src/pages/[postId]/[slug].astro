@@ -1,61 +1,14 @@
 ---
-import HomeNewsPage from "../../components/HomeNewsPage.astro";
-import Layout from "../../layouts/Layout.astro";
+import LocalizedPostPage from "../../components/LocalizedPostPage.astro";
 import { findFeedItem } from "../../server/public-site";
-import { sortedHomePosts } from "../../utils/home-posts";
-import { postSocialImagePath } from "../../utils/media";
-import { buildPostSchema } from "../../utils/post-schema";
-import { excerptAfterTitle, getFirstSentence } from "../../utils/text";
 
 export const prerender = false;
-
 const { postId, slug } = Astro.params;
 const found = findFeedItem(postId);
 const item = found?.slug_en === slug ? found : undefined;
 if (!item) {
-  // Same id, different slug: the post was renamed, so send the reader on.
   if (found?.has_en && found.slug_en) return Astro.redirect(`/${found.post_id}/${found.slug_en}/`, 301);
   return new Response("Not found\n", { status: 404 });
 }
-const englishPosts = sortedHomePosts([item], "en");
-const selectedPost = englishPosts.find((post) => String(post.id) === String(postId));
-const siteAuthor = "Alex Getman";
-const postText = item.text_en || item.text || "";
-const pageTitle = selectedPost?.title || getFirstSentence(postText) || `Post ${postId}`;
-const postDescription =
-  excerptAfterTitle(postText, pageTitle, 158) || "AI news, automation notes and developer updates by Alex Getman on alexgetman.com.";
-const localUrl = `https://alexgetman.com/${postId}/${slug}/`;
-const ogImage = postSocialImagePath(item, "en");
-const schema = buildPostSchema({ item, locale: "en", pageTitle, description: postDescription, canonicalUrl: localUrl });
-
-const labels = {
-  empty: "English posts will appear here after publication approval.",
-};
 ---
-
-<Layout
-  title={`${pageTitle} | ${siteAuthor}`}
-  description={postDescription}
-  schema={schema}
-  canonicalUrl={localUrl}
-  lang="en"
-  siteName={siteAuthor}
-  rssHref="/feed.xml"
-  socialImage={ogImage}
-  socialImageWidth={1200}
-  socialImageHeight={630}
-  ogType="article"
-  alternateLinks={[
-    { hreflang: 'en', href: localUrl },
-    ...(item.has_ru ? [{ hreflang: 'ru', href: `https://alexgetman.com/ru/${postId}/${item.slug_ru}/` }] : []),
-    { hreflang: 'x-default', href: localUrl }
-  ]}
-  immersiveHome
->
-  <HomeNewsPage
-    posts={englishPosts}
-    labels={labels}
-    locale="en"
-    initialPostId={postId}
-  />
-</Layout>
+<LocalizedPostPage locale="en" item={item} postId={String(postId)} slug={String(slug)} />

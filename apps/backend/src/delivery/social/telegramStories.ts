@@ -4,7 +4,7 @@ import path from "node:path";
 import type { tl } from "@mtcute/core";
 import type { BackendConfig } from "../../foundation/config.js";
 import { createChannelStoryClient } from "../../foundation/external/telegram-session.js";
-import { runFfmpeg } from "../../foundation/runtime/ffmpeg.js";
+import { probeMediaMetadata, runFfmpeg } from "../../foundation/runtime/ffmpeg.js";
 import { withTimeout } from "../../foundation/runtime/timeout.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { ambiguousExternalMutation } from "../ambiguous-publication.js";
@@ -181,26 +181,15 @@ async function probeVideo(filePath: string, media: PublishMediaItem): Promise<St
     audioBitrate: 320_000,
   };
   if (media.type !== "VIDEO") return fallback;
-  const child = Bun.spawn(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", filePath], {
-    stdout: "pipe",
-    stderr: "ignore",
-  });
-  const timeout = setTimeout(() => child.kill("SIGKILL"), 10_000);
-  const [exitCode, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()]);
-  clearTimeout(timeout);
-  if (exitCode !== 0) return fallback;
   try {
-    const streams = (JSON.parse(stdout) as { streams?: Array<Record<string, unknown>> }).streams ?? [];
-    const video = streams.find((stream) => stream.codec_type === "video") ?? {};
-    const audio = streams.find((stream) => stream.codec_type === "audio");
-    const audioBitrate = audio ? Number(audio.bit_rate) : 0;
+    const metadata = await probeMediaMetadata(filePath, 10);
     return {
-      width: Number(video.width ?? fallback.width),
-      height: Number(video.height ?? fallback.height),
-      duration: Math.round(Number(video.duration ?? fallback.duration)),
+      width: metadata.width,
+      height: metadata.height,
+      duration: Math.round(metadata.durationSeconds || fallback.duration),
       // A silent source costs nothing; an unreported bitrate falls back to the
       // pessimistic 320 kbps rather than to zero.
-      audioBitrate: audio ? (Number.isFinite(audioBitrate) && audioBitrate > 0 ? audioBitrate : fallback.audioBitrate) : 0,
+      audioBitrate: metadata.audioCodec ? (metadata.audioBitrate ?? fallback.audioBitrate) : 0,
     };
   } catch {
     return fallback;
