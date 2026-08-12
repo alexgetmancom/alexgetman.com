@@ -11,8 +11,10 @@ import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { isTargetAuthBlocked } from "../observability/auth-circuit.js";
 import { trackUsageAsync } from "../observability/usage.js";
 import {
-  claimDuePublishJobs,
+  type ClaimedPublishJob,
+  claimPublishJob,
   completePublishJob,
+  duePublishJobs,
   failPublishJob,
   forcePublishJobVerification,
   PUBLISH_CLAIM_LIMIT,
@@ -30,7 +32,8 @@ export async function runDeliveryPublishCycle(
   publishers: DeliveryPorts = createPlatformPorts(config),
 ): Promise<number> {
   recoverStalePublishJobs(backendDb, config);
-  const jobs = claimDuePublishJobs(backendDb, PUBLISH_CLAIM_LIMIT);
+  const candidates = duePublishJobs(backendDb, PUBLISH_CLAIM_LIMIT);
+  const claimedByIndex: Array<ClaimedPublishJob | null> = Array.from({ length: candidates.length }, () => null);
   // One lane per target instead of one shared pool: a single global pLimit let a
   // slow/hung target occupy every concurrency slot,
   // so unrelated targets (Telegram, Threads, ...) sat waiting behind it even
@@ -47,8 +50,11 @@ export async function runDeliveryPublishCycle(
     return limit;
   };
   const results = await Promise.allSettled(
-    jobs.map((job) =>
-      limitForTarget(job.target)(async () => {
+    candidates.map((candidate, index) =>
+      limitForTarget(candidate.target)(async () => {
+        const job = claimPublishJob(backendDb, candidate.jobId);
+        if (!job) return;
+        claimedByIndex[index] = job;
         const port = publishers[job.target];
         if (!port) {
           try {
@@ -125,7 +131,7 @@ export async function runDeliveryPublishCycle(
   );
   for (const [index, result] of results.entries()) {
     if (result.status !== "rejected") continue;
-    const job = jobs[index];
+    const job = claimedByIndex[index];
     if (!job) continue;
     const error = `worker finalization failed: ${String(result.reason instanceof Error ? result.reason.message : result.reason)}`;
     log("error", "publish job finalization failed", { jobId: job.jobId, target: job.target, error });
@@ -135,6 +141,7 @@ export async function runDeliveryPublishCycle(
       log("error", "publish job emergency settlement failed", { jobId: job.jobId, target: job.target, error: String(finalizationError) });
     }
   }
+  const jobs = claimedByIndex.filter((job): job is ClaimedPublishJob => job != null);
   const postIds = [...new Set(jobs.map((job) => job.postId).filter((id): id is number => id != null))];
   for (const postId of postIds) {
     try {

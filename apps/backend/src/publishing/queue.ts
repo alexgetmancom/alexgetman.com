@@ -38,6 +38,7 @@ export type ClaimedPublishJob = {
   attemptCount: number;
   lockId: string;
 };
+export type DuePublishJob = Pick<ClaimedPublishJob, "jobId" | "target">;
 
 export function workerId(prefix = "backend"): string {
   return `${prefix}:${os.hostname()}:${process.pid}`;
@@ -47,9 +48,17 @@ export function claimDuePublishJobs(
   limit: number,
   worker = `${workerId()}:${crypto.randomUUID()}`,
 ): ClaimedPublishJob[] {
+  const due = duePublishJobs(backendDb, limit);
+  return due.flatMap((job) => {
+    const claimed = claimPublishJob(backendDb, job.jobId, worker);
+    return claimed ? [claimed] : [];
+  });
+}
+
+export function duePublishJobs(backendDb: BackendDb, limit: number): DuePublishJob[] {
   const now = new Date().toISOString();
-  const rows = unsafeDb(backendDb)
-    .db.select()
+  return unsafeDb(backendDb)
+    .db.select({ jobId: publishJobs.jobId, target: publishJobs.target })
     .from(publishJobs)
     .where(
       and(
@@ -61,43 +70,61 @@ export function claimDuePublishJobs(
     .orderBy(publishJobs.createdAt, publishJobs.jobId)
     .limit(limit)
     .all();
-  const claimed: ClaimedPublishJob[] = [];
-  unsafeDb(backendDb).db.transaction((tx) => {
-    for (const row of rows) {
-      const locked = tx
-        .update(publishJobs)
-        // currentPhase belongs to the attempt, not to the job: a new claim starts
-        // without one so recoverStalePublishJobs can never read a phase left by
-        // whoever last touched the row.
-        .set({ status: "publishing", lockedBy: worker, lockedAt: now, currentPhase: null, updatedAt: now })
-        .where(and(eq(publishJobs.jobId, row.jobId), eq(publishJobs.status, "queued")))
-        .returning({ jobId: publishJobs.jobId })
-        .get();
-      if (!locked) continue;
-      const postKey = row.postKey;
-      upsertPostTarget(tx, {
-        postKey,
-        target: row.target,
-        status: "publishing",
-        error: null,
-        skipped: 0,
-        updatedAt: now,
-        rawJson: JSON.stringify({ job_id: row.jobId, worker }),
-      });
-      insertEvent(tx, postKey, row.target, "publish.job.claimed", "info", `Publishing ${row.target}`, { job_id: row.jobId, worker }, now);
-      claimed.push({
-        jobId: row.jobId,
-        postId: row.postId,
-        postKey,
-        messageId: row.messageId,
-        target: row.target,
-        payload: parsePayload(row.payloadJson),
-        attemptCount: row.attemptCount,
-        lockId: worker,
-      });
-    }
+}
+
+/** Claims one selected due job immediately before its target lane starts it. */
+export function claimPublishJob(
+  backendDb: BackendDb,
+  jobId: number,
+  worker = `${workerId()}:${crypto.randomUUID()}`,
+): ClaimedPublishJob | null {
+  const now = new Date().toISOString();
+  return unsafeDb(backendDb).db.transaction((tx) => {
+    const row = tx
+      .select()
+      .from(publishJobs)
+      .where(
+        and(
+          eq(publishJobs.jobId, jobId),
+          eq(publishJobs.status, "queued"),
+          or(isNull(publishJobs.publishAt), lte(publishJobs.publishAt, now)),
+          or(isNull(publishJobs.nextAttemptAt), lte(publishJobs.nextAttemptAt, now)),
+        ),
+      )
+      .get();
+    if (!row) return null;
+    const locked = tx
+      .update(publishJobs)
+      // currentPhase belongs to the attempt, not to the job: a new claim starts
+      // without one so recoverStalePublishJobs can never read a phase left by
+      // whoever last touched the row.
+      .set({ status: "publishing", lockedBy: worker, lockedAt: now, currentPhase: null, updatedAt: now })
+      .where(and(eq(publishJobs.jobId, jobId), eq(publishJobs.status, "queued")))
+      .returning({ jobId: publishJobs.jobId })
+      .get();
+    if (!locked) return null;
+    const postKey = row.postKey;
+    upsertPostTarget(tx, {
+      postKey,
+      target: row.target,
+      status: "publishing",
+      error: null,
+      skipped: 0,
+      updatedAt: now,
+      rawJson: JSON.stringify({ job_id: row.jobId, worker }),
+    });
+    insertEvent(tx, postKey, row.target, "publish.job.claimed", "info", `Publishing ${row.target}`, { job_id: row.jobId, worker }, now);
+    return {
+      jobId: row.jobId,
+      postId: row.postId,
+      postKey,
+      messageId: row.messageId,
+      target: row.target,
+      payload: parsePayload(row.payloadJson),
+      attemptCount: row.attemptCount,
+      lockId: worker,
+    };
   });
-  return claimed;
 }
 
 /** Runs a settlement transaction and reports whether it stuck. A settlement

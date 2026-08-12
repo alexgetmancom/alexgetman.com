@@ -254,11 +254,19 @@ describe("publish queue", () => {
       let activeSlow = 0;
       let maxActiveSlow = 0;
       let fastElapsedMs: number | null = null;
+      let sameLaneStatuses: string[] = [];
       const start = Date.now();
       const publishers = testPorts({
         "slow-target": async () => {
           activeSlow += 1;
           maxActiveSlow = Math.max(maxActiveSlow, activeSlow);
+          if (sameLaneStatuses.length === 0)
+            sameLaneStatuses = backendDb.db
+              .select({ status: publishJobs.status })
+              .from(publishJobs)
+              .where(eq(publishJobs.target, "slow-target"))
+              .all()
+              .map((job) => job.status);
           await Bun.sleep(50);
           activeSlow -= 1;
           return { ok: true, id: "slow" };
@@ -271,6 +279,8 @@ describe("publish queue", () => {
       await runPublishCycle(loadConfig({}), backendDb, publishers);
       // Two jobs on the same target never overlap...
       expect(maxActiveSlow).toBe(1);
+      // ...and the second one owns no expiring lock while it waits in that lane.
+      expect(sameLaneStatuses).toEqual(["publishing", "queued"]);
       // ...but a stuck/slow target doesn't hold up an unrelated one.
       expect(fastElapsedMs).not.toBeNull();
       expect(fastElapsedMs as unknown as number).toBeLessThan(50);
