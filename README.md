@@ -1,3 +1,5 @@
+[English](README.md) · [Русский](README.ru.md)
+
 # Solo Publisher
 
 **Write in chat. Publish everywhere. Own the stack.**
