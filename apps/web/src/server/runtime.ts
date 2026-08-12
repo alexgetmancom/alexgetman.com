@@ -81,7 +81,7 @@ export function unsafeRuntimeDb(): RawBackendDb {
 export async function stopRuntime(signal: string): Promise<void> {
   if (!runtime) return;
   log("info", "shutdown requested", { signal });
-  for (const loop of runtime.loops) loop.stop();
+  await Promise.all(runtime.loops.map((loop) => loop.stop()));
   if (runtime.bot?.isRunning()) await runtime.bot.stop();
   runtime.backendDb.close();
   delete runtimeGlobal.__alexgetmanRuntime;

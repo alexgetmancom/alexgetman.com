@@ -2,7 +2,7 @@ import { log } from "./logger.js";
 
 export type ScheduledLoop = {
   name: string;
-  stop: () => void;
+  stop: () => Promise<void>;
 };
 
 type LoopHooks = {
@@ -15,6 +15,7 @@ type LoopHooks = {
 export function startLoop(name: string, intervalMs: number, task: () => void | Promise<void>, hooks: LoopHooks = {}): ScheduledLoop {
   let running = false;
   let stopped = false;
+  let completion = Promise.resolve();
   const notify = (hook: (() => void) | undefined) => {
     if (!hook) return;
     try {
@@ -23,31 +24,34 @@ export function startLoop(name: string, intervalMs: number, task: () => void | P
       log("warn", `${name} lifecycle hook failed`, { error: String(error) });
     }
   };
-  const run = async () => {
+  const run = () => {
     if (stopped || running) return;
     running = true;
     notify(hooks.onStart);
-    let failure: unknown | null = null;
-    try {
-      await task();
-    } catch (error) {
-      failure = error;
-      log("error", `${name} loop failed`, { error: String(error) });
-    } finally {
-      notify(() => hooks.onFinish?.(failure));
-      running = false;
-    }
+    completion = (async () => {
+      let failure: unknown | null = null;
+      try {
+        await task();
+      } catch (error) {
+        failure = error;
+        log("error", `${name} loop failed`, { error: String(error) });
+      } finally {
+        notify(() => hooks.onFinish?.(failure));
+        running = false;
+      }
+    })();
   };
   const timer = setInterval(run, intervalMs);
   const heartbeatTimer =
     hooks.onHeartbeat && hooks.heartbeatIntervalMs ? setInterval(() => notify(hooks.onHeartbeat), hooks.heartbeatIntervalMs) : undefined;
-  void run();
+  run();
   return {
     name,
-    stop: () => {
+    stop: async () => {
       stopped = true;
       clearInterval(timer);
       if (heartbeatTimer) clearInterval(heartbeatTimer);
+      await completion;
     },
   };
 }

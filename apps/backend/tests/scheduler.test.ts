@@ -31,6 +31,26 @@ describe("startLoop", () => {
     expect(runs).toBe(afterStop);
   });
 
+  it("waits for the in-flight task when stopped", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const loop = startLoop("draining", 60_000, () => gate);
+    await tick(0);
+
+    let stopped = false;
+    const stopping = loop.stop().then(() => {
+      stopped = true;
+    });
+    await tick(0);
+    expect(stopped).toBe(false);
+
+    release();
+    await stopping;
+    expect(stopped).toBe(true);
+  });
+
   it("does not start a second pass while the previous one is still awaiting", async () => {
     let starts = 0;
     let release: () => void = () => {};
