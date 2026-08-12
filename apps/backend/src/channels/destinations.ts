@@ -47,3 +47,11 @@ export function isPublishableVideoPlatform(platform: string): boolean {
   const target = VIDEO_PLATFORM_TARGET[platform];
   return Boolean(target && VIDEO_TARGETS.includes(target));
 }
+
+/** Credential checks, token probes and delivery failures all name the same
+ * connected account. Historical work can outlive a disabled registry row, so
+ * the deterministic platform/locale id remains its identity fallback. */
+export function videoChannelIdentity(backendDb: BackendDb, target: VideoTarget, locale: VideoLocale): string {
+  const platform = VIDEO_TARGET_PLATFORM[target];
+  return backendDb.channels.find(platform, locale)?.id ?? `${platform}_${locale}`;
+}

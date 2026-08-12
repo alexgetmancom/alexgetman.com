@@ -1,5 +1,6 @@
 import type { BackendConfig } from "../foundation/config.js";
-import { ExternalHttpError, requestJson } from "../foundation/http.js";
+import { zernioRequest } from "../foundation/external/zernio.js";
+import { ExternalHttpError } from "../foundation/http.js";
 import type { InstagramMetadata } from "../publishing/video-types.js";
 import { AmbiguousPublicationError, isAmbiguousTransportFailure } from "./ambiguous-publication.js";
 
@@ -21,10 +22,6 @@ type ZernioDuplicateError = {
   };
 };
 
-function api(path: string): string {
-  return `https://zernio.com/api/v1/${path}`;
-}
-
 function postId(post: ZernioPost): string | null {
   return post._id ?? post.id ?? post.post?._id ?? post.post?.id ?? post.existingPost?._id ?? post.existingPost?.id ?? null;
 }
@@ -35,12 +32,10 @@ export async function publishZernioInstagramReel(
   input: { accountId: string; publicUrl: string; metadata: InstagramMetadata; requestId: string },
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ providerPostId: string; externalId: string | null; url: string | null }> {
-  if (!config.ZERNIO_API_KEY) throw new Error("ZERNIO_API_KEY is missing");
   const create = () =>
-    requestJson<ZernioPost>(fetchImpl, api("posts"), {
+    zernioRequest<ZernioPost>(config, "posts", fetchImpl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${config.ZERNIO_API_KEY}`,
         "Content-Type": "application/json",
         "x-request-id": input.requestId,
       },
@@ -81,10 +76,7 @@ export async function verifyZernioPost(
   providerPostId: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ providerPostId: string; externalId: string | null; url: string | null }> {
-  if (!config.ZERNIO_API_KEY) throw new Error("ZERNIO_API_KEY is missing");
-  const post = await requestJson<ZernioPost>(fetchImpl, api(`posts/${encodeURIComponent(providerPostId)}`), {
-    headers: { Authorization: `Bearer ${config.ZERNIO_API_KEY}` },
-  });
+  const post = await zernioRequest<ZernioPost>(config, `posts/${encodeURIComponent(providerPostId)}`, fetchImpl);
   return zernioPublishResult(post, providerPostId);
 }
 

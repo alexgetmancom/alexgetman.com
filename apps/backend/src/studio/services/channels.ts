@@ -2,10 +2,9 @@ import { isPublishableVideoPlatform } from "../../channels/destinations.js";
 import { type ChannelInput, listChannels, registerChannel } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import { requestJson } from "../../foundation/http.js";
+import { listZernioAccounts, type ZernioAccount } from "../../foundation/external/zernio.js";
 
-export type StudioZernioAccount = { _id?: string; username?: string; displayName?: string; platform?: string };
-type ZernioAccounts = { accounts?: StudioZernioAccount[] } | StudioZernioAccount[];
+export type StudioZernioAccount = ZernioAccount;
 
 /** Channel administration shared by Studio interfaces.
  *
@@ -26,11 +25,7 @@ export function channelService(backendDb: BackendDb, config: BackendConfig, fetc
       return registerChannel(backendDb, { ...input, source: "interface" });
     },
     async discoverZernioAccounts(): Promise<StudioZernioAccount[]> {
-      if (!config.ZERNIO_API_KEY) throw new Error("Zernio API key is not configured.");
-      const response = await requestJson<ZernioAccounts>(fetchImpl, "https://zernio.com/api/v1/accounts", {
-        headers: { Authorization: `Bearer ${config.ZERNIO_API_KEY}` },
-      });
-      return Array.isArray(response) ? response : (response.accounts ?? []);
+      return listZernioAccounts(config, fetchImpl);
     },
   };
 }

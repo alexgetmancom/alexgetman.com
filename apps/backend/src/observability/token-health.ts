@@ -1,3 +1,4 @@
+import { listChannels } from "../channels/registry.js";
 import type { BackendDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -78,8 +79,7 @@ async function graphMeCheck(
   return debugTokenExpiry(target, host, version, token, fetchImpl);
 }
 
-function youtubeProbe(locale: VideoLocale): Probe {
-  const target = locale === "ru" ? "youtube_shorts" : "youtube_shorts_en";
+function youtubeProbe(target: string, locale: VideoLocale): Probe {
   return {
     target,
     configured: (config) => {
@@ -96,8 +96,7 @@ function youtubeProbe(locale: VideoLocale): Probe {
   };
 }
 
-function instagramStoriesProbe(locale: VideoLocale): Probe {
-  const target = locale === "ru" ? "instagram_stories_ru" : "instagram_stories";
+function instagramProbe(target: string, locale: VideoLocale): Probe {
   return {
     target,
     configured: (config) => {
@@ -134,8 +133,6 @@ const probes: Probe[] = [
       return null;
     },
   },
-  youtubeProbe("ru"),
-  youtubeProbe("en"),
   {
     target: "x",
     configured: (c) => Boolean(c.X_CONSUMER_KEY && c.X_CONSUMER_SECRET && c.X_ACCESS_TOKEN && c.X_ACCESS_TOKEN_SECRET),
@@ -147,25 +144,25 @@ const probes: Probe[] = [
   },
   threadsProbe("threads_ru"),
   threadsProbe("threads_en"),
-  {
-    target: "instagram_reels",
-    configured: (c) => Boolean(c.INSTAGRAM_RU_ACCESS_TOKEN && c.INSTAGRAM_RU_USER_ID),
-    run: (config, fetchImpl) => {
-      const token = config.INSTAGRAM_RU_ACCESS_TOKEN as string;
-      const host = instagramGraphHost(token);
-      const version = config.INSTAGRAM_GRAPH_API_VERSION;
-      return graphMeCheck("instagram_reels", host, version, config.INSTAGRAM_RU_USER_ID as string, token, fetchImpl);
-    },
-  },
-  instagramStoriesProbe("en"),
-  instagramStoriesProbe("ru"),
+  instagramProbe("instagram_stories", "en"),
+  instagramProbe("instagram_stories_ru", "ru"),
 ];
+
+function videoChannelProbes(backendDb: BackendDb): Probe[] {
+  return listChannels(backendDb).flatMap((channel) => {
+    if (channel.provider === "zernio") return [];
+    const locale = channel.locale === "en" ? "en" : "ru";
+    if (channel.platform === "youtube") return [youtubeProbe(channel.id, locale)];
+    if (channel.platform === "instagram") return [instagramProbe(channel.id, locale)];
+    return [];
+  });
+}
 
 /** Runs due live probes and feeds their outcome into the auth circuit
  * breaker/expiry alerts. Returns how many probes actually ran this cycle. */
 export async function checkTokenHealth(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): Promise<number> {
   let checked = 0;
-  for (const probe of probes) {
+  for (const probe of [...probes, ...videoChannelProbes(backendDb)]) {
     if (!probe.configured(config) || !shouldPingToken(backendDb, probe.target, PING_INTERVAL_SECONDS)) continue;
     checked += 1;
     try {

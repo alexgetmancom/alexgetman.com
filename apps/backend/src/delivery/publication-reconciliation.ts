@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { and, eq, isNull, lt, lte, or } from "drizzle-orm";
 import { publicationRef } from "../application/publication-ref.js";
+import { videoChannelIdentity } from "../channels/destinations.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { postTargets, publishJobs, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
@@ -157,7 +158,9 @@ export async function runPublicationReconciliation(
     if (!claimed) continue;
     const job = { ...row.job, lockedBy: reconciliationWorker, lockedAt: nowIso };
     checked += 1;
-    if (isTargetAuthBlocked(backendDb, row.target.target)) {
+    const locale = row.draft.locale === "en" ? "en" : "ru";
+    const credentialTarget = videoChannelIdentity(backendDb, row.target.target as "youtube_shorts" | "instagram_reels", locale);
+    if (isTargetAuthBlocked(backendDb, credentialTarget)) {
       deferVideoReconciliation(backendDb, config, job, reconciliationWorker);
       continue;
     }
@@ -171,7 +174,7 @@ export async function runPublicationReconciliation(
         const verified = await verifyZernioPost(config, row.target.providerPostId);
         confirmation = { externalId: verified.externalId, url: verified.url };
       } else if (row.target.target === "youtube_shorts" && row.target.externalId) {
-        const verified = await verifyYouTubeVideo(config, row.target.externalId, row.draft.locale === "en" ? "en" : "ru");
+        const verified = await verifyYouTubeVideo(config, row.target.externalId, locale);
         confirmation = { externalId: verified.id, url: verified.url };
       }
     } catch {

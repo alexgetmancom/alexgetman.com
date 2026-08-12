@@ -4,7 +4,7 @@ import { isSiteTarget, targetLocale } from "../botTargets.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { drafts, postEvents, publicationPlans, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
-import { effectivePublicationStatus, planObject, planScheduleAt } from "./state.js";
+import { effectivePublicationStatus, isPostJobFinal, planObject, planScheduleAt } from "./state.js";
 
 type PublicationJob = { target: string; status: string; error: string | null };
 
@@ -45,25 +45,24 @@ export function reconcilePublication(backendDb: BackendDb, postId: number): void
     tx.update(publications).set({ status: effectiveStatus, updatedAt: now }).where(eq(publications.postId, postId)).run();
     tx.update(drafts).set({ status: effectiveStatus, updatedAt: now }).where(eq(drafts.postId, postId)).run();
   });
-  if (effectiveStatus !== "scheduled" && previousStatus !== effectiveStatus && all.every((job) => FINAL_JOB_STATUSES.has(job.status))) {
-    const failed = all.filter((job) => job.status === "failed" || job.status === "verification_required").length;
+  if (effectiveStatus !== "scheduled" && previousStatus !== effectiveStatus && all.every((job) => isPostJobFinal(job.status))) {
+    const counts = postJobCounts(all);
     recordDomainEvent(backendDb.events, {
       ref: publicationRef("post", postId),
       type: "delivery.post.completed",
       severity: "info",
-      message: failed ? `Post #${postId} completed with ${failed} failed target(s)` : `Post #${postId} published successfully`,
+      message: counts.failed
+        ? `Post #${postId} completed with ${counts.failed} failed target(s)`
+        : `Post #${postId} published successfully`,
       details: {
         post_id: postId,
         total: all.length,
-        failed,
-        published: all.filter((job) => job.status === "published" || job.status === "skipped").length,
+        ...counts,
       },
       cooldownSeconds: 60 * 60,
     });
   }
 }
-
-const FINAL_JOB_STATUSES = new Set(["published", "failed", "cancelled", "skipped", "verification_required"]);
 
 function emitLocaleCompletion(backendDb: BackendDb, postId: number, jobs: PublicationJob[], plan: Record<string, unknown> | null): void {
   if (plan?.mode !== "scheduled") return;
@@ -85,12 +84,12 @@ function emitLocaleCompletion(backendDb: BackendDb, postId: number, jobs: Public
 
   for (const locale of ["ru", "en"] as const) {
     const completed = byLocale.get(locale) ?? [];
-    if (!completed.length || completed.some((job) => !FINAL_JOB_STATUSES.has(job.status))) continue;
+    if (!completed.length || completed.some((job) => !isPostJobFinal(job.status))) continue;
     const remaining = [...enabledLocales]
       .filter((other) => other !== locale)
       .filter((other) => {
         const otherJobs = byLocale.get(other) ?? [];
-        if (otherJobs.length && otherJobs.every((job) => FINAL_JOB_STATUSES.has(job.status))) return false;
+        if (otherJobs.length && otherJobs.every((job) => isPostJobFinal(job.status))) return false;
         return isDeferredLocale(plan, locale, other);
       })
       .map((other) => ({ locale: other, scheduled_at: planScheduleAt(plan, other) }));
@@ -109,25 +108,31 @@ function emitLocaleCompletion(backendDb: BackendDb, postId: number, jobs: Public
       .get();
     if (alreadyEmitted) continue;
 
-    const failed = completed.filter((job) => job.status === "failed" || job.status === "verification_required").length;
+    const counts = postJobCounts(completed);
     recordDomainEvent(backendDb.events, {
       ref: publicationRef("post", postId),
       type: "delivery.post.locale.completed",
       target: locale,
-      severity: failed ? "warn" : "info",
+      severity: counts.failed ? "warn" : "info",
       message: `Post #${postId} ${locale.toUpperCase()} publication part completed`,
       details: {
         post_id: postId,
         locale,
         total: completed.length,
-        failed,
-        published: completed.filter((job) => job.status === "published" || job.status === "skipped").length,
+        ...counts,
         targets: completed.map((job) => ({ target: job.target, status: job.status, error: job.error })),
         remaining,
       },
       cooldownSeconds: 365 * 24 * 60 * 60,
     });
   }
+}
+
+function postJobCounts(jobs: PublicationJob[]): { failed: number; published: number } {
+  return {
+    failed: jobs.filter((job) => job.status === "failed" || job.status === "verification_required").length,
+    published: jobs.filter((job) => job.status === "published" || job.status === "skipped").length,
+  };
 }
 
 function isDeferredLocale(plan: Record<string, unknown>, completed: "ru" | "en", remaining: "ru" | "en"): boolean {

@@ -6,6 +6,7 @@ import { instagramCredentialsForLocale, instagramGraphHost } from "../../foundat
 import { createChannelStoryClient } from "../../foundation/external/telegram-session.js";
 import { oauthAuthorization } from "../../foundation/external/x-oauth.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
+import { zernioAccount, zernioRequest } from "../../foundation/external/zernio.js";
 import { requestJson } from "../../foundation/http.js";
 import { claimSync, markSynced, metricNumber, recordProfileSnapshot } from "../snapshots/creator-store.js";
 import { queryYouTubeAnalytics, youtubeAnalyticsDateRange } from "./youtube-analytics.js";
@@ -22,8 +23,6 @@ type InstagramProfile = {
   followers_count?: number;
   media_count?: number;
 };
-type ZernioAccount = { _id?: string; username?: string; displayName?: string; followersCount?: number };
-type ZernioAccounts = { accounts?: ZernioAccount[] } | ZernioAccount[];
 type ZernioInsights = { metrics?: Record<string, { total?: number }> };
 
 /** Runs one platform sync and records its outcome; every platform below funnels through
@@ -165,13 +164,8 @@ export async function syncZernioChannelProfile(
     backendDb,
     connection.id,
     async () => {
-      if (!config.ZERNIO_API_KEY || !connection.providerAccountId) throw new Error("Zernio channel credentials are missing");
-      const headers = { Authorization: `Bearer ${config.ZERNIO_API_KEY}` };
-      const accounts = await requestJson<ZernioAccounts>(fetchImpl, "https://zernio.com/api/v1/accounts", { headers });
-      const account = (Array.isArray(accounts) ? accounts : (accounts.accounts ?? [])).find(
-        (item) => item._id === connection.providerAccountId,
-      );
-      if (!account) throw new Error("Zernio channel account was not found");
+      if (!connection.providerAccountId) throw new Error("Zernio channel account is missing");
+      const account = await zernioAccount(config, connection.providerAccountId, fetchImpl);
       recordProfileSnapshot(backendDb, {
         platform: connection.id,
         account: account.username ?? connection.providerAccountId,
@@ -192,26 +186,23 @@ async function syncZernioInstagramProfile(
   fetchImpl: typeof fetch,
   connection: ChannelConnection,
 ): Promise<void> {
-  const route = { provider: "zernio" as const, accountId: connection.providerAccountId ?? undefined };
-  if (!config.ZERNIO_API_KEY || !route.accountId) throw new Error("Zernio Instagram credentials are missing");
-  const headers = { Authorization: `Bearer ${config.ZERNIO_API_KEY}` };
-  const accounts = await requestJson<ZernioAccounts>(fetchImpl, "https://zernio.com/api/v1/accounts", { headers });
-  const account = (Array.isArray(accounts) ? accounts : (accounts.accounts ?? [])).find((item) => item._id === route.accountId);
-  if (!account) throw new Error("Zernio Instagram account was not found");
+  const accountId = connection.providerAccountId;
+  if (!accountId) throw new Error("Zernio Instagram account is missing");
+  const account = await zernioAccount(config, accountId, fetchImpl);
   const [todayInsights, weekInsights, insights] = await Promise.all([
-    zernioInsights(fetchImpl, headers, route.accountId, 1),
-    zernioInsights(fetchImpl, headers, route.accountId, 7),
-    zernioInsights(fetchImpl, headers, route.accountId, 30),
+    zernioInsights(config, fetchImpl, accountId, 1),
+    zernioInsights(config, fetchImpl, accountId, 7),
+    zernioInsights(config, fetchImpl, accountId, 30),
   ]);
-  const history = await requestJson<ZernioInsights>(
+  const history = await zernioRequest<ZernioInsights>(
+    config,
+    `analytics/instagram/follower-history?${new URLSearchParams({ accountId })}`,
     fetchImpl,
-    `https://zernio.com/api/v1/analytics/instagram/follower-history?${new URLSearchParams({ accountId: route.accountId })}`,
-    { headers },
   );
   const metric = (name: string) => metricNumber(insights.metrics?.[name]?.total);
   recordProfileSnapshot(backendDb, {
     platform: connection.id,
-    account: account.username ?? route.accountId,
+    account: account.username ?? accountId,
     source: "zernio",
     metrics: {
       username: account.username ?? account.displayName ?? "Instagram",
@@ -239,8 +230,8 @@ async function syncZernioInstagramProfile(
 }
 
 async function zernioInsights(
+  config: BackendConfig,
   fetchImpl: typeof fetch,
-  headers: Record<string, string>,
   accountId: string,
   days: 1 | 7 | 30,
 ): Promise<ZernioInsights> {
@@ -250,7 +241,7 @@ async function zernioInsights(
     since: new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10),
     until: new Date().toISOString().slice(0, 10),
   });
-  return requestJson<ZernioInsights>(fetchImpl, `https://zernio.com/api/v1/analytics/instagram/account-insights?${query}`, { headers });
+  return zernioRequest<ZernioInsights>(config, `analytics/instagram/account-insights?${query}`, fetchImpl);
 }
 
 function zernioPeriodMetrics(insights: ZernioInsights, days: 1 | 7): Record<string, number> {

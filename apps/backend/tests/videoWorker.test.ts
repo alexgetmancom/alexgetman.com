@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
 import { videoJobs, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { recordAuthFailure } from "../src/observability/auth-circuit.js";
 import { replaceVideoTargets, saveVideoMetadata, scheduleVideo } from "../src/publishing/video-service.js";
 import { VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { useBackendDb } from "./helpers/db.js";
@@ -228,6 +229,29 @@ describe("video job execution", () => {
         { token: "en-token", userId: "en-user" },
         { token: "en-token", userId: "en-user" },
       ]);
+    });
+  });
+
+  it("blocks only the connected video account whose credential circuit tripped", async () => {
+    reset();
+    await withDirectory(async (directory) => {
+      const backendDb = testDb.open();
+      const config = videoConfig(directory, {
+        INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
+        INSTAGRAM_EN_USER_ID: "en-user",
+      });
+      const draftId = dueDraft(backendDb, directory, ["instagram_reels"], "en");
+      recordAuthFailure(backendDb, "instagram_en");
+      recordAuthFailure(backendDb, "instagram_en");
+      recordAuthFailure(backendDb, "instagram_en");
+
+      await runVideoCycle(config, backendDb);
+
+      expect(seen).toHaveLength(0);
+      expect(targetRow(backendDb, draftId)?.status).toBe("scheduled");
+      expect(backendDb.db.select().from(videoJobs).where(eq(videoJobs.videoDraftId, draftId)).all()).toEqual(
+        expect.arrayContaining([expect.objectContaining({ status: "queued", attemptCount: 0 })]),
+      );
     });
   });
 

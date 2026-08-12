@@ -92,6 +92,13 @@
       "when": 1786501000000,
       "tag": "0012_remove_settings_pending_action",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1786502000000,
+      "tag": "0013_channel_credential_identity",
+      "breakpoints": true
     }
   ]
 }

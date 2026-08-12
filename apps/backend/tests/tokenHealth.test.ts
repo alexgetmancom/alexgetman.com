@@ -2,10 +2,11 @@ import { afterAll, describe, expect, it, mock } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { credentialChecks, postEvents } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { checkTokenHealth } from "../src/observability/token-health.js";
+import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 const tempDirectories: string[] = [];
@@ -35,15 +36,20 @@ describe("token health probes", () => {
         return jsonResponse({ id: "123" });
       });
       const config = loadConfig({ INSTAGRAM_RU_ACCESS_TOKEN: "EAAtoken", INSTAGRAM_RU_USER_ID: "123" });
+      registerTestChannels(backendDb, ["instagram_ru"]);
 
       await checkTokenHealth(config, backendDb, fetchMock as unknown as typeof fetch);
 
-      const row = backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, "instagram_reels")).get();
+      const row = backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, "instagram_ru")).get();
       expect(row?.expiresAt).toBe(new Date(Math.floor(soon.getTime() / 1000) * 1000).toISOString());
 
-      const event = backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, "credential.token_expiring_soon")).get();
+      const event = backendDb.db
+        .select()
+        .from(postEvents)
+        .where(and(eq(postEvents.eventType, "credential.token_expiring_soon"), eq(postEvents.target, "instagram_ru")))
+        .get();
       expect(event).not.toBeUndefined();
-      expect(event?.target).toBe("instagram_reels");
+      expect(event?.target).toBe("instagram_ru");
     } finally {
       backendDb.close();
     }
@@ -65,11 +71,12 @@ describe("token health probes", () => {
         YOUTUBE_RU_CLIENT_SECRET: "client-secret",
         YOUTUBE_RU_REFRESH_TOKEN: "refresh-token",
       });
+      registerTestChannels(backendDb, ["youtube_ru"]);
 
       await checkTokenHealth(config, backendDb, fetchMock as unknown as typeof fetch);
 
       expect(calls).toEqual(["https://oauth2.googleapis.com/token", "https://www.googleapis.com/youtube/v3/channels?part=id&mine=true"]);
-      expect(backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, "youtube_shorts")).get()).toBeDefined();
+      expect(backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, "youtube_ru")).get()).toBeDefined();
     } finally {
       backendDb.close();
     }

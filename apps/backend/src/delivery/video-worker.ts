@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import { publicationRef } from "../application/publication-ref.js";
+import { videoChannelIdentity } from "../channels/destinations.js";
 import { videoPublicUrl, videoSourcePath } from "../content/video-assets.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
 import { botSettings, videoJobs, videoTargets } from "../db/schema.js";
@@ -8,10 +9,12 @@ import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { instagramCredentialsForLocale } from "../foundation/external/instagram.js";
 import { withJobHeartbeat } from "../foundation/runtime/job-heartbeat.js";
+import { isTargetAuthBlocked, recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
 import { trackUsageAsync } from "../observability/usage.js";
-import { nextRetryAt } from "../publishing/errors.js";
+import { classifyPublishError, nextRetryAt } from "../publishing/errors.js";
 import { failedJobTransition } from "../publishing/job-policy.js";
 import { PUBLISH_CLAIM_LIMIT } from "../publishing/queue.js";
+import { isVideoTargetFinal } from "../publishing/state.js";
 import { getVideoDraft, refreshVideoDraftStatus, type VideoJob } from "../publishing/video-data.js";
 import type { InstagramMetadata, VideoMetadata, YouTubeMetadata } from "../publishing/video-types.js";
 import { isAmbiguousPublicationError } from "./ambiguous-publication.js";
@@ -42,6 +45,11 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
   // The trade-off is accepted: a target's publish can slip a few minutes past
   // its scheduled time while an upload ahead of it drains.
   for (const job of jobs) {
+    const credentialTarget = videoJobCredentialTarget(backendDb, job);
+    if (credentialTarget && isTargetAuthBlocked(backendDb, credentialTarget)) {
+      deferBlockedVideoJob(backendDb, job);
+      continue;
+    }
     try {
       await trackUsageAsync(backendDb, "publishing.video.job", async () => {
         await withJobHeartbeat(
@@ -56,6 +64,7 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
           () => executeVideoJob(config, backendDb, job),
         );
         if (completeVideoJob(backendDb, job)) {
+          if (credentialTarget) recordAuthSuccess(backendDb, credentialTarget);
           recordVideoProgressEvent(backendDb, job, "video.job.completed");
           recordVideoCompletionIfFinal(backendDb, job.videoDraftId);
         }
@@ -65,6 +74,7 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
         ? requireVideoVerification(backendDb, job, error, config)
         : failVideoJob(backendDb, job, error, config);
       if (settled) {
+        if (credentialTarget && classifyPublishError(error) === "auth") recordAuthFailure(backendDb, credentialTarget);
         recordVideoProgressEvent(backendDb, job, "video.job.failed");
         recordVideoCompletionIfFinal(backendDb, job.videoDraftId);
       }
@@ -72,6 +82,32 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
   }
   pruneExpiredVideos(config, backendDb);
   return jobs.length;
+}
+
+function videoJobCredentialTarget(backendDb: BackendDb, job: VideoJob): string | null {
+  if (!job.videoTargetId) return null;
+  const target = unsafeDb(backendDb)
+    .db.select({ target: videoTargets.target })
+    .from(videoTargets)
+    .where(eq(videoTargets.id, job.videoTargetId))
+    .get();
+  if (!target || (target.target !== "youtube_shorts" && target.target !== "instagram_reels")) return null;
+  const locale = getVideoDraft(backendDb, job.videoDraftId).locale === "en" ? "en" : "ru";
+  return videoChannelIdentity(backendDb, target.target, locale);
+}
+
+function deferBlockedVideoJob(backendDb: BackendDb, job: VideoJob): void {
+  unsafeDb(backendDb)
+    .db.update(videoJobs)
+    .set({
+      status: "queued",
+      nextAttemptAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      lockedAt: null,
+      lockedBy: null,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(activeVideoJob(job))
+    .run();
 }
 
 /** Keeps target state updates consistent across the prepare/publish/fail/recovery paths. */
@@ -88,8 +124,7 @@ function recordVideoCompletionIfFinal(backendDb: BackendDb, videoDraftId: number
     .from(videoTargets)
     .where(eq(videoTargets.videoDraftId, videoDraftId))
     .all();
-  if (!targets.length || !targets.every((target) => ["published", "failed", "cancelled", "verification_required"].includes(target.status)))
-    return;
+  if (!targets.length || !targets.every((target) => isVideoTargetFinal(target.status))) return;
   const failed = targets.filter((target) => target.status === "failed" || target.status === "verification_required").length;
   recordDomainEvent(backendDb.events, {
     ref: publicationRef("video", videoDraftId),

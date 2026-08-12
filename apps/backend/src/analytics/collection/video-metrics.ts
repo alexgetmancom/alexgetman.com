@@ -7,6 +7,7 @@ import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { instagramCredentialsForLocale, instagramGraphHost } from "../../foundation/external/instagram.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
+import { zernioRequest } from "../../foundation/external/zernio.js";
 import { requestJson } from "../../foundation/http.js";
 import { markSynced, mergeVideoSnapshot, metricNumber, upsertComment, upsertVideoSnapshot } from "../snapshots/creator-store.js";
 import { isTerminalMetricError, terminalIfMissingRemoteObject } from "./collectors/errors.js";
@@ -300,12 +301,12 @@ async function collectZernioInstagramVideoMetrics(
   target: VideoMetricTask,
   fetchImpl: typeof fetch,
 ): Promise<void> {
-  if (!config.ZERNIO_API_KEY || !target.providerPostId) throw new Error("Zernio analytics credentials or post ID are missing");
-  const url = new URL("https://zernio.com/api/v1/analytics");
-  url.searchParams.set("postId", target.providerPostId);
-  const data = await requestJson<ZernioPostAnalytics>(fetchImpl, url.toString(), {
-    headers: { Authorization: `Bearer ${config.ZERNIO_API_KEY}` },
-  });
+  if (!target.providerPostId) throw new Error("Zernio analytics post ID is missing");
+  const data = await zernioRequest<ZernioPostAnalytics>(
+    config,
+    `analytics?${new URLSearchParams({ postId: target.providerPostId })}`,
+    fetchImpl,
+  );
   const platform = data.platforms?.find((item) => item.platform === "instagram");
   const metrics = platform?.analytics ?? data.analytics ?? {};
   const follows = optionalProviderMetric(metrics.follows);

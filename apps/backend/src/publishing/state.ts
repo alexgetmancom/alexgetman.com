@@ -1,6 +1,7 @@
 import { targetLocale } from "../botTargets.js";
 
 const VIDEO_FINAL_TARGET_STATUSES = new Set(["published", "failed", "cancelled", "verification_required"]);
+const POST_FINAL_JOB_STATUSES = new Set(["published", "failed", "cancelled", "skipped", "verification_required"]);
 const VIDEO_EDITABLE_TARGET_STATUSES = new Set(["editing", "draft"]);
 const VIDEO_METADATA_EDITABLE_TARGET_STATUSES = new Set(["editing", "draft", "scheduled"]);
 const VIDEO_SCHEDULABLE_TARGET_STATUSES = new Set(["editing", "draft", "scheduled"]);
@@ -9,6 +10,10 @@ const POST_MUTABLE_STATUSES = new Set(["draft", "needs_review", "scheduled"]);
 
 export function isVideoTargetFinal(status: string): boolean {
   return VIDEO_FINAL_TARGET_STATUSES.has(status);
+}
+
+export function isPostJobFinal(status: string): boolean {
+  return POST_FINAL_JOB_STATUSES.has(status);
 }
 
 export function isVideoTargetEditable(status: string): boolean {
