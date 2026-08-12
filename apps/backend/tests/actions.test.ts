@@ -250,6 +250,54 @@ describe("command center actions", () => {
     }
   });
 
+  it("marks a deleted target's delivery job cancelled when it stays down", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      const source = { text_ru: "RU", text_en: "EN", media: [], media_en: [] };
+      backendDb.db.insert(publications).values({ postId: 21, status: "published", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(posts)
+        .values({
+          postKey: "post:21",
+          postId: 21,
+          channel: "studio",
+          messageId: 21,
+          text: "RU",
+          textEn: "EN",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db.insert(publicationSources).values({ postId: 21, itemJson: source, createdAt: now, updatedAt: now }).run();
+      const jobId = enqueuePublishJobTx(backendDb.db, {
+        postId: 21,
+        postKey: "post:21",
+        messageId: 21,
+        target: "threads_en",
+        payload: source,
+      });
+      backendDb.db.update(publishJobs).set({ status: "published" }).where(eq(publishJobs.jobId, jobId)).run();
+      backendDb.db
+        .insert(postTargets)
+        .values({ postKey: "post:21", target: "threads_en", status: "published", externalId: "post-21", updatedAt: now })
+        .run();
+
+      await runOperationCommand(
+        backendDb,
+        { action: "delete", ref: "post:21", target: "threads_en", apply: true },
+        loadConfig({ THREADS_EN_ACCESS_TOKEN: "token" }),
+        (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch,
+      );
+
+      expect(backendDb.db.select().from(postTargets).where(eq(postTargets.target, "threads_en")).get()?.status).toBe("deleted");
+      expect(backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get()?.status).toBe("cancelled");
+      expect(backendDb.db.select().from(opsActions).all()).toHaveLength(1);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("rolls back a requeue when its audit record cannot be written", async () => {
     const backendDb = openBackendDb(":memory:");
     try {

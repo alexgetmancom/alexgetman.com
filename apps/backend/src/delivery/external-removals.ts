@@ -1,7 +1,7 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { targetLocale } from "../botTargets.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
-import { postTargets } from "../db/schema.js";
+import { postTargets, publishJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { createPlatformAdapters } from "./platform-adapters.js";
 import type { DeliveryRemove } from "./ports.js";
@@ -114,10 +114,25 @@ export function settlePublishedTargetRemovals(
         remaining: remaining.length,
         error: "target changed while remote deletion was in flight",
       };
+    if (!remaining.length) cancelDeletedPublishJob(db, row, now);
     return remaining.length
       ? { target: row.target, ok: false, deleted: deleted.length, remaining: remaining.length, ...(error ? { error } : {}) }
       : { target: row.target, ok: true, deleted: deleted.length };
   });
+}
+
+function cancelDeletedPublishJob(db: UnsafeBackendDb["db"], target: PublishedTarget, now: string): void {
+  const job = db
+    .select({ jobId: publishJobs.jobId, status: publishJobs.status })
+    .from(publishJobs)
+    .where(and(eq(publishJobs.postKey, target.postKey), eq(publishJobs.target, target.target)))
+    .orderBy(desc(publishJobs.jobId))
+    .get();
+  if (job?.status !== "published") return;
+  db.update(publishJobs)
+    .set({ status: "cancelled", currentPhase: null, lockedBy: null, lockedAt: null, nextAttemptAt: null, lastError: null, updatedAt: now })
+    .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "published")))
+    .run();
 }
 
 type RemovalOutcome = { deleted: string[]; remaining: string[]; error?: string };
