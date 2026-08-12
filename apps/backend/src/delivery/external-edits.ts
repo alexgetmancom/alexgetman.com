@@ -4,6 +4,8 @@ import { type BackendDb, unsafeDb } from "../db/client.js";
 import { posts, postTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { requestJson } from "../foundation/http.js";
+import { platformProfile } from "../publishing/platform-profiles.js";
+import { editDiscordMessage } from "./social/discord.js";
 
 type PublishedTargetEdit = { postKey: string; textRu: string | null; textEn: string | null; target?: string; locale?: "ru" | "en" };
 
@@ -41,6 +43,15 @@ export async function editPublishedTargets(
             message_id: Number(row.externalId),
             [field]: edit.textRu,
           });
+        }
+        if (row.target === "discord" && edit.textEn) {
+          // Only the first message carries the edit. A post long enough to have
+          // been split cannot be re-split in place — editing message one and
+          // leaving message two stale would read worse than not editing at all.
+          const limit = platformProfile("discord")?.limits?.text ?? 2000;
+          if (edit.textEn.length > limit) return { target: row.target, ok: false, skipped: true, error: "edit_exceeds_discord_limit" };
+          const response = await editDiscordMessage(row.externalId, edit.textEn, config, fetchImpl);
+          return { target: row.target, ok: true, response };
         }
         // Every other platform's API is append-only for us. Say so instead of
         // returning nothing, so a caller can tell "no edit port" apart from

@@ -7,6 +7,7 @@ export const TARGETS = [
   { id: "threads_ru", label: "Threads RU", locale: "ru", kind: "social" },
   { id: "threads_en", label: "Threads EN", locale: "en", kind: "social" },
   { id: "x", label: "X (Twitter)", locale: "en", kind: "social" },
+  { id: "discord", label: "Discord", locale: "en", kind: "social" },
   { id: "telegram_stories", label: "Telegram Stories", locale: "ru", kind: "social" },
   { id: "instagram_stories_ru", label: "Instagram Stories RU", locale: "ru", kind: "social" },
   { id: "instagram_stories", label: "Instagram Stories EN", locale: "en", kind: "social" },
@@ -20,6 +21,7 @@ export type AudienceView = (typeof AUDIENCE_VIEWS)[number];
 export const TARGET_GROUPS = {
   threads: ["threads_ru", "threads_en"],
   x: ["x"],
+  discord: ["discord"],
   instagramStory: ["instagram_stories", "instagram_stories_ru"],
   telegramStory: ["telegram_stories"],
 } as const;
@@ -27,9 +29,9 @@ export const TARGET_GROUPS = {
 const targetById = new Map<string, (typeof TARGETS)[number]>(TARGETS.map((target) => [target.id, target]));
 const ALL_TARGETS = Object.fromEntries(TARGETS.map(({ id }) => [id, true])) as Record<TargetId, boolean>;
 
-// X is normally published by hand, but remains selectable on the platform
-// screen and in the explicit Full preset.
-export const DEFAULT_TARGETS = { ...ALL_TARGETS, x: false } as Record<TargetId, boolean>;
+// X and Discord are normally published by hand, but remain selectable on the
+// platform screen and in the explicit Full preset.
+export const DEFAULT_TARGETS = { ...ALL_TARGETS, x: false, discord: false } as Record<TargetId, boolean>;
 
 export const PRESETS: Record<string, Record<TargetId, boolean>> = {
   full: { ...ALL_TARGETS },

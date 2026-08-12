@@ -4,6 +4,7 @@ import { type BackendDb, unsafeDb } from "../db/client.js";
 import { postTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { requestJson } from "../foundation/http.js";
+import { deleteDiscordMessage } from "./social/discord.js";
 
 type RemovalOptions = { postKey: string; target?: string; locale?: "ru" | "en" };
 
@@ -72,6 +73,10 @@ async function removeTarget(target: string, ids: string[], config: BackendConfig
       await requestJson(fetchImpl, `https://graph.threads.net/v1.0/${encodeURIComponent(id)}?access_token=${encodeURIComponent(token)}`, {
         method: "DELETE",
       });
+    return;
+  }
+  if (target === "discord") {
+    for (const id of ids) await deleteDiscordMessage(id, config, fetchImpl);
     return;
   }
   throw new Error(`remote deletion is not supported for ${target}`);

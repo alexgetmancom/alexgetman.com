@@ -113,7 +113,7 @@ describe("TypeScript operations tooling", () => {
     try {
       seedCapabilities(backendDb);
       expect(capabilitySummary(backendDb)).toHaveLength(9);
-      expect((backendDb.sqlite.prepare("SELECT count(*) AS count FROM platform_capabilities").get() as { count: number }).count).toBe(81);
+      expect((backendDb.sqlite.prepare("SELECT count(*) AS count FROM platform_capabilities").get() as { count: number }).count).toBe(90);
     } finally {
       backendDb.close();
     }

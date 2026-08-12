@@ -1,6 +1,7 @@
 import type { UnsafeBackendDb } from "../../src/db/client.js";
 
 const CHANNELS = {
+  discord: ["discord", "en", "discord", "Discord EN"],
   instagram_en: ["instagram", "en", null, "Instagram EN"],
   instagram_ru: ["instagram", "ru", null, "Instagram RU"],
   instagram_stories: ["instagram_stories", "en", "instagram_stories", "Instagram Stories EN"],
@@ -50,6 +51,7 @@ export const TEXT_TEST_CHANNELS = [
   "threads_en",
   "threads_ru",
   "x",
+  "discord",
 ] as const;
 
 export const VIDEO_TEST_CHANNELS = ["instagram_en", "instagram_ru", "youtube_en", "youtube_ru"] as const;

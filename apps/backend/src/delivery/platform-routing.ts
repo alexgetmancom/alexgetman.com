@@ -14,6 +14,7 @@ export function platformTargetConfigs(config: BackendConfig): Record<string, Bac
     telegram: config,
     ...Object.fromEntries(TARGET_GROUPS.threads.map((target) => [target, target === "threads_en" ? threadsEnConfig : config])),
     ...Object.fromEntries(TARGET_GROUPS.x.map((target) => [target, config])),
+    ...Object.fromEntries(TARGET_GROUPS.discord.map((target) => [target, config])),
     ...Object.fromEntries(TARGET_GROUPS.instagramStory.map((target) => [target, config])),
     ...Object.fromEntries(TARGET_GROUPS.telegramStory.map((target) => [target, config])),
   };

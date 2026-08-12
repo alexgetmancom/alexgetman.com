@@ -7,6 +7,7 @@ import { platformProfile } from "../publishing/platform-profiles.js";
 import type { ClaimedPublishJob } from "../publishing/queue.js";
 import { platformTargetConfigs } from "./platform-routing.js";
 import type { DeliveryPorts, DeliveryPublisher } from "./ports.js";
+import { publishToDiscord, verifyDiscordMessage } from "./social/discord.js";
 import { publishInstagramStory, verifyInstagramPublication } from "./social/instagram.js";
 import { publishToTelegram } from "./social/telegram.js";
 import { publishToThreads, verifyThreadsPost } from "./social/threads.js";
@@ -29,6 +30,7 @@ export function createPlatformAdapters(config: BackendConfig, fetchImpl: typeof 
         target === "threads_en" ? target : undefined,
       );
   for (const target of TARGET_GROUPS.x) publishers[target] = (job) => publishToX(job.payload, config, fetchImpl);
+  for (const target of TARGET_GROUPS.discord) publishers[target] = (job) => publishToDiscord(job.payload, config, fetchImpl);
   for (const target of TARGET_GROUPS.instagramStory)
     publishers[target] = (job) =>
       publishInstagramStory(
@@ -79,6 +81,10 @@ export async function verifyPlatformPublication(
     if (targetInGroup(TARGET_GROUPS.x, target)) {
       const verified = await verifyXPost(id, config, fetchImpl);
       return { ...result, verification: { status: "verified", providerId: verified.id } };
+    }
+    if (targetInGroup(TARGET_GROUPS.discord, target)) {
+      const verified = await verifyDiscordMessage(id, config, fetchImpl);
+      return { ...result, url: result.url ?? verified.url, verification: { status: "verified", providerId: verified.id } };
     }
     return { ...result, verification: { status: "unsupported" } };
   } catch (error) {

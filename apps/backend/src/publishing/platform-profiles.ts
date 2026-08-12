@@ -37,6 +37,7 @@ const requirements: Record<string, readonly string[]> = {
   threads_ru: ["THREADS_RU_ACCESS_TOKEN"],
   threads_en: ["THREADS_EN_ACCESS_TOKEN"],
   x: ["X_CONSUMER_KEY", "X_CONSUMER_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRET"],
+  discord: ["DISCORD_BOT_TOKEN", "DISCORD_CHANNEL_ID"],
   telegram_stories: ["TELEGRAM_CHANNEL_STORIES_API_ID", "TELEGRAM_CHANNEL_STORIES_API_HASH", "TELEGRAM_CHANNEL_STORIES_SESSION"],
   instagram_stories: ["INSTAGRAM_EN_USER_ID", "INSTAGRAM_EN_ACCESS_TOKEN"],
   instagram_stories_ru: ["INSTAGRAM_RU_USER_ID", "INSTAGRAM_RU_ACCESS_TOKEN"],
@@ -74,6 +75,14 @@ const platformOverrides: Record<PlatformId, Omit<PlatformProfile, "id" | "label"
     video: threadsVideo,
   },
   x: { capabilities: { text: true, image: true, video: true }, text: { removeUrls: true }, media: { mode: "all" } },
+  // 2000 is Discord's own cap on `content`. Unlike Threads, going over it is not
+  // a preflight rejection: the adapter splits the text across consecutive
+  // messages in the same channel, which is how a Discord channel reads anyway.
+  discord: {
+    capabilities: { text: true, image: true, video: true },
+    limits: { text: 2000 },
+    media: { mode: "limited", limit: 10, label: "Discord" },
+  },
   telegram_stories: {
     capabilities: { text: true, image: true, video: true },
     media: { mode: "story-first", note: "Stories use a single rendered asset made from the first source item." },

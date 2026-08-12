@@ -465,6 +465,7 @@ const operationDefs = {
           "threads_ru",
           "threads_en",
           "x",
+          "discord",
           "telegram_stories",
           "instagram_stories_ru",
           "instagram_stories",

@@ -131,6 +131,11 @@ const envSchema = z
     X_ACCESS_TOKEN: z.string().optional(),
     X_ACCESS_TOKEN_SECRET: z.string().optional(),
     ENABLE_X_METRICS: booleanFlag(false),
+    DISCORD_BOT_TOKEN: z.string().optional(),
+    DISCORD_CHANNEL_ID: z.string().optional(),
+    // Only used to build the message permalink: the create-message response
+    // carries the channel but not the guild it lives in.
+    DISCORD_GUILD_ID: z.string().optional(),
     ENABLE_X_PROFILE_METRICS: booleanFlag(true),
     INSTAGRAM_EN_ACCESS_TOKEN: z.string().optional(),
     INSTAGRAM_EN_USER_ID: z.string().optional(),

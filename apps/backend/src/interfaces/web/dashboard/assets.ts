@@ -9,6 +9,7 @@ const ORDERED_IDS = [
   "instagram_stories_ru",
   "telegram",
   "x",
+  "discord",
   "telegram_stories",
 ] as const;
 
@@ -27,6 +28,7 @@ export const PLATFORM_ICONS: Record<string, string> = {
   telegram_stories: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align: middle;"><path d="M12 2 14.9 8.3 22 9.1l-5.3 4.7 1.5 6.9L12 17.2 5.8 20.7l1.5-6.9L2 9.1l7.1-.8L12 2Z"></path></svg>`,
   instagram: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><rect x="3" y="3" width="18" height="18" rx="5"></rect><circle cx="12" cy="12" r="4"></circle><circle cx="17.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"></circle></svg>`,
   x: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align: middle;"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path></svg>`,
+  discord: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><path d="M8.5 4.5 7.2 4.9C4.9 5.6 3.6 7.9 3.2 10.4l-.5 3.4c-.2 1.5.6 3 2 3.6l1.6.7 1.1-1.9"></path><path d="M15.5 4.5l1.3.4c2.3.7 3.6 3 4 5.5l.5 3.4c.2 1.5-.6 3-2 3.6l-1.6.7-1.1-1.9"></path><path d="M7.6 16.6c2.9 1.1 5.9 1.1 8.8 0"></path><circle cx="9.3" cy="11.6" r="1.3" fill="currentColor" stroke="none"></circle><circle cx="14.7" cy="11.6" r="1.3" fill="currentColor" stroke="none"></circle></svg>`,
   // Video platforms are drawn in the same monochrome 16px stroke idiom as the
   // text ones. Brand-coloured logos here would be the loudest thing on a screen
   // whose whole point is that the numbers are what you read first.
