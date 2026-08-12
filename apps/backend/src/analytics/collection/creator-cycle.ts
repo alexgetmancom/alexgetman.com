@@ -47,7 +47,7 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
     const profileSupported = standardProfile || (channel.provider === "zernio" && !standardProfile);
     if (!profileSupported) continue;
     const owner = `profile:${channel.id}:${crypto.randomUUID()}`;
-    if (!claimSync(backendDb, channel.id, profileInterval, owner)) continue;
+    if (!claimSync(backendDb, channel.id, { intervalSeconds: profileInterval, owner })) continue;
     if (channel.platform === "youtube")
       profiles += await step(backendDb, channel.id, "analytics.creator_profile.sync", () =>
         syncYouTubeProfile(config, backendDb, fetchImpl, channel, owner),
@@ -68,7 +68,7 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
     config.X_CONSUMER_SECRET &&
     config.X_ACCESS_TOKEN &&
     config.X_ACCESS_TOKEN_SECRET &&
-    claimSync(backendDb, "x_profile", profileInterval, xOwner)
+    claimSync(backendDb, "x_profile", { intervalSeconds: profileInterval, owner: xOwner })
   )
     profiles += await step(backendDb, "x_profile", "analytics.creator_profile.sync", () =>
       syncXProfile(config, backendDb, fetchImpl, xOwner),

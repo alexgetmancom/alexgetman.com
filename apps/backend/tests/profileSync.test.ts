@@ -8,6 +8,24 @@ import { loadConfig } from "../src/foundation/config.js";
 import { withDb } from "./helpers/db.js";
 
 describe("creator profile sync boundary", () => {
+  it("reclaims a crashed sync by lease age instead of refresh cadence", async () => {
+    await withDb(async (backendDb) => {
+      const source = "daily-profile";
+      const intervalSeconds = 24 * 60 * 60;
+      expect(claimSync(backendDb, source, { intervalSeconds, owner: "first-worker" })).toBe(true);
+      expect(claimSync(backendDb, source, { intervalSeconds, owner: "second-worker" })).toBe(false);
+
+      backendDb.db
+        .update(analyticsSync)
+        .set({ lockedAt: new Date(Date.now() - 16 * 60_000).toISOString() })
+        .where(eq(analyticsSync.source, source))
+        .run();
+
+      expect(claimSync(backendDb, source, { intervalSeconds, owner: "second-worker" })).toBe(true);
+      expect(backendDb.db.select().from(analyticsSync).where(eq(analyticsSync.source, source)).get()?.lockedBy).toBe("second-worker");
+    });
+  });
+
   it("persists a Zernio channel profile and marks its owned sync successful", async () => {
     await withDb(async (backendDb) => {
       const connection = registerChannel(backendDb, {
@@ -19,7 +37,12 @@ describe("creator profile sync boundary", () => {
       const config = loadConfig({ ZERNIO_API_KEY: "a".repeat(16) });
       const fetchMock = (async () =>
         new Response(JSON.stringify([{ _id: "account-1", username: "marux_play", followersCount: 306 }]))) as unknown as typeof fetch;
-      expect(claimSync(backendDb, connection.id, config.CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS, "profile-owner")).toBe(true);
+      expect(
+        claimSync(backendDb, connection.id, {
+          intervalSeconds: config.CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS,
+          owner: "profile-owner",
+        }),
+      ).toBe(true);
 
       await syncZernioChannelProfile(config, backendDb, fetchMock, connection, "profile-owner");
 
@@ -58,7 +81,12 @@ describe("creator profile sync boundary", () => {
           }),
         )) as unknown as typeof fetch;
 
-      expect(claimSync(backendDb, "x_profile", config.CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS, "x-owner")).toBe(true);
+      expect(
+        claimSync(backendDb, "x_profile", {
+          intervalSeconds: config.CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS,
+          owner: "x-owner",
+        }),
+      ).toBe(true);
       await syncXProfile(config, backendDb, fetchMock, "x-owner");
 
       expect(backendDb.db.select().from(creatorProfiles).where(eq(creatorProfiles.platform, "x")).get()?.dataJson).toMatchObject({

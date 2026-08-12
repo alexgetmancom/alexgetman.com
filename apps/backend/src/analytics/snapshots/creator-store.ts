@@ -2,11 +2,21 @@ import { and, eq, isNull, lt, lte, or } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { analyticsSync, creatorProfileSnapshots, creatorProfiles, socialComments } from "../../db/schema.js";
 
-/** Atomically reserves a due profile sync for one worker instance. */
-export function claimSync(backendDb: BackendDb, source: string, intervalSeconds: number, owner: string): boolean {
+type SyncClaim = {
+  intervalSeconds: number;
+  owner: string;
+  /** Override only for work whose own timeout exceeds the normal API cycle. */
+  leaseSeconds?: number;
+};
+
+const DEFAULT_SYNC_LEASE_SECONDS = 15 * 60;
+
+/** Atomically reserves a due sync for one worker instance. Refresh cadence and
+ * crash recovery are independent: a daily job must not hold a two-day lease. */
+export function claimSync(backendDb: BackendDb, source: string, claim: SyncClaim): boolean {
   const now = new Date().toISOString();
-  const dueBefore = new Date(Date.now() - intervalSeconds * 1000).toISOString();
-  const staleBefore = new Date(Date.now() - intervalSeconds * 2 * 1000).toISOString();
+  const dueBefore = new Date(Date.now() - claim.intervalSeconds * 1000).toISOString();
+  const staleBefore = new Date(Date.now() - (claim.leaseSeconds ?? DEFAULT_SYNC_LEASE_SECONDS) * 1000).toISOString();
   unsafeDb(backendDb)
     .db.insert(analyticsSync)
     .values({ source, lastSyncedAt: new Date(0).toISOString(), lastSuccessAt: null, lastError: null, lockedBy: null, lockedAt: null })
@@ -15,7 +25,7 @@ export function claimSync(backendDb: BackendDb, source: string, intervalSeconds:
   return Boolean(
     unsafeDb(backendDb)
       .db.update(analyticsSync)
-      .set({ lockedBy: owner, lockedAt: now })
+      .set({ lockedBy: claim.owner, lockedAt: now })
       .where(
         and(
           eq(analyticsSync.source, source),

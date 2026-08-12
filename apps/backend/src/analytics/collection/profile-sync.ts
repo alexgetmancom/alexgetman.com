@@ -310,10 +310,13 @@ export async function syncCommunityProfiles(
   if (
     config.studio.modules.text_posting &&
     config.controllerBotToken &&
-    claimSync(backendDb, "telegram_profile", interval, `${ownerPrefix}:telegram`)
+    claimSync(backendDb, "telegram_profile", { intervalSeconds: interval, owner: `${ownerPrefix}:telegram` })
   )
     jobs.push(syncTelegramProfile(config, backendDb, fetchImpl, `${ownerPrefix}:telegram`));
-  if (config.THREADS_RU_ACCESS_TOKEN && claimSync(backendDb, "threads_profile", interval, `${ownerPrefix}:threads`))
+  if (
+    config.THREADS_RU_ACCESS_TOKEN &&
+    claimSync(backendDb, "threads_profile", { intervalSeconds: interval, owner: `${ownerPrefix}:threads` })
+  )
     jobs.push(syncThreadsProfile(config, backendDb, fetchImpl, `${ownerPrefix}:threads`));
   await Promise.all(jobs);
   return jobs.length;

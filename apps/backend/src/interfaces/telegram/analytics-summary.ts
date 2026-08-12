@@ -38,7 +38,7 @@ export async function sendWeeklyAnalyticsSummary(
   if (!settings.enabled || settings.weekday !== weekday) return false;
   const key = `weekly_summary:${parts.year}-${parts.month}-${parts.day}`;
   const owner = "telegram:weekly-summary";
-  if (!claimSync(backendDb, key, 24 * 60 * 60, owner)) return false;
+  if (!claimSync(backendDb, key, { intervalSeconds: 24 * 60 * 60, owner })) return false;
   // Claim this Studio before sending so one unreachable chat cannot cause
   // repeated delivery attempts to the other administrators on every worker tick.
   markSynced(backendDb, key, null, owner);

@@ -51,7 +51,15 @@ export async function sendDailyNewsDigest(
 
   const key = `news_digest:${date.day}`;
   const owner = "telegram:news-digest";
-  if (!options.force && !claimSync(backendDb, key, 24 * 60 * 60, owner)) return { status: "already_sent" };
+  if (
+    !options.force &&
+    !claimSync(backendDb, key, {
+      intervalSeconds: 24 * 60 * 60,
+      leaseSeconds: config.GROK_CLI_TIMEOUT_SECONDS + 60,
+      owner,
+    })
+  )
+    return { status: "already_sent" };
 
   try {
     const markdown = await runGrok(config, settings.prompt, options.spawn ?? (Bun.spawn as unknown as GrokSpawn));

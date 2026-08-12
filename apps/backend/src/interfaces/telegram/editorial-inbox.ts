@@ -53,7 +53,7 @@ export async function sendDailyEditorialInbox(
     });
   if (material.length === 0) return false;
   const owner = "telegram:editorial-inbox";
-  if (!claimSync(backendDb, key, 24 * 60 * 60, owner)) return false;
+  if (!claimSync(backendDb, key, { intervalSeconds: 24 * 60 * 60, owner })) return false;
   const clusters = unsafeDb(backendDb)
     .db.select({
       slug: knowledgeEntities.slug,
