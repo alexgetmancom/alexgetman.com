@@ -154,6 +154,30 @@ function reset(): void {
 }
 
 describe("video job execution", () => {
+  it("claims each serial video job only when its provider call is about to start", async () => {
+    reset();
+    await withDirectory(async (directory) => {
+      const backendDb = testDb.open();
+      const config = videoConfig(directory);
+      dueDraft(backendDb, directory, ["youtube_shorts"]);
+      dueDraft(backendDb, directory, ["youtube_shorts"]);
+      let statuses: string[] = [];
+      duringUpload = () => {
+        statuses = backendDb.db
+          .select({ status: videoJobs.status })
+          .from(videoJobs)
+          .all()
+          .map((job) => job.status);
+        duringUpload = null;
+      };
+
+      await runVideoCycle(config, backendDb);
+
+      expect(statuses.filter((status) => status === "running")).toHaveLength(1);
+      expect(statuses.filter((status) => status === "queued")).toHaveLength(3);
+    });
+  });
+
   it("uploads to YouTube on prepare and records the id before the scheduled release", async () => {
     reset();
     await withDirectory(async (directory) => {

@@ -37,14 +37,21 @@ import { publishZernioInstagramReel } from "./zernio.js";
 export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb): Promise<number> {
   if (!config.studio.modules.video_posting) return 0;
   recoverVideoLocks(backendDb, config);
-  const jobs = claimVideoJobs(backendDb, PUBLISH_CLAIM_LIMIT);
+  let claimed = 0;
   // Deliberately serial, unlike the social pipeline's per-target lanes
   // (delivery/publish-workflow.ts): every job here moves a video file of a few
   // hundred MB, and two concurrent uploads share one uplink, so they finish no
   // sooner together than one after the other — and risk timing each other out.
   // The trade-off is accepted: a target's publish can slip a few minutes past
   // its scheduled time while an upload ahead of it drains.
-  for (const job of jobs) {
+  while (claimed < PUBLISH_CLAIM_LIMIT) {
+    // Claim only the job about to run. Claiming the whole serial batch made
+    // untouched jobs look in-flight during a long upload; after a restart,
+    // recovery then treated their publish calls as ambiguous even though they
+    // had never started.
+    const job = claimVideoJobs(backendDb, 1)[0];
+    if (!job) break;
+    claimed += 1;
     const credentialTarget = videoJobCredentialTarget(backendDb, job);
     if (credentialTarget && isTargetAuthBlocked(backendDb, credentialTarget)) {
       deferBlockedVideoJob(backendDb, job);
@@ -81,7 +88,7 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
     }
   }
   pruneExpiredVideos(config, backendDb);
-  return jobs.length;
+  return claimed;
 }
 
 function videoJobCredentialTarget(backendDb: BackendDb, job: VideoJob): string | null {
