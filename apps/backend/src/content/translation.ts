@@ -1,7 +1,5 @@
 import type { BackendConfig } from "../foundation/config.js";
-import { requestJson } from "../foundation/http.js";
-
-type ChatCompletion = { choices?: Array<{ message?: { content?: string } }> };
+import { deepSeekChat } from "../foundation/external/deepseek.js";
 
 export async function translateToEnglish(text: string, config: BackendConfig, fetchImpl: typeof fetch = fetch): Promise<string> {
   const source = text.trim();
@@ -14,20 +12,15 @@ export async function translateToEnglish(text: string, config: BackendConfig, fe
     "Keep lowercase list items lowercase. Avoid em dashes and overly literal phrasing.",
     "Use this glossary consistently: сброс лимитов = limit reset; встроенный браузер = built-in browser; нейросеть = AI model.",
   ].join("\n");
-  const result = await requestJson<ChatCompletion>(fetchImpl, "https://api.deepseek.com/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${config.DEEPSEEK_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: source },
-      ],
-      temperature: 0.1,
-    }),
-    signal: AbortSignal.timeout(40_000),
-  });
-  const translated = result.choices?.[0]?.message?.content?.trim() ?? "";
+  const translated = await deepSeekChat(
+    config,
+    [
+      { role: "system", content: system },
+      { role: "user", content: source },
+    ],
+    { temperature: 0.1, timeoutMs: 40_000 },
+    fetchImpl,
+  );
   if (!translated || /please provide|i'd be happy to help/i.test(translated)) throw new Error("translation returned an invalid response");
   return translated;
 }

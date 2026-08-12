@@ -3,7 +3,7 @@ import { claimSync, markSynced } from "../../analytics/snapshots/creator-store.j
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { knowledgeEntities, postEntityLinks, posts } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import { requestJson } from "../../foundation/http.js";
+import { deepSeekChat } from "../../foundation/external/deepseek.js";
 import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 import { log } from "../../foundation/logger.js";
@@ -11,7 +11,6 @@ import { truncateUnicode } from "../../foundation/text.js";
 import { zonedDateTimeParts } from "../../foundation/time.js";
 import { settingsService } from "../../studio/services/settings.js";
 
-type ChatCompletion = { choices?: Array<{ message?: { content?: string } }> };
 type Opportunity = { kind?: string; title?: string; reason?: string; posts?: number[] };
 type EditorialResponse = { items?: Opportunity[] };
 
@@ -77,45 +76,37 @@ export async function sendDailyEditorialInbox(
   try {
     const messages = new Map<StudioLocale, string>();
     for (const locale of new Set(recipients.map((recipient) => recipient.locale))) {
-      const response = await requestJson<ChatCompletion>(fetchImpl, "https://api.deepseek.com/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${config.DEEPSEEK_API_KEY}`, "Content-Type": "application/json" },
-        // The signal belongs to the request, not to the chat-completion payload:
-        // nested inside the body it was both a no-op and an unknown `"signal":{}`
-        // field sent to the provider.
-        signal: AbortSignal.timeout(45_000),
-        body: JSON.stringify({
-          model: "deepseek-chat",
-          temperature: 0.2,
-          messages: [
-            {
-              role: "system",
-              content: [
-                "You are an editorial research assistant for a solo AI news creator.",
-                `Write the title and reason in ${languageName(locale)}.`,
-                "Using only the supplied published posts and entity clusters, propose at most three useful next pages: a hub update, a page that answers one real question, a comparison, a practical guide, an official-data update, or a weekly roundup.",
-                "Prefer one concrete query-shaped page over generic SEO. A cluster is not enough by itself: name the question the page would answer.",
-                "Do not invent facts, demand a conclusion, write publication copy, or use generic SEO ideas.",
-                "Each reason must name the concrete cluster or gap found in the supplied posts.",
-                'Return strict JSON only: {"items":[{"kind":"review|guide|data|roundup","title":"...","reason":"...","posts":[1,2]}]}.',
-              ].join("\n"),
-            },
-            {
-              role: "user",
-              content: JSON.stringify({
-                posts: material.map((post) => ({ id: post.id, date: post.date, text: sourceText(post.textEn, post.textRu, locale) })),
-                clusters: clusters.map((cluster) => ({
-                  slug: cluster.slug,
-                  count: cluster.count,
-                  title: sourceText(cluster.titleEn, cluster.titleRu, locale),
-                })),
-              }),
-            },
-          ],
-          response_format: { type: "json_object" },
-        }),
-      });
-      const items = editorialItems(response.choices?.[0]?.message?.content ?? "");
+      const content = await deepSeekChat(
+        config,
+        [
+          {
+            role: "system",
+            content: [
+              "You are an editorial research assistant for a solo AI news creator.",
+              `Write the title and reason in ${languageName(locale)}.`,
+              "Using only the supplied published posts and entity clusters, propose at most three useful next pages: a hub update, a page that answers one real question, a comparison, a practical guide, an official-data update, or a weekly roundup.",
+              "Prefer one concrete query-shaped page over generic SEO. A cluster is not enough by itself: name the question the page would answer.",
+              "Do not invent facts, demand a conclusion, write publication copy, or use generic SEO ideas.",
+              "Each reason must name the concrete cluster or gap found in the supplied posts.",
+              'Return strict JSON only: {"items":[{"kind":"review|guide|data|roundup","title":"...","reason":"...","posts":[1,2]}]}.',
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              posts: material.map((post) => ({ id: post.id, date: post.date, text: sourceText(post.textEn, post.textRu, locale) })),
+              clusters: clusters.map((cluster) => ({
+                slug: cluster.slug,
+                count: cluster.count,
+                title: sourceText(cluster.titleEn, cluster.titleRu, locale),
+              })),
+            }),
+          },
+        ],
+        { temperature: 0.2, timeoutMs: 45_000, json: true },
+        fetchImpl,
+      );
+      const items = editorialItems(content);
       if (items.length === 0) throw new Error("editorial inbox returned no usable opportunities");
       messages.set(locale, renderInbox(items, locale));
     }

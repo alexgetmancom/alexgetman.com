@@ -2,7 +2,7 @@ import { desc } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { socialComments } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import { requestJson } from "../../foundation/http.js";
+import { deepSeekChat } from "../../foundation/external/deepseek.js";
 import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 
@@ -23,22 +23,14 @@ export async function audienceAnalysis(
     .limit(100)
     .all();
   if (!comments.length) return `🤖 ${t(locale, "audience.no-comments")}`;
-  const result = await requestJson<{ choices?: Array<{ message?: { content?: string } }> }>(
+  const content = await deepSeekChat(
+    config,
+    [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: comments.map((comment) => `[${comment.platform}] ${comment.text}`).join("\n") },
+    ],
+    { temperature: 0.2, timeoutMs: 40_000 },
     fetchImpl,
-    "https://api.deepseek.com/v1/chat/completions",
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${config.DEEPSEEK_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        temperature: 0.2,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: comments.map((comment) => `[${comment.platform}] ${comment.text}`).join("\n") },
-        ],
-      }),
-      signal: AbortSignal.timeout(40_000),
-    },
   );
-  return `🤖 *${t(locale, "audience.title")}*\n\n${result.choices?.[0]?.message?.content?.trim() || t(locale, "audience.no-report")}`;
+  return `🤖 *${t(locale, "audience.title")}*\n\n${content || t(locale, "audience.no-report")}`;
 }
