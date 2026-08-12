@@ -67,18 +67,16 @@ export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | nul
     .all();
   let handled = 0;
   for (const event of events) {
-    if (wasDelivered(backendDb, event.id)) continue;
-    // Delivery is at-most-once by design (see alertDedup below), so a failed
-    // send is dropped, never retried. Letting it propagate instead would leave
-    // the event unmarked and permanently stuck at the head of the queue — one
-    // blocked chat (403) would then starve every reminder behind it.
+    if (!claimDelivery(backendDb, event.id)) continue;
+    // Delivery is at-most-once by design: the durable reservation is committed
+    // before Telegram is called. A failed or interrupted send is never retried,
+    // because its external outcome may be ambiguous and a duplicate audience
+    // notification is worse than a missing one.
     try {
       await deliverEvent(backendDb, bot, config, event);
       handled += 1;
     } catch (error) {
       log("error", "telegram event delivery failed", { event: event.id, type: event.eventType, error: String(error) });
-    } finally {
-      markDelivered(backendDb, event.id);
     }
   }
   return handled;
@@ -113,22 +111,15 @@ function postIdFromRef(value: string | null): number | null {
   return publication?.kind === "post" ? publication.id : null;
 }
 
-function wasDelivered(backendDb: BackendDb, eventId: number): boolean {
+function claimDelivery(backendDb: BackendDb, eventId: number): boolean {
   return (
     unsafeDb(backendDb)
-      .db.select()
-      .from(alertDedup)
-      .where(eq(alertDedup.alertKey, `telegram:event:${eventId}`))
+      .db.insert(alertDedup)
+      .values({ alertKey: `telegram:event:${eventId}`, lastSentAt: new Date().toISOString(), suppressedCount: 0 })
+      .onConflictDoNothing()
+      .returning({ alertKey: alertDedup.alertKey })
       .get() != null
   );
-}
-
-function markDelivered(backendDb: BackendDb, eventId: number): void {
-  unsafeDb(backendDb)
-    .db.insert(alertDedup)
-    .values({ alertKey: `telegram:event:${eventId}`, lastSentAt: new Date().toISOString(), suppressedCount: 0 })
-    .onConflictDoNothing()
-    .run();
 }
 
 function numberDetail(details: unknown, key: string): number | null {

@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { Bot } from "grammy";
 import { refreshPostControlCard } from "../src/bot/progress.js";
-import { botUiSettings, drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
+import { alertDedup, botUiSettings, drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
 import { recordDomainEvent } from "../src/domain/events.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { setTelegramPostCard, setTelegramPostProgressCard, setTelegramVideoCard } from "../src/interfaces/telegram/control-cards.js";
@@ -129,6 +129,18 @@ describe("Telegram event consumer", () => {
       expect(await consumeTelegramEvents(backendDb, bot, config)).toBe(1);
       expect(await consumeTelegramEvents(backendDb, bot, config)).toBe(0);
       expect(sendMessage).toHaveBeenCalledTimes(1);
+    }));
+
+  it("durably reserves an event before calling Telegram", async () =>
+    withDb(async (backendDb) => {
+      recordDomainEvent(backendDb.events, milestone("reserved"));
+      const sendMessage = mock(async () => {
+        expect(backendDb.db.select().from(alertDedup).all()).toHaveLength(1);
+        return { message_id: 1, date: 1, chat: { id: 42, type: "private" as const } };
+      });
+      const bot = { api: { sendMessage } } as unknown as Bot;
+
+      expect(await consumeTelegramEvents(backendDb, bot, config)).toBe(1);
     }));
 
   it("fans one aggregated video reminder and detailed completion out to every admin", async () =>

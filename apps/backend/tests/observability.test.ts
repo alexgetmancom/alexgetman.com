@@ -5,6 +5,7 @@ import { alertDedup, channelConnections, credentialChecks, postEvents, publishJo
 import { loadConfig } from "../src/foundation/config.js";
 import { expectedWorkerNames } from "../src/foundation/runtime/worker-state.js";
 import { renderDashboard } from "../src/interfaces/web/dashboard.js";
+import { deliverPendingAlerts } from "../src/observability/alerts.js";
 import { runObservabilityCycle } from "../src/observability/cycle.js";
 import { healthReport } from "../src/observability/health.js";
 import { recordMemoryPressure } from "../src/observability/runtime-health.js";
@@ -56,6 +57,33 @@ describe("observability", () => {
       expect(await runObservabilityCycle(config, backendDb, alertsPort)).toMatchObject({ alerts: 0 });
       expect(sendMessage).toHaveBeenCalledTimes(1);
       expect(backendDb.db.select({ suppressedCount: alertDedup.suppressedCount }).from(alertDedup).get()?.suppressedCount).toBe(1);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("reserves alerts before delivery and continues after a transport failure", async () => {
+    const { backendDb, config } = testHarness();
+    try {
+      recordFailure(backendDb, "first failure");
+      recordFailure(backendDb, "second failure");
+      let attempts = 0;
+      const sendAlert = mock(async () => {
+        attempts += 1;
+        expect(
+          backendDb.db
+            .select()
+            .from(postEvents)
+            .all()
+            .filter((event) => event.ackedAt != null),
+        ).toHaveLength(attempts);
+        if (attempts === 1) throw new Error("ambiguous Telegram response");
+      });
+
+      expect(await deliverPendingAlerts(config, backendDb, { sendAlert })).toBe(1);
+      expect(sendAlert).toHaveBeenCalledTimes(2);
+      expect(await deliverPendingAlerts(config, backendDb, { sendAlert })).toBe(0);
+      expect(sendAlert).toHaveBeenCalledTimes(2);
     } finally {
       backendDb.close();
     }

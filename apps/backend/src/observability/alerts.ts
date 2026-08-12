@@ -1,8 +1,9 @@
 import crypto from "node:crypto";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { alertDedup, postEvents } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { log } from "../foundation/logger.js";
 
 export type AlertPort = { sendAlert?: (text: string) => Promise<void> };
 
@@ -27,27 +28,41 @@ export async function deliverPendingAlerts(config: BackendConfig, backendDb: Bac
       .createHash("sha256")
       .update(`${event.eventType}\0${event.target ?? ""}\0${event.message}`)
       .digest("hex");
-    const dedup = unsafeDb(backendDb).db.select().from(alertDedup).where(eq(alertDedup.alertKey, key)).get();
-    const cooling = dedup?.lastSentAt && Date.now() - new Date(dedup.lastSentAt).getTime() < config.ALERT_COOLDOWN_SECONDS * 1000;
-    if (cooling) {
-      unsafeDb(backendDb)
-        .db.update(alertDedup)
-        .set({ suppressedCount: (dedup.suppressedCount ?? 0) + 1 })
-        .where(eq(alertDedup.alertKey, key))
-        .run();
-      unsafeDb(backendDb).db.update(postEvents).set({ ackedAt: new Date().toISOString() }).where(eq(postEvents.id, event.id)).run();
-      continue;
-    }
-    if (!alertsPort.sendAlert) continue;
-    await alertsPort.sendAlert(`[${event.severity.toUpperCase()}] ${event.target ?? event.eventType}\n${event.message}`.slice(0, 4000));
-    alerts += 1;
     const now = new Date().toISOString();
-    unsafeDb(backendDb)
-      .db.insert(alertDedup)
-      .values({ alertKey: key, lastSentAt: now, suppressedCount: 0 })
-      .onConflictDoUpdate({ target: alertDedup.alertKey, set: { lastSentAt: now, suppressedCount: 0 } })
-      .run();
-    unsafeDb(backendDb).db.update(postEvents).set({ ackedAt: now }).where(eq(postEvents.id, event.id)).run();
+    const disposition = unsafeDb(backendDb).db.transaction((tx) => {
+      const dedup = tx.select().from(alertDedup).where(eq(alertDedup.alertKey, key)).get();
+      const cooling = dedup?.lastSentAt && Date.now() - new Date(dedup.lastSentAt).getTime() < config.ALERT_COOLDOWN_SECONDS * 1000;
+      if (!cooling && !alertsPort.sendAlert) return "unavailable";
+      const claimed = tx
+        .update(postEvents)
+        .set({ ackedAt: now })
+        .where(and(eq(postEvents.id, event.id), isNull(postEvents.ackedAt)))
+        .returning({ id: postEvents.id })
+        .get();
+      if (!claimed) return "claimed";
+      if (cooling) {
+        tx.update(alertDedup)
+          .set({ suppressedCount: sql`${alertDedup.suppressedCount} + 1` })
+          .where(eq(alertDedup.alertKey, key))
+          .run();
+        return "suppressed";
+      }
+      tx.insert(alertDedup)
+        .values({ alertKey: key, lastSentAt: now, suppressedCount: 0 })
+        .onConflictDoUpdate({ target: alertDedup.alertKey, set: { lastSentAt: now, suppressedCount: 0 } })
+        .run();
+      return "send";
+    });
+    if (disposition !== "send") continue;
+    try {
+      await alertsPort.sendAlert?.(`[${event.severity.toUpperCase()}] ${event.target ?? event.eventType}\n${event.message}`.slice(0, 4000));
+      alerts += 1;
+    } catch (error) {
+      // The durable reservation precedes the external call. A transport error
+      // may still mean Telegram accepted the message, so retrying could alert
+      // the audience twice; keep the attempt settled and continue the batch.
+      log("error", "alert delivery failed after durable reservation", { event: event.id, error: String(error) });
+    }
   }
   return alerts;
 }
