@@ -1,12 +1,12 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../../db/client.js";
+import type { UnsafeBackendDb } from "../../db/client.js";
 import { drafts, postLocales, posts, publicationSources, siteJobs, siteSourceItems } from "../../db/schema.js";
 import { jsonObject } from "../../json.js";
 import type { ResolvedPublicationRef } from "../publication-ref.js";
 
 /** Repairs durable English content before Delivery rebuilds the site or retries a target. */
-export function editLocaleContent(
-  backendDb: BackendDb,
+export function editLocaleContentTx(
+  db: UnsafeBackendDb["db"],
   ref: ResolvedPublicationRef,
   locale: "ru" | "en",
   text: string,
@@ -14,24 +14,22 @@ export function editLocaleContent(
   const value = text.trim();
   if (!value) throw new Error(`text_${locale} is required`);
   const now = new Date().toISOString();
-  unsafeDb(backendDb).db.transaction((tx) => {
-    if (ref.postId != null) {
-      tx.update(drafts)
-        .set(locale === "en" ? { textEnApproved: value, updatedAt: now } : { textRu: value, updatedAt: now })
-        .where(eq(drafts.postId, ref.postId))
-        .run();
-      tx.update(postLocales)
-        .set({ text: value, updatedAt: now })
-        .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, locale)))
-        .run();
-    }
-    tx.update(posts)
-      .set(locale === "en" ? { textEn: value, updatedAt: now } : { text: value, updatedAt: now })
-      .where(eq(posts.postKey, ref.postKey))
+  if (ref.postId != null) {
+    db.update(drafts)
+      .set(locale === "en" ? { textEnApproved: value, updatedAt: now } : { textRu: value, updatedAt: now })
+      .where(eq(drafts.postId, ref.postId))
       .run();
-    updateSource(tx, ref, locale === "en" ? { text_en: value, bodyMarkdown: value } : { text_ru: value, text: value }, now);
-    enqueueRepairSiteJob(tx, ref, `edit_${locale}`, now);
-  });
+    db.update(postLocales)
+      .set({ text: value, updatedAt: now })
+      .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, locale)))
+      .run();
+  }
+  db.update(posts)
+    .set(locale === "en" ? { textEn: value, updatedAt: now } : { text: value, updatedAt: now })
+    .where(eq(posts.postKey, ref.postKey))
+    .run();
+  updateSource(db, ref, locale === "en" ? { text_en: value, bodyMarkdown: value } : { text_ru: value, text: value }, now);
+  enqueueRepairSiteJob(db, ref, `edit_${locale}`, now);
   return {
     ok: true,
     post_id: ref.postId,
@@ -42,43 +40,41 @@ export function editLocaleContent(
   };
 }
 
-export function replaceLocaleMedia(
-  backendDb: BackendDb,
+export function replaceLocaleMediaTx(
+  db: UnsafeBackendDb["db"],
   ref: ResolvedPublicationRef,
   locale: "ru" | "en",
   media: Record<string, unknown>[] | null,
 ): Record<string, unknown> {
   const now = new Date().toISOString();
-  unsafeDb(backendDb).db.transaction((tx) => {
-    if (ref.postId != null) {
-      tx.update(drafts)
-        .set(
-          locale === "en"
-            ? { mediaEnJson: media == null ? null : JSON.stringify(media), updatedAt: now }
-            : { mediaRuJson: JSON.stringify(media ?? []), updatedAt: now },
-        )
-        .where(eq(drafts.postId, ref.postId))
-        .run();
-      const other = tx
-        .select({ mediaJson: postLocales.mediaJson })
-        .from(postLocales)
-        .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, locale === "en" ? "ru" : "en")))
-        .get();
-      tx.update(postLocales)
-        .set({ mediaJson: media == null ? (other?.mediaJson ?? []) : media, updatedAt: now })
-        .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, locale)))
-        .run();
-    }
-    updateSource(tx, ref, { [locale === "en" ? "media_en" : "media"]: media }, now);
-    enqueueRepairSiteJob(tx, ref, media == null ? `use_other_media_for_${locale}` : `replace_${locale}_media`, now);
-  });
+  if (ref.postId != null) {
+    db.update(drafts)
+      .set(
+        locale === "en"
+          ? { mediaEnJson: media == null ? null : JSON.stringify(media), updatedAt: now }
+          : { mediaRuJson: JSON.stringify(media ?? []), updatedAt: now },
+      )
+      .where(eq(drafts.postId, ref.postId))
+      .run();
+    const other = db
+      .select({ mediaJson: postLocales.mediaJson })
+      .from(postLocales)
+      .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, locale === "en" ? "ru" : "en")))
+      .get();
+    db.update(postLocales)
+      .set({ mediaJson: media == null ? (other?.mediaJson ?? []) : media, updatedAt: now })
+      .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, locale)))
+      .run();
+  }
+  updateSource(db, ref, { [locale === "en" ? "media_en" : "media"]: media }, now);
+  enqueueRepairSiteJob(db, ref, media == null ? `use_other_media_for_${locale}` : `replace_${locale}_media`, now);
   return { ok: true, post_id: ref.postId, post_key: ref.postKey, locale, media: media != null };
 }
 
 /** Rebuilds one locale's public projection without touching social targets. */
-export function refreshLocaleSite(backendDb: BackendDb, ref: ResolvedPublicationRef, locale: "ru" | "en"): Record<string, unknown> {
+export function refreshLocaleSiteTx(db: UnsafeBackendDb["db"], ref: ResolvedPublicationRef, locale: "ru" | "en"): Record<string, unknown> {
   const now = new Date().toISOString();
-  unsafeDb(backendDb).db.transaction((tx) => enqueueRepairSiteJob(tx, ref, `refresh_${locale}_site`, now));
+  enqueueRepairSiteJob(db, ref, `refresh_${locale}_site`, now);
   return { ok: true, post_id: ref.postId, post_key: ref.postKey, locale, site_refresh: true };
 }
 

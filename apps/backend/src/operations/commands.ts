@@ -5,15 +5,15 @@ import type { BackendDb } from "../db/client.js";
 import { unsafeDb } from "../db/client.js";
 import { drafts } from "../db/schema.js";
 import { editPublishedTargets } from "../delivery/external-edits.js";
-import { removePublishedTargets } from "../delivery/external-removals.js";
+import { attemptPublishedTargetRemovals, settlePublishedTargetRemovals } from "../delivery/external-removals.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { parseManualSchedule } from "../publishing/schedule.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { recordOperationAction } from "./action-audit.js";
-import { editLocaleContent, parseLocaleMedia, refreshLocaleSite, replaceLocaleMedia } from "./commands/content-repair.js";
-import { replaceTextFallbackTargets, requeueAfterRemoval, requeuePublicationScope } from "./commands/requeue.js";
+import { editLocaleContentTx, parseLocaleMedia, refreshLocaleSiteTx, replaceLocaleMediaTx } from "./commands/content-repair.js";
+import { attemptTextFallbackRemovals, requeueAfterRemovalTx, requeuePublicationScopeTx } from "./commands/requeue.js";
 import { publicationScope, scopePlan } from "./commands/scope-plan.js";
-import { resolvePublicationRef } from "./publication-ref.js";
+import { resolvePublicationRef, sourcePayload } from "./publication-ref.js";
 
 /** A boolean an HTML form, a JSON body or a CLI flag can all express. Not
  * `z.coerce.boolean()`: that reads the string "false" as true, which on `apply`
@@ -77,20 +77,30 @@ export async function runOperationCommand(
     return scopePlan(input.action, publicationRef, publicationScope(backendDb, publicationRef, input.target, input.locale), {
       ...(input.action === "delete" ? { republish: input.republish } : {}),
     });
-  let result: Record<string, unknown>;
-  if (input.action === "retry") result = requeuePublicationScope(backendDb, publicationRef, input.target, input.locale);
-  else if (input.action === "reschedule") {
+  if (input.action === "retry") {
+    const source = sourcePayload(backendDb, publicationRef);
+    return commitOperation(backendDb, input, publicationRef, (tx) =>
+      requeuePublicationScopeTx(tx, publicationRef, source, input.target, input.locale),
+    );
+  }
+  if (input.action === "reschedule") {
     if (!config) throw new Error("reschedule requires runtime config");
-    result = reschedulePost(backendDb, publicationRef, config, input.schedule_locale, input.at);
-  } else if (input.action === "refresh_site") {
+    const result = reschedulePost(backendDb, publicationRef, config, input.schedule_locale, input.at);
+    return commitOperation(backendDb, input, publicationRef, () => result);
+  }
+  if (input.action === "refresh_site") {
     const locale = input.locale ?? "en";
-    result = refreshLocaleSite(backendDb, publicationRef, locale);
-  } else if (input.action === "edit") {
+    return commitOperation(backendDb, input, publicationRef, (tx) => refreshLocaleSiteTx(tx, publicationRef, locale));
+  }
+  if (input.action === "edit") {
     const locale = input.locale ?? "en";
     const text = input.text ?? "";
-    result = editLocaleContent(backendDb, publicationRef, locale, text);
+    if (!text.trim()) throw new Error(`text_${locale} is required`);
+    const source = sourcePayload(backendDb, publicationRef);
+    let external: Array<Record<string, unknown>> = [];
+    let fallbacks: Awaited<ReturnType<typeof attemptTextFallbackRemovals>> = [];
     if (config) {
-      result.external = await editPublishedTargets(
+      external = await editPublishedTargets(
         backendDb,
         {
           postKey: publicationRef.postKey,
@@ -102,64 +112,85 @@ export async function runOperationCommand(
         config,
         fetchImpl,
       );
-      result.replaced = await replaceTextFallbackTargets(
-        backendDb,
-        publicationRef,
-        config,
-        input.target,
-        locale,
-        fetchImpl,
-        result.external as Array<Record<string, unknown>>,
-      );
+      fallbacks = await attemptTextFallbackRemovals(backendDb, publicationRef, config, input.target, locale, fetchImpl, external);
     }
-  } else if (input.action === "replace_media") {
-    const locale = input.locale ?? "en";
-    result = replaceLocaleMedia(backendDb, publicationRef, locale, parseLocaleMedia(input.media_json));
-    if (config) {
-      result.removed = await removePublishedTargets(
-        backendDb,
-        config,
-        { postKey: publicationRef.postKey, ...(input.target ? { target: input.target } : {}), locale },
-        fetchImpl,
-      );
-      result.republish = requeueAfterRemoval(backendDb, publicationRef, result.removed as Array<Record<string, unknown>>, input.target);
-    } else result.republish = requeuePublicationScope(backendDb, publicationRef, input.target, locale);
-  } else if (input.action === "use_other_media") {
-    const locale = input.locale ?? "en";
-    result = replaceLocaleMedia(backendDb, publicationRef, locale, null);
-    if (config) {
-      // The same shape as replace_media: this changes the media a published
-      // post carries, so the published object has to come down first. Requeuing
-      // on its own left the original standing and published a second copy.
-      result.removed = await removePublishedTargets(
-        backendDb,
-        config,
-        { postKey: publicationRef.postKey, ...(input.target ? { target: input.target } : {}), locale },
-        fetchImpl,
-      );
-      result.republish = requeueAfterRemoval(backendDb, publicationRef, result.removed as Array<Record<string, unknown>>, input.target);
-    } else result.republish = requeuePublicationScope(backendDb, publicationRef, input.target, locale);
-  } else if (input.action === "delete") {
-    if (!config) throw new Error("external removal requires runtime config");
-    result = {
-      ok: true,
-      removed: await removePublishedTargets(
-        backendDb,
-        config,
-        {
-          postKey: publicationRef.postKey,
-          ...(input.target ? { target: input.target } : {}),
-          ...(input.locale ? { locale: input.locale } : {}),
-        },
-        fetchImpl,
-      ),
+    const nextSource = {
+      ...source,
+      ...(locale === "en" ? { text_en: text.trim(), bodyMarkdown: text.trim() } : { text_ru: text.trim(), text: text.trim() }),
     };
-    if (input.republish)
-      result.republish = requeueAfterRemoval(backendDb, publicationRef, result.removed as Array<Record<string, unknown>>, input.target);
-  } else throw new Error(`unknown action: ${input.action}`);
-  result.applied = true;
-  recordOperationAction(backendDb, input.action, publicationRef, input.target ?? null, result, input.actor_type ?? "operations");
-  return result;
+    return commitOperation(backendDb, input, publicationRef, (tx) => {
+      const result = editLocaleContentTx(tx, publicationRef, locale, text);
+      if (config) {
+        result.external = external;
+        result.replaced = fallbacks.flatMap(({ target, attempts }) => {
+          const removed = settlePublishedTargetRemovals(tx, attempts);
+          if (!removed.some((item) => item.ok)) return [];
+          return [{ target, removed, republish: requeueAfterRemovalTx(tx, publicationRef, nextSource, removed, target) }];
+        });
+      }
+      return result;
+    });
+  }
+  if (input.action === "replace_media" || input.action === "use_other_media") {
+    const locale = input.locale ?? "en";
+    const media = input.action === "replace_media" ? parseLocaleMedia(input.media_json) : null;
+    const source = sourcePayload(backendDb, publicationRef);
+    const nextSource = { ...source, [locale === "en" ? "media_en" : "media"]: media };
+    const attempts = config
+      ? await attemptPublishedTargetRemovals(
+          backendDb,
+          config,
+          { postKey: publicationRef.postKey, ...(input.target ? { target: input.target } : {}), locale },
+          fetchImpl,
+        )
+      : [];
+    return commitOperation(backendDb, input, publicationRef, (tx) => {
+      const result = replaceLocaleMediaTx(tx, publicationRef, locale, media);
+      if (config) {
+        const removed = settlePublishedTargetRemovals(tx, attempts);
+        result.removed = removed;
+        result.republish = requeueAfterRemovalTx(tx, publicationRef, nextSource, removed, input.target);
+      } else result.republish = requeuePublicationScopeTx(tx, publicationRef, nextSource, input.target, locale);
+      return result;
+    });
+  }
+  if (input.action === "delete") {
+    if (!config) throw new Error("external removal requires runtime config");
+    const source = sourcePayload(backendDb, publicationRef);
+    const attempts = await attemptPublishedTargetRemovals(
+      backendDb,
+      config,
+      {
+        postKey: publicationRef.postKey,
+        ...(input.target ? { target: input.target } : {}),
+        ...(input.locale ? { locale: input.locale } : {}),
+      },
+      fetchImpl,
+    );
+    return commitOperation(backendDb, input, publicationRef, (tx) => {
+      const removed = settlePublishedTargetRemovals(tx, attempts);
+      const result: Record<string, unknown> = { ok: true, removed };
+      if (input.republish) result.republish = requeueAfterRemovalTx(tx, publicationRef, source, removed, input.target);
+      return result;
+    });
+  }
+  throw new Error(`unknown action: ${input.action}`);
+}
+
+type OperationTransaction = Parameters<Parameters<ReturnType<typeof unsafeDb>["db"]["transaction"]>[0]>[0];
+
+function commitOperation(
+  backendDb: BackendDb,
+  input: z.output<typeof commandActionSchema>,
+  ref: NonNullable<ReturnType<typeof resolvePublicationRef>>,
+  mutate: (tx: OperationTransaction) => Record<string, unknown>,
+): Record<string, unknown> {
+  return unsafeDb(backendDb).db.transaction((tx) => {
+    const result = mutate(tx);
+    result.applied = true;
+    recordOperationAction(tx, input.action, ref, input.target ?? null, result, input.actor_type ?? "operations");
+    return result;
+  });
 }
 
 function reschedulePost(

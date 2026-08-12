@@ -1,9 +1,9 @@
-import { type BackendDb, unsafeDb } from "../db/client.js";
+import type { UnsafeBackendDb } from "../db/client.js";
 import { opsActions } from "../db/schema.js";
 import type { ResolvedPublicationRef } from "./publication-ref.js";
 
 export function recordOperationAction(
-  backendDb: BackendDb,
+  db: UnsafeBackendDb["db"],
   action: string,
   ref: ResolvedPublicationRef,
   target: string | null,
@@ -11,8 +11,7 @@ export function recordOperationAction(
   actorType = "command-center",
 ): void {
   const now = new Date().toISOString();
-  unsafeDb(backendDb)
-    .db.insert(opsActions)
+  db.insert(opsActions)
     .values({
       actorType,
       action,

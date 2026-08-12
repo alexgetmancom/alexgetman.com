@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { isSiteTarget } from "../botTargets.js";
-import { type BackendDb, unsafeDb } from "../db/client.js";
+import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
 import { postTargets, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { jsonObject } from "../json.js";
 import { requeuedPostTarget, requeuedPublishJobColumns } from "./job-policy.js";
@@ -48,35 +48,44 @@ export function requeuePublicationTargets(
   targets: string[],
   options: RequeueOptions,
 ): RequeueResult[] {
+  return unsafeDb(backendDb).db.transaction((tx) => requeuePublicationTargetsTx(tx, scope, targets, options));
+}
+
+/** Same state transition for callers already committing a larger operation. */
+export function requeuePublicationTargetsTx(
+  db: UnsafeBackendDb["db"],
+  scope: RequeueScope,
+  targets: string[],
+  options: RequeueOptions,
+): RequeueResult[] {
   const now = new Date().toISOString();
   const results: RequeueResult[] = [];
   let cachedSource: Record<string, unknown> | null = null;
   const source = (): Record<string, unknown> => (cachedSource ??= options.source());
 
-  unsafeDb(backendDb).db.transaction((tx) => {
-    for (const target of [...new Set(targets)]) {
-      results.push(
-        isSiteTarget(target)
-          ? requeueSiteTarget(tx, scope, target, options, now)
-          : requeueSocialTarget(tx, scope, target, options, source, now),
-      );
-    }
-    // Only when something is actually going out again: a retry that found every
-    // target held changed nothing, and moving the publication back to
-    // `scheduled` would tell the Command Center a delivery was under way.
-    if (scope.postId != null && results.some((result) => result.outcome === "requeued"))
-      tx.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, scope.postId)).run();
-  });
+  for (const target of [...new Set(targets)]) {
+    results.push(
+      isSiteTarget(target)
+        ? requeueSiteTarget(db, scope, target, options, now)
+        : requeueSocialTarget(db, scope, target, options, source, now),
+    );
+  }
+  // Only when something is actually going out again: a retry that found every
+  // target held changed nothing, and moving the publication back to
+  // `scheduled` would tell the Command Center a delivery was under way.
+  if (scope.postId != null && results.some((result) => result.outcome === "requeued"))
+    db.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, scope.postId)).run();
   return results;
 }
 
 type Transaction = Parameters<Parameters<ReturnType<typeof unsafeDb>["db"]["transaction"]>[0]>[0];
+type RequeueDb = UnsafeBackendDb["db"] | Transaction;
 
 /** The site is rendered from `siteJobs`, keyed by a publish reason; every other
  * target is delivered from `publishJobs`, keyed by the target. Routing them
  * together used to manufacture a publishJobs row for `site_ru`, which no
  * publisher serves. */
-function requeueSiteTarget(tx: Transaction, scope: RequeueScope, target: string, options: RequeueOptions, now: string): RequeueResult {
+function requeueSiteTarget(tx: RequeueDb, scope: RequeueScope, target: string, options: RequeueOptions, now: string): RequeueResult {
   if (scope.postId == null && scope.messageId == null) return { target, outcome: "not_retryable", status: null };
   const whereRef = scope.postId != null ? eq(siteJobs.postId, scope.postId) : eq(siteJobs.messageId, scope.messageId as number);
   const row = tx
@@ -106,7 +115,7 @@ function requeueSiteTarget(tx: Transaction, scope: RequeueScope, target: string,
 }
 
 function requeueSocialTarget(
-  tx: Transaction,
+  tx: RequeueDb,
   scope: RequeueScope,
   target: string,
   options: RequeueOptions,
@@ -139,13 +148,7 @@ function requeueSocialTarget(
   return { target, outcome: "requeued", status: row.status };
 }
 
-function createPublishJob(
-  tx: Transaction,
-  scope: RequeueScope,
-  target: string,
-  source: Record<string, unknown>,
-  now: string,
-): RequeueResult {
+function createPublishJob(tx: RequeueDb, scope: RequeueScope, target: string, source: Record<string, unknown>, now: string): RequeueResult {
   const payload = localizeTargetPayload(source, target);
   if (scope.postId == null || scope.messageId == null || Object.keys(payload).length === 0)
     return { target, outcome: "not_retryable", status: null };
@@ -177,7 +180,7 @@ function pickPayload(source: Record<string, unknown>, payloadJson: unknown): Rec
   return Object.keys(source).length > 0 ? source : jsonObject(payloadJson);
 }
 
-function mirrorRequeuedTarget(tx: Transaction, postKey: string, target: string, now: string): void {
+function mirrorRequeuedTarget(tx: RequeueDb, postKey: string, target: string, now: string): void {
   const mirrored = requeuedPostTarget(postKey, target, now);
   tx.insert(postTargets)
     .values(mirrored.values)

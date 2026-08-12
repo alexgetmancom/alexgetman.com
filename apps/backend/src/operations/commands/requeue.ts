@@ -1,26 +1,31 @@
 import { eq } from "drizzle-orm";
 import { targetLocale } from "../../botTargets.js";
-import { type BackendDb, unsafeDb } from "../../db/client.js";
+import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../../db/client.js";
 import { postTargets, publishJobs } from "../../db/schema.js";
-import { removePublishedTargets } from "../../delivery/external-removals.js";
+import { attemptPublishedTargetRemovals, type TargetRemovalAttempt, type TargetRemovalResult } from "../../delivery/external-removals.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import { RETRY_UNLESS_HELD, requeuePublicationTargets } from "../../publishing/requeue.js";
-import { type ResolvedPublicationRef, sourcePayload } from "../publication-ref.js";
+import { RETRY_UNLESS_HELD, requeuePublicationTargetsTx } from "../../publishing/requeue.js";
+import type { ResolvedPublicationRef } from "../publication-ref.js";
 
 /** `ops retry` over one publication: which targets it names, and how its
  * result reads to an operator. The requeue itself belongs to Publishing, which
  * Studio's retry button also goes through — one job, one mechanism. */
-function requeuePublication(backendDb: BackendDb, ref: ResolvedPublicationRef, target?: string): Record<string, unknown> {
+function requeuePublicationTx(
+  db: UnsafeBackendDb["db"],
+  ref: ResolvedPublicationRef,
+  source: Record<string, unknown>,
+  target?: string,
+): Record<string, unknown> {
   const scope = { postId: ref.postId, postKey: ref.postKey, messageId: ref.messageId };
-  const targets = target ? [target] : jobbedTargets(backendDb, ref);
+  const targets = target ? [target] : jobbedTargets(db, ref);
   if (targets.length === 0) throw new Error("no publish jobs found");
-  const results = requeuePublicationTargets(backendDb, scope, targets, {
+  const results = requeuePublicationTargetsTx(db, scope, targets, {
     from: RETRY_UNLESS_HELD,
     // An operator naming one target may be restoring a publication whose job
     // rows were never created — after a channel was connected late, or a
     // publication was planned without it.
     createMissing: Boolean(target),
-    source: () => sourcePayload(backendDb, ref),
+    source: () => source,
   });
   return {
     // Every target still held means nothing was requeued, and an operator
@@ -36,12 +41,12 @@ function requeuePublication(backendDb: BackendDb, ref: ResolvedPublicationRef, t
 }
 
 /** Targets this publication has ever delivered to, newest job per target. */
-function jobbedTargets(backendDb: BackendDb, ref: ResolvedPublicationRef): string[] {
+function jobbedTargets(db: UnsafeBackendDb["db"], ref: ResolvedPublicationRef): string[] {
   const whereRef = ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.postKey, ref.postKey);
   return [
     ...new Set(
-      unsafeDb(backendDb)
-        .db.select({ target: publishJobs.target })
+      db
+        .select({ target: publishJobs.target })
         .from(publishJobs)
         .where(whereRef)
         .all()
@@ -50,15 +55,16 @@ function jobbedTargets(backendDb: BackendDb, ref: ResolvedPublicationRef): strin
   ];
 }
 
-export function requeuePublicationScope(
-  backendDb: BackendDb,
+export function requeuePublicationScopeTx(
+  db: UnsafeBackendDb["db"],
   ref: ResolvedPublicationRef,
+  source: Record<string, unknown>,
   target?: string,
   locale?: "ru" | "en",
 ): Record<string, unknown> {
-  if (target || !locale) return requeuePublication(backendDb, ref, target);
-  const targets = unsafeDb(backendDb)
-    .db.select({ target: postTargets.target })
+  if (target || !locale) return requeuePublicationTx(db, ref, source, target);
+  const targets = db
+    .select({ target: postTargets.target })
     .from(postTargets)
     .where(eq(postTargets.postKey, ref.postKey))
     .all()
@@ -67,13 +73,14 @@ export function requeuePublicationScope(
   // A mutation that matched nothing is not a success. Silently returning an
   // empty result set reads as "done" to an operator running `ops retry`.
   if (targets.length === 0) throw new Error(`no ${locale} targets found for ${ref.postKey}`);
-  return { ok: true, locale, results: targets.map((value) => requeuePublication(backendDb, ref, value)) };
+  return { ok: true, locale, results: targets.map((value) => requeuePublicationTx(db, ref, source, value)) };
 }
 
-export function requeueAfterRemoval(
-  backendDb: BackendDb,
+export function requeueAfterRemovalTx(
+  db: UnsafeBackendDb["db"],
   ref: ResolvedPublicationRef,
-  removals: Array<Record<string, unknown>>,
+  source: Record<string, unknown>,
+  removals: TargetRemovalResult[],
   target?: string,
 ): Record<string, unknown> {
   const succeeded = removals.filter((row) => row.ok === true && typeof row.target === "string").map((row) => row.target as string);
@@ -83,7 +90,7 @@ export function requeueAfterRemoval(
   // empty success list published a replacement next to a post still standing.
   const attempted = new Set(removals.filter((row) => row.skipped !== true).map((row) => row.target));
   const targets = target && !succeeded.includes(target) ? (attempted.has(target) ? [] : [target]) : succeeded;
-  return { ok: targets.length > 0, results: targets.map((value) => requeuePublication(backendDb, ref, value)) };
+  return { ok: targets.length > 0, results: targets.map((value) => requeuePublicationTx(db, ref, source, value)) };
 }
 
 /** Takes down and re-publishes the targets an edit could not reach in place.
@@ -91,7 +98,7 @@ export function requeueAfterRemoval(
  * Which those are is the edit's own answer, not a second list here: a target
  * that reported `ok` was already rewritten, and deleting it afterwards produced
  * an edit, a deletion and a fresh publication of the same post. */
-export async function replaceTextFallbackTargets(
+export async function attemptTextFallbackRemovals(
   backendDb: BackendDb,
   ref: ResolvedPublicationRef,
   config: BackendConfig,
@@ -99,7 +106,7 @@ export async function replaceTextFallbackTargets(
   locale: "ru" | "en",
   fetchImpl: typeof fetch,
   edited: Array<Record<string, unknown>>,
-): Promise<Array<Record<string, unknown>>> {
+): Promise<Array<{ target: string; attempts: TargetRemovalAttempt[] }>> {
   const rewritten = new Set(edited.filter((row) => row.ok === true && typeof row.target === "string").map((row) => row.target as string));
   const targets = unsafeDb(backendDb)
     .db.select({ target: postTargets.target })
@@ -108,10 +115,10 @@ export async function replaceTextFallbackTargets(
     .all()
     .map((row) => row.target)
     .filter((value) => (!target || value === target) && targetLocale(value) === locale && !rewritten.has(value));
-  const results: Array<Record<string, unknown>> = [];
+  const results: Array<{ target: string; attempts: TargetRemovalAttempt[] }> = [];
   for (const value of targets) {
-    const removed = await removePublishedTargets(backendDb, config, { postKey: ref.postKey, target: value }, fetchImpl);
-    if (removed.some((item) => item.ok)) results.push({ target: value, removed, republish: requeuePublication(backendDb, ref, value) });
+    const attempts = await attemptPublishedTargetRemovals(backendDb, config, { postKey: ref.postKey, target: value }, fetchImpl);
+    results.push({ target: value, attempts });
   }
   return results;
 }

@@ -44,13 +44,35 @@ export function resolvePublicationRef(backendDb: BackendDb, ref: string): Resolv
 
 export function sourcePayload(backendDb: BackendDb, ref: ResolvedPublicationRef): Record<string, unknown> {
   if (ref.postId == null) throw new Error("publication has no post id");
-  const source = jsonObject(
+  const stored = jsonObject(
     unsafeDb(backendDb)
       .db.select({ itemJson: publicationSources.itemJson })
       .from(publicationSources)
       .where(eq(publicationSources.postId, ref.postId))
       .get()?.itemJson,
   );
+  if (Object.keys(stored).length > 0) return stored;
+  const post = unsafeDb(backendDb).db.select().from(posts).where(eq(posts.postKey, ref.postKey)).get();
+  const source = post
+    ? {
+        post_id: post.postId,
+        message_id: post.messageId,
+        text: post.text,
+        text_ru: post.text,
+        text_en: post.textEn,
+        media: parseMedia(post.mediaJson),
+      }
+    : {};
   if (Object.keys(source).length === 0) throw new Error(`publication ${ref.postId} has no source payload`);
   return source;
+}
+
+function parseMedia(value: string | null): unknown[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }

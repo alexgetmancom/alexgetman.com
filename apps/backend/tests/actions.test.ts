@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { asc, count, eq } from "drizzle-orm";
-import { posts, postTargets, publicationSources, publications, publishJobs, siteJobs } from "../src/db/schema.js";
+import { opsActions, posts, postTargets, publicationSources, publications, publishJobs, siteJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { runOperationCommand } from "../src/operations/commands.js";
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
@@ -176,6 +176,108 @@ describe("command center actions", () => {
       expect(requests).toEqual([{ url: "https://graph.threads.net/v1.0/page_post?access_token=token", method: "DELETE" }]);
       expect(result.removed).toEqual([{ target: "threads_en", ok: true, deleted: 1 }]);
       expect(backendDb.db.select().from(postTargets).where(eq(postTargets.target, "threads_en")).get()?.status).toBe("queued");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("does not requeue a newer target when deletion loses its external-id fence", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      const source = { text_ru: "RU", text_en: "EN", media: [], media_en: [] };
+      backendDb.db.insert(publications).values({ postId: 19, status: "published", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(posts)
+        .values({
+          postKey: "post:19",
+          postId: 19,
+          channel: "studio",
+          messageId: 19,
+          text: "RU",
+          textEn: "EN",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db.insert(publicationSources).values({ postId: 19, itemJson: source, createdAt: now, updatedAt: now }).run();
+      const jobId = enqueuePublishJobTx(backendDb.db, {
+        postId: 19,
+        postKey: "post:19",
+        messageId: 19,
+        target: "threads_en",
+        payload: source,
+      });
+      backendDb.db.update(publishJobs).set({ status: "published" }).where(eq(publishJobs.jobId, jobId)).run();
+      backendDb.db
+        .insert(postTargets)
+        .values({ postKey: "post:19", target: "threads_en", status: "published", externalId: "old-post", updatedAt: now })
+        .run();
+      const fetchImpl = (async () => {
+        backendDb.db
+          .update(postTargets)
+          .set({ externalId: "new-post", updatedAt: new Date().toISOString() })
+          .where(eq(postTargets.target, "threads_en"))
+          .run();
+        return new Response("{}", { status: 200 });
+      }) as unknown as typeof fetch;
+
+      const result = await runOperationCommand(
+        backendDb,
+        { action: "delete", ref: "post:19", target: "threads_en", republish: true, apply: true },
+        loadConfig({ THREADS_EN_ACCESS_TOKEN: "token" }),
+        fetchImpl,
+      );
+
+      expect(result.removed).toEqual([
+        {
+          target: "threads_en",
+          ok: false,
+          stale: true,
+          deleted: 1,
+          remaining: 0,
+          error: "target changed while remote deletion was in flight",
+        },
+      ]);
+      expect(result.republish).toEqual({ ok: false, results: [] });
+      expect(backendDb.db.select().from(postTargets).where(eq(postTargets.target, "threads_en")).get()).toMatchObject({
+        status: "published",
+        externalId: "new-post",
+      });
+      expect(backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get()?.status).toBe("published");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("rolls back a requeue when its audit record cannot be written", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const now = new Date().toISOString();
+      backendDb.db.insert(publications).values({ postId: 20, status: "published", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(publicationSources)
+        .values({ postId: 20, itemJson: { text: "RU", text_en: "EN" }, createdAt: now, updatedAt: now })
+        .run();
+      const jobId = enqueuePublishJobTx(backendDb.db, {
+        postId: 20,
+        postKey: "post:20",
+        messageId: 20,
+        target: "threads_en",
+        payload: { text: "RU", text_en: "EN" },
+      });
+      backendDb.db.update(publishJobs).set({ status: "failed", lastError: "boom" }).where(eq(publishJobs.jobId, jobId)).run();
+      backendDb.sqlite.exec("CREATE TRIGGER reject_ops_audit BEFORE INSERT ON ops_actions BEGIN SELECT RAISE(ABORT, 'audit failed'); END");
+
+      expect(runOperationCommand(backendDb, { action: "retry", ref: "post:20", target: "threads_en", apply: true })).rejects.toThrow(
+        "audit failed",
+      );
+      expect(backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get()).toMatchObject({
+        status: "failed",
+        lastError: "boom",
+      });
+      expect(backendDb.db.select().from(publications).where(eq(publications.postId, 20)).get()?.status).toBe("published");
+      expect(backendDb.db.select().from(opsActions).all()).toEqual([]);
     } finally {
       backendDb.close();
     }
