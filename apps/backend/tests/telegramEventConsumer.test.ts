@@ -191,6 +191,53 @@ describe("Telegram event consumer", () => {
       }
     }));
 
+  it("reports an ambiguous video outcome without offering a duplicate-producing retry", async () =>
+    withDb(async (backendDb) => {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(videoDrafts)
+        .values({
+          id: 11,
+          actorId: 42,
+          locale: "ru",
+          label: "Ambiguous launch",
+          studioMediaAssetId: createTestVideoAsset(backendDb, 42),
+          status: "partial",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db
+        .insert(videoTargets)
+        .values({
+          videoDraftId: 11,
+          target: "instagram_reels",
+          metadataJson: {},
+          status: "verification_required",
+          lastError: "Provider response was ambiguous",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      const sendMessage = mock(async (_chatId: number, text: string, options: unknown) => ({
+        message_id: 1,
+        date: 1,
+        chat: { id: 42, type: "private" as const },
+        text,
+        options,
+      }));
+      const bot = { api: { sendMessage } } as unknown as Bot;
+
+      await sendStudioCompletion(backendDb, bot, config, {
+        postKey: "publication:video:11",
+        detailsJson: { total: 1, published: 0, failed: 1 },
+      });
+
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+      expect(sendMessage.mock.calls[0]?.[1]).toContain("Provider response was ambiguous");
+      expect(JSON.stringify(sendMessage.mock.calls[0]?.[2])).not.toContain("p:video:retry:11");
+    }));
+
   it("notifies about a completed locale and shows the later locale schedule", async () =>
     withDb(async (backendDb) => {
       const now = new Date().toISOString();

@@ -38,6 +38,21 @@ describe("post publication retry", () => {
         })
         .run();
       backendDb.db
+        .insert(publishJobs)
+        .values({
+          postId: 700,
+          postKey: "post:700",
+          messageId: 700,
+          target: "threads_en",
+          status: "verification_required",
+          payloadJson: { text: "Retryable post" },
+          attemptCount: 1,
+          lastError: "Threads response was ambiguous",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db
         .insert(siteJobs)
         .values({
           postId: 700,
@@ -52,11 +67,17 @@ describe("post publication retry", () => {
         .run();
 
       const posts = createStudioServices(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" })).posts;
-      expect(backendDb.studioPosts.failedPublicationTargets(700).map((item) => item.target)).toEqual(["telegram_ru", "site_en"]);
+      expect(backendDb.studioPosts.retryablePublicationTargets(700).map((item) => item.target)).toEqual(["telegram_ru", "site_en"]);
 
       expect(posts.retryTarget(42, 7)).toMatchObject({ requeued: 2, alreadyQueued: 0 });
-      expect(backendDb.db.select({ status: publishJobs.status, attemptCount: publishJobs.attemptCount }).from(publishJobs).all()).toEqual([
-        { status: "queued", attemptCount: 0 },
+      expect(
+        backendDb.db
+          .select({ target: publishJobs.target, status: publishJobs.status, attemptCount: publishJobs.attemptCount })
+          .from(publishJobs)
+          .all(),
+      ).toEqual([
+        { target: "telegram_ru", status: "queued", attemptCount: 0 },
+        { target: "threads_en", status: "verification_required", attemptCount: 1 },
       ]);
       expect(backendDb.db.select({ status: siteJobs.status, attemptCount: siteJobs.attemptCount }).from(siteJobs).all()).toEqual([
         { status: "queued", attemptCount: 0 },

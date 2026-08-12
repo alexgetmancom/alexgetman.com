@@ -11,6 +11,7 @@ import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 import { log } from "../../foundation/logger.js";
 import { truncateUnicode } from "../../foundation/text.js";
+import { isAudienceMutationRetryable, isPostTargetRetryable } from "../../publishing/state.js";
 import { getVideoDraft } from "../../publishing/video-data.js";
 import type { VideoTarget } from "../../publishing/video-types.js";
 import { VIDEO_TARGETS, videoTargetLabel } from "../../publishing/video-types.js";
@@ -131,6 +132,12 @@ export async function sendStudioCompletion(
   );
   const videoLocale = videoLocaleForRef(backendDb, event.postKey);
   const failedTargets = results.filter((result) => result.status === "failed" || result.status === "verification_required");
+  const publication = parsePublicationRef(event.postKey);
+  const retryableTargets = failedTargets.filter((result) =>
+    publication?.kind === "video"
+      ? isAudienceMutationRetryable(result.status)
+      : publication?.kind === "post" && isPostTargetRetryable(result.target, result.status),
+  );
   const draftId = publicationDraftId(backendDb, event.postKey);
   await forEachAdmin(config.CONTROLLER_ADMIN_IDS, async (actorId) => {
     if (!settingsService(backendDb).notifications(actorId).completionEnabled) return;
@@ -159,7 +166,7 @@ export async function sendStudioCompletion(
     const remaining = partialLocale ? remainingScheduleText(details, locale, timeConfig) : "";
     const text = `${headline}${videoLocale ? `\n${localeName(videoLocale, locale)}` : ""}${remaining ? `\n\n${remaining}` : ""}${lines.length ? `\n\n${lines.join("\n")}` : ""}`;
     await bot.api.sendMessage(actorId, text, {
-      reply_markup: completionKeyboard(locale, event.postKey, draftId, failedTargets, partialLocale != null),
+      reply_markup: completionKeyboard(locale, event.postKey, draftId, retryableTargets, partialLocale != null),
     });
   });
 }
@@ -168,7 +175,7 @@ function completionKeyboard(
   locale: StudioLocale,
   postKey: string | null,
   draftId: number | null,
-  failedTargets: Array<{ target: string; status: string; error: string | null }>,
+  retryableTargets: Array<{ target: string; status: string; error: string | null }>,
   partial: boolean,
 ): InlineKeyboard {
   const keyboard = new InlineKeyboard();
@@ -176,11 +183,11 @@ function completionKeyboard(
   const kind = publication?.kind === "post" || publication?.kind === "video" ? publication.kind : null;
   // Only a post can requeue every failed target in one call; a video is retried
   // per target because each upload carries its own metadata.
-  const bulkRetry = kind === "post" && failedTargets.length > 0;
-  if (kind && draftId != null && (failedTargets.length || (kind === "post" && partial))) {
+  const bulkRetry = kind === "post" && retryableTargets.length > 0;
+  if (kind && draftId != null && (retryableTargets.length || (kind === "post" && partial))) {
     if (bulkRetry) keyboard.text(t(locale, "notif.retry-failed"), publicationCallback(kind, "retry", [draftId, "all", "notice"])).row();
     keyboard.text(t(locale, "notif.open"), publicationCallback(kind, "view", [draftId, "overview"])).row();
-    for (const target of failedTargets)
+    for (const target of retryableTargets)
       keyboard
         .text(
           t(locale, "notif.retry-target", { target: friendlyTarget(target.target) }),

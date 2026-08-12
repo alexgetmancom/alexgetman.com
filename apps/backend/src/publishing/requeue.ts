@@ -17,12 +17,6 @@ import { localizeTargetPayload } from "./payload.js";
  */
 export type RequeueResult = { target: string; outcome: "requeued" | "already_queued" | "not_retryable"; status: string | null };
 
-/** Studio retries what failed. `verification_required` is not failure: the
- * provider may be holding the post, and republishing it is how one publication
- * becomes two. Reconciliation settles that state, and moves it to `failed`
- * once it has given up — at which point this path applies again. */
-export const RETRY_AFTER_FAILURE = ["failed"] as const;
-
 /** An operator restores a target whatever state it reached — including one
  * deleted from the platform on purpose. The two states missing here belong to
  * someone else: `publishing` to a live worker, `verification_required` to

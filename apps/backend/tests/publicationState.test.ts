@@ -1,5 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { isVideoTargetEditable, isVideoTargetSchedulable, publicationStatus, videoDraftStatus } from "../src/publishing/state.js";
+import {
+  isAudienceMutationRetryable,
+  isPostTargetRetryable,
+  isVideoTargetEditable,
+  isVideoTargetSchedulable,
+  publicationStatus,
+  videoDraftStatus,
+} from "../src/publishing/state.js";
 
 describe("publication state transitions", () => {
   it("keeps published video targets immutable while allowing scheduled targets to move", () => {
@@ -22,5 +29,12 @@ describe("publication state transitions", () => {
     // before its jobs exist — used to report itself as fully published.
     expect(videoDraftStatus([])).toBe("scheduled");
     expect(publicationStatus([])).toBeNull();
+  });
+
+  it("retries ambiguous site rendering but never ambiguous audience mutations", () => {
+    expect(isAudienceMutationRetryable("failed")).toBe(true);
+    expect(isAudienceMutationRetryable("verification_required")).toBe(false);
+    expect(isPostTargetRetryable("threads_en", "verification_required")).toBe(false);
+    expect(isPostTargetRetryable("site_en", "verification_required")).toBe(true);
   });
 });

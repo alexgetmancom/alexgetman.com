@@ -600,4 +600,22 @@ describe("video publication queue", () => {
       backendDb.sqlite.prepare("SELECT status FROM video_targets WHERE video_draft_id=? AND target='youtube_shorts'").get(draftId),
     ).toEqual({ status: "editing" });
   });
+
+  it("does not retry a video mutation with an ambiguous provider outcome", () => {
+    const backendDb = testDb.open();
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
+    const instagram = backendDb.db
+      .select()
+      .from(videoTargets)
+      .where(and(eq(videoTargets.videoDraftId, draftId), eq(videoTargets.target, "instagram_reels")))
+      .get();
+    if (!instagram) throw new Error("instagram target missing");
+    backendDb.db.update(videoTargets).set({ status: "verification_required" }).where(eq(videoTargets.id, instagram.id)).run();
+
+    expect(() => retryVideoTarget(backendDb, draftId, "instagram_reels")).toThrow("err.retry-only-failed");
+    expect(backendDb.sqlite.prepare("SELECT count(*) AS count FROM video_jobs WHERE video_target_id=?").get(instagram.id)).toEqual({
+      count: 0,
+    });
+  });
 });

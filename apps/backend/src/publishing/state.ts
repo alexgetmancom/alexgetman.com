@@ -1,4 +1,4 @@
-import { targetLocale } from "../botTargets.js";
+import { isSiteTarget, targetLocale } from "../botTargets.js";
 
 const VIDEO_FINAL_TARGET_STATUSES = new Set(["published", "failed", "cancelled", "verification_required"]);
 const POST_FINAL_JOB_STATUSES = new Set(["published", "failed", "cancelled", "skipped", "verification_required"]);
@@ -7,6 +7,7 @@ const VIDEO_METADATA_EDITABLE_TARGET_STATUSES = new Set(["editing", "draft", "sc
 const VIDEO_SCHEDULABLE_TARGET_STATUSES = new Set(["editing", "draft", "scheduled"]);
 const ACTIVE_PUBLICATION_JOB_STATUSES = new Set(["queued", "publishing", "rendering"]);
 const POST_MUTABLE_STATUSES = new Set(["draft", "needs_review", "scheduled"]);
+export const AUDIENCE_MUTATION_RETRYABLE_STATUSES = ["failed"] as const;
 
 export function isVideoTargetFinal(status: string): boolean {
   return VIDEO_FINAL_TARGET_STATUSES.has(status);
@@ -35,6 +36,20 @@ export function isVideoTargetSchedulable(status: string): boolean {
  * unfinished delivery jobs. */
 export function isPostDraftMutable(status: string): boolean {
   return POST_MUTABLE_STATUSES.has(status);
+}
+
+/** Failed provider mutations are safe to retry because the provider rejected
+ * them. An ambiguous mutation is held for reconciliation: retrying it can put
+ * the same publication in front of the audience twice. */
+export function isAudienceMutationRetryable(status: string): status is "failed" {
+  return AUDIENCE_MUTATION_RETRYABLE_STATUSES.some((retryable) => retryable === status);
+}
+
+/** Site verification is the exception: rendering the same page again replaces
+ * one deterministic artifact, so an ambiguous verification cannot duplicate a
+ * publication. */
+export function isPostTargetRetryable(target: string, status: string): status is "failed" | "verification_required" {
+  return isAudienceMutationRetryable(status) || (isSiteTarget(target) && status === "verification_required");
 }
 
 /** An empty status list is "nothing has happened yet", never success: `every`

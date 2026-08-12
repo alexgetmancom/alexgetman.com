@@ -11,7 +11,7 @@ import { youtubeCredentials } from "../foundation/external/youtube.js";
 import { probeMediaMetadata } from "../foundation/runtime/ffmpeg.js";
 import { isZernioRouteReady, registeredVideoDeliveryRoute } from "./delivery-provider.js";
 import { assertFutureSchedule } from "./schedule.js";
-import { isVideoTargetEditable, isVideoTargetMetadataEditable, isVideoTargetSchedulable } from "./state.js";
+import { isAudienceMutationRetryable, isVideoTargetEditable, isVideoTargetMetadataEditable, isVideoTargetSchedulable } from "./state.js";
 import { getVideoDraft, insertVideoJob, listVideoTargets, refreshVideoDraftStatus } from "./video-data.js";
 import type { VideoLocale, VideoMetadata, VideoTarget } from "./video-types.js";
 import { VIDEO_TARGETS } from "./video-types.js";
@@ -228,7 +228,7 @@ export function retryVideoTarget(backendDb: BackendDb, videoDraftId: number, tar
     .from(videoTargets)
     .where(and(eq(videoTargets.videoDraftId, videoDraftId), eq(videoTargets.target, targetName)))
     .get();
-  if (!target || !["failed", "verification_required"].includes(target.status)) throw new StudioError("err.retry-only-failed");
+  if (!target || !isAudienceMutationRetryable(target.status)) throw new StudioError("err.retry-only-failed");
   const now = new Date();
   const nowIso = now.toISOString();
   unsafeDb(backendDb).db.transaction((tx) => {

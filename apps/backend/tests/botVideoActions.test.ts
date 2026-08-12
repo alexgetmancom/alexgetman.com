@@ -56,6 +56,7 @@ describe("video card controls", () => {
 
     expect(preview.text).toContain("нужна проверка");
     expect(preview.text).not.toContain("verification_required");
+    expect(JSON.stringify(preview.keyboard)).not.toContain("p:video:retry:7");
   });
 
   it("offers Instagram metadata editing while a scheduled target is still waiting", async () => {

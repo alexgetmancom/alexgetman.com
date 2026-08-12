@@ -18,8 +18,9 @@ import { cancelDraft, cancelPendingPostJobs } from "../../publishing/draft-lifec
 import { mediaPolicyForTarget } from "../../publishing/media-policy.js";
 import { publicationPreflight } from "../../publishing/preflight.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
-import { RETRY_AFTER_FAILURE, requeuePublicationTargets } from "../../publishing/requeue.js";
+import { requeuePublicationTargets } from "../../publishing/requeue.js";
 import { assertFutureSchedule, assertValidScheduleDate, parseManualSchedule, publicationSlotTime } from "../../publishing/schedule.js";
+import { AUDIENCE_MUTATION_RETRYABLE_STATUSES } from "../../publishing/state.js";
 import { parseTargets } from "../../publishing/targets.js";
 
 import { accessibleStudioActorIds } from "../access.js";
@@ -306,15 +307,15 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       return trackUsageSync(backendDb, "studio.post.retry", () => {
         const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
         if (draft.post_id == null) throw new StudioError("err.retry-only-failed");
-        const failed = backendDb.studioPosts.failedPublicationTargets(draft.post_id);
-        const selected = target ? failed.filter((item) => item.target === target) : failed;
+        const retryable = backendDb.studioPosts.retryablePublicationTargets(draft.post_id);
+        const selected = target ? retryable.filter((item) => item.target === target) : retryable;
         if (selected.length === 0) throw new StudioError("err.retry-only-failed");
         const postId = draft.post_id;
         const results = requeuePublicationTargets(
           backendDb,
           { postId, postKey: publicationRef("post", postId), messageId: null },
           selected.map((item) => item.target),
-          { from: RETRY_AFTER_FAILURE, source: () => backendDb.studioPosts.publicationSource(postId) },
+          { from: AUDIENCE_MUTATION_RETRYABLE_STATUSES, source: () => backendDb.studioPosts.publicationSource(postId) },
         );
         const requeued = results.filter((item) => item.outcome === "requeued").length;
         const alreadyQueued = results.filter((item) => item.outcome === "already_queued").length;

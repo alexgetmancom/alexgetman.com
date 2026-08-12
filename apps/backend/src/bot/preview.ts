@@ -10,7 +10,7 @@ import { escapeMarkdown } from "../foundation/markdown.js";
 import { truncateUnicode } from "../foundation/text.js";
 import { formatZonedDateTime } from "../foundation/time.js";
 import { mediaPolicyForTarget } from "../publishing/media-policy.js";
-import { isPostDraftMutable } from "../publishing/state.js";
+import { isPostDraftMutable, isPostTargetRetryable } from "../publishing/state.js";
 import { parseTargets } from "../publishing/targets.js";
 import { storyCardsForDraft } from "../story-cards/store.js";
 import { createStudioServices } from "../studio/services/index.js";
@@ -242,7 +242,7 @@ export function draftPreview(
       .row();
     keyboard.text(t(locale, "post.delete-btn"), publicationCallback("post", "cancel", [draftId, "confirm_delete"]));
   } else {
-    const retryable = failedTargets(backendDb, draftId);
+    const retryable = retryableTargets(backendDb, draftId);
     if (retryable.length) {
       keyboard.text(t(locale, "notif.retry-failed"), publicationCallback("post", "retry", [draftId, "all", "card"])).row();
       for (const item of retryable)
@@ -272,10 +272,10 @@ export function draftPreview(
   };
 }
 
-function failedTargets(backendDb: BackendDb, draftId: number): Array<{ target: string; label: string }> {
+function retryableTargets(backendDb: BackendDb, draftId: number): Array<{ target: string; label: string }> {
   try {
     return postProgressState(backendDb, draftId)
-      .targets.filter((item) => item.status === "failed" || item.status === "verification_required")
+      .targets.filter((item) => isPostTargetRetryable(item.target, item.status))
       .map(({ target, label }) => ({ target, label }));
   } catch {
     return [];

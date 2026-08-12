@@ -6,7 +6,12 @@ import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 import { escapeMarkdown } from "../../foundation/markdown.js";
-import { isVideoTargetEditable, isVideoTargetMetadataEditable, isVideoTargetSchedulable } from "../../publishing/state.js";
+import {
+  isAudienceMutationRetryable,
+  isVideoTargetEditable,
+  isVideoTargetMetadataEditable,
+  isVideoTargetSchedulable,
+} from "../../publishing/state.js";
 import { type InstagramMetadata, type VideoTarget, videoTargetLabel, type YouTubeMetadata } from "../../publishing/video-types.js";
 import { formatVideoTime } from "./video-time.js";
 
@@ -70,10 +75,10 @@ export function videoPreview(
       keyboard.text(t(locale, "vpreview.ig-time"), publicationCallback("video", "time", [draft.id, "instagram_reels"]));
     if (isVideoTargetEditable(igTarget.status))
       keyboard.text(t(locale, "vpreview.ig-remove"), publicationCallback("video", "remove_ask", [draft.id, "instagram_reels"])).row();
-    if (igTarget.status === "failed" || igTarget.status === "verification_required")
+    if (isAudienceMutationRetryable(igTarget.status))
       keyboard.text(t(locale, "vpreview.ig-retry"), publicationCallback("video", "retry", [draft.id, "instagram_reels", "card"])).row();
   }
-  if (ytTarget?.status === "failed" || ytTarget?.status === "verification_required")
+  if (ytTarget && isAudienceMutationRetryable(ytTarget.status))
     keyboard.text(t(locale, "vpreview.yt-retry"), publicationCallback("video", "retry", [draft.id, "youtube_shorts", "card"])).row();
   if (view !== "overview") return videoConfirmationPreview(draft.id, lines.join("\n"), locale, view, options);
   // Publishing now and scheduling are the same pair of choices a text post

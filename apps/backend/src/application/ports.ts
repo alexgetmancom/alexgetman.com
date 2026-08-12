@@ -78,7 +78,7 @@ export type PostEventRecord = {
   ackedAt: string | null;
 };
 
-export type FailedPublicationTarget = {
+export type RetryablePublicationTarget = {
   target: string;
   status: "failed" | "verification_required";
   error: string | null;
@@ -99,7 +99,7 @@ export type StudioPostStore = {
   acceptEntityCandidates(draftId: number, now: string): void;
   history(draftId: number, postId: number | null, limit: number): PostEventRecord[];
   progress(draftId: number): StudioPostProgress | null;
-  failedPublicationTargets(postId: number): FailedPublicationTarget[];
+  retryablePublicationTargets(postId: number): RetryablePublicationTarget[];
   publicationSource(postId: number): Record<string, unknown>;
 };
 

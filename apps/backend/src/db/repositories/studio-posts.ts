@@ -2,13 +2,14 @@ import { desc, eq, or } from "drizzle-orm";
 import type {
   DraftEntityCandidate,
   DraftSource,
-  FailedPublicationTarget,
   PostEventRecord,
+  RetryablePublicationTarget,
   StudioPostStore,
 } from "../../application/ports.js";
 import { publicationRef } from "../../application/publication-ref.js";
 import { isSiteTarget } from "../../botTargets.js";
 import { jsonObject } from "../../json.js";
+import { isPostTargetRetryable } from "../../publishing/state.js";
 import {
   draftEntityCandidates,
   draftSources,
@@ -99,7 +100,7 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
       return publicationSource(db, postId);
     },
 
-    failedPublicationTargets(postId: number): FailedPublicationTarget[] {
+    retryablePublicationTargets(postId: number): RetryablePublicationTarget[] {
       const social = db
         .select({ target: publishJobs.target, status: publishJobs.status, error: publishJobs.lastError, jobId: publishJobs.jobId })
         .from(publishJobs)
@@ -121,7 +122,7 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
       }
 
       return [...latestSocial.entries(), ...latestSite.entries()].flatMap(([target, row]) => {
-        if (row.status !== "failed" && row.status !== "verification_required") return [];
+        if (!isPostTargetRetryable(target, row.status)) return [];
         return [{ target, status: row.status, error: row.error }];
       });
     },
