@@ -1,12 +1,12 @@
 import { TARGET_GROUPS, targetInGroup } from "../botTargets.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { instagramCredentialsForLocale } from "../foundation/external/instagram.js";
+import { type ThreadsTarget, threadsCredentials } from "../foundation/external/threads.js";
 import { requestJson } from "../foundation/http.js";
 import { isCapabilityReady } from "../observability/capabilities.js";
 import type { PublishResult } from "../publishing/errors.js";
 import { platformProfile } from "../publishing/platform-profiles.js";
 import type { ClaimedPublishJob } from "../publishing/queue.js";
-import { platformTargetConfigs } from "./platform-routing.js";
 import type { DeliveryAdapter, DeliveryPorts, DeliveryPublisher } from "./ports.js";
 import { deleteDiscordMessage, editDiscordMessage, publishToDiscord, verifyDiscordMessage } from "./social/discord.js";
 import { publishInstagramStory, verifyInstagramPublication } from "./social/instagram.js";
@@ -22,18 +22,10 @@ export function createPlatformAdapters(
   fetchImpl: typeof fetch = fetch,
   prepare: PreparePlatformJob = async (job) => job,
 ): DeliveryPorts {
-  const targetConfigs = platformTargetConfigs(config);
   const publishers: Record<string, DeliveryPublisher> = {
     telegram: (job) => publishToTelegram(job.payload, config, fetchImpl),
   };
-  for (const target of TARGET_GROUPS.threads)
-    publishers[target] = (job) =>
-      publishToThreads(
-        job.payload,
-        target === "threads_en" ? (targetConfigs[target] ?? config) : config,
-        fetchImpl,
-        target === "threads_en" ? target : undefined,
-      );
+  for (const target of TARGET_GROUPS.threads) publishers[target] = (job) => publishToThreads(job.payload, config, fetchImpl, target);
   for (const target of TARGET_GROUPS.x) publishers[target] = (job) => publishToX(job.payload, config, fetchImpl);
   for (const target of TARGET_GROUPS.discord) publishers[target] = (job) => publishToDiscord(job.payload, config, fetchImpl);
   for (const target of TARGET_GROUPS.instagramStory)
@@ -53,9 +45,9 @@ export function createPlatformAdapters(
     Object.entries(publishers).map(([target, publish]) => {
       const adapter: DeliveryAdapter = {
         publish,
-        validate: async () => validatePlatformTarget(target, targetConfigs[target] ?? config),
-        prepare: async (job) => (target === "telegram" ? job : prepare(job, targetConfigs[target] ?? config)),
-        verify: async (_job, result) => verifyPlatformPublication(target, result, targetConfigs[target] ?? config, fetchImpl),
+        validate: async () => validatePlatformTarget(target, config),
+        prepare: async (job) => (target === "telegram" ? job : prepare(job, config)),
+        verify: async (_job, result) => verifyPlatformPublication(target, result, config, fetchImpl),
         ...mutations[target],
       };
       return [target, adapter];
@@ -104,15 +96,15 @@ function platformMutations(config: BackendConfig, fetchImpl: typeof fetch): Part
     ...Object.fromEntries(TARGET_GROUPS.discord.map((target) => [target, discord])),
     ...Object.fromEntries(
       TARGET_GROUPS.threads.map((target) => {
-        const token = target === "threads_en" ? config.THREADS_EN_ACCESS_TOKEN : config.THREADS_RU_ACCESS_TOKEN;
+        const credentials = threadsCredentials(config, target as ThreadsTarget);
         return [
           target,
           {
             remove: (id: string) => {
-              if (!token) throw new Error(`missing ${target === "threads_en" ? "THREADS_EN_ACCESS_TOKEN" : "THREADS_RU_ACCESS_TOKEN"}`);
+              if (!credentials.accessToken) throw new Error(`missing ${credentials.envName}`);
               return requestJson(
                 fetchImpl,
-                `https://graph.threads.net/v1.0/${encodeURIComponent(id)}?access_token=${encodeURIComponent(token)}`,
+                `https://graph.threads.net/v1.0/${encodeURIComponent(id)}?access_token=${encodeURIComponent(credentials.accessToken)}`,
                 { method: "DELETE" },
               );
             },
@@ -133,7 +125,7 @@ export async function verifyPlatformPublication(
   const id = String(result.id);
   try {
     if (targetInGroup(TARGET_GROUPS.threads, target)) {
-      const verified = await verifyThreadsPost(id, config, fetchImpl);
+      const verified = await verifyThreadsPost(id, config, fetchImpl, target as "threads_ru" | "threads_en");
       return { ...result, url: result.url ?? verified.url, verification: { status: "verified", providerId: verified.id } };
     }
     if (targetInGroup(TARGET_GROUPS.instagramStory, target)) {

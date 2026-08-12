@@ -2,6 +2,7 @@ import type { BackendDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { instagramCredentialsForLocale, instagramGraphHost } from "../foundation/external/instagram.js";
+import { type ThreadsTarget, threadsCredentials } from "../foundation/external/threads.js";
 import { oauthAuthorization } from "../foundation/external/x-oauth.js";
 import { type VideoLocale, youtubeAccessToken, youtubeCredentials } from "../foundation/external/youtube.js";
 import { ExternalHttpError, requestJson } from "../foundation/http.js";
@@ -111,6 +112,19 @@ function instagramStoriesProbe(locale: VideoLocale): Probe {
   };
 }
 
+function threadsProbe(target: ThreadsTarget): Probe {
+  return {
+    target,
+    configured: (config) => Boolean(threadsCredentials(config, target).accessToken),
+    run: async (config, fetchImpl) => {
+      const { accessToken } = threadsCredentials(config, target);
+      if (!accessToken) throw new Error(`${target} credentials are missing`);
+      await requestJson(fetchImpl, `https://graph.threads.net/v1.0/me?fields=id&access_token=${encodeURIComponent(accessToken)}`);
+      return null;
+    },
+  };
+}
+
 const probes: Probe[] = [
   {
     target: "controller_bot",
@@ -131,28 +145,8 @@ const probes: Probe[] = [
       return null;
     },
   },
-  {
-    target: "threads_ru",
-    configured: (c) => Boolean(c.THREADS_RU_ACCESS_TOKEN),
-    run: async (config, fetchImpl) => {
-      await requestJson(
-        fetchImpl,
-        `https://graph.threads.net/v1.0/me?fields=id&access_token=${encodeURIComponent(config.THREADS_RU_ACCESS_TOKEN as string)}`,
-      );
-      return null;
-    },
-  },
-  {
-    target: "threads_en",
-    configured: (c) => Boolean(c.THREADS_EN_ACCESS_TOKEN),
-    run: async (config, fetchImpl) => {
-      await requestJson(
-        fetchImpl,
-        `https://graph.threads.net/v1.0/me?fields=id&access_token=${encodeURIComponent(config.THREADS_EN_ACCESS_TOKEN as string)}`,
-      );
-      return null;
-    },
-  },
+  threadsProbe("threads_ru"),
+  threadsProbe("threads_en"),
   {
     target: "instagram_reels",
     configured: (c) => Boolean(c.INSTAGRAM_RU_ACCESS_TOKEN && c.INSTAGRAM_RU_USER_ID),

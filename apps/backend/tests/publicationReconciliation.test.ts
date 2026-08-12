@@ -168,7 +168,7 @@ describe("publication reconciliation", () => {
         new Response(JSON.stringify({ id: "thread-81", permalink: "https://www.threads.net/@owner/post/81" }), {
           status: 200,
         })) as unknown as typeof fetch;
-      expect(await runPublicationReconciliation(backendDb, loadConfig({}), fetchImpl)).toMatchObject({
+      expect(await runPublicationReconciliation(backendDb, loadConfig({ THREADS_RU_ACCESS_TOKEN: "token" }), fetchImpl)).toMatchObject({
         checked: 1,
         resolved: 1,
         unresolved: 0,
@@ -195,7 +195,7 @@ describe("publication reconciliation", () => {
         payload: { text: "retried before it turned ambiguous" },
       });
       const now = new Date().toISOString();
-      const config = loadConfig({ PUBLISH_MAX_ATTEMPTS: "3" });
+      const config = loadConfig({ PUBLISH_MAX_ATTEMPTS: "3", THREADS_RU_ACCESS_TOKEN: "token" });
       backendDb.db
         .update(publishJobs)
         // Two failed publishes, then a lost confirmation: the publish budget is

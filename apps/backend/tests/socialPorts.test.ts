@@ -47,7 +47,11 @@ mock.module("../src/delivery/social/telegram.js", () => ({
 mock.module("../src/delivery/social/threads.js", () => ({
   publishToThreads: async (...args: Parameters<typeof real.publishToThreads>) => {
     if (!intercepting) return real.publishToThreads(...args);
-    calls.push({ target: "threads", payload: args[0], token: args[1].THREADS_RU_ACCESS_TOKEN });
+    calls.push({
+      target: "threads",
+      payload: args[0],
+      token: args[3] === "threads_en" ? args[1].THREADS_EN_ACCESS_TOKEN : args[1].THREADS_RU_ACCESS_TOKEN,
+    });
     return { ok: true, id: "t" };
   },
 }));

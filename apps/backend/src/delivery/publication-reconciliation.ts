@@ -11,7 +11,6 @@ import { reconcilePublication } from "../publishing/publication-reconciliation.j
 import { PUBLISH_CLAIM_LIMIT, workerId } from "../publishing/queue.js";
 import { refreshVideoDraftStatus } from "../publishing/video-data.js";
 import { verifyPlatformPublication } from "./platform-adapters.js";
-import { platformConfig } from "./platform-routing.js";
 import { verifyYouTubeVideo } from "./video-publishers.js";
 import { verifyZernioPost } from "./zernio.js";
 
@@ -70,12 +69,7 @@ export async function runPublicationReconciliation(
     }
     let result: Awaited<ReturnType<typeof verifyPlatformPublication>>;
     try {
-      result = await verifyPlatformPublication(
-        row.job.target,
-        { ok: true, id: externalId, url: row.target.url },
-        platformConfig(row.job.target, config),
-        fetchImpl,
-      );
+      result = await verifyPlatformPublication(row.job.target, { ok: true, id: externalId, url: row.target.url }, config, fetchImpl);
     } catch {
       deferOrdinaryReconciliation(backendDb, config, job, reconciliationWorker);
       continue;

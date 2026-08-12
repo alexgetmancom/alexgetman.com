@@ -1,5 +1,6 @@
 import type { JsonValue } from "../../../db/schema.js";
 import type { BackendConfig } from "../../../foundation/config.js";
+import { threadsCredentials } from "../../../foundation/external/threads.js";
 import { requestJson } from "../../../foundation/http.js";
 import type { MetricTask } from "../metric-schedule.js";
 import { terminalIfMissingRemoteObject } from "./errors.js";
@@ -8,7 +9,7 @@ import type { MetricResult } from "./types.js";
 const THREADS_METRICS = "views,likes,replies,reposts,quotes";
 
 export async function collectThreads(task: MetricTask, config: BackendConfig, fetchImpl: typeof fetch): Promise<MetricResult> {
-  const token = task.target === "threads_en" ? config.THREADS_EN_ACCESS_TOKEN : config.THREADS_RU_ACCESS_TOKEN;
+  const { accessToken: token } = threadsCredentials(config, task.target === "threads_en" ? "threads_en" : "threads_ru");
   if (!token || task.externalIds.length === 0) throw new Error("missing_threads_token_or_id");
   const totals: Record<string, number> = {};
   const parts: JsonValue[] = [];

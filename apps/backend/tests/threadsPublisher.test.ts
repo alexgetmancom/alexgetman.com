@@ -54,6 +54,16 @@ describe("publishToThreads", () => {
     expect(result).toEqual({ skipped: true, reason: "missing THREADS_RU_ACCESS_TOKEN" });
   });
 
+  it("uses the selected account token without rewriting the shared config", async () => {
+    const { fetchImpl, creations } = transport({});
+    const bilingual = loadConfig({ THREADS_RU_ACCESS_TOKEN: "ru-token", THREADS_EN_ACCESS_TOKEN: "en-token" });
+
+    await publishToThreads({ text: "hello" }, bilingual, fetchImpl, "threads_en");
+
+    expect(creations()[0]?.access_token).toBe("en-token");
+    expect(bilingual.THREADS_RU_ACCESS_TOKEN).toBe("ru-token");
+  });
+
   it("publishes a text post and rewrites the permalink onto threads.com", async () => {
     const { fetchImpl, creations } = transport({ permalink: "https://www.threads.net/@alex/post/abc" });
     const result = await publishToThreads({ text: "hello" }, config, fetchImpl);

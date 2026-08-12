@@ -1,4 +1,5 @@
 import type { BackendConfig } from "../../foundation/config.js";
+import { type ThreadsTarget, threadsCredentials } from "../../foundation/external/threads.js";
 import { formBody, requestJson } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { threadsBody, threadsTextLimit } from "../../publishing/threads-text.js";
@@ -13,17 +14,19 @@ type ThreadsResponse = {
 };
 type SleepImplementation = (milliseconds: number) => Promise<void>;
 type NowImplementation = () => number;
+type ThreadsRuntime = { accessToken: string; retryDelayMs: number; containerTimeoutSeconds: number };
 const defaultSleep: SleepImplementation = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 export async function publishToThreads(
   payload: Record<string, unknown>,
   config: BackendConfig,
   fetchImpl: typeof fetch = fetch,
-  target: "threads_ru" | "threads_en" = "threads_ru",
+  target: ThreadsTarget = "threads_ru",
   sleepImpl: SleepImplementation = defaultSleep,
   nowImpl: NowImplementation = Date.now,
 ): Promise<PublishResult> {
-  if (!config.THREADS_RU_ACCESS_TOKEN) return { skipped: true, reason: "missing THREADS_RU_ACCESS_TOKEN" };
+  const runtime = threadsRuntime(config, target);
+  if (!runtime) return { skipped: true, reason: `missing ${threadsCredentials(config, target).envName}` };
   // One post by default: the text is written to fit 500 characters and preflight
   // refuses the draft otherwise, so there is nothing to continue into. A chain is
   // only built when the author waived the rule for this draft and saw the cost.
@@ -48,7 +51,7 @@ export async function publishToThreads(
         const children: string[] = [];
         for (const item of mediaItems) {
           const child = await callThreadsWithRetry(
-            config,
+            runtime,
             "me/threads",
             {
               media_type: item.type,
@@ -60,11 +63,11 @@ export async function publishToThreads(
             sleepImpl,
           );
           if (!child.id) throw new Error("threads_carousel_child_missing");
-          await waitForThreadsContainer(config, child.id, fetchImpl, sleepImpl, nowImpl);
+          await waitForThreadsContainer(runtime, child.id, fetchImpl, sleepImpl, nowImpl);
           children.push(child.id);
         }
         const parent = await callThreadsWithRetry(
-          config,
+          runtime,
           "me/threads",
           { media_type: "CAROUSEL", text: parts[0], children: children.join(",") },
           fetchImpl,
@@ -72,11 +75,11 @@ export async function publishToThreads(
           sleepImpl,
         );
         if (!parent.id) throw new Error("threads_carousel_parent_missing");
-        await waitForThreadsContainer(config, parent.id, fetchImpl, sleepImpl, nowImpl);
+        await waitForThreadsContainer(runtime, parent.id, fetchImpl, sleepImpl, nowImpl);
         firstContainer = parent.id;
       } catch (error) {
         if (carouselAttempt === 0 && isInvalidCarouselError(error)) {
-          await sleepImpl(config.THREADS_RETRY_DELAY_MS);
+          await sleepImpl(runtime.retryDelayMs);
           continue;
         }
         throw error;
@@ -85,7 +88,7 @@ export async function publishToThreads(
   } else if (ids.length === 0 && mediaItems[0]) {
     const item = mediaItems[0];
     const container = await callThreadsWithRetry(
-      config,
+      runtime,
       "me/threads",
       {
         media_type: item.type,
@@ -97,12 +100,12 @@ export async function publishToThreads(
       sleepImpl,
     );
     if (container.id) {
-      await waitForThreadsContainer(config, container.id, fetchImpl, sleepImpl, nowImpl);
+      await waitForThreadsContainer(runtime, container.id, fetchImpl, sleepImpl, nowImpl);
       firstContainer = container.id;
     }
   } else if (ids.length === 0) {
     const container = await callThreadsWithRetry(
-      config,
+      runtime,
       "me/threads",
       { media_type: "TEXT", text: parts[0] },
       fetchImpl,
@@ -110,14 +113,14 @@ export async function publishToThreads(
       sleepImpl,
     );
     if (container.id) {
-      await waitForThreadsContainer(config, container.id, fetchImpl, sleepImpl, nowImpl);
+      await waitForThreadsContainer(runtime, container.id, fetchImpl, sleepImpl, nowImpl);
       firstContainer = container.id;
     }
   }
 
   if (firstContainer) {
     const published = await ambiguousExternalMutation("threads", () =>
-      callThreadsWithRetry(config, "me/threads_publish", { creation_id: firstContainer }, fetchImpl, "POST", sleepImpl),
+      callThreadsWithRetry(runtime, "me/threads_publish", { creation_id: firstContainer }, fetchImpl, "POST", sleepImpl),
     );
     if (!published.id) return { ok: false, error: "threads_publish_missing" };
     ids.push(published.id);
@@ -127,7 +130,7 @@ export async function publishToThreads(
   for (const part of parts.slice(ids.length)) {
     try {
       const reply = await callThreadsWithRetry(
-        config,
+        runtime,
         "me/threads",
         { media_type: "TEXT", text: part, reply_to_id: parentId },
         fetchImpl,
@@ -135,9 +138,9 @@ export async function publishToThreads(
         sleepImpl,
       );
       if (!reply.id) return { partial: true, ids, error: "threads_reply_container_missing", retryable: true };
-      await waitForThreadsContainer(config, reply.id, fetchImpl, sleepImpl, nowImpl);
+      await waitForThreadsContainer(runtime, reply.id, fetchImpl, sleepImpl, nowImpl);
       const replyPublish = await ambiguousExternalMutation("threads", () =>
-        callThreadsWithRetry(config, "me/threads_publish", { creation_id: reply.id }, fetchImpl, "POST", sleepImpl),
+        callThreadsWithRetry(runtime, "me/threads_publish", { creation_id: reply.id }, fetchImpl, "POST", sleepImpl),
       );
       if (!replyPublish.id) return { partial: true, ids, error: "threads_reply_publish_missing", retryable: true };
       ids.push(replyPublish.id);
@@ -160,14 +163,17 @@ export async function verifyThreadsPost(
   id: string,
   config: BackendConfig,
   fetchImpl: typeof fetch = fetch,
+  target: ThreadsTarget = "threads_ru",
 ): Promise<{ id: string; url: string | null }> {
-  const post = await callThreads(config, id, { fields: "id,permalink" }, fetchImpl, "GET");
+  const runtime = threadsRuntime(config, target);
+  if (!runtime) throw new Error(`missing ${threadsCredentials(config, target).envName}`);
+  const post = await callThreads(runtime, id, { fields: "id,permalink" }, fetchImpl, "GET");
   if (post.id !== id) throw new Error("Threads verification returned a different post");
   return { id, url: post.permalink?.replace("threads.net", "threads.com") ?? null };
 }
 
 async function callThreadsWithRetry(
-  config: BackendConfig,
+  runtime: ThreadsRuntime,
   endpoint: string,
   payload: Record<string, unknown>,
   fetchImpl: typeof fetch,
@@ -177,11 +183,11 @@ async function callThreadsWithRetry(
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      return await callThreads(config, endpoint, payload, fetchImpl, method);
+      return await callThreads(runtime, endpoint, payload, fetchImpl, method);
     } catch (error) {
       lastError = error;
       if (!isRetryableThreadsError(error)) throw error;
-      await sleepImpl(config.THREADS_RETRY_DELAY_MS * (attempt + 1));
+      await sleepImpl(runtime.retryDelayMs * (attempt + 1));
     }
   }
   throw lastError;
@@ -202,14 +208,14 @@ function isInvalidCarouselError(error: unknown): boolean {
 }
 
 async function callThreads(
-  config: BackendConfig,
+  runtime: ThreadsRuntime,
   endpoint: string,
   payload: Record<string, unknown>,
   fetchImpl: typeof fetch,
   method: "GET" | "POST" = "POST",
 ): Promise<ThreadsResponse> {
   const url = new URL(`https://graph.threads.net/v1.0/${endpoint}`);
-  const body = formBody({ ...payload, access_token: config.THREADS_RU_ACCESS_TOKEN });
+  const body = formBody({ ...payload, access_token: runtime.accessToken });
   if (method === "GET") {
     for (const [key, value] of body.entries()) url.searchParams.append(key, value);
     return requestJson<ThreadsResponse>(fetchImpl, url.toString());
@@ -222,19 +228,30 @@ async function callThreads(
 }
 
 async function waitForThreadsContainer(
-  config: BackendConfig,
+  runtime: ThreadsRuntime,
   id: string,
   fetchImpl: typeof fetch,
   sleepImpl: SleepImplementation,
   nowImpl: NowImplementation,
 ): Promise<void> {
-  const deadline = nowImpl() + config.THREADS_CONTAINER_TIMEOUT_SECONDS * 1000;
+  const deadline = nowImpl() + runtime.containerTimeoutSeconds * 1000;
   while (nowImpl() < deadline) {
-    const status = await callThreads(config, id, { fields: "status,error_message" }, fetchImpl, "GET");
+    const status = await callThreads(runtime, id, { fields: "status,error_message" }, fetchImpl, "GET");
     if (status.status === "FINISHED") return;
     if (status.status === "ERROR" || status.status === "EXPIRED")
       throw new Error(`Threads container ${id} failed: ${status.error_message ?? status.status}`);
     await sleepImpl(2000);
   }
   throw new Error(`Threads container ${id} timed out`);
+}
+
+function threadsRuntime(config: BackendConfig, target: ThreadsTarget): ThreadsRuntime | null {
+  const { accessToken } = threadsCredentials(config, target);
+  return accessToken
+    ? {
+        accessToken,
+        retryDelayMs: config.THREADS_RETRY_DELAY_MS,
+        containerTimeoutSeconds: config.THREADS_CONTAINER_TIMEOUT_SECONDS,
+      }
+    : null;
 }
