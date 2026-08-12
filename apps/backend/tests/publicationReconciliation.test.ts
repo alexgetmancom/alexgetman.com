@@ -1,6 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
-import { drafts, postEvents, postTargets, publicationPlans, publications, publishJobs, siteJobs } from "../src/db/schema.js";
+import {
+  credentialChecks,
+  drafts,
+  postEvents,
+  postTargets,
+  publicationPlans,
+  publications,
+  publishJobs,
+  siteJobs,
+} from "../src/db/schema.js";
 import { runPublicationReconciliation } from "../src/delivery/publication-reconciliation.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { reconcilePublication } from "../src/publishing/publication-reconciliation.js";
@@ -220,6 +229,32 @@ describe("publication reconciliation", () => {
           .where(and(eq(postTargets.postKey, "post:83"), eq(postTargets.target, "threads_ru")))
           .get(),
       ).toEqual({ status: "published" });
+    }));
+
+  it("counts provider auth failures found during reconciliation", () =>
+    withDb(async (backendDb) => {
+      const jobId = enqueuePublishJobTx(backendDb.db, {
+        postId: 84,
+        postKey: "post:84",
+        messageId: 84,
+        target: "threads_ru",
+        payload: { text: "unknown outcome" },
+      });
+      const now = new Date().toISOString();
+      backendDb.db.update(publishJobs).set({ status: "verification_required", updatedAt: now }).where(eq(publishJobs.jobId, jobId)).run();
+      backendDb.db
+        .insert(postTargets)
+        .values({ postKey: "post:84", target: "threads_ru", status: "verification_required", externalId: "thread-84", updatedAt: now })
+        .run();
+
+      const fetchImpl = (async () => new Response("expired token", { status: 401 })) as unknown as typeof fetch;
+      expect(await runPublicationReconciliation(backendDb, loadConfig({ THREADS_RU_ACCESS_TOKEN: "token" }), fetchImpl)).toMatchObject({
+        checked: 1,
+        resolved: 0,
+        unresolved: 1,
+      });
+      const check = backendDb.db.select().from(credentialChecks).where(eq(credentialChecks.target, "threads_ru")).get();
+      expect(JSON.parse(check?.detailsJson ?? "{}")).toMatchObject({ authFailureStreak: 1 });
     }));
 
   it("keeps an id-less result unresolved and emits one owner-visible summary", () =>

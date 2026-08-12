@@ -6,8 +6,8 @@ import { type BackendDb, unsafeDb } from "../db/client.js";
 import { postTargets, publishJobs, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { isTargetAuthBlocked } from "../observability/auth-circuit.js";
-import { nextRetryAt } from "../publishing/errors.js";
+import { isTargetAuthBlocked, recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
+import { classifyPublishError, nextRetryAt } from "../publishing/errors.js";
 import { reconcilePublication } from "../publishing/publication-reconciliation.js";
 import { PUBLISH_CLAIM_LIMIT, workerId } from "../publishing/queue.js";
 import { refreshVideoDraftStatus } from "../publishing/video-data.js";
@@ -71,15 +71,20 @@ export async function runPublicationReconciliation(
     let result: Awaited<ReturnType<typeof verifyPlatformPublication>>;
     try {
       result = await verifyPlatformPublication(row.job.target, { ok: true, id: externalId, url: row.target.url }, config, fetchImpl);
-    } catch {
+    } catch (error) {
+      if (classifyPublishError(error) === "auth") recordAuthFailure(backendDb, row.job.target);
       deferOrdinaryReconciliation(backendDb, config, job, reconciliationWorker);
       continue;
     }
     const verification = result.verification as { status?: string } | undefined;
+    const verificationError = (result.verification as { error?: string } | undefined)?.error;
+    if (verification?.status === "unavailable" && classifyPublishError(verificationError) === "auth")
+      recordAuthFailure(backendDb, row.job.target);
     if (verification?.status !== "verified") {
       deferOrdinaryReconciliation(backendDb, config, job, reconciliationWorker);
       continue;
     }
+    recordAuthSuccess(backendDb, row.job.target);
     const now = new Date().toISOString();
     // The job update is fenced by this worker's claim, and the target write only
     // happens if that fence held: a reconciliation whose lock had been taken
@@ -177,7 +182,8 @@ export async function runPublicationReconciliation(
         const verified = await verifyYouTubeVideo(config, row.target.externalId, locale);
         confirmation = { externalId: verified.id, url: verified.url };
       }
-    } catch {
+    } catch (error) {
+      if (classifyPublishError(error) === "auth") recordAuthFailure(backendDb, credentialTarget);
       deferVideoReconciliation(backendDb, config, job, reconciliationWorker);
       continue;
     }
@@ -185,6 +191,7 @@ export async function runPublicationReconciliation(
       deferVideoReconciliation(backendDb, config, job, reconciliationWorker);
       continue;
     }
+    recordAuthSuccess(backendDb, credentialTarget);
     const now = new Date().toISOString();
     // Same order as the social case above: win the job's fence first, and only
     // then say the target is published.
