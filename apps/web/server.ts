@@ -9,10 +9,11 @@ if (runtime.bot) {
   await runtime.bot.init();
   void runtime.bot.start({ onStart: (botInfo) => log("info", "grammY polling started", { username: botInfo.username }) });
 }
-const entry = process.env.ASTRO_DIST_ENTRY ?? "/app/dist/server/entry.mjs";
+const distDirectory = path.resolve(process.env.ASTRO_DIST_DIR ?? "/app/dist");
+const entry = process.env.ASTRO_DIST_ENTRY ?? path.join(distDirectory, "server/entry.mjs");
 const { handler } = await import(entry);
 
-const CLIENT_DIR = path.resolve("/app/dist/client");
+const CLIENT_DIR = path.join(distDirectory, "client");
 
 const MIME_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",

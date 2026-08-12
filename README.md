@@ -1,75 +1,126 @@
-# alexgetman.com
+# Solo Publisher
 
-`alexgetman.com` is an open, self-hosted personal publishing system. It combines an Astro news site with a private Telegram control bot, durable social publishing, creator analytics, and production operations tooling.
+**Write in chat. Publish everywhere. Own the stack.**
 
-It is designed for a small editorial workflow rather than as a multi-tenant CMS or SaaS product.
+Solo Publisher is an agent-native, self-hosted publishing studio for solo creators. Write from Telegram or an MCP client such as Codex, then publish to your website and social channels with durable scheduling, independent retries, media processing, and creator analytics.
 
-## What it does
+[Live site](https://alexgetman.com) · [Quick start](#quick-start) · [Production architecture](#how-it-works)
 
-- Publishes bilingual Russian and English posts to the site and selected social platforms from Telegram.
-- Keeps publication targets, schedules, retries, and external IDs in SQLite so a partial platform failure does not invalidate the rest of a publication.
-- Supports optional video workflows for YouTube Shorts and Instagram Reels, including independent schedules and source-media retention.
-- Serves an Astro site with feeds, sitemap, structured metadata, search, and machine-readable endpoints.
-- Collects publication and creator metrics, exposes a private Command Center, and sends operational alerts to the owner.
+![A live publication powered by Solo Publisher](docs/assets/live-site.png)
 
-### Media processing modes
+> This is not a starter kit or a mockup. Solo Publisher runs the complete publishing pipeline behind [alexgetman.com](https://alexgetman.com) in production.
 
-Media processing supports two self-hosting modes:
+## The workflow
 
-- `MEDIA_PROCESSOR_PROVIDER=local` runs the ffmpeg executor inside the backend container. This is the simple default for a host with enough CPU and memory.
-- `MEDIA_PROCESSOR_PROVIDER=remote_http` keeps the backend and durable queues on the application host, but sends heavy Story and short-form video transforms to a separately deployed media processor. This is the recommended mode for a small VPS; the remote worker can run on a stronger home server or another host.
+```text
+You: Publish this tomorrow at 09:00 in Russian and English.
 
-The backend queue worker and the remote media processor are separate roles. The remote processor owns the hardware-accelerated video encode; it does not run the application's Telegram polling or publication queues. See [deploy/media-processor/README.md](deploy/media-processor/README.md) for the deployment contract.
+Solo Publisher:
+✓ Draft created and validated
+✓ Media prepared
+✓ Website, Telegram, X, and Threads scheduled
+✓ Every destination will be delivered and retried independently
+```
+
+One conversation replaces the usual chain of CMS tabs, social schedulers, media tools, and spreadsheets. The website and every connected channel are destinations of the same durable publication rather than separate copies you have to keep in sync.
+
+## Built for one creator
+
+Solo Publisher deliberately serves one owner instead of reproducing agency software. There are no organizations, seats, approval committees, workspace hierarchies, or per-channel subscriptions.
+
+- **Chat-native authoring** — create, edit, preview, schedule, and publish from a private Telegram bot.
+- **Agent-native control** — the same Studio is exposed through MCP, so Codex and other compatible clients can write, publish, inspect analytics, and diagnose delivery.
+- **Owned website** — an Astro publication site with bilingual pages, feeds, search, sitemap, structured metadata, Markdown endpoints, and an interactive story reader.
+- **Durable delivery** — SQLite stores schedules, jobs, targets, retries, and external IDs. A failure on one platform does not invalidate the destinations that succeeded.
+- **Text and short-form video** — publish text and media to Telegram, X, and Threads; run optional YouTube Shorts and Instagram Reels or Stories workflows.
+- **Creator analytics** — collect publication metrics, audience snapshots, and operational state in one private Command Center.
+- **Self-hosted by default** — your content, credentials, database, media, domain, and deployment stay under your control.
+
+![Solo Publisher Command Center with text and video analytics](docs/assets/command-center.png)
+
+## Quick start
+
+Requirements: [Bun 1.3.14](https://bun.sh/) and the native build prerequisites required by `sharp`.
+
+```bash
+git clone https://github.com/alexgetmancom/solo-publisher.git
+cd solo-publisher
+bun install --frozen-lockfile
+bun run demo
+```
+
+The demo creates deterministic fixture content, builds the production Astro bundle, and starts the complete Bun runtime without requiring Telegram or social-platform credentials.
+
+- Public site: <http://localhost:8788/>
+- Command Center: <http://localhost:8788/command-center?token=dev>
+
+The fixture is deliberately not all-green: it includes enough history, delivery state, and analytics to make the operational views useful. Stop the server with `Ctrl+C`; run `bun run demo` again to rebuild the fixture from scratch.
+
+## Connect your own Studio
+
+Copy the secret template and select the modules you actually use:
+
+```bash
+cp apps/backend/secrets.env.example apps/backend/secrets.env
+cp studio.unified.example.yaml studio.yaml
+```
+
+`studio.yaml` is the committed, secret-free feature switchboard. Credentials stay in the ignored `apps/backend/secrets.env`. A text-only Studio can run the website and Telegram path without configuring the video platforms; a video-only example is included as `studio.video-only.example.yaml`.
+
+The private Telegram bot and MCP endpoint operate the same Studio services. Posts created through either interface land in the same drafts, schedules, publication jobs, and analytics.
+
+For an MCP client on another machine, the bundled [`studio` plugin](plugin/README.md) packages the remote transport and the operating skill. Its [setup prompt](plugin/setup-prompt.md) connects and verifies a deployment without exposing its database or SSH access.
+
+## Supported destinations
+
+| Destination | Text | Media | Short video | Analytics |
+| --- | :---: | :---: | :---: | :---: |
+| Website | ✓ | ✓ | — | ✓ |
+| Telegram channel | ✓ | ✓ | — | ✓ |
+| Telegram Stories | — | ✓ | ✓ | — |
+| X | ✓ | ✓ | — | ✓ |
+| Threads | ✓ | ✓ | — | ✓ |
+| YouTube Shorts | — | — | ✓ | ✓ |
+| Instagram Reels / Stories | — | ✓ | ✓ | ✓ |
+
+Availability depends on the platform modules and credentials enabled for a deployment. Solo Publisher uses your own platform accounts and API credentials; it is not an aggregator sitting between you and your audience.
+
+## How it works
+
+```mermaid
+flowchart LR
+  Telegram["Telegram bot"] --> Studio["Studio services"]
+  MCP["MCP client"] --> Studio
+  Studio --> Content["Drafts and media"]
+  Studio --> Queue["Durable publication jobs"]
+  Content --> DB[("SQLite")]
+  Queue --> DB
+  DB --> Workers["Delivery workers"]
+  Workers --> Site["Astro site"]
+  Workers --> Social["Telegram · X · Threads"]
+  Workers --> Video["YouTube · Instagram"]
+  Social --> Analytics["Creator analytics"]
+  Video --> Analytics
+  Analytics --> DB
+```
+
+The core is intentionally small: Telegram and MCP are command adapters over the same Studio services. Those services create durable SQLite publication jobs; workers deliver each target independently. The private Command Center and operations CLI read and maintain that same state.
+
+Heavy media processing can run locally with ffmpeg or through the included remote HTTP worker. The remote worker performs hardware-accelerated transforms without taking over Telegram polling or the durable queues. See [`deploy/media-processor`](deploy/media-processor/README.md).
 
 ## Stack
 
 - Bun and TypeScript
-- Astro with the Node adapter for the public site and SSR endpoints
-- grammY for the private Telegram bot
-- SQLite via `bun:sqlite`, Drizzle ORM, and versioned SQL migrations
-- Zod for runtime configuration and untrusted payload validation
-- Docker Compose, nginx, GitHub Actions, and immutable image deployment
+- Astro and Svelte
+- grammY and MTProto
+- SQLite and Drizzle ORM
+- MCP over HTTP
+- ffmpeg and sharp
+- Docker Compose, nginx, and immutable-image deployment
 
-The HTTP layer speaks standard `Request` and `Response` objects; Hono is used only as the router that assembles the backend API (`apps/backend/src/api.ts`). There is no Express, Redis, RabbitMQ, or separate database server.
+There is no Redis, RabbitMQ, separate database server, or multi-tenant application layer.
 
-## Repository layout
-
-```text
-apps/
-  web/       Astro pages, components, feeds, and the server entry point
-  backend/   bot, API controller, workers, publishing, metrics, and operations
-deploy/      Docker, nginx, deployment-agent, and production runbook material
-scripts/     repository checks and build helpers
-```
-
-The main path is deliberately small: Telegram and MCP are command adapters over
-the same Studio services, while the private web Studio is a read-only view of
-their read model. Those services create durable SQLite publication jobs; workers
-deliver them to the site and social platforms. The Command Center and operations
-CLI only read or explicitly maintain that state.
-
-## Local development
-
-Requirements: Bun `1.3.14` and the usual native build prerequisites for `sharp`.
-
-```bash
-bun install --frozen-lockfile
-cp apps/backend/secrets.env.example apps/backend/secrets.env
-bun run dev
-```
-
-The site is available at `http://127.0.0.1:4321`.
-
-`studio.yaml` is a committed, secret-free feature switchboard. It controls the site, text publishing, video publishing, platform modules, and analytics. Keep tokens and private credentials in the ignored `apps/backend/secrets.env` file.
-
-For a video-only bot configuration:
-
-```bash
-cp studio.video-only.example.yaml studio.yaml
-bun run --filter @alexgetman/backend ops doctor
-```
-
-## Quality checks
+## Development
 
 ```bash
 bun run typecheck
@@ -78,82 +129,14 @@ bun run test
 bun run build
 ```
 
-`bun run check:all` runs the repository gate. Git hooks run the same important checks before a push; CI builds the production image and is the only production deployment path.
+`bun run check:all` runs the full repository gate. Production deployment is intentionally specific to the live alexgetman.com installation; self-hosters should treat the committed deployment files as an implementation reference and supply their own domains, credentials, storage paths, and host configuration.
 
-## Operations
+## Security
 
-The backend CLI is intentionally split between read-only diagnostics and explicit maintenance commands:
+Runtime secrets, SQLite databases, Telegram sessions, generated media, logs, and production environment files are excluded from Git. Never commit a token, OAuth refresh token, session, or production data export.
 
-```bash
-bun run --filter @alexgetman/backend ops status --db ./data/pipeline.db
-bun run --filter @alexgetman/backend ops doctor
-bun run --filter @alexgetman/backend ops audit --db ./data/pipeline.db
-bun run --filter @alexgetman/backend ops usage --days 30 --unused-days 90 --db ./data/pipeline.db
-bun run --filter @alexgetman/backend ops verify --ref post:123
-```
+The production container starts as root only to fix ownership on dedicated bind-mounted data directories, then irreversibly drops to an unprivileged user before loading the server. Do not point those mounts at shared host directories.
 
-Production images contain the same bundled CLI. The production deployment and
-read-only diagnostics are documented in [deploy/README.md](deploy/README.md).
-`AGENTS.md` is the working runbook for agents: follow it before inspecting or
-changing production state.
+## License
 
-For a self-hosted production route, put the SSH destination in the ignored
-`.env.local` file at the repository root:
-
-```env
-OPS_SSH_TARGET=deploy@your-server.example
-```
-
-Then use the same launcher for every production command:
-
-```bash
-bun run ops:prod doctor
-bun run ops:prod --as maru audit
-```
-
-One host can run several Studios, each in its own container, so the launcher
-takes the deployment by name — `--as` selects it, its absence means `alex`, and
-the resolved deployment is printed on stderr. The names are the table at the top
-of `scripts/ops-prod.ts`. The SSH key stays in the user's normal SSH agent or
-`~/.ssh` and is never read from the repository.
-
-## Operating it from another machine
-
-A deployment can be driven from a machine that has no checkout at all: `/api/mcp` is the whole
-interface. The `studio` plugin in this repository packages that transport together with the skill
-that uses it, so an operator installs it once and supplies their own endpoint and token — nothing
-about this repository's own deployment is baked into it.
-
-Setup is not done by hand: [plugin/setup-prompt.md](plugin/setup-prompt.md) is a prompt you paste
-into your own agent, which then exposes the routes, generates the credential, restarts the
-deployment, installs the plugin and verifies the connection. See
-[plugin/README.md](plugin/README.md) for what the plugin is and how to teach it your voice.
-
-## Container permissions
-
-The image starts as root and drops to the unprivileged `bun` user (uid/gid 1000)
-before the server loads — see
-[apps/backend/src/runtime/docker-entrypoint.ts](apps/backend/src/runtime/docker-entrypoint.ts).
-The root phase exists only to `chown` the configured data directories: Docker
-creates a bind-mount target that does not exist yet as root, and without this a
-fresh deployment fails much later with a permission error on the first upload
-rather than at boot. The drop is irreversible (`setuid` from root also replaces
-the saved uid), so the server cannot regain root. Two consequences when you
-deploy this yourself:
-
-- The directories listed in `DATA_DIR`, `MEDIA_CACHE_DIR`, `VIDEO_MEDIA_DIR` and
-  `SITE_PUBLIC_DIR` get their owner set to 1000:1000 at boot. Point them at
-  paths dedicated to this app, not at a directory shared with other services.
-- To read videos downloaded by the local Telegram Bot API server, the container
-  needs that server's data group: `group_add: ["${BOT_API_GID:-101}"]` in the
-  compose file. Set `BOT_API_GID` to the group owning your bot-api data
-  directory (`stat -c %g <bot-api-data>`). The entrypoint preserves every group
-  Docker grants the container; it cannot add one that was never granted.
-
-Do not add a `command:` override for the backend service — the entrypoint loads
-the server itself, and anything passed as a command becomes an ignored argument
-instead of a Bun flag.
-
-## Security and privacy
-
-Runtime secrets, SQLite databases, Telegram sessions, generated media, logs, and production environment files are intentionally excluded from Git. The repository contains examples only; never commit a token, OAuth refresh token, session, or production data export.
+Licensed under the [Apache License 2.0](LICENSE).

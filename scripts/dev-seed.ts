@@ -90,7 +90,7 @@ if (withDashboard) {
 }
 
 console.log(
-  `\nPIPELINE_DB=${dbPath} SITE_PUBLIC_DIR=${publicDir} COMMAND_CENTER_TOKEN=dev STUDIO_CONFIG=${path.resolve("studio.unified.example.yaml")} bun run dev`,
+  `\nbun run build\nDATA_DIR=${path.join(defaultRoot, "data")} STUDIO_MEDIA_DIR=${path.join(defaultRoot, "video-media")} VIDEO_MEDIA_DIR=${path.join(defaultRoot, "video-media")} MEDIA_CACHE_DIR=${path.join(defaultRoot, "media-cache")} STORY_CARD_DIR=${path.join(defaultRoot, "story-cards")} PIPELINE_DB=${dbPath} SITE_PUBLIC_DIR=${publicDir} COMMAND_CENTER_TOKEN=dev STUDIO_CONFIG=${path.resolve("studio.unified.example.yaml")} ASTRO_DIST_DIR=${path.resolve("dist")} bun run --filter @alexgetman/backend dev`,
 );
-console.log("  site       http://localhost:4321/");
-if (withDashboard) console.log("  dashboard  http://localhost:4321/command-center?token=dev");
+console.log("  site       http://localhost:8788/");
+if (withDashboard) console.log("  dashboard  http://localhost:8788/command-center?token=dev");
