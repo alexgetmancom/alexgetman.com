@@ -5,6 +5,7 @@ import { creatorVideoArchive, creatorVideoMetrics } from "../../analytics/report
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import type { StudioLocale } from "../../foundation/locale.js";
+import { trackUsageAsync, trackUsageSync } from "../../observability/usage.js";
 
 type AnalyticsSection = "overview" | "audience" | "posts" | "video";
 type AnalyticsPeriod = 1 | 7 | 30;
@@ -16,28 +17,34 @@ type AnalyticsPeriod = 1 | 7 | 30;
 export function analyticsService(backendDb: BackendDb, config: BackendConfig) {
   return {
     dashboard(section: AnalyticsSection, days: AnalyticsPeriod, locale: StudioLocale) {
-      return studioAnalyticsDashboard(backendDb, config, section, days, locale);
+      return trackUsageSync(backendDb, "studio.analytics.dashboard.read", () =>
+        studioAnalyticsDashboard(backendDb, config, section, days, locale),
+      );
     },
     postArchive(offset: number, locale: StudioLocale) {
-      return creatorPostArchive(backendDb, offset, locale);
+      return trackUsageSync(backendDb, "studio.analytics.post.read", () => creatorPostArchive(backendDb, offset, locale));
     },
     postMetrics(postId: number, locale: StudioLocale) {
-      return creatorPostMetrics(backendDb, postId, locale);
+      return trackUsageSync(backendDb, "studio.analytics.post.read", () => creatorPostMetrics(backendDb, postId, locale));
     },
     postMedia(postId: number, locale: StudioLocale) {
-      return creatorPostMedia(backendDb, postId, locale);
+      return trackUsageSync(backendDb, "studio.analytics.post.read", () => creatorPostMedia(backendDb, postId, locale));
     },
     archiveSummary(locale: StudioLocale) {
-      return creatorArchiveSummary(backendDb, config.studio.modules.video_posting, locale);
+      return trackUsageSync(backendDb, "studio.analytics.post.read", () =>
+        creatorArchiveSummary(backendDb, config.studio.modules.video_posting, locale),
+      );
     },
     videoArchive(offset: number, locale: StudioLocale) {
-      return creatorVideoArchive(backendDb, offset, locale);
+      return trackUsageSync(backendDb, "studio.analytics.video.read", () => creatorVideoArchive(backendDb, offset, locale));
     },
     videoMetrics(publicationId: number, locale: StudioLocale) {
-      return creatorVideoMetrics(backendDb, publicationId, locale, config.TIMEZONE);
+      return trackUsageSync(backendDb, "studio.analytics.video.read", () =>
+        creatorVideoMetrics(backendDb, publicationId, locale, config.TIMEZONE),
+      );
     },
     audienceAnalysis(locale: StudioLocale) {
-      return audienceAnalysis(backendDb, config, locale);
+      return trackUsageAsync(backendDb, "studio.analytics.audience.read", () => audienceAnalysis(backendDb, config, locale));
     },
   };
 }

@@ -39,6 +39,7 @@ describe("runtime usage telemetry", () => {
       const old = report.features.find((feature) => feature.featureKey === "old.operation");
       const never = report.features.find((feature) => feature.featureKey === "publishing.video.job");
       expect(report.windowDays).toBe(2);
+      expect(report.since).toBe("2026-07-31T00:00:00.000Z");
       expect(publishing).toMatchObject({ calls: 2, successes: 2, failures: 0, totalDurationMs: 32, daysWithCalls: 2, unused: false });
       expect(old).toMatchObject({ calls: 0, failures: 0, unused: true });
       expect(never).toMatchObject({ calls: 0, unused: true, firstSeenAt: null, lastSeenAt: null });

@@ -299,7 +299,7 @@ export async function syncCommunityProfiles(
   backendDb: BackendDb,
   fetchImpl: typeof fetch,
   owner?: string,
-): Promise<void> {
+): Promise<number> {
   const jobs: Promise<void>[] = [];
   const interval = config.CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS;
   const ownerPrefix = owner ?? `community:${crypto.randomUUID()}`;
@@ -316,6 +316,7 @@ export async function syncCommunityProfiles(
   if (config.THREADS_RU_ACCESS_TOKEN && claimSync(backendDb, "threads_profile", interval, `${ownerPrefix}:threads`))
     jobs.push(syncThreadsProfile(config, backendDb, fetchImpl, `${ownerPrefix}:threads`));
   await Promise.all(jobs);
+  return jobs.length;
 }
 
 /** TELEGRAM_CHANNEL_USERNAME may or may not carry a leading "@" depending on how it was

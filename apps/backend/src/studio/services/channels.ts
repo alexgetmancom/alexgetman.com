@@ -3,6 +3,7 @@ import { type ChannelInput, listChannels, registerChannel } from "../../channels
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { listZernioAccounts, type ZernioAccount } from "../../foundation/external/zernio.js";
+import { trackUsageAsync, trackUsageSync } from "../../observability/usage.js";
 
 export type StudioZernioAccount = ZernioAccount;
 
@@ -16,16 +17,16 @@ export type StudioZernioAccount = ZernioAccount;
 export function channelService(backendDb: BackendDb, config: BackendConfig, fetchImpl: typeof fetch = fetch) {
   return {
     list(enabledOnly = true) {
-      return listChannels(backendDb, enabledOnly);
+      return trackUsageSync(backendDb, "studio.channel.list", () => listChannels(backendDb, enabledOnly));
     },
     isPublishablePlatform(platform: string): boolean {
       return isPublishableVideoPlatform(platform);
     },
     connect(input: Omit<ChannelInput, "source">) {
-      return registerChannel(backendDb, { ...input, source: "interface" });
+      return trackUsageSync(backendDb, "studio.channel.connect", () => registerChannel(backendDb, { ...input, source: "interface" }));
     },
     async discoverZernioAccounts(): Promise<StudioZernioAccount[]> {
-      return listZernioAccounts(config, fetchImpl);
+      return trackUsageAsync(backendDb, "studio.channel.discover", () => listZernioAccounts(config, fetchImpl));
     },
   };
 }

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "../src/foundation/config.js";
+import { flushUsage } from "../src/observability/usage.js";
 import { createStudioServices } from "../src/studio/services/index.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
@@ -81,6 +82,15 @@ describe("Studio service boundaries", () => {
       });
       expect(result.source).toBe("interface");
       expect(channels.list().find((channel) => channel.id === "instagram_en")).toMatchObject({ providerAccountId: "account-1" });
+      flushUsage(backendDb);
+      expect(
+        backendDb.sqlite
+          .query("SELECT feature_key, calls FROM runtime_usage WHERE feature_key LIKE 'studio.channel.%' ORDER BY feature_key")
+          .all(),
+      ).toEqual([
+        { feature_key: "studio.channel.connect", calls: 1 },
+        { feature_key: "studio.channel.list", calls: 1 },
+      ]);
     } finally {
       backendDb.close();
     }

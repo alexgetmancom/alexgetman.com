@@ -14,6 +14,7 @@ import {
   videoMetricSnapshots,
 } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
+import { flushUsage } from "../src/observability/usage.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
 import { TEXT_TEST_CHANNELS, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { withDb as withFixtureDb } from "./helpers/db.js";
@@ -72,6 +73,23 @@ describe("creator analytics collection", () => {
       const config = loadConfig({});
       config.studio.modules.analytics = false;
       expect(await runAnalyticsCycle(config, backendDb)).toBe(0);
+    });
+  });
+
+  it("does not count empty scheduler ticks as video metric collections", async () => {
+    await withDb(async (backendDb) => {
+      const config = loadConfig({});
+      config.studio.modules.analytics = true;
+      config.studio.modules.text_posting = false;
+      config.studio.modules.video_posting = true;
+      config.studio.modules.youtube = false;
+      config.studio.modules.instagram = false;
+
+      expect(await runAnalyticsCycle(config, backendDb)).toBe(0);
+      flushUsage(backendDb);
+      expect(
+        backendDb.sqlite.query("SELECT calls FROM runtime_usage WHERE feature_key = 'analytics.video_metrics.collect'").get(),
+      ).toBeNull();
     });
   });
 

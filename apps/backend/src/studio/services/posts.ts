@@ -13,6 +13,7 @@ import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
 import { truncateUnicode } from "../../foundation/text.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
+import { trackUsageSync } from "../../observability/usage.js";
 import { cancelDraft, cancelPendingPostJobs } from "../../publishing/draft-lifecycle.js";
 import { mediaPolicyForTarget } from "../../publishing/media-policy.js";
 import { publicationPreflight } from "../../publishing/preflight.js";
@@ -130,7 +131,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
     kind: "post" as const,
     capabilities: { hasMetadataWizard: false, hasStoryCards: true, scheduleAxis: "locale" as const },
     create(actorId: number, message: DraftMessage): number {
-      return createDraftFromMessage(backendDb, actorId, message);
+      return trackUsageSync(backendDb, "studio.post.create", () => createDraftFromMessage(backendDb, actorId, message));
     },
     get(actorId: number, draftId: number) {
       return requireOwnedDraft(backendDb, config, actorId, draftId);
@@ -224,7 +225,9 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       });
     },
     schedule(actorId: number, draftId: number, input: PostScheduleInput | PublicationSchedule): number {
-      return schedulePost(backendDb, config, actorId, draftId, toPostScheduleInput(input));
+      return trackUsageSync(backendDb, "studio.post.schedule", () =>
+        schedulePost(backendDb, config, actorId, draftId, toPostScheduleInput(input)),
+      );
     },
     hasLocaleTargets(actorId: number, draftId: number, locale: "ru" | "en"): boolean {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
@@ -246,9 +249,11 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       return scheduleAt(requireOwnedDraft(backendDb, config, actorId, draftId), scope, value);
     },
     cancel(actorId: number, draftId: number): void {
-      const draft = requireMutableDraft(backendDb, config, actorId, draftId);
-      cancelDraft(backendDb, draftId);
-      if (draft.post_id != null) cancelScheduledNotifications(backendDb, publicationRef("post", draft.post_id));
+      trackUsageSync(backendDb, "studio.post.cancel", () => {
+        const draft = requireMutableDraft(backendDb, config, actorId, draftId);
+        cancelDraft(backendDb, draftId);
+        if (draft.post_id != null) cancelScheduledNotifications(backendDb, publicationRef("post", draft.post_id));
+      });
     },
     cancelJobs(actorId: number, draftId: number): void {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
@@ -292,26 +297,30 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       });
     },
     publish(actorId: number, draftId: number): number {
-      requireMutableDraft(backendDb, config, actorId, draftId);
-      return publishDraftToQueue(backendDb, draftId);
+      return trackUsageSync(backendDb, "studio.post.publish", () => {
+        requireMutableDraft(backendDb, config, actorId, draftId);
+        return publishDraftToQueue(backendDb, draftId);
+      });
     },
     retryTarget(actorId: number, draftId: number, target?: string) {
-      const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
-      if (draft.post_id == null) throw new StudioError("err.retry-only-failed");
-      const failed = backendDb.studioPosts.failedPublicationTargets(draft.post_id);
-      const selected = target ? failed.filter((item) => item.target === target) : failed;
-      if (selected.length === 0) throw new StudioError("err.retry-only-failed");
-      const postId = draft.post_id;
-      const results = requeuePublicationTargets(
-        backendDb,
-        { postId, postKey: publicationRef("post", postId), messageId: null },
-        selected.map((item) => item.target),
-        { from: RETRY_AFTER_FAILURE, source: () => backendDb.studioPosts.publicationSource(postId) },
-      );
-      const requeued = results.filter((item) => item.outcome === "requeued").length;
-      const alreadyQueued = results.filter((item) => item.outcome === "already_queued").length;
-      if (requeued === 0 && alreadyQueued === 0) throw new StudioError("err.retry-only-failed");
-      return { results, requeued, alreadyQueued };
+      return trackUsageSync(backendDb, "studio.post.retry", () => {
+        const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
+        if (draft.post_id == null) throw new StudioError("err.retry-only-failed");
+        const failed = backendDb.studioPosts.failedPublicationTargets(draft.post_id);
+        const selected = target ? failed.filter((item) => item.target === target) : failed;
+        if (selected.length === 0) throw new StudioError("err.retry-only-failed");
+        const postId = draft.post_id;
+        const results = requeuePublicationTargets(
+          backendDb,
+          { postId, postKey: publicationRef("post", postId), messageId: null },
+          selected.map((item) => item.target),
+          { from: RETRY_AFTER_FAILURE, source: () => backendDb.studioPosts.publicationSource(postId) },
+        );
+        const requeued = results.filter((item) => item.outcome === "requeued").length;
+        const alreadyQueued = results.filter((item) => item.outcome === "already_queued").length;
+        if (requeued === 0 && alreadyQueued === 0) throw new StudioError("err.retry-only-failed");
+        return { results, requeued, alreadyQueued };
+      });
     },
     toggleTarget(actorId: number, draftId: number, target: string): void {
       const draft = requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now());
@@ -340,21 +349,23 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       return next;
     },
     edit(actorId: number, draftId: number, input: EditInput): void {
-      const { draft, patch } = prepareDraftContentEdit(backendDb, config, actorId, draftId, input);
-      withDraftRollback(
-        backendDb,
-        draftId,
-        draft,
-        patch,
-        () => {
-          backendDb.drafts.update(draftId, patch);
-          backendDb.storyCards.queue(draftId);
-          const updated = backendDb.drafts.get(draftId) ?? draft;
-          if (!waitForStoryCardReplan(backendDb, updated)) rescheduleIfNeeded(backendDb, config, actorId, draftId, updated);
-        },
-        { queueStoryCards: true },
-      );
-      recordEditEvent(backendDb, draftId, input);
+      trackUsageSync(backendDb, "studio.post.edit", () => {
+        const { draft, patch } = prepareDraftContentEdit(backendDb, config, actorId, draftId, input);
+        withDraftRollback(
+          backendDb,
+          draftId,
+          draft,
+          patch,
+          () => {
+            backendDb.drafts.update(draftId, patch);
+            backendDb.storyCards.queue(draftId);
+            const updated = backendDb.drafts.get(draftId) ?? draft;
+            if (!waitForStoryCardReplan(backendDb, updated)) rescheduleIfNeeded(backendDb, config, actorId, draftId, updated);
+          },
+          { queueStoryCards: true },
+        );
+        recordEditEvent(backendDb, draftId, input);
+      });
     },
   };
   service satisfies PublicationPipeline;

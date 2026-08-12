@@ -3,7 +3,7 @@ import { listChannels } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { log } from "../../foundation/logger.js";
-import { trackUsageAsync } from "../../observability/usage.js";
+import { recordUsage } from "../../observability/usage.js";
 import { evaluateAudienceMilestones } from "../audience-milestones.js";
 import { claimSync } from "../snapshots/creator-store.js";
 import { syncCommunityProfiles, syncInstagramProfile, syncXProfile, syncYouTubeProfile, syncZernioChannelProfile } from "./profile-sync.js";
@@ -13,13 +13,16 @@ import { runVideoMetricSchedule } from "./video-metrics.js";
  * YouTube token, say) must not take the rest of the cycle down with it: the loop
  * runner catches per tick, so an unguarded throw here meant video metrics were
  * never collected again until someone noticed. */
-async function step(backendDb: BackendDb, name: string, featureKey: string, run: () => Promise<void>): Promise<number> {
+async function step(backendDb: BackendDb, name: string, featureKey: string, run: () => Promise<unknown>): Promise<number> {
   const startedAt = Date.now();
   try {
-    await trackUsageAsync(backendDb, featureKey, run);
+    const result = await run();
+    const completed = typeof result === "number" ? result : 1;
+    if (completed > 0) recordUsage(backendDb, featureKey, true, Date.now() - startedAt);
     log("info", "operation timing", { operation: featureKey, step: name, success: true, totalMs: Date.now() - startedAt });
-    return 1;
+    return completed;
   } catch (error) {
+    recordUsage(backendDb, featureKey, false, Date.now() - startedAt);
     log("error", "operation timing", {
       operation: featureKey,
       step: name,
@@ -79,13 +82,12 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
       syncCommunityProfiles(config, backendDb, fetchImpl, `community:${crypto.randomUUID()}`),
     );
   evaluateAudienceMilestones(backendDb);
-  let metrics = 0;
   if (config.studio.modules.video_posting)
-    await step(backendDb, "video_metrics", "analytics.video_metrics.collect", async () => {
-      metrics = await runVideoMetricSchedule(config, backendDb, fetchImpl);
-    });
+    profiles += await step(backendDb, "video_metrics", "analytics.video_metrics.collect", () =>
+      runVideoMetricSchedule(config, backendDb, fetchImpl),
+    );
   // A successful collection is worker telemetry, not a creator notification.
   // Keeping it out of the domain event journal prevents every metrics cycle
   // from becoming an unread Inbox item in every Studio interface.
-  return profiles + metrics;
+  return profiles;
 }

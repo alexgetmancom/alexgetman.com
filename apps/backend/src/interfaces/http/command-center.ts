@@ -102,17 +102,19 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, engag
         "command_center.dashboard.publication_details",
         { route: "/api/command-center/publication-details", period: periodDays, weekOffset, offset, limit },
         () =>
-          renderDashboardPublicationDetails(
-            config,
-            backendDb,
-            weekOffset,
-            periodDays,
-            c.req.query("view") ?? undefined,
-            offset,
-            limit,
-            c.req.query("track") ?? undefined,
-            c.req.query("video_view") ?? undefined,
-            c.req.query("locale") ?? undefined,
+          trackUsageSync(backendDb, "command_center.publication_details.render", () =>
+            renderDashboardPublicationDetails(
+              config,
+              backendDb,
+              weekOffset,
+              periodDays,
+              c.req.query("view") ?? undefined,
+              offset,
+              limit,
+              c.req.query("track") ?? undefined,
+              c.req.query("video_view") ?? undefined,
+              c.req.query("locale") ?? undefined,
+            ),
           ),
       ),
     );

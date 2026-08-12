@@ -7,6 +7,7 @@ import { recordDomainEvent } from "../../domain/events.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
+import { trackUsageAsync, trackUsageSync } from "../../observability/usage.js";
 import { parseManualSchedule, publicationSlotTime } from "../../publishing/schedule.js";
 import { isVideoTargetMetadataEditable } from "../../publishing/state.js";
 import {
@@ -33,9 +34,11 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     kind: "video" as const,
     capabilities: { hasMetadataWizard: true, hasStoryCards: false, scheduleAxis: "target" as const },
     create(actorId: number, studioMediaAssetId: number, locale: VideoLocale = "ru"): number {
-      const [asset] = requireStudioMediaAssets(backendDb, actorId, [studioMediaAssetId], accessibleStudioActorIds(config, actorId));
-      if (asset?.kind !== "video") throw new StudioError("err.video-needs-asset");
-      return createVideoDraft(backendDb, actorId, studioMediaAssetId, config.VIDEO_MEDIA_RETENTION_HOURS, locale);
+      return trackUsageSync(backendDb, "studio.video.create", () => {
+        const [asset] = requireStudioMediaAssets(backendDb, actorId, [studioMediaAssetId], accessibleStudioActorIds(config, actorId));
+        if (asset?.kind !== "video") throw new StudioError("err.video-needs-asset");
+        return createVideoDraft(backendDb, actorId, studioMediaAssetId, config.VIDEO_MEDIA_RETENTION_HOURS, locale);
+      });
     },
     get(actorId: number, publicationId: number) {
       const draft = requireOwnedVideo(backendDb, config, actorId, publicationId);
@@ -52,7 +55,9 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       return backendDb.studioVideos.list(accessibleStudioActorIds(config, actorId), limit);
     },
     async schedule(actorId: number, publicationId: number, schedule: Partial<Record<VideoTarget, Date>> | PublicationSchedule) {
-      return scheduleOwnedVideo(backendDb, config, actorId, publicationId, toVideoScheduleInput(schedule));
+      return trackUsageAsync(backendDb, "studio.video.schedule", () =>
+        scheduleOwnedVideo(backendDb, config, actorId, publicationId, toVideoScheduleInput(schedule)),
+      );
     },
     async validate(actorId: number, publicationId: number): Promise<Issue[]> {
       requireOwnedVideo(backendDb, config, actorId, publicationId);
@@ -64,51 +69,57 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       return validateVideoDraft(config, backendDb, publicationId);
     },
     async publish(actorId: number, publicationId: number) {
-      // Access first: otherwise an outsider's draft answers "choose platforms"
-      // instead of "not yours", which leaks whether it exists and how it looks.
-      requireOwnedVideo(backendDb, config, actorId, publicationId);
-      const targets = backendDb.studioVideos.targets(publicationId).map((row) => row.target as VideoTarget);
-      if (!targets.length) throw new StudioError("err.video-choose-platforms");
-      const schedule = Object.fromEntries(targets.map((target) => [target, new Date(backendDb.clock.now().getTime() + 60_000)])) as Partial<
-        Record<VideoTarget, Date>
-      >;
-      return scheduleOwnedVideo(backendDb, config, actorId, publicationId, schedule);
+      return trackUsageAsync(backendDb, "studio.video.publish", async () => {
+        // Access first: otherwise an outsider's draft answers "choose platforms"
+        // instead of "not yours", which leaks whether it exists and how it looks.
+        requireOwnedVideo(backendDb, config, actorId, publicationId);
+        const targets = backendDb.studioVideos.targets(publicationId).map((row) => row.target as VideoTarget);
+        if (!targets.length) throw new StudioError("err.video-choose-platforms");
+        const schedule = Object.fromEntries(
+          targets.map((target) => [target, new Date(backendDb.clock.now().getTime() + 60_000)]),
+        ) as Partial<Record<VideoTarget, Date>>;
+        return scheduleOwnedVideo(backendDb, config, actorId, publicationId, schedule);
+      });
     },
     retryTarget(actorId: number, publicationId: number, target: VideoTarget) {
-      requireOwnedVideo(backendDb, config, actorId, publicationId);
-      retryVideoTarget(backendDb, publicationId, target);
-      return { requeued: 1, alreadyQueued: 0 };
+      return trackUsageSync(backendDb, "studio.video.retry", () => {
+        requireOwnedVideo(backendDb, config, actorId, publicationId);
+        retryVideoTarget(backendDb, publicationId, target);
+        return { requeued: 1, alreadyQueued: 0 };
+      });
     },
     async cancel(actorId: number, publicationId: number) {
-      const draft = requireOwnedVideo(backendDb, config, actorId, publicationId);
-      const cancellation = cancelVideo(backendDb, publicationId, config.VIDEO_MEDIA_RETENTION_HOURS);
-      cancelScheduledNotifications(backendDb, publicationRef("video", publicationId));
-      const heldPrivateYouTubeIds: string[] = [];
-      const holdFailures: string[] = [];
-      for (const videoId of cancellation.holdPrivateYouTubeIds) {
-        try {
-          await keepYouTubeUploadPrivate(config, videoId, draft.locale === "en" ? "en" : "ru");
-          heldPrivateYouTubeIds.push(videoId);
-        } catch (error) {
-          holdFailures.push(error instanceof Error ? error.message : String(error));
+      return trackUsageAsync(backendDb, "studio.video.cancel", async () => {
+        const draft = requireOwnedVideo(backendDb, config, actorId, publicationId);
+        const cancellation = cancelVideo(backendDb, publicationId, config.VIDEO_MEDIA_RETENTION_HOURS);
+        cancelScheduledNotifications(backendDb, publicationRef("video", publicationId));
+        const heldPrivateYouTubeIds: string[] = [];
+        const holdFailures: string[] = [];
+        for (const videoId of cancellation.holdPrivateYouTubeIds) {
+          try {
+            await keepYouTubeUploadPrivate(config, videoId, draft.locale === "en" ? "en" : "ru");
+            heldPrivateYouTubeIds.push(videoId);
+          } catch (error) {
+            holdFailures.push(error instanceof Error ? error.message : String(error));
+          }
         }
-      }
-      if (cancellation.manualRemoval.length || holdFailures.length) {
-        recordDomainEvent(backendDb.events, {
-          ref: publicationRef("video", publicationId),
-          type: "studio.notification.video_cancelled",
-          severity: holdFailures.length ? "warn" : "info",
-          message: cancellation.manualRemoval.length
-            ? `Video #${publicationId} was cancelled locally; published targets require manual removal.`
-            : `Video #${publicationId} was cancelled locally; YouTube schedule needs attention.`,
-          details: {
-            manual_removal: cancellation.manualRemoval,
-            held_private_youtube_ids: heldPrivateYouTubeIds,
-            hold_failures: holdFailures,
-          },
-        });
-      }
-      return { ...cancellation, heldPrivateYouTubeIds, holdFailures };
+        if (cancellation.manualRemoval.length || holdFailures.length) {
+          recordDomainEvent(backendDb.events, {
+            ref: publicationRef("video", publicationId),
+            type: "studio.notification.video_cancelled",
+            severity: holdFailures.length ? "warn" : "info",
+            message: cancellation.manualRemoval.length
+              ? `Video #${publicationId} was cancelled locally; published targets require manual removal.`
+              : `Video #${publicationId} was cancelled locally; YouTube schedule needs attention.`,
+            details: {
+              manual_removal: cancellation.manualRemoval,
+              held_private_youtube_ids: heldPrivateYouTubeIds,
+              hold_failures: holdFailures,
+            },
+          });
+        }
+        return { ...cancellation, heldPrivateYouTubeIds, holdFailures };
+      });
     },
     preview(actorId: number, publicationId: number) {
       const draft = requireOwnedVideo(backendDb, config, actorId, publicationId);
@@ -134,8 +145,10 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       return backendDb.studioVideos.history(publicationRef("video", publicationId), limit);
     },
     updateMetadata(actorId: number, publicationId: number, target: VideoTarget, metadata: VideoMetadata): void {
-      requireOwnedVideo(backendDb, config, actorId, publicationId);
-      saveVideoMetadata(backendDb, publicationId, target, metadata);
+      trackUsageSync(backendDb, "studio.video.edit", () => {
+        requireOwnedVideo(backendDb, config, actorId, publicationId);
+        saveVideoMetadata(backendDb, publicationId, target, metadata);
+      });
     },
     editMetadataField(actorId: number, publicationId: number, field: VideoWizardStep, value: unknown): void {
       requireOwnedVideo(backendDb, config, actorId, publicationId);
@@ -170,12 +183,16 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       if (target === labellingVideoTarget(selected)) updateVideoLabel(backendDb, publicationId, wizardLabel(metadata));
     },
     rename(actorId: number, publicationId: number, label: string): void {
-      requireOwnedVideo(backendDb, config, actorId, publicationId);
-      updateVideoLabel(backendDb, publicationId, label);
+      trackUsageSync(backendDb, "studio.video.edit", () => {
+        requireOwnedVideo(backendDb, config, actorId, publicationId);
+        updateVideoLabel(backendDb, publicationId, label);
+      });
     },
     replaceTargets(actorId: number, publicationId: number, targets: VideoTarget[]): void {
-      requireOwnedVideo(backendDb, config, actorId, publicationId);
-      replaceVideoTargets(backendDb, publicationId, targets);
+      trackUsageSync(backendDb, "studio.video.edit", () => {
+        requireOwnedVideo(backendDb, config, actorId, publicationId);
+        replaceVideoTargets(backendDb, publicationId, targets);
+      });
     },
     removeTarget(actorId: number, publicationId: number, target: VideoTarget): { cancelled: boolean } {
       requireOwnedVideo(backendDb, config, actorId, publicationId);

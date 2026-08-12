@@ -19,8 +19,30 @@ const TRACKED_FEATURES = [
   // every 60 seconds. One shared key buried the render's cost under the poll's
   // call count and made the average answer no question at all.
   "command_center.dashboard.render",
+  "command_center.publication_details.render",
   "command_center.fingerprint.poll",
   "command_center.action.execute",
+  "studio.queue.read",
+  "studio.post.create",
+  "studio.post.edit",
+  "studio.post.publish",
+  "studio.post.schedule",
+  "studio.post.cancel",
+  "studio.post.retry",
+  "studio.video.create",
+  "studio.video.edit",
+  "studio.video.publish",
+  "studio.video.schedule",
+  "studio.video.cancel",
+  "studio.video.retry",
+  "studio.media.import",
+  "studio.channel.list",
+  "studio.channel.connect",
+  "studio.channel.discover",
+  "studio.analytics.dashboard.read",
+  "studio.analytics.post.read",
+  "studio.analytics.video.read",
+  "studio.analytics.audience.read",
   "studio.mcp.request",
   "telegram.update.handle",
 ] as const;
@@ -177,6 +199,10 @@ function dayString(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+function utcDayStart(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
 function positiveDays(value: number | undefined, fallback: number): number {
   if (value === undefined) return fallback;
   if (!Number.isInteger(value) || value < 1 || value > 3660) throw new Error("usage day window must be an integer between 1 and 3660");
@@ -189,8 +215,9 @@ export function usageReport(backendDb: BackendDb, options: { days?: number; unus
   const now = options.now ?? new Date();
   const windowDays = positiveDays(options.days, 30);
   const unusedDays = positiveDays(options.unusedDays, 90);
-  const sinceDate = new Date(now.getTime() - (windowDays - 1) * millisecondsPerDay);
-  const unusedSinceDate = new Date(now.getTime() - (unusedDays - 1) * millisecondsPerDay);
+  const today = utcDayStart(now);
+  const sinceDate = new Date(today.getTime() - (windowDays - 1) * millisecondsPerDay);
+  const unusedSinceDate = new Date(today.getTime() - (unusedDays - 1) * millisecondsPerDay);
   const rows = unsafeDb(backendDb)
     .sqlite.prepare(
       `SELECT
