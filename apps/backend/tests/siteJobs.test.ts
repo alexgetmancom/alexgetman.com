@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { postLocales, publicationSources, publications, siteJobs } from "../src/db/schema.js";
-import { materializeSitePosts, runSiteJobCycle } from "../src/delivery/site-jobs.js";
+import { materializeSitePosts, recoverStaleSiteJobs, runSiteJobCycle } from "../src/delivery/site-jobs.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
@@ -19,6 +19,35 @@ afterEach(() => {
 });
 
 describe("site jobs", () => {
+  it("ends stale lock recovery when the retry budget is exhausted", () => {
+    backendDb = openBackendDb(":memory:");
+    const lockedAt = new Date(Date.now() - 60_000).toISOString();
+    const now = new Date().toISOString();
+    backendDb.db
+      .insert(siteJobs)
+      .values({
+        messageId: 11,
+        reason: "publish",
+        status: "rendering",
+        attemptCount: 4,
+        lockedBy: "dead-worker",
+        lockedAt,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    expect(recoverStaleSiteJobs(backendDb, 1)).toBe(1);
+    expect(backendDb.db.select().from(siteJobs).get()).toMatchObject({
+      status: "failed",
+      attemptCount: 5,
+      nextAttemptAt: null,
+      lockedBy: null,
+      lockedAt: null,
+      lastError: "stale site lock recovered",
+    });
+  });
+
   it("persists materialized media in the public read model", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-"));
     const config = loadConfig({ SITE_PUBLIC_DIR: tempDir });

@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, asc, desc, eq, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
 import { postEvents, postLocales, publicationSources, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -96,23 +96,39 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
 export function recoverStaleSiteJobs(backendDb: BackendDb, maxLockAgeSeconds = SITE_JOB_LOCK_TIMEOUT_SECONDS): number {
   const cutoff = new Date(Date.now() - maxLockAgeSeconds * 1000).toISOString();
   const now = new Date().toISOString();
-  return unsafeDb(backendDb)
-    .db.update(siteJobs)
-    .set({
-      status: "queued",
-      lockedBy: null,
-      lockedAt: null,
-      nextAttemptAt: now,
-      updatedAt: now,
-      // A recovery is an attempt that happened, so it counts as one. Without
-      // this a renderer killed mid-job returned the row to the queue forever
-      // and SITE_JOB_MAX_ATTEMPTS never applied to it.
-      attemptCount: sql`${siteJobs.attemptCount} + 1`,
-      lastError: sql`coalesce(${siteJobs.lastError}, 'stale site lock recovered')`,
-    })
+  const stale = unsafeDb(backendDb)
+    .db.select()
+    .from(siteJobs)
     .where(and(eq(siteJobs.status, "rendering"), isNotNull(siteJobs.lockedAt), lt(siteJobs.lockedAt, cutoff)))
-    .returning({ jobId: siteJobs.jobId })
-    .all().length;
+    .all();
+  let recovered = 0;
+  const terminalPostIds = new Set<number>();
+  unsafeDb(backendDb).db.transaction((tx) => {
+    for (const job of stale) {
+      if (!job.lockedAt) continue;
+      const attempt = job.attemptCount + 1;
+      const retry = attempt < SITE_JOB_MAX_ATTEMPTS;
+      const updated = tx
+        .update(siteJobs)
+        .set({
+          status: retry ? "queued" : "failed",
+          lockedBy: null,
+          lockedAt: null,
+          nextAttemptAt: retry ? nextRetryAt(attempt, SITE_JOB_BACKOFF_BASE_SECONDS, SITE_JOB_BACKOFF_MAX_SECONDS) : null,
+          updatedAt: now,
+          attemptCount: attempt,
+          lastError: job.lastError ?? "stale site lock recovered",
+        })
+        .where(and(eq(siteJobs.jobId, job.jobId), eq(siteJobs.status, "rendering"), eq(siteJobs.lockedAt, job.lockedAt)))
+        .returning({ jobId: siteJobs.jobId })
+        .get();
+      if (!updated) continue;
+      recovered += 1;
+      if (!retry && job.postId != null) terminalPostIds.add(job.postId);
+    }
+  });
+  for (const postId of terminalPostIds) reconcilePublication(backendDb, postId);
+  return recovered;
 }
 
 export async function materializeSitePosts(

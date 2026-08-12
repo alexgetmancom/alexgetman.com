@@ -11,7 +11,7 @@ import { instagramCredentialsForLocale } from "../foundation/external/instagram.
 import { withJobHeartbeat } from "../foundation/runtime/job-heartbeat.js";
 import { isTargetAuthBlocked, recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
 import { trackUsageAsync } from "../observability/usage.js";
-import { classifyPublishError, nextRetryAt } from "../publishing/errors.js";
+import { classifyPublishError } from "../publishing/errors.js";
 import { failedJobTransition } from "../publishing/job-policy.js";
 import { PUBLISH_CLAIM_LIMIT } from "../publishing/queue.js";
 import { isVideoTargetFinal } from "../publishing/state.js";
@@ -324,8 +324,12 @@ function completeVideoJob(backendDb: BackendDb, job: VideoJob): boolean {
 
 function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, config: BackendConfig): boolean {
   const error = cause instanceof Error ? cause.message : String(cause);
-  const attempts = job.attemptCount + 1;
-  if (cause instanceof InstagramContainerProcessingError && attempts < config.PUBLISH_MAX_ATTEMPTS) {
+  const transition = failedJobTransition(cause, job.attemptCount, {
+    maxAttempts: config.PUBLISH_MAX_ATTEMPTS,
+    backoffBaseSeconds: config.PUBLISH_BACKOFF_BASE_SECONDS,
+    backoffMaxSeconds: config.PUBLISH_BACKOFF_MAX_SECONDS,
+  });
+  if (cause instanceof InstagramContainerProcessingError && transition.attempt < config.PUBLISH_MAX_ATTEMPTS) {
     const now = new Date().toISOString();
     let failed = false;
     unsafeDb(backendDb).db.transaction((tx) => {
@@ -333,7 +337,7 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
         .update(videoJobs)
         .set({
           status: "queued",
-          attemptCount: attempts,
+          attemptCount: transition.attempt,
           nextAttemptAt: new Date(Date.now() + 30_000).toISOString(),
           lockedAt: null,
           lockedBy: null,
@@ -349,16 +353,16 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
     });
     return failed;
   }
-  const retry = attempts < config.PUBLISH_MAX_ATTEMPTS;
+  const retry = transition.status === "queued";
   const now = new Date().toISOString();
   let failed = false;
   unsafeDb(backendDb).db.transaction((tx) => {
     const updated = tx
       .update(videoJobs)
       .set({
-        status: retry ? "queued" : "failed",
-        attemptCount: attempts,
-        nextAttemptAt: retry ? nextRetryAt(attempts, config.PUBLISH_BACKOFF_BASE_SECONDS, config.PUBLISH_BACKOFF_MAX_SECONDS) : null,
+        status: transition.status,
+        attemptCount: transition.attempt,
+        nextAttemptAt: transition.nextAttemptAt,
         lockedAt: null,
         lockedBy: null,
         lastError: error,
@@ -370,7 +374,7 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
     if (!updated) return;
     failed = true;
     if (job.videoTargetId && cause instanceof InstagramContainerInvalidError && job.kind === "publish" && retry) {
-      requeueInstagramPreparation(tx, job, error, now, attempts);
+      requeueInstagramPreparation(tx, job, error, now, transition.attempt);
     } else if (job.videoTargetId) updateVideoTarget(tx, job.videoTargetId, { status: retry ? "scheduled" : "failed", lastError: error });
   });
   if (!failed) return false;

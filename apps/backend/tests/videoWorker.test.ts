@@ -298,19 +298,22 @@ describe("video job execution", () => {
     });
   });
 
-  it("fails the job rather than publishing when the source file is gone", async () => {
+  it("spends only the single safe retry on an unknown video failure", async () => {
     reset();
     await withDirectory(async (directory) => {
       const backendDb = testDb.open();
       const config = videoConfig(directory);
       const draftId = dueDraft(backendDb, directory, ["youtube_shorts"]);
       rmSync(path.join(directory, "clip-youtube_shorts.mp4"), { force: true });
+      backendDb.db.update(videoJobs).set({ attemptCount: 1 }).where(eq(videoJobs.kind, "prepare")).run();
 
       await runVideoCycle(config, backendDb);
 
       expect(seen).toHaveLength(0);
       expect(targetRow(backendDb, draftId)?.status).not.toBe("published");
       const job = backendDb.db.select().from(videoJobs).where(eq(videoJobs.kind, "prepare")).get();
+      expect(job?.status).toBe("failed");
+      expect(job?.attemptCount).toBe(2);
       expect(job?.lastError).toContain("Video source was removed");
     });
   });
