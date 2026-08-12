@@ -27,8 +27,8 @@ describe("openBackendDb", () => {
       expect(backendDb.sqlite.query("PRAGMA journal_mode").get()).toMatchObject({ journal_mode: "wal" });
       expect(backendDb.sqlite.query("PRAGMA busy_timeout").get()).toMatchObject({ timeout: 5000 });
       expect(backendDb.sqlite.query("PRAGMA synchronous").get()).toMatchObject({ synchronous: 1 });
-      expect(backendDb.sqlite.query("PRAGMA cache_size").get()).toMatchObject({ cache_size: -65_536 });
-      expect(backendDb.sqlite.query("PRAGMA mmap_size").get()).toMatchObject({ mmap_size: 268_435_456 });
+      expect(backendDb.sqlite.query("PRAGMA cache_size").get()).toMatchObject({ cache_size: -16_384 });
+      expect(backendDb.sqlite.query("PRAGMA mmap_size").get()).toMatchObject({ mmap_size: 33_554_432 });
       expect(backendDb.sqlite.query("PRAGMA wal_autocheckpoint").get()).toMatchObject({ wal_autocheckpoint: 4_000 });
       expect(backendDb.sqlite.query("PRAGMA foreign_keys").get()).toMatchObject({ foreign_keys: 1 });
     } finally {
