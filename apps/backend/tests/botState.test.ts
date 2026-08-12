@@ -174,6 +174,25 @@ describe("Telegram dialog state", () => {
     }
   });
 
+  it("keeps one active conversation when settings input replaces a publication flow", () => {
+    const backendDb: BackendDb = openBackendDb(":memory:");
+    try {
+      setPostAdminState(backendDb, 42, { type: "edit_text", locale: "ru" }, 7, 9);
+      saveConversationState(backendDb, 42, {
+        kind: "settings",
+        draftId: null,
+        step: "timezone",
+        data: {},
+        controlMessageId: null,
+      });
+
+      expect(getConversationState(backendDb, 42, "post")).toBeNull();
+      expect(getConversationState(backendDb, 42, "settings")).toMatchObject({ step: "timezone", revision: 1 });
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("expires a stale post state instead of applying an old text reply", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {

@@ -341,8 +341,10 @@ describe("TypeScript operations tooling", () => {
         .run(now, now);
 
       const audit = auditOperations(backendDb);
-      expect(audit.verificationRequiredPublishJobs).toEqual([{ target: "x", count: 1, latest: now }]);
-      expect(audit.verificationRequiredTargets).toEqual([{ target: "x", count: 1, latest: now }]);
+      expect(audit.deliveryIssues).toEqual([
+        { source: "post_target", status: "verification_required", target: "x", count: 1, latest: now },
+        { source: "publish_job", status: "verification_required", target: "x", count: 1, latest: now },
+      ]);
       expect(audit.recentVideoVerificationRequired).toEqual([
         expect.objectContaining({ videoDraftId: 1, target: "instagram_reels", lastError: "timeout" }),
       ]);

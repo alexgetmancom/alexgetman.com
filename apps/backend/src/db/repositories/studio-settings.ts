@@ -74,7 +74,6 @@ export function createStudioSettingsStore(db: BackendDatabase): StudioSettingsSt
           target: botSettings.actorId,
           set: {
             youtubeSignature: input.youtubeSignature,
-            pendingAction: input.pendingAction,
             updatedAt: input.updatedAt,
           },
         })

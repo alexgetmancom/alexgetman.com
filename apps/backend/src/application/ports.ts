@@ -103,7 +103,7 @@ export type StudioPostStore = {
   publicationSource(postId: number): Record<string, unknown>;
 };
 
-export type ConversationSessionKind = "post" | "video";
+export type ConversationSessionKind = "post" | "video" | "settings";
 
 export type ConversationSessionRecord = {
   actorId: number;
@@ -118,7 +118,7 @@ export type ConversationSessionRecord = {
   expiresAt: string | null;
 };
 
-/** Durable conversational state shared by the Telegram post and video adapters. */
+/** Durable conversational state shared by every Telegram workflow. */
 export type ConversationSessionStore = {
   get(actorId: number, kind: ConversationSessionKind): ConversationSessionRecord | null;
   save(input: {
@@ -215,7 +215,7 @@ export type StudioSettingsStore = {
     updatedAt: string;
   }): void;
   botSettings(actorId: number): StudioBotSettingsRecord | null;
-  saveBotSettings(input: { actorId: number; youtubeSignature: string; pendingAction: string | null; updatedAt: string }): void;
+  saveBotSettings(input: { actorId: number; youtubeSignature: string; updatedAt: string }): void;
   saveLocale(input: { actorId: number; locale: string; updatedAt: string }): void;
   saveTimezone(input: { actorId: number; timezone: string; updatedAt: string }): void;
 };
@@ -247,7 +247,6 @@ type StudioNewsDigestSettingsRecord = {
 type StudioBotSettingsRecord = {
   actorId: number;
   youtubeSignature: string;
-  pendingAction: string | null;
   updatedAt: string;
 };
 

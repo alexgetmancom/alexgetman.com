@@ -74,7 +74,6 @@ export const studioMediaAssets = sqliteTable(
 export const botSettings = sqliteTable("bot_settings", {
   actorId: integer().primaryKey(),
   youtubeSignature: text().notNull().default(""),
-  pendingAction: text(),
   updatedAt: text().notNull(),
 });
 

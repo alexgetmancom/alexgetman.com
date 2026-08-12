@@ -3,7 +3,7 @@ import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { instagramCredentialsForLocale, instagramGraphHost } from "../foundation/external/instagram.js";
 import { oauthAuthorization } from "../foundation/external/x-oauth.js";
-import { youtubeAccessToken } from "../foundation/external/youtube.js";
+import { type VideoLocale, youtubeAccessToken, youtubeCredentials } from "../foundation/external/youtube.js";
 import { ExternalHttpError, requestJson } from "../foundation/http.js";
 import { log } from "../foundation/logger.js";
 import { recordAuthFailure, recordAuthSuccess, recordTokenPing, shouldPingToken } from "./auth-circuit.js";
@@ -77,6 +77,40 @@ async function graphMeCheck(
   return debugTokenExpiry(target, host, version, token, fetchImpl);
 }
 
+function youtubeProbe(locale: VideoLocale): Probe {
+  const target = locale === "ru" ? "youtube_shorts" : "youtube_shorts_en";
+  return {
+    target,
+    configured: (config) => {
+      const credentials = youtubeCredentials(config, locale);
+      return Boolean(credentials.clientId && credentials.clientSecret && credentials.refreshToken);
+    },
+    run: async (config, fetchImpl) => {
+      const token = await youtubeAccessToken(config, fetchImpl, locale);
+      await requestJson(fetchImpl, "https://www.googleapis.com/youtube/v3/channels?part=id&mine=true", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return null;
+    },
+  };
+}
+
+function instagramStoriesProbe(locale: VideoLocale): Probe {
+  const target = locale === "ru" ? "instagram_stories_ru" : "instagram_stories";
+  return {
+    target,
+    configured: (config) => {
+      const credentials = instagramCredentialsForLocale(config, locale);
+      return Boolean(credentials.accessToken && credentials.userId);
+    },
+    run: (config, fetchImpl) => {
+      const { accessToken: token, userId } = instagramCredentialsForLocale(config, locale);
+      if (!token || !userId) throw new Error(`${target} credentials are missing`);
+      return graphMeCheck(target, instagramGraphHost(token), config.INSTAGRAM_GRAPH_API_VERSION, userId, token, fetchImpl);
+    },
+  };
+}
+
 const probes: Probe[] = [
   {
     target: "controller_bot",
@@ -86,28 +120,8 @@ const probes: Probe[] = [
       return null;
     },
   },
-  {
-    target: "youtube_shorts",
-    configured: (c) => Boolean(c.YOUTUBE_RU_CLIENT_ID && c.YOUTUBE_RU_CLIENT_SECRET && c.YOUTUBE_RU_REFRESH_TOKEN),
-    run: async (config, fetchImpl) => {
-      const token = await youtubeAccessToken(config, fetchImpl);
-      await requestJson(fetchImpl, "https://www.googleapis.com/youtube/v3/channels?part=id&mine=true", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      return null;
-    },
-  },
-  {
-    target: "youtube_shorts_en",
-    configured: (c) => Boolean(c.YOUTUBE_EN_CLIENT_ID && c.YOUTUBE_EN_CLIENT_SECRET && c.YOUTUBE_EN_REFRESH_TOKEN),
-    run: async (config, fetchImpl) => {
-      const token = await youtubeAccessToken(config, fetchImpl, "en");
-      await requestJson(fetchImpl, "https://www.googleapis.com/youtube/v3/channels?part=id&mine=true", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      return null;
-    },
-  },
+  youtubeProbe("ru"),
+  youtubeProbe("en"),
   {
     target: "x",
     configured: (c) => Boolean(c.X_CONSUMER_KEY && c.X_CONSUMER_SECRET && c.X_ACCESS_TOKEN && c.X_ACCESS_TOKEN_SECRET),
@@ -149,34 +163,8 @@ const probes: Probe[] = [
       return graphMeCheck("instagram_reels", host, version, config.INSTAGRAM_RU_USER_ID as string, token, fetchImpl);
     },
   },
-  {
-    target: "instagram_stories",
-    configured: (c) => {
-      const credentials = instagramCredentialsForLocale(c, "en");
-      return Boolean(credentials.accessToken && credentials.userId);
-    },
-    run: (config, fetchImpl) => {
-      const { accessToken: token, userId } = instagramCredentialsForLocale(config, "en");
-      if (!token || !userId) throw new Error("Instagram Stories EN credentials are missing");
-      const host = instagramGraphHost(token);
-      const version = config.INSTAGRAM_GRAPH_API_VERSION;
-      return graphMeCheck("instagram_stories", host, version, userId, token, fetchImpl);
-    },
-  },
-  {
-    target: "instagram_stories_ru",
-    configured: (c) => {
-      const credentials = instagramCredentialsForLocale(c, "ru");
-      return Boolean(credentials.accessToken && credentials.userId);
-    },
-    run: (config, fetchImpl) => {
-      const { accessToken: token, userId } = instagramCredentialsForLocale(config, "ru");
-      if (!token || !userId) throw new Error("Instagram Stories RU credentials are missing");
-      const host = instagramGraphHost(token);
-      const version = config.INSTAGRAM_GRAPH_API_VERSION;
-      return graphMeCheck("instagram_stories_ru", host, version, userId, token, fetchImpl);
-    },
-  },
+  instagramStoriesProbe("en"),
+  instagramStoriesProbe("ru"),
 ];
 
 /** Runs due live probes and feeds their outcome into the auth circuit

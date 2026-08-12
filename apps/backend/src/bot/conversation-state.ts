@@ -1,3 +1,4 @@
+import type { PublicationKind } from "../application/conversation-flow.js";
 import type { ConversationSessionKind, ConversationSessionRecord } from "../application/ports.js";
 import type { BackendDb } from "../db/client.js";
 import {
@@ -8,7 +9,7 @@ import {
   saveConversationSession,
 } from "./conversation-session.js";
 
-/** The single durable state shape used by every publication conversation. */
+/** The single durable state shape used by every Telegram conversation. */
 export type ConversationState = {
   kind: ConversationSessionKind;
   draftId: number | null;
@@ -31,8 +32,11 @@ export function getConversationState(backendDb: BackendDb, actorId: number, kind
 }
 
 /** Returns the current publication conversation, if one exists. */
-export function getActiveConversationState(backendDb: BackendDb, actorId: number): ConversationState | null {
-  return getConversationState(backendDb, actorId, "video") ?? getConversationState(backendDb, actorId, "post");
+export function getActiveConversationState(backendDb: BackendDb, actorId: number): (ConversationState & { kind: PublicationKind }) | null {
+  const video = getConversationState(backendDb, actorId, "video");
+  if (video) return { ...video, kind: "video" };
+  const post = getConversationState(backendDb, actorId, "post");
+  return post ? { ...post, kind: "post" } : null;
 }
 
 export function saveConversationState(backendDb: BackendDb, actorId: number, input: ConversationStateInput): ConversationState {
@@ -40,9 +44,9 @@ export function saveConversationState(backendDb: BackendDb, actorId: number, inp
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + CONVERSATION_SESSION_TTL_MS).toISOString();
   const data = { ...input.data };
-  // A person can have one active publication conversation. Starting a new one
-  // retires the other kind before the new state is written.
-  retireConversationSession(backendDb, actorId, input.kind === "post" ? "video" : "post");
+  // A person can have one active conversation. Starting another workflow
+  // retires every other kind before the new state is written.
+  for (const kind of ["post", "video", "settings"] as const) if (kind !== input.kind) retireConversationSession(backendDb, actorId, kind);
   const revision = saveConversationSession(backendDb, {
     actorId,
     kind: input.kind,

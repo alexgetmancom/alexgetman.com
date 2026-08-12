@@ -13,6 +13,7 @@ import { sendDailyNewsDigest } from "../interfaces/telegram/news-digest.js";
 import type { StudioZernioAccount } from "../studio/services/channels.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
+import { clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
 import { persistentKeyboard } from "./menu-render.js";
 import { NOTIFICATIONS_MENU_ID, notificationsInboxText } from "./notifications-screen.js";
 
@@ -33,11 +34,8 @@ const THREADS_FOLLOWERS_MENU_ID = "settings-threads-followers";
 const X_IMPORT_MENU_ID = "settings-x-import";
 type ZernioAccount = StudioZernioAccount;
 const discoveredAccounts = new Map<number, { locale: "ru" | "en"; accounts: ZernioAccount[] }>();
-const pendingTimezones = new Set<number>();
-const pendingNewsDigestPrompts = new Set<number>();
-const pendingNewsDigestTimes = new Set<number>();
-const pendingThreadsFollowers = new Map<number, "ru" | "en">();
-const pendingXImports = new Set<number>();
+
+type SettingsInputStep = "timezone" | "news_digest_prompt" | "news_digest_time" | "threads_followers" | "x_import" | "youtube_signature";
 
 const TIMEZONE_OPTIONS = [
   ["UTC", "UTC"],
@@ -57,8 +55,8 @@ const TIMEZONE_OPTIONS = [
   ["America/Los_Angeles", "America/Los_Angeles"],
 ] as const;
 
-/** Settings is an interface screen: it owns its callbacks and the small
- * transient input state, keeping the root Telegram router transport-only. */
+/** Settings is an interface screen: it owns its callbacks while the shared
+ * durable conversation store owns which input the actor is answering. */
 export async function handleSettingsMessage(
   ctx: Context,
   backendDb: BackendDb,
@@ -66,13 +64,22 @@ export async function handleSettingsMessage(
   settingsMenu: Menu<Context>,
 ): Promise<boolean> {
   const actorId = Number(ctx.from?.id);
+  const state = getConversationState(backendDb, actorId, "settings");
+  if (!state) return false;
   const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
-  if (await collectXAnalyticsCsv(ctx, backendDb, config, actorId, settingsMenu)) return true;
-  if (await collectThreadsFollowers(ctx, backendDb, actorId, text, settingsMenu)) return true;
-  if (await collectTimezone(ctx, backendDb, config, actorId, text, settingsMenu)) return true;
-  if (await collectNewsDigestTime(ctx, backendDb, config, actorId, text, settingsMenu)) return true;
-  if (await collectNewsDigestPrompt(ctx, backendDb, config, actorId, text, settingsMenu)) return true;
-  if (!createStudioServices(backendDb, config).settings.saveYoutubeSignature(actorId, text)) return false;
+  if (isNavigationMessage(text)) {
+    clearConversationState(backendDb, actorId, "settings");
+    return false;
+  }
+  if (state.step === "x_import") return collectXAnalyticsCsv(ctx, backendDb, config, actorId, settingsMenu);
+  clearConversationState(backendDb, actorId, "settings");
+  if (state.step === "threads_followers")
+    return collectThreadsFollowers(ctx, backendDb, actorId, text, settingsMenu, state.data.account === "en" ? "en" : "ru");
+  if (state.step === "timezone") return collectTimezone(ctx, backendDb, config, actorId, text, settingsMenu);
+  if (state.step === "news_digest_time") return collectNewsDigestTime(ctx, backendDb, config, actorId, text, settingsMenu);
+  if (state.step === "news_digest_prompt") return collectNewsDigestPrompt(ctx, backendDb, config, actorId, text, settingsMenu);
+  if (state.step !== "youtube_signature") return false;
+  createStudioServices(backendDb, config).settings.setYoutubeSignature(actorId, text);
   const locale = settingsService(backendDb).locale(actorId);
   await ctx.reply(t(locale, "settings.youtube-saved"));
   await ctx.reply(youtubeSignatureText(backendDb, config, actorId, locale), {
@@ -80,6 +87,10 @@ export async function handleSettingsMessage(
     reply_markup: settingsMenu.at(YOUTUBE_SIGNATURE_MENU_ID),
   });
   return true;
+}
+
+function beginSettingsInput(backendDb: BackendDb, actorId: number, step: SettingsInputStep, data: Record<string, unknown> = {}): void {
+  saveConversationState(backendDb, actorId, { kind: "settings", draftId: null, step, data, controlMessageId: null });
 }
 
 export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, bot: Bot | null = null): Menu<Context> {
@@ -194,12 +205,13 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
     }
     range
       .text(t(locale, "settings.news-digest-time-custom"), async (ctx) => {
-        pendingNewsDigestTimes.add(Number(ctx.from?.id));
+        beginSettingsInput(backendDb, Number(ctx.from?.id), "news_digest_time");
         await ctx.answerCallbackQuery();
         await ctx.reply(t(locale, "settings.news-digest-time-input-prompt"));
       })
       .row()
       .back(t(locale, "settings.back-to-news-digest"), async (ctx) => {
+        clearConversationState(backendDb, Number(ctx.from?.id), "settings");
         await ctx.answerCallbackQuery();
         await ctx.editMessageText(newsDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
       });
@@ -226,7 +238,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
       )
       .row()
       .text(t(locale, "settings.news-digest-prompt-edit"), async (ctx) => {
-        pendingNewsDigestPrompts.add(actorId);
+        beginSettingsInput(backendDb, actorId, "news_digest_prompt");
         await ctx.answerCallbackQuery();
         await ctx.reply(t(locale, "settings.news-digest-prompt-input"));
       })
@@ -244,6 +256,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
       })
       .row()
       .back(t(locale, "settings.back-to-notifications"), async (ctx) => {
+        clearConversationState(backendDb, actorId, "settings");
         await ctx.answerCallbackQuery();
         await ctx.editMessageText(t(locale, "settings.category-notifications-body"));
       });
@@ -254,7 +267,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
     const locale = settingsService(backendDb).locale(actorId);
     range
       .text(t(locale, "settings.edit"), async (ctx) => {
-        createStudioServices(backendDb, config).settings.beginYoutubeSignatureEdit(actorId);
+        beginSettingsInput(backendDb, actorId, "youtube_signature");
         await ctx.answerCallbackQuery();
         await ctx.reply(t(locale, "settings.youtube-edit-prompt"));
       })
@@ -265,6 +278,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
       })
       .row()
       .back(t(locale, "settings.back-to-publishing"), async (ctx) => {
+        clearConversationState(backendDb, actorId, "settings");
         await ctx.answerCallbackQuery();
         await ctx.editMessageText(t(locale, "settings.category-publishing-body"));
       });
@@ -295,11 +309,12 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
       if (index + 2 < options.length) range.row();
     }
     range.row().text(t(locale, "settings.timezone-custom"), async (ctx) => {
-      pendingTimezones.add(actorId);
+      beginSettingsInput(backendDb, actorId, "timezone");
       await ctx.answerCallbackQuery();
       await ctx.reply(t(locale, "settings.timezone-input-prompt"));
     });
     range.row().back(t(locale, "settings.back-to-general"), async (ctx) => {
+      clearConversationState(backendDb, actorId, "settings");
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(t(locale, "settings.category-general-body"));
     });
@@ -310,12 +325,12 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
     const locale = settingsService(backendDb).locale(actorId);
     for (const account of ["ru", "en"] as const)
       range.text(t(locale, "settings.threads-edit", { account: account.toUpperCase() }), async (ctx) => {
-        pendingThreadsFollowers.set(actorId, account);
+        beginSettingsInput(backendDb, actorId, "threads_followers", { account });
         await ctx.answerCallbackQuery();
         await ctx.reply(t(locale, "settings.threads-ask", { account: account.toUpperCase() }));
       });
     range.row().back(t(locale, "settings.back-to-analytics"), async (ctx) => {
-      pendingThreadsFollowers.delete(actorId);
+      clearConversationState(backendDb, actorId, "settings");
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(analyticsText(backendDb, locale), { parse_mode: "Markdown" });
     });
@@ -326,13 +341,13 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
     const locale = settingsService(backendDb).locale(actorId);
     range
       .text(t(locale, "settings.x-import-start"), async (ctx) => {
-        pendingXImports.add(actorId);
+        beginSettingsInput(backendDb, actorId, "x_import");
         await ctx.answerCallbackQuery();
         await ctx.reply(t(locale, "settings.x-import-ask"));
       })
       .row()
       .back(t(locale, "settings.back-to-analytics"), async (ctx) => {
-        pendingXImports.delete(actorId);
+        clearConversationState(backendDb, actorId, "settings");
         await ctx.answerCallbackQuery();
         await ctx.editMessageText(analyticsText(backendDb, locale), { parse_mode: "Markdown" });
       });
@@ -496,6 +511,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
  * the previous screen's body text on the message reads as a failed tap. */
 function backToSettings(backendDb: BackendDb) {
   return async (ctx: Context): Promise<void> => {
+    clearConversationState(backendDb, Number(ctx.from?.id), "settings");
     await ctx.answerCallbackQuery();
     await ctx.editMessageText(t(settingsService(backendDb).locale(Number(ctx.from?.id)), "settings.title"));
   };
@@ -529,11 +545,8 @@ async function collectThreadsFollowers(
   actorId: number,
   text: string,
   settingsMenu: Menu<Context>,
+  account: "ru" | "en",
 ): Promise<boolean> {
-  const account = pendingThreadsFollowers.get(actorId);
-  if (!account) return false;
-  pendingThreadsFollowers.delete(actorId);
-  if (isNavigationMessage(text)) return false;
   const locale = settingsService(backendDb).locale(actorId);
   const count = Number(text.replace(/[\s,]/gu, ""));
   if (!Number.isSafeInteger(count) || count < 0) {
@@ -567,19 +580,13 @@ async function collectXAnalyticsCsv(
   actorId: number,
   settingsMenu: Menu<Context>,
 ): Promise<boolean> {
-  if (!pendingXImports.has(actorId)) return false;
   const locale = settingsService(backendDb).locale(actorId);
   const document = ctx.message && "document" in ctx.message ? ctx.message.document : undefined;
   if (!document) {
-    const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
-    if (isNavigationMessage(text)) {
-      pendingXImports.delete(actorId);
-      return false;
-    }
     await ctx.reply(t(locale, "settings.x-import-expects-file"));
     return true;
   }
-  pendingXImports.delete(actorId);
+  clearConversationState(backendDb, actorId, "settings");
   if (!/\.csv$/iu.test(document.file_name ?? "")) {
     await ctx.reply(t(locale, "settings.x-import-expects-file"));
     return true;
@@ -661,9 +668,6 @@ async function collectNewsDigestPrompt(
   text: string,
   settingsMenu: Menu<Context>,
 ): Promise<boolean> {
-  if (!pendingNewsDigestPrompts.has(actorId)) return false;
-  pendingNewsDigestPrompts.delete(actorId);
-  if (isNavigationMessage(text)) return false;
   const locale = settingsService(backendDb).locale(actorId);
   try {
     createStudioServices(backendDb, config).settings.setNewsDigest({ prompt: text === "-" ? "" : text });
@@ -686,9 +690,6 @@ async function collectNewsDigestTime(
   text: string,
   settingsMenu: Menu<Context>,
 ): Promise<boolean> {
-  if (!pendingNewsDigestTimes.has(actorId)) return false;
-  pendingNewsDigestTimes.delete(actorId);
-  if (isNavigationMessage(text)) return false;
   const locale = settingsService(backendDb).locale(actorId);
   const match = /^(\d{1,2}):(\d{2})$/u.exec(text);
   const hour = match ? Number(match[1]) : NaN;
@@ -709,10 +710,8 @@ async function collectNewsDigestTime(
 /**
  * A message that is navigation rather than input.
  *
- * Both collectors below sit in front of the router and claim the next message.
- * Without this, pressing the persistent keyboard button or sending a command
- * while a prompt is open stores that text as a time zone or a publishing token
- * and deletes the message, leaving the user with no way out but `/cancel`.
+ * Settings input sits in front of the router and claims the next message.
+ * Commands and persistent keyboard navigation must leave that input instead.
  */
 function isNavigationMessage(text: string): boolean {
   return text.startsWith("/") || text === t("en", "menu.button") || text === t("ru", "menu.button");
@@ -726,9 +725,6 @@ async function collectTimezone(
   text: string,
   settingsMenu: Menu<Context>,
 ): Promise<boolean> {
-  if (!pendingTimezones.has(actorId)) return false;
-  pendingTimezones.delete(actorId);
-  if (isNavigationMessage(text)) return false;
   const locale = settingsService(backendDb).locale(actorId);
   try {
     createStudioServices(backendDb, config).settings.setTimezone(actorId, text);

@@ -85,6 +85,13 @@
       "when": 1786500000000,
       "tag": "0011_remove_video_reminder_path",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1786501000000,
+      "tag": "0012_remove_settings_pending_action",
+      "breakpoints": true
     }
   ]
 }

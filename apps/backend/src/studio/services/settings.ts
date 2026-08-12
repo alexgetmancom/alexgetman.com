@@ -34,7 +34,6 @@ function writeYoutubeSignature(backendDb: SettingsDependencies, actorId: number,
   backendDb.studioSettings.saveBotSettings({
     actorId,
     youtubeSignature: signature,
-    pendingAction: null,
     updatedAt: backendDb.clock.now().toISOString(),
   });
 }
@@ -140,21 +139,6 @@ export function settingsService(backendDb: SettingsDependencies) {
     },
     setYoutubeSignature(actorId: number, value: string): void {
       writeYoutubeSignature(backendDb, actorId, value);
-    },
-    beginYoutubeSignatureEdit(actorId: number): void {
-      const current = backendDb.studioSettings.botSettings(actorId);
-      backendDb.studioSettings.saveBotSettings({
-        actorId,
-        youtubeSignature: current?.youtubeSignature ?? "",
-        pendingAction: "youtube_signature",
-        updatedAt: backendDb.clock.now().toISOString(),
-      });
-    },
-    saveYoutubeSignature(actorId: number, value: string): boolean {
-      const setting = backendDb.studioSettings.botSettings(actorId);
-      if (setting?.pendingAction !== "youtube_signature") return false;
-      writeYoutubeSignature(backendDb, actorId, value);
-      return true;
     },
     clearYoutubeSignature(actorId: number): void {
       writeYoutubeSignature(backendDb, actorId, "-");
