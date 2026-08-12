@@ -12,7 +12,7 @@ import { extractMessage } from "./message.js";
 import { POST_FLOW, type PostFlowInput, type PostWizardStep, postStateStep } from "./post-flow.js";
 import { publicationCallback } from "./publication-callback.js";
 import { advancePublicationFlow } from "./publication-flow.js";
-import { publicationCardEffect, publicationRenderers } from "./publication-renderers.js";
+import { postPreviewCard, publicationCardEffect, publicationRenderers } from "./publication-renderers.js";
 import { createPublicationScheduleEngine, scheduleConfirmationEffects } from "./scheduling.js";
 
 export async function applyAdminState(
@@ -30,14 +30,7 @@ export async function applyAdminState(
   const session = requireConversationState(backendDb, actorId, "post", expectedRevision ?? null);
   const saved = await advancePublicationFlow(backendDb, actorId, POST_FLOW, session, input, session.data, "action.session-stale");
   if (saved.step === "schedule_confirm") return renderPostScheduleConfirmation(backendDb, config, actorId, draftId, saved);
-  const preview = publicationRenderers(backendDb, config).post.card({
-    backendDb,
-    pipeline: createStudioServices(backendDb, config).posts,
-    actorId,
-    publicationId: draftId,
-    config,
-    locale: settingsService(backendDb).locale(actorId),
-  });
+  const preview = postPreviewCard(backendDb, config, actorId, draftId);
   return [{ type: "session", operation: "clear", kind: "post", actorId }, ...publicationCardEffect(preview, { type: "prompt" })];
 }
 

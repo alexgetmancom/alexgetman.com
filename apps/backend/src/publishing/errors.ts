@@ -1,3 +1,6 @@
+import { retryAfterSecondsFromHeaders } from "../foundation/http.js";
+import { redactExternalSecrets } from "../foundation/redact.js";
+
 const transientStatusCodes = new Set([408, 425, 429, 500, 502, 503, 504]);
 // 401/403 are split out of the generic permanent bucket: they specifically mean
 // "this credential is dead", which the auth circuit breaker (auth-circuit.ts)
@@ -16,6 +19,28 @@ export class HttpPublishError extends Error {
   ) {
     super(message);
   }
+}
+
+/** The publish error a provider's failed HTTP response becomes. Redaction and
+ * the provider's retry-after header are part of that shape, not a decision each
+ * platform adapter gets to make differently. */
+export function httpPublishError(response: Response, body: string, label: string): HttpPublishError {
+  const safeBody = redactExternalSecrets(body);
+  return new HttpPublishError(
+    `${label} ${response.status}: ${safeBody}`,
+    response.status,
+    safeBody,
+    retryAfterSecondsFromHeaders(response.headers),
+  );
+}
+
+/** A provider's JSON response, or the publish error its failure becomes. An
+ * empty body is an empty object: several providers answer a successful mutation
+ * with no content at all. */
+export async function publishJson<T>(response: Response, label: string): Promise<T> {
+  const body = await response.text();
+  if (!response.ok) throw httpPublishError(response, body, label);
+  return body ? (JSON.parse(body) as T) : ({} as T);
 }
 
 /** Reads a provider-specified retry delay off any thrown HTTP error (HttpPublishError

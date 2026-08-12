@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { ChannelStore } from "../../application/ports.js";
 import { channelConnections } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
@@ -39,16 +39,16 @@ export function createChannelStore(db: BackendDatabase): ChannelStore {
       db.update(channelConnections).set({ enabled: 0, updatedAt: now }).where(eq(channelConnections.id, id)).run();
     },
 
-    hasAny() {
-      return Boolean(db.select({ id: channelConnections.id }).from(channelConnections).limit(1).get());
-    },
-
+    /** The schema allows several enabled accounts for one platform and locale,
+     * so which one a video goes to has to be a rule rather than whatever SQLite
+     * returned first: the most recently connected account wins. */
     find(platform, locale) {
       return (
         db
           .select()
           .from(channelConnections)
           .where(and(eq(channelConnections.platform, platform), eq(channelConnections.locale, locale), eq(channelConnections.enabled, 1)))
+          .orderBy(desc(channelConnections.updatedAt), desc(channelConnections.id))
           .get() ?? null
       );
     },

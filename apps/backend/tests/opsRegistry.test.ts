@@ -21,6 +21,7 @@ const HOST_ONLY = [
   "import-x-analytics",
   "import-manual-analytics",
   "capability-record",
+  "replace-media",
   "site-media-images",
   "site-media-deduplicate",
   "channel-connect",
@@ -41,9 +42,29 @@ describe("operations registry", () => {
   it("keeps host-only operations off the agent surface", () => {
     const catalog = new Map(operationCatalog().map((entry) => [entry.name, entry]));
 
-    for (const name of HOST_ONLY) expect(catalog.get(name)?.agent).toBe(false);
+    // Both directions: the list has to name every host-only operation, or a new
+    // one added with `agent: false` and forgotten here reaches MCP the day
+    // someone flips it back without a test to say why it was off.
+    expect(
+      [...catalog.values()]
+        .filter((entry) => !entry.agent)
+        .map((entry) => entry.name)
+        .sort(),
+    ).toEqual([...HOST_ONLY].sort());
     expect(catalog.get("recent")?.agent).toBe(true);
     expect(catalog.get("retry")?.agent).toBe(true);
+  });
+
+  it("refuses input the schema does not define, on every surface", async () => {
+    backendDb = openBackendDb(":memory:");
+
+    // A misspelled `target` used to be stripped and read as "every target".
+    await expect(runOperation("delete", context(backendDb), { ref: "post:1", targte: "x", apply: true })).rejects.toThrow(
+      "delete: unknown field targte",
+    );
+    await expect(runOperation("retry", context(backendDb), { ref: "post:1", target: "" })).rejects.toThrow("retry: target");
+    await expect(runOperation("metrics-backfill", context(backendDb), { refs: "" })).rejects.toThrow("metrics-backfill: refs");
+    await expect(runOperation("toString", context(backendDb), {})).rejects.toThrow("unknown command: toString");
   });
 
   /** A usage line reading `--ref VALUE` is what produced `--ref 160` and the

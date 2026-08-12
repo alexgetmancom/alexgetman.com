@@ -203,8 +203,11 @@ async function timedDeliveryPhase<T>(
   if (!owned) throw new Error(`delivery_job_no_longer_owned:${job.jobId}`);
   unsafeDb(backendDb)
     .db.update(publishJobs)
+    // Fenced by the same lease the check above reads. Without it an expired
+    // worker wrote its phase onto the job its successor now holds, and recovery
+    // read that phase as "the new worker already called the provider".
     .set({ currentPhase: phase, updatedAt: new Date().toISOString() })
-    .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "publishing")))
+    .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "publishing"), eq(publishJobs.lockedBy, job.lockId)))
     .run();
   try {
     const result = await work();

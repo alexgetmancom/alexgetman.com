@@ -104,6 +104,10 @@ export function recoverStaleSiteJobs(backendDb: BackendDb, maxLockAgeSeconds = S
       lockedAt: null,
       nextAttemptAt: now,
       updatedAt: now,
+      // A recovery is an attempt that happened, so it counts as one. Without
+      // this a renderer killed mid-job returned the row to the queue forever
+      // and SITE_JOB_MAX_ATTEMPTS never applied to it.
+      attemptCount: sql`${siteJobs.attemptCount} + 1`,
       lastError: sql`coalesce(${siteJobs.lastError}, 'stale site lock recovered')`,
     })
     .where(and(eq(siteJobs.status, "rendering"), isNotNull(siteJobs.lockedAt), lt(siteJobs.lockedAt, cutoff)))

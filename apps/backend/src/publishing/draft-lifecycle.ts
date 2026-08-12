@@ -60,7 +60,7 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
     tx.delete(publications).where(eq(publications.postId, postId)).run();
     tx.update(drafts).set({ postId: null, updatedAt: now }).where(eq(drafts.id, draftId)).run();
   });
-  discardDraftStoryCards(backendDb, draftId);
+  discardDraftStoryCards(unsafeDb(backendDb).db, draftId);
   recordDomainEvent(backendDb.events, {
     ref: publicationRef("draft", draftId),
     type: "publishing.draft.cancelled",
@@ -74,20 +74,25 @@ export function cancelPendingPostJobs(backendDb: BackendDb, draftId: number): vo
   const draft = unsafeDb(backendDb).db.select({ postId: drafts.postId }).from(drafts).where(eq(drafts.id, draftId)).get();
   if (!draft?.postId) return;
   const now = new Date().toISOString();
-  unsafeDb(backendDb)
-    .db.update(publishJobs)
-    .set({ status: "cancelled", updatedAt: now })
-    .where(and(eq(publishJobs.postId, draft.postId), inArray(publishJobs.status, ["queued", "failed"])))
-    .run();
+  const postId = draft.postId;
+  // Social and site work is cancelled together, and the journal entry is written
+  // only once that has committed: the two updates used to be separate writes
+  // with the event between them, so a failure in the middle left the site still
+  // rendering a post the journal already called fully cancelled.
+  unsafeDb(backendDb).db.transaction((tx) => {
+    tx.update(publishJobs)
+      .set({ status: "cancelled", updatedAt: now })
+      .where(and(eq(publishJobs.postId, postId), inArray(publishJobs.status, ["queued", "failed"])))
+      .run();
+    tx.update(siteJobs)
+      .set({ status: "cancelled", updatedAt: now })
+      .where(and(eq(siteJobs.postId, postId), inArray(siteJobs.status, ["queued", "failed"])))
+      .run();
+  });
   recordDomainEvent(backendDb.events, {
     ref: publicationRef("draft", draftId),
     type: "publishing.remaining.cancelled",
     severity: "warn",
     message: `Remaining publication jobs for draft #${draftId} cancelled`,
   });
-  unsafeDb(backendDb)
-    .db.update(siteJobs)
-    .set({ status: "cancelled", updatedAt: now })
-    .where(and(eq(siteJobs.postId, draft.postId), inArray(siteJobs.status, ["queued", "failed"])))
-    .run();
 }

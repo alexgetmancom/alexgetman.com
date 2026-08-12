@@ -1,10 +1,9 @@
 import fs from "node:fs";
 import type { BackendConfig } from "../../foundation/config.js";
 import { assertXCredentials, oauthAuthorization } from "../../foundation/external/x-oauth.js";
-import { externalFetch, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
-import { redactExternalSecrets } from "../../foundation/redact.js";
+import { externalFetch } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
-import { HttpPublishError } from "../../publishing/errors.js";
+import { type HttpPublishError, httpPublishError, publishJson } from "../../publishing/errors.js";
 import { formatPlatformText } from "../../publishing/platform-profiles.js";
 import { ambiguousExternalMutation } from "../ambiguous-publication.js";
 import { guessContentType, payloadMedia, payloadText } from "./payload.js";
@@ -40,14 +39,14 @@ export async function publishToX(
       body,
     }),
   );
-  const result = await jsonResponse<{ data?: { id?: string } }>(response, "X tweet create");
+  const result = await publishJson<{ data?: { id?: string } }>(response, "X tweet create");
   const id = result.data?.id;
   return { ok: Boolean(id), id: id ?? null, url: id ? `https://x.com/i/web/status/${id}` : null, raw: result };
 }
 
 export async function verifyXPost(id: string, config: BackendConfig, fetchImpl: typeof fetch = fetch): Promise<{ id: string }> {
   const response = await oauthFetch(`https://api.twitter.com/2/tweets/${encodeURIComponent(id)}`, config, fetchImpl, { method: "GET" });
-  const result = await jsonResponse<{ data?: { id?: string } }>(response, "X post verify");
+  const result = await publishJson<{ data?: { id?: string } }>(response, "X post verify");
   if (result.data?.id !== id) throw new Error("X verification did not return the expected post");
   return { id };
 }
@@ -56,7 +55,7 @@ async function uploadImage(filePath: string, config: BackendConfig, fetchImpl: t
   const form = new FormData();
   form.set("media", Bun.file(filePath, { type: guessContentType(filePath) }), filePath.split("/").pop() || "image");
   const response = await oauthFetch(UPLOAD_URL, config, fetchImpl, { method: "POST", body: form });
-  const result = await jsonResponse<{ media_id_string?: string }>(response, "X media upload");
+  const result = await publishJson<{ media_id_string?: string }>(response, "X media upload");
   if (!result.media_id_string) throw new Error("X media upload missing media_id_string");
   return result.media_id_string;
 }
@@ -73,7 +72,7 @@ async function uploadVideo(
     media_type: "video/mp4",
     media_category: "amplify_video",
   });
-  const initialized = await jsonResponse<{ media_id_string?: string }>(
+  const initialized = await publishJson<{ media_id_string?: string }>(
     await oauthFetch(UPLOAD_URL, config, fetchImpl, formInit(initParams), initParams),
     "X media INIT",
   );
@@ -106,7 +105,7 @@ async function uploadVideo(
   }
 
   const finalizeParams = new URLSearchParams({ command: "FINALIZE", media_id: mediaId });
-  const finalized = await jsonResponse<ProcessingResponse>(
+  const finalized = await publishJson<ProcessingResponse>(
     await oauthFetch(UPLOAD_URL, config, fetchImpl, formInit(finalizeParams), finalizeParams),
     "X media FINALIZE",
   );
@@ -127,7 +126,7 @@ async function waitForProcessing(
     if (Date.now() >= deadline) throw new Error("X media processing timeout");
     await sleepImpl(Math.max(1, processing.check_after_secs ?? 5) * 1000);
     const query = new URLSearchParams({ command: "STATUS", media_id: mediaId });
-    const result = await jsonResponse<ProcessingResponse>(
+    const result = await publishJson<ProcessingResponse>(
       await oauthFetch(`${UPLOAD_URL}?${query}`, config, fetchImpl, { method: "GET" }),
       "X media STATUS",
     );
@@ -155,27 +154,6 @@ async function oauthFetch(
   return externalFetch(fetchImpl, url, { ...init, headers: { ...init.headers, Authorization: authorization } });
 }
 
-async function jsonResponse<T>(response: Response, label: string): Promise<T> {
-  const body = await response.text();
-  if (!response.ok) {
-    const safeBody = redactExternalSecrets(body);
-    throw new HttpPublishError(
-      `${label} ${response.status}: ${safeBody}`,
-      response.status,
-      safeBody,
-      retryAfterSecondsFromHeaders(response.headers),
-    );
-  }
-  return body ? (JSON.parse(body) as T) : ({} as T);
-}
-
 async function responseError(response: Response, label: string): Promise<HttpPublishError> {
-  const body = await response.text();
-  const safeBody = redactExternalSecrets(body);
-  return new HttpPublishError(
-    `${label} ${response.status}: ${safeBody}`,
-    response.status,
-    safeBody,
-    retryAfterSecondsFromHeaders(response.headers),
-  );
+  return httpPublishError(response, await response.text(), label);
 }

@@ -1,11 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import { firstNonEmptyLine } from "../content/message.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { drafts, postLocales, publicationSources, publications, siteJobs, siteSourceItems } from "../db/schema.js";
+import { drafts, postLocales, publications, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { jsonObject } from "../json.js";
 import { queueDraftStoryCards, readyStoryCardMedia, setStoryPublishMode, storyCardsForDraft } from "../story-cards/store.js";
 import { runStoryCardCycle } from "../story-cards/worker.js";
+import { updateSource } from "./commands/content-repair.js";
 import { resolvePublicationRef } from "./publication-ref.js";
 
 type LocalePlan = { locale: "ru" | "en"; slug: string; headline: string };
@@ -65,7 +66,7 @@ export async function backfillTextStoryCards(
   };
   if (!apply || plan.length === 0) return { ok: true, applied: false, ...base };
 
-  queueDraftStoryCards(backendDb, publication.draftId);
+  queueDraftStoryCards(unsafeDb(backendDb).db, publication.draftId);
   const cards = await waitForCards(backendDb, config, publication.draftId);
   const now = new Date().toISOString();
   unsafeDb(backendDb).db.transaction((tx) => {
@@ -76,32 +77,15 @@ export async function backfillTextStoryCards(
         .where(and(eq(postLocales.postId, ref.postId as number), eq(postLocales.locale, item.locale)))
         .run();
     }
-    const sourceRow = tx
-      .select({ itemJson: publicationSources.itemJson })
-      .from(publicationSources)
-      .where(eq(publicationSources.postId, ref.postId as number))
-      .get();
-    const source = {
-      ...jsonObject(sourceRow?.itemJson),
-      ...(plan.some((item) => item.locale === "ru") ? { site_media_ru: [cards.ru] } : {}),
-      ...(plan.some((item) => item.locale === "en") ? { site_media_en: [cards.en] } : {}),
-    };
-    tx.update(publicationSources)
-      .set({ itemJson: source, updatedAt: now })
-      .where(eq(publicationSources.postId, ref.postId as number))
-      .run();
-    const siteSource = tx
-      .select({ itemJson: siteSourceItems.itemJson })
-      .from(siteSourceItems)
-      .where(eq(siteSourceItems.messageId, ref.messageId))
-      .get();
-    tx.insert(siteSourceItems)
-      .values({ messageId: ref.messageId, itemJson: { ...jsonObject(siteSource?.itemJson), ...source }, createdAt: now, updatedAt: now })
-      .onConflictDoUpdate({
-        target: siteSourceItems.messageId,
-        set: { itemJson: { ...jsonObject(siteSource?.itemJson), ...source }, updatedAt: now },
-      })
-      .run();
+    updateSource(
+      tx,
+      ref,
+      {
+        ...(plan.some((item) => item.locale === "ru") ? { site_media_ru: [cards.ru] } : {}),
+        ...(plan.some((item) => item.locale === "en") ? { site_media_en: [cards.en] } : {}),
+      },
+      now,
+    );
     tx.insert(siteJobs)
       .values({
         postId: ref.postId,
@@ -114,19 +98,19 @@ export async function backfillTextStoryCards(
       })
       .run();
   });
-  setStoryPublishMode(backendDb, publication.draftId, "site_only");
-  return { ok: true, applied: true, ...base, cards: storyCardsForDraft(backendDb, publication.draftId) };
+  setStoryPublishMode(unsafeDb(backendDb).db, publication.draftId, "site_only");
+  return { ok: true, applied: true, ...base, cards: storyCardsForDraft(unsafeDb(backendDb).db, publication.draftId) };
 }
 
 async function waitForCards(backendDb: BackendDb, config: BackendConfig, draftId: number) {
   const deadline = Date.now() + config.STORY_CARD_TIMEOUT_SECONDS * 2_000;
   while (Date.now() < deadline) {
-    const ready = readyStoryCardMedia(backendDb, draftId);
+    const ready = readyStoryCardMedia(unsafeDb(backendDb).db, draftId);
     if (ready) return ready;
     await runStoryCardCycle(config, backendDb);
     await Bun.sleep(100);
   }
-  const states = storyCardsForDraft(backendDb, draftId)
+  const states = storyCardsForDraft(unsafeDb(backendDb).db, draftId)
     .map((card) => `${card.locale}:${card.status}`)
     .join(", ");
   throw new Error(`Story card backfill timed out for draft ${draftId}: ${states}`);

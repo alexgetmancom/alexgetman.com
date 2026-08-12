@@ -17,7 +17,7 @@ import { applyAdminState } from "./post-input-actions.js";
 import { translatePostText } from "./post-translation.js";
 import { parseSessionCallback, publicationCallback } from "./publication-callback.js";
 import { openPublicationFlow } from "./publication-flow.js";
-import { publicationRenderers } from "./publication-renderers.js";
+import { postPreviewCard } from "./publication-renderers.js";
 
 /** The conversational text-post screen. It owns user input and keeps the
  * root bot router limited to authorization and screen dispatch.
@@ -112,14 +112,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
   const textEn = await translatePostText(message.text, config);
   const draftId = createStudioServices(backendDb, config).posts.create(actorId, { ...message, textEn });
   clearConversationState(backendDb, actorId, "post");
-  const preview = publicationRenderers(backendDb, config).post.card({
-    backendDb,
-    pipeline: createStudioServices(backendDb, config).posts,
-    actorId,
-    publicationId: draftId,
-    config,
-    locale,
-  });
+  const preview = postPreviewCard(backendDb, config, actorId, draftId);
   return {
     handled: true,
     effects: [

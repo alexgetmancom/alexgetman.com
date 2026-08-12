@@ -29,7 +29,7 @@ export function requirePostEditAllowed(
   config: BackendConfig,
   actorId: number,
   draftId: number,
-  now = new Date(),
+  now: Date,
   locale?: "ru" | "en",
 ): DraftRecord {
   const draft = requireMutableDraft(ports, config, actorId, draftId);

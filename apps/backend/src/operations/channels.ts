@@ -1,9 +1,7 @@
-import { eq } from "drizzle-orm";
 import { isPublishableVideoPlatform } from "../channels/destinations.js";
-import { persistChannelConnection } from "../channels/management.js";
-import { listChannels } from "../channels/registry.js";
-import { type BackendDb, unsafeDb } from "../db/client.js";
-import { channelConnections } from "../db/schema.js";
+
+import { listChannels, registerChannel } from "../channels/registry.js";
+import type { BackendDb } from "../db/client.js";
 import type { VideoLocale } from "../publishing/video-types.js";
 
 /**
@@ -51,22 +49,17 @@ export function connectChannel(
     locale: VideoLocale;
     provider: string;
     targetId?: string;
-    accountId?: string;
+    providerAccountId?: string;
     label?: string;
   },
 ): { id: string } {
-  return { id: persistChannelConnection(backendDb, { ...input, source: "cli" }).id };
+  return { id: registerChannel(backendDb, { ...input, source: "cli" }).id };
 }
 
 /** Disabling keeps the row: its publications, metrics and audience history stay
  * attributable to the account they came from. */
 export function disableChannel(backendDb: BackendDb, channelId: string): { id: string; disabled: boolean } {
-  const updated = unsafeDb(backendDb)
-    .db.update(channelConnections)
-    .set({ enabled: 0, updatedAt: new Date().toISOString() })
-    .where(eq(channelConnections.id, channelId))
-    .returning({ id: channelConnections.id })
-    .get();
-  if (!updated) throw new Error(`unknown channel: ${channelId}`);
+  if (!backendDb.channels.get(channelId)) throw new Error(`unknown channel: ${channelId}`);
+  backendDb.channels.disable(channelId, new Date().toISOString());
   return { id: channelId, disabled: true };
 }

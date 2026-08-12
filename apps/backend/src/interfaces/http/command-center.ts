@@ -32,7 +32,6 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, engag
             backendDb,
             Number(url.searchParams.get("week_offset") ?? 0) || 0,
             url.searchParams.get("ref") ?? "",
-            url.searchParams.get("message_id") ?? "",
             url.searchParams.get("tab") ?? undefined,
             url.searchParams.get("locale") ?? undefined,
             url.searchParams.get("panel") ?? undefined,
@@ -121,6 +120,7 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, engag
 
   app.post("/api/command-center/action", async (c) => {
     const body = await commandAction(c.req.raw);
+    if (!body) return json({ detail: "unreadable command" }, 400);
     if (!commandAllowed(c.req.raw, config, body.token)) return json({ detail: "forbidden" }, 403);
     // This endpoint deletes external publications, so it gets the same same-origin
     // check as /command-center/studio/acknowledge — cookie authority is ambient and
@@ -149,11 +149,16 @@ function dashboardMemoryContext(url: URL): Record<string, string | null> {
   };
 }
 
-async function commandAction(request: Request): Promise<CommandAction> {
+async function commandAction(request: Request): Promise<CommandAction | null> {
   const raw = request.headers.get("content-type")?.includes("application/json")
     ? await request.json().catch(() => ({}))
     : Object.fromEntries((await request.formData().catch(() => new FormData())).entries());
   const parsed = commandActionSchema.safeParse(raw);
+  // A body this endpoint cannot read used to become the empty command, so a
+  // misspelled field arrived as an unscoped action instead of as the error it
+  // is — and a typo in `target` is the difference between one delivery target
+  // and every one the publication has.
+  if (!parsed.success) return null;
   // The actor is where the request arrived, never what the body claims.
-  return { ...(parsed.success ? parsed.data : commandActionSchema.parse({})), actor_type: "command-center" };
+  return { ...parsed.data, actor_type: "command-center" };
 }

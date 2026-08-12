@@ -77,7 +77,7 @@ describe("Studio service boundaries", () => {
         platform: "instagram",
         locale: "en",
         provider: "native",
-        accountId: "account-1",
+        providerAccountId: "account-1",
       });
       expect(result.source).toBe("interface");
       expect(channels.list().find((channel) => channel.id === "instagram_en")).toMatchObject({ providerAccountId: "account-1" });

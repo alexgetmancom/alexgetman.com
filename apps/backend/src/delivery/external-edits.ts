@@ -22,7 +22,12 @@ export async function editPublishedTargets(
     .where(eq(posts.postKey, edit.postKey))
     .get();
   const rows = unsafeDb(backendDb)
-    .db.select({ target: postTargets.target, status: postTargets.status, externalId: postTargets.externalId })
+    .db.select({
+      target: postTargets.target,
+      status: postTargets.status,
+      externalId: postTargets.externalId,
+      externalIdsJson: postTargets.externalIdsJson,
+    })
     .from(postTargets)
     .where(eq(postTargets.postKey, edit.postKey))
     .all();
@@ -45,10 +50,14 @@ export async function editPublishedTargets(
           });
         }
         if (row.target === "discord" && edit.textEn) {
-          // Only the first message carries the edit. A post long enough to have
-          // been split cannot be re-split in place — editing message one and
-          // leaving message two stale would read worse than not editing at all.
+          // Only the first message carries the edit, so a post that is split —
+          // before or after the edit — cannot be corrected in place: editing
+          // message one would leave message two as the stale tail of a text
+          // that no longer exists. Declining here sends it down the replacement
+          // path, which deletes every message and publishes the post again.
           const limit = platformProfile("discord")?.limits?.text ?? 2000;
+          if ((row.externalIdsJson?.length ?? 1) > 1)
+            return { target: row.target, ok: false, skipped: true, error: "discord_post_is_split" };
           if (edit.textEn.length > limit) return { target: row.target, ok: false, skipped: true, error: "edit_exceeds_discord_limit" };
           const response = await editDiscordMessage(row.externalId, edit.textEn, config, fetchImpl);
           return { target: row.target, ok: true, response };

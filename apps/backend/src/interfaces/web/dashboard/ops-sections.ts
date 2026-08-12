@@ -60,7 +60,7 @@ const REPAIR_ACTIONS: [value: string, key: MessageKey][] = [
 /** The form authenticates through the HttpOnly `command_token` cookie; the
  * endpoint pairs that with a same-origin check, which is what actually stops a
  * cross-site POST from riding the session. */
-export function renderRepairSection(ref: string, messageId: string, locale: StudioLocale): string {
+export function renderRepairSection(ref: string, locale: StudioLocale): string {
   const options = ORDERED_TARGETS.map((target) => `<option value="${escapeHtml(target.id)}">${escapeHtml(target.label)}</option>`).join(
     "\n",
   );
@@ -72,7 +72,6 @@ export function renderRepairSection(ref: string, messageId: string, locale: Stud
     `<select name="action">${actions}</select>`,
     `<select name="locale"><option value="">${t(locale, "cc.repair.both-locales")}</option><option value="ru">RU</option><option value="en">EN</option></select>`,
     `<input name="ref" placeholder="${t(locale, "cc.repair.ref-placeholder")}" value="${escapeHtml(ref)}">`,
-    `<input name="message_id" placeholder="${t(locale, "cc.repair.message-placeholder")}" value="${escapeHtml(messageId)}">`,
     `<select name="target"><option value="">${t(locale, "cc.repair.all-targets")}</option>${options}</select>`,
     `<textarea name="text" placeholder="${t(locale, "cc.repair.text-placeholder")}"></textarea>`,
     `<textarea name="media_json" placeholder='${t(locale, "cc.repair.media-placeholder")}'></textarea>`,

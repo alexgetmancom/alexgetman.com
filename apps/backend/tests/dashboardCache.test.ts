@@ -10,8 +10,8 @@ describe("dashboard render cache", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const config = loadConfig({ COMMAND_CENTER_TOKEN: "secret" });
-      const first = renderDashboard(config, backendDb, 0, "", "", undefined, undefined, "queue");
-      expect(renderDashboard(config, backendDb, 0, "", "", undefined, undefined, "queue")).toBe(first);
+      const first = renderDashboard(config, backendDb, 0, "", undefined, undefined, "queue");
+      expect(renderDashboard(config, backendDb, 0, "", undefined, undefined, "queue")).toBe(first);
       const now = new Date().toISOString();
       backendDb.db
         .insert(publishJobs)
@@ -27,7 +27,7 @@ describe("dashboard render cache", () => {
         })
         .run();
 
-      expect(renderDashboard(config, backendDb, 0, "", "", undefined, undefined, "queue")).not.toBe(first);
+      expect(renderDashboard(config, backendDb, 0, "", undefined, undefined, "queue")).not.toBe(first);
     } finally {
       backendDb.close();
     }

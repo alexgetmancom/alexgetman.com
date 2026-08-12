@@ -72,17 +72,25 @@ const example = <S extends z.ZodType>(schema: S, placeholder: string): S => sche
 
 /** Callers reach for the bare post number — it is what every other surface
  * shows them — so it is a spelling of the ref, not a mistake to reject. */
-const refOption = example(z.string().trim().min(1), "post:160")
-  .describe("publication ref")
-  .transform((value) => (/^\d+$/.test(value) ? `post:${value}` : value));
+const refSpelling = (value: string): string => (/^\d+$/.test(value) ? `post:${value}` : value);
+const refOption = example(z.string().trim().min(1), "post:160").describe("publication ref").transform(refSpelling);
 const applyOption = z.boolean().default(false).describe("perform the change; omitted it reports the plan only");
 const localeOption = z.enum(["ru", "en"]).optional().describe("restrict to one language");
-const targetOption = example(z.string().optional(), "x").describe("restrict to one delivery target");
-const commaList = (what: string) => z.string().optional().describe(`comma-separated ${what}`);
+/** Non-empty wherever it is optional: `--target=` used to reach the dispatcher
+ * as the empty string, which reads as "no target given" and silently widens the
+ * command to every target the publication has. An option spelled with nothing
+ * after it is a mistake, and the only safe reading of it is an error. */
+const targetOption = example(z.string().trim().min(1).optional(), "x").describe("restrict to one delivery target");
+const commaList = (what: string) => z.string().trim().min(1).optional().describe(`comma-separated ${what}`);
 
 function splitList(value: string | undefined): string[] | undefined {
-  const items = value?.split(",").filter(Boolean);
-  return items?.length ? items : undefined;
+  if (value === undefined) return undefined;
+  const items = value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!items.length) throw new Error("a comma-separated option must name at least one value");
+  return items;
 }
 
 const METRIC_BACKFILL_TARGETS = "telegram,threads_ru,threads_en,instagram_stories,instagram_stories_ru,telegram_stories";
@@ -200,14 +208,17 @@ const operationDefs = {
       }),
   }),
   migrations: operation({
-    summary: "Applied and pending schema migrations.",
+    // Pending is not a state this can report: opening the database migrates it,
+    // so by the time the handler runs there is nothing left to apply.
+    summary: "Schema migrations this database has applied.",
     schema: z.object({}),
     mutates: false,
     agent: true,
     handler: (context) => ({ migrations: migrationStatus(unsafeDb(context.db()).sqlite) }),
   }),
   "x-analytics": operation({
-    summary: "What the X CSV imports hold: coverage, unlinked activity and posts an import declined to link.",
+    summary:
+      "What the X CSV imports hold: coverage, unlinked activity, and linkCandidates — items matching exactly one post but under the linker's 30-character bar, reported and never linked.",
     schema: z.object({ limit: z.coerce.number().int().min(1).max(100).default(10).describe("how many unlinked items to list") }),
     mutates: false,
     agent: true,
@@ -219,7 +230,7 @@ const operationDefs = {
     schema: z.object({ apply: applyOption }),
     mutates: true,
     agent: true,
-    note: "an import runs this itself; use it after the matching rule changes",
+    note: "an import runs this itself; use it after the matching rule changes, because re-importing a byte-identical CSV will not re-link anything",
     handler: (context, input) => attachXActivityToPosts(context.db(), input.apply),
   }),
   "media-status": operation({
@@ -317,7 +328,9 @@ const operationDefs = {
   "publication-repair": operation({
     summary: "Reconcile publication rows against their jobs and targets.",
     schema: z.object({
-      ref: example(z.string().optional(), "post:160").describe("scope to one publication; omitted it sweeps everything"),
+      ref: example(z.string().trim().min(1).optional(), "post:160")
+        .describe("scope to one publication; omitted it sweeps everything")
+        .transform((value) => (value === undefined ? undefined : refSpelling(value))),
       apply: applyOption,
     }),
     mutates: true,
@@ -364,7 +377,7 @@ const operationDefs = {
     agent: true,
     handler: (context, input) => {
       const backendDb = context.db();
-      const refs = splitList(input.refs);
+      const refs = splitList(input.refs)?.map(refSpelling);
       const plan = buildMetricsBackfillPlan(backendDb, {
         targets: splitList(input.targets) ?? METRIC_BACKFILL_TARGETS.split(","),
         ...(refs ? { refs } : {}),
@@ -399,10 +412,13 @@ const operationDefs = {
     summary: "Import an X analytics CSV export.",
     schema: z.object({
       file: example(z.string().min(1), "PATH").describe("CSV path on this host"),
-      sampled_at: example(z.string().min(1), "ISO").describe("when the export was taken"),
+      sampled_at: example(z.string().min(1), "ISO").describe(
+        "when the export was taken: the file's own mtime in ISO UTC, never now — it stamps the metric history",
+      ),
     }),
     mutates: true,
     agent: false,
+    note: "a byte-identical file is a no-op by SHA-256, so a repeat costs nothing; it links the whole table afterwards, so an older export still reaches posts written since",
     handler: (context, input) => importXAnalyticsCsv(context.db(), input.file, input.sampled_at),
   }),
   "import-manual-analytics": operation({
@@ -482,7 +498,7 @@ const operationDefs = {
         locale: input.locale,
         provider: input.provider,
         ...(input.target ? { targetId: input.target } : {}),
-        ...(input.account_id ? { accountId: input.account_id } : {}),
+        ...(input.account_id ? { providerAccountId: input.account_id } : {}),
         ...(input.label ? { label: input.label } : {}),
       }),
   }),
@@ -498,17 +514,35 @@ const operationDefs = {
 } satisfies Record<string, OperationDef>;
 
 export function operationDef(name: string): OperationDef | undefined {
-  return (operationDefs as Record<string, OperationDef>)[name];
+  const defs = operationDefs as Record<string, OperationDef>;
+  // Own properties only: a plain lookup answers `toString` and `constructor`
+  // with something inherited from Object.prototype, and the caller gets an
+  // internal type error instead of "unknown command".
+  return Object.hasOwn(defs, name) ? defs[name] : undefined;
 }
+
+/** What the caller wrote is wrong, as opposed to the operation having failed.
+ * MCP reports it as -32602 with the offending field named and the CLI prints
+ * it; both come from this one parse rather than validating a second time. */
+export class OperationInputError extends Error {}
 
 export async function runOperation(name: string, context: OperationContext, args: unknown): Promise<unknown> {
   const def = operationDef(name);
-  if (!def) throw new Error(`unknown command: ${name}`);
+  if (!def) throw new OperationInputError(`unknown command: ${name}`);
+  // Zod strips what it does not know, so a misspelled `target` used to arrive
+  // as no target at all and widen a scoped command to the whole publication.
+  const fields = Object.keys((operationJsonSchema(def).properties ?? {}) as JsonObject);
+  const given = typeof args === "object" && args !== null ? Object.keys(args as JsonObject) : [];
+  const unknown = given.filter((field) => !fields.includes(field));
+  if (unknown.length)
+    throw new OperationInputError(
+      `${name}: unknown field${unknown.length > 1 ? "s" : ""} ${unknown.join(", ")}; accepts ${fields.join(", ") || "no arguments"}`,
+    );
   const parsed = def.schema.safeParse(args);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     const path = issue?.path.join(".");
-    throw new Error(`${name}: ${path ? `${path}: ` : ""}${issue?.message ?? "invalid arguments"}`);
+    throw new OperationInputError(`${name}: ${path ? `${path}: ` : ""}${issue?.message ?? "invalid arguments"}`);
   }
   return def.handler(context, parsed.data);
 }

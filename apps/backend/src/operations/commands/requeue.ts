@@ -1,153 +1,31 @@
-import { and, desc, eq } from "drizzle-orm";
-import { isSiteTarget, targetLocale } from "../../botTargets.js";
+import { eq } from "drizzle-orm";
+import { targetLocale } from "../../botTargets.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
-import { postTargets, publications, publishJobs, siteJobs } from "../../db/schema.js";
+import { postTargets, publishJobs } from "../../db/schema.js";
 import { removePublishedTargets } from "../../delivery/external-removals.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import { requeuedPostTarget, requeuedPublishJobColumns } from "../../publishing/job-policy.js";
-import { localizeTargetPayload } from "../../publishing/payload.js";
+import { RETRY_UNLESS_HELD, requeuePublicationTargets } from "../../publishing/requeue.js";
 import { type ResolvedPublicationRef, sourcePayload } from "../publication-ref.js";
 
-/** The site is rendered from `siteJobs`, keyed by a publish reason; every other
- * target is delivered from `publishJobs`, keyed by the target. Treating a site
- * target as a publish target used to manufacture a publishJobs row for
- * `site_ru`, which no publisher serves: the worker failed it as an unsupported
- * target, the real site job was never re-rendered, and post_targets — what the
- * Command Center and the bot read — was overwritten from its actual state to
- * "queued". Studio's retry has always routed these apart; this is that routing. */
-function requeueSitePublication(
-  backendDb: BackendDb,
-  ref: ResolvedPublicationRef,
-  target: string,
-  reason: string,
-): Record<string, unknown> {
-  const now = new Date().toISOString();
-  const whereRef = ref.postId != null ? eq(siteJobs.postId, ref.postId) : eq(siteJobs.messageId, ref.messageId);
-  const outcome = unsafeDb(backendDb).db.transaction((tx) => {
-    const row = tx
-      .select()
-      .from(siteJobs)
-      .where(and(whereRef, eq(siteJobs.reason, reason)))
-      .orderBy(desc(siteJobs.jobId))
-      .get();
-    // Fabricating a site job here would be a different operation, and one
-    // `ops repair-content` already owns. Say so instead.
-    if (!row) return "no_job" as const;
-    if (row.status === "queued") return "already_queued" as const;
-    // Held by the renderer, for the same reason a publishing job is untouchable:
-    // recoverStaleSiteJobs releases it once its lock ages out.
-    if (row.status === "rendering") return "rendering" as const;
-    tx.update(siteJobs)
-      .set({ status: "queued", attemptCount: 0, nextAttemptAt: null, lockedBy: null, lockedAt: null, lastError: null, updatedAt: now })
-      .where(eq(siteJobs.jobId, row.jobId))
-      .run();
-    const mirrored = requeuedPostTarget(ref.postKey, target, now);
-    tx.insert(postTargets)
-      .values(mirrored.values)
-      .onConflictDoUpdate({ target: [postTargets.postKey, postTargets.target], set: mirrored.patch })
-      .run();
-    if (ref.postId != null)
-      tx.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, ref.postId)).run();
-    return "requeued" as const;
-  });
-  return {
-    ok: outcome === "requeued" || outcome === "already_queued",
-    post_id: ref.postId,
-    post_key: ref.postKey,
-    message_id: ref.messageId,
-    target,
-    targets: [target],
-    results: [{ target, outcome }],
-  };
-}
-
-/** Restores queued Delivery work from its durable publication source. */
+/** `ops retry` over one publication: which targets it names, and how its
+ * result reads to an operator. The requeue itself belongs to Publishing, which
+ * Studio's retry button also goes through — one job, one mechanism. */
 function requeuePublication(backendDb: BackendDb, ref: ResolvedPublicationRef, target?: string): Record<string, unknown> {
-  if (target && isSiteTarget(target)) return requeueSitePublication(backendDb, ref, target, target);
-  const source = sourcePayload(backendDb, ref);
-  const whereRef = ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.postKey, ref.postKey);
-  const rows = unsafeDb(backendDb)
-    .db.select()
-    .from(publishJobs)
-    .where(target ? and(whereRef, eq(publishJobs.target, target)) : whereRef)
-    .orderBy(desc(publishJobs.jobId))
-    .all();
-  const latest = new Map<string, typeof publishJobs.$inferSelect>();
-  for (const row of rows) if (!latest.has(row.target)) latest.set(row.target, row);
-  if (latest.size === 0 && target) {
-    if (ref.postId == null) throw new Error("publication has no post id");
-    const payload = localizeTargetPayload(source, target);
-    if (Object.keys(payload).length === 0) throw new Error("no publish jobs found");
-    const now = new Date().toISOString();
-    const inserted = unsafeDb(backendDb)
-      .db.insert(publishJobs)
-      .values({
-        postId: ref.postId,
-        postKey: ref.postKey,
-        messageId: ref.messageId,
-        target,
-        status: "queued",
-        attemptCount: 0,
-        publishAt: now,
-        nextAttemptAt: null,
-        lockedBy: null,
-        lockedAt: null,
-        payloadJson: payload,
-        lastError: null,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning()
-      .get();
-    if (inserted) latest.set(target, inserted);
-  }
-  if (latest.size === 0) throw new Error("no publish jobs found");
-  const now = new Date().toISOString();
-  // Per-target outcome, not a flat name list: a target that already had a queued
-  // job keeps its existing payload, so reporting it as "requeued" would tell the
-  // operator the payload was regenerated from the durable source when it wasn't.
-  const results: Array<{ target: string; outcome: "requeued" | "already_queued" | "publishing" }> = [];
-  unsafeDb(backendDb).db.transaction((tx) => {
-    for (const [targetId, row] of latest) {
-      const existing = tx
-        .select({ jobId: publishJobs.jobId })
-        .from(publishJobs)
-        .where(
-          and(
-            ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.postKey, ref.postKey),
-            eq(publishJobs.target, targetId),
-            eq(publishJobs.status, "queued"),
-          ),
-        )
-        .get();
-      // A job a worker currently holds is off limits. Flipping it to queued
-      // clears the lock the worker checks before recording its result, so the
-      // provider call it is in the middle of would go out, be discarded as a
-      // lost lock, and then be published a second time by the next claim. A
-      // worker that actually died is recovered by recoverStalePublishJobs once
-      // its lock ages out; there is nothing for an operator to rescue here.
-      if (!existing && row.status === "publishing") {
-        results.push({ target: targetId, outcome: "publishing" });
-        continue;
-      }
-      if (!existing) {
-        const payload = localizeTargetPayload(source, targetId);
-        tx.update(publishJobs).set(requeuedPublishJobColumns(payload, now)).where(eq(publishJobs.jobId, row.jobId)).run();
-      }
-      const mirrored = requeuedPostTarget(row.postKey ?? ref.postKey, targetId, now);
-      tx.insert(postTargets)
-        .values(mirrored.values)
-        .onConflictDoUpdate({ target: [postTargets.postKey, postTargets.target], set: mirrored.patch })
-        .run();
-      results.push({ target: targetId, outcome: existing ? "already_queued" : "requeued" });
-    }
-    if (ref.postId != null)
-      tx.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, ref.postId)).run();
+  const scope = { postId: ref.postId, postKey: ref.postKey, messageId: ref.messageId };
+  const targets = target ? [target] : jobbedTargets(backendDb, ref);
+  if (targets.length === 0) throw new Error("no publish jobs found");
+  const results = requeuePublicationTargets(backendDb, scope, targets, {
+    from: RETRY_UNLESS_HELD,
+    // An operator naming one target may be restoring a publication whose job
+    // rows were never created — after a channel was connected late, or a
+    // publication was planned without it.
+    createMissing: Boolean(target),
+    source: () => sourcePayload(backendDb, ref),
   });
   return {
-    // Every target still in a worker's hands means nothing was requeued, and an
-    // operator reading `ok: true` off `ops retry` would believe otherwise.
-    ok: results.some((row) => row.outcome !== "publishing"),
+    // Every target still held means nothing was requeued, and an operator
+    // reading `ok: true` off `ops retry` would believe otherwise.
+    ok: results.some((row) => row.outcome !== "not_retryable"),
     post_id: ref.postId,
     post_key: ref.postKey,
     message_id: ref.messageId,
@@ -155,6 +33,21 @@ function requeuePublication(backendDb: BackendDb, ref: ResolvedPublicationRef, t
     targets: results.map((row) => row.target),
     results,
   };
+}
+
+/** Targets this publication has ever delivered to, newest job per target. */
+function jobbedTargets(backendDb: BackendDb, ref: ResolvedPublicationRef): string[] {
+  const whereRef = ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.postKey, ref.postKey);
+  return [
+    ...new Set(
+      unsafeDb(backendDb)
+        .db.select({ target: publishJobs.target })
+        .from(publishJobs)
+        .where(whereRef)
+        .all()
+        .map((row) => row.target),
+    ),
+  ];
 }
 
 export function requeuePublicationScope(
@@ -185,12 +78,19 @@ export function requeueAfterRemoval(
 ): Record<string, unknown> {
   const succeeded = removals.filter((row) => row.ok === true && typeof row.target === "string").map((row) => row.target as string);
   // An explicitly selected target with no durable remote row is already gone;
-  // it is safe to create its replacement. A failed deletion is never retried
-  // as a new post, preventing accidental duplicates.
-  const targets = succeeded.length > 0 ? succeeded : target ? [target] : [];
+  // it is safe to create its replacement. A deletion that was *attempted and
+  // failed* is not that case, and falling back to the requested target on any
+  // empty success list published a replacement next to a post still standing.
+  const attempted = new Set(removals.filter((row) => row.skipped !== true).map((row) => row.target));
+  const targets = target && !succeeded.includes(target) ? (attempted.has(target) ? [] : [target]) : succeeded;
   return { ok: targets.length > 0, results: targets.map((value) => requeuePublication(backendDb, ref, value)) };
 }
 
+/** Takes down and re-publishes the targets an edit could not reach in place.
+ *
+ * Which those are is the edit's own answer, not a second list here: a target
+ * that reported `ok` was already rewritten, and deleting it afterwards produced
+ * an edit, a deletion and a fresh publication of the same post. */
 export async function replaceTextFallbackTargets(
   backendDb: BackendDb,
   ref: ResolvedPublicationRef,
@@ -198,15 +98,16 @@ export async function replaceTextFallbackTargets(
   target: string | undefined,
   locale: "ru" | "en",
   fetchImpl: typeof fetch,
+  edited: Array<Record<string, unknown>>,
 ): Promise<Array<Record<string, unknown>>> {
-  const nativeEdit = new Set(["telegram"]);
+  const rewritten = new Set(edited.filter((row) => row.ok === true && typeof row.target === "string").map((row) => row.target as string));
   const targets = unsafeDb(backendDb)
     .db.select({ target: postTargets.target })
     .from(postTargets)
     .where(eq(postTargets.postKey, ref.postKey))
     .all()
     .map((row) => row.target)
-    .filter((value) => (!target || value === target) && targetLocale(value) === locale && !nativeEdit.has(value));
+    .filter((value) => (!target || value === target) && targetLocale(value) === locale && !rewritten.has(value));
   const results: Array<Record<string, unknown>> = [];
   for (const value of targets) {
     const removed = await removePublishedTargets(backendDb, config, { postKey: ref.postKey, target: value }, fetchImpl);

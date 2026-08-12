@@ -64,7 +64,6 @@ function readiness(config: BackendConfig, backendDb: BackendDb): Record<string, 
 
   return {
     ok: Object.values(checks).every((check) => check.ok),
-    pipeline_db: config.PIPELINE_DB,
     checks,
     workers,
   };

@@ -15,18 +15,17 @@ export function listChannels(backendDb: BackendDb, enabledOnly = true): ChannelC
     .sort((left, right) => left.platform.localeCompare(right.platform) || left.locale.localeCompare(right.locale));
 }
 
-export function registerChannel(
-  backendDb: BackendDb,
-  input: {
-    platform: string;
-    locale: VideoLocale;
-    provider: string;
-    providerAccountId?: string;
-    targetId?: string;
-    label?: string;
-    source?: string;
-  },
-): ChannelConnection {
+export type ChannelInput = {
+  platform: string;
+  locale: VideoLocale;
+  provider: string;
+  providerAccountId?: string;
+  targetId?: string;
+  label?: string;
+  source?: string;
+};
+
+export function registerChannel(backendDb: BackendDb, input: ChannelInput): ChannelConnection {
   const now = new Date().toISOString();
   const id = input.targetId ?? channelId(input.platform, input.locale);
   backendDb.channels.upsert(

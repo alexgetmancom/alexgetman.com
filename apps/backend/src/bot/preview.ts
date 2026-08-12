@@ -2,7 +2,7 @@ import { InlineKeyboard } from "grammy";
 import { type PresetName, presetName, TARGETS } from "../botTargets.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
 import { requireDraft } from "../content/drafts.js";
-import type { BackendDb } from "../db/client.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
 import type { StudioLocale } from "../foundation/locale.js";
@@ -257,7 +257,7 @@ export function draftPreview(
   }
 
   const media = mediaCounts(draft.media_ru_json, draft.media_en_json);
-  const storyCards = storyCardsForDraft(backendDb, draftId);
+  const storyCards = storyCardsForDraft(unsafeDb(backendDb).db, draftId);
   const storyCardStatus =
     storyCards.length === 0
       ? ""
@@ -284,7 +284,7 @@ function failedTargets(backendDb: BackendDb, draftId: number): Array<{ target: s
 
 export function canEditLocale(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, locale: "ru" | "en"): boolean {
   try {
-    requirePostEditAllowed(backendDb, config, actorId, draftId, new Date(), locale);
+    requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now(), locale);
     return true;
   } catch {
     return false;

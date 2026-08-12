@@ -87,7 +87,20 @@ export function insertEvent(
     .run();
 }
 
-/** A settlement updates the job, mirrors target state, and journals the event atomically. */
+/** Raised when the lease a settlement was fenced by is no longer held, which
+ * rolls the whole settlement back: the job belongs to another worker now, and
+ * its target row and journal entry must not be written by the previous one. */
+export class PublishLockLostError extends Error {
+  constructor(readonly jobId: number) {
+    super(`publish_job_lock_lost:${jobId}`);
+  }
+}
+
+/** A settlement updates the job, mirrors target state, and journals the event
+ * atomically. `fence` is the lease the caller checked before it called the
+ * provider: that check is minutes old by the time a settlement lands, and
+ * without carrying it into the write a timed-out worker overwrote the result
+ * its replacement had already recorded. */
 export function settleJob(
   tx: UnsafeBackendDb["db"],
   jobId: number,
@@ -96,8 +109,17 @@ export function settleJob(
   target: string,
   targetPatch: Omit<typeof postTargets.$inferInsert, "postKey" | "target"> & { updatedAt: string },
   event: { type: string; severity: string; message: string; details: Record<string, unknown> },
+  fence?: string,
 ): void {
-  if (jobPatch) tx.update(publishJobs).set(jobPatch).where(eq(publishJobs.jobId, jobId)).run();
+  if (jobPatch && fence != null) {
+    const updated = tx
+      .update(publishJobs)
+      .set(jobPatch)
+      .where(and(eq(publishJobs.jobId, jobId), eq(publishJobs.lockedBy, fence)))
+      .returning({ jobId: publishJobs.jobId })
+      .get();
+    if (!updated) throw new PublishLockLostError(jobId);
+  } else if (jobPatch) tx.update(publishJobs).set(jobPatch).where(eq(publishJobs.jobId, jobId)).run();
   upsertPostTarget(tx, { postKey, target, ...targetPatch });
   insertEvent(tx, postKey, target, event.type, event.severity, event.message, event.details, targetPatch.updatedAt);
 }

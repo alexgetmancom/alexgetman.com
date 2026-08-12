@@ -54,8 +54,11 @@ async function runProductionCommand(): Promise<number> {
   const shipped: string[] = [];
   try {
     for (const [index, value] of argv.entries()) {
-      if (!FILE_FLAGS.has(value)) continue;
-      const local = argv[index + 1];
+      // Both spellings the CLI parser accepts: `--file=PATH` used to travel
+      // through untouched and the container looked for a Mac path.
+      const inlined = value.indexOf("=") > 2 && FILE_FLAGS.has(value.slice(0, value.indexOf("=")));
+      if (!inlined && !FILE_FLAGS.has(value)) continue;
+      const local = inlined ? value.slice(value.indexOf("=") + 1) : argv[index + 1];
       if (!local || !(await Bun.file(local).exists())) continue;
       const remotePath = `/tmp/${basename(local)}`;
       const copyCommand = remoteCommand(["docker", "exec", "-i", "-u", "bun", container, "sh", "-c", `cat > ${shellQuote(remotePath)}`]);
@@ -65,7 +68,8 @@ async function runProductionCommand(): Promise<number> {
         return copyCode;
       }
       shipped.push(remotePath);
-      argv[index + 1] = remotePath;
+      if (inlined) argv[index] = `${value.slice(0, value.indexOf("="))}=${remotePath}`;
+      else argv[index + 1] = remotePath;
     }
 
     return await run(["ssh", sshTarget, remoteCommand(["docker", "exec", "-u", "bun", container, "bun", "/app/ops/cli.js", ...argv])]);

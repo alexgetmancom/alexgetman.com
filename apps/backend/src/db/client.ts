@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import type { ApplicationPorts } from "../application/ports.js";
-import { queueDraftStoryCards } from "../story-cards/store.js";
+import { queueDraftStoryCards, readyStoryCardMedia, setStoryPublishMode, storyCardsForDraft } from "../story-cards/store.js";
 import { createChannelStore } from "./repositories/channels.js";
 import { createConversationSessionStore } from "./repositories/conversation-sessions.js";
 import { createDraftStore } from "./repositories/drafts.js";
@@ -71,8 +71,7 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
   migrate(db, { migrationsFolder: migrationsFolder() });
   sqlite.run("PRAGMA foreign_keys = ON");
   const clock = { now: () => new Date() };
-  let backendDb: UnsafeBackendDb;
-  backendDb = {
+  const backendDb: UnsafeBackendDb = {
     sqlite,
     db,
     clock,
@@ -87,7 +86,12 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
     conversationSessions: createConversationSessionStore(db),
     studioQueue: createStudioQueueStore(db),
     studioVideos: createStudioVideoStore(db),
-    storyCards: { queue: (draftId) => queueDraftStoryCards(backendDb, draftId) },
+    storyCards: {
+      queue: (draftId) => queueDraftStoryCards(db, draftId),
+      forDraft: (draftId) => storyCardsForDraft(db, draftId),
+      readyMedia: (draftId) => readyStoryCardMedia(db, draftId),
+      setPublishMode: (draftId, mode) => setStoryPublishMode(db, draftId, mode),
+    },
     close: () => sqlite.close(),
   };
   return backendDb;

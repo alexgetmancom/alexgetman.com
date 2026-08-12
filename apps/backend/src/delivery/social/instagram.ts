@@ -1,9 +1,9 @@
 import type { BackendConfig } from "../../foundation/config.js";
 import { type InstagramCredentials, instagramGraphHost } from "../../foundation/external/instagram.js";
-import { externalFetch, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
+import { externalFetch } from "../../foundation/http.js";
 import { redactExternalSecrets } from "../../foundation/redact.js";
 import type { PublishResult } from "../../publishing/errors.js";
-import { HttpPublishError } from "../../publishing/errors.js";
+import { httpPublishError } from "../../publishing/errors.js";
 import { ambiguousExternalMutation, isAmbiguousPublicationError } from "../ambiguous-publication.js";
 import { InstagramContainerInvalidError, isExpiredInstagramContainer } from "./instagram-container.js";
 import { payloadMedia } from "./payload.js";
@@ -208,15 +208,7 @@ async function graphRequest(
   const version = config.INSTAGRAM_GRAPH_API_VERSION;
   const response = await externalFetch(fetchImpl, `https://${host}/${version}/${path.replace(/^\/+/, "")}`, init);
   const body = await response.text();
-  if (!response.ok) {
-    const safeBody = redactExternalSecrets(body);
-    throw new HttpPublishError(
-      `Instagram API ${response.status}: ${safeBody}`,
-      response.status,
-      safeBody,
-      retryAfterSecondsFromHeaders(response.headers),
-    );
-  }
+  if (!response.ok) throw httpPublishError(response, body, "Instagram API");
   return body ? (JSON.parse(body) as GraphResponse) : {};
 }
 

@@ -12,12 +12,12 @@ import { createOperationsService } from "../../operations/service.js";
 import { type PlatformMetric, renderCombinedSection } from "./dashboard/combined-section.js";
 import { localeQuery, renderLocaleSwitcher } from "./dashboard/locale-links.js";
 import { renderCredentialsSection, renderDiagnosticsSection, renderQueueSection, renderRepairSection } from "./dashboard/ops-sections.js";
-import { buildOverviewData, loadDashboardReadModel, videoOverviewForPeriod } from "./dashboard/overview-data.js";
+import { buildOverviewData, filterPipeline, loadDashboardReadModel, videoOverviewForPeriod } from "./dashboard/overview-data.js";
 import { renderPeriodControls } from "./dashboard/period-controls.js";
 import { renderDashboardShell } from "./dashboard/shell.js";
 import { type PublicationDetailsResult, renderPublicationDetails } from "./dashboard/table.js";
 import { dashboardThemeToggleHtml } from "./dashboard/theme.js";
-import type { OpsPayload, PipelineData, PipelinePost } from "./dashboard/types.js";
+import type { OpsPayload, PipelinePost } from "./dashboard/types.js";
 import { createVideoOverviewCache, invalidateVideoOverviewCache } from "./dashboard/video-overview.js";
 import { renderStudioSection } from "./studio.js";
 
@@ -39,7 +39,6 @@ function dashboardCacheKey(
   config: BackendConfig,
   weekOffset: number,
   ref: string,
-  messageId: string,
   requestedTab: string | undefined,
   requestedLocale: string | undefined,
   requestedPanel: string | undefined,
@@ -57,7 +56,6 @@ function dashboardCacheKey(
     request: [
       weekOffset,
       ref,
-      messageId,
       requestedTab ?? null,
       requestedLocale ?? null,
       requestedPanel ?? null,
@@ -91,7 +89,6 @@ export function renderDashboard(
   backendDb: BackendDb,
   weekOffset: number,
   ref = "",
-  messageId = "",
   requestedTab?: string,
   requestedLocale?: string,
   requestedPanel?: string,
@@ -110,7 +107,6 @@ export function renderDashboard(
     config,
     weekOffset,
     ref,
-    messageId,
     requestedTab,
     requestedLocale,
     requestedPanel,
@@ -185,7 +181,7 @@ export function renderDashboard(
       case "health":
         return `${renderCredentialsSection(ops ?? {}, locale)}${renderDiagnosticsSection(ops ?? {}, locale)}`;
       case "repair":
-        return renderRepairSection(ref, messageId, locale);
+        return renderRepairSection(ref, locale);
       default:
         return renderOverview();
     }
@@ -328,17 +324,6 @@ function xActivityPipelinePost(item: XActivityDashboardItem): PipelinePost {
       },
     },
   };
-}
-
-function filterPipeline(data: PipelineData | null, targetIds: string[]): PipelineData | null {
-  if (!data) return null;
-  return { ...data, posts: (data.posts ?? []).filter((post) => targetIds.some((target) => postHasTarget(post, target))) };
-}
-
-function postHasTarget(post: PipelinePost, target: string): boolean {
-  if (post.targets?.[target]?.status === "published") return true;
-  if (target === "telegram" && post.telegram_url) return true;
-  return Boolean(post.metrics?.[target]);
 }
 
 export function renderCommandCenterLogin(locale: StudioLocale, error = false): string {

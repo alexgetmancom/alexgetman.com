@@ -69,7 +69,7 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
       requireOwnedVideo(backendDb, config, actorId, publicationId);
       const targets = backendDb.studioVideos.targets(publicationId).map((row) => row.target as VideoTarget);
       if (!targets.length) throw new StudioError("err.video-choose-platforms");
-      const schedule = Object.fromEntries(targets.map((target) => [target, new Date(Date.now() + 60_000)])) as Partial<
+      const schedule = Object.fromEntries(targets.map((target) => [target, new Date(backendDb.clock.now().getTime() + 60_000)])) as Partial<
         Record<VideoTarget, Date>
       >;
       return scheduleOwnedVideo(backendDb, config, actorId, publicationId, schedule);

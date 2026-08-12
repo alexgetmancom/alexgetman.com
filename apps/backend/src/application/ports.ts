@@ -84,11 +84,6 @@ export type FailedPublicationTarget = {
   error: string | null;
 };
 
-export type PublicationRetryResult = {
-  target: string;
-  outcome: "requeued" | "already_queued" | "not_failed";
-};
-
 export type DraftEntityCandidate = {
   kind: string;
   slug: string;
@@ -102,11 +97,10 @@ export type StudioPostStore = {
   replaceSources(draftId: number, urls: string[], now: string): void;
   replaceEntityCandidates(draftId: number, candidates: DraftEntityCandidate[], now: string): void;
   acceptEntityCandidates(draftId: number, now: string): void;
-  notificationSettings(actorIds: number[]): Array<{ actorId: number; remindersEnabled: number }>;
   history(draftId: number, postId: number | null, limit: number): PostEventRecord[];
   progress(draftId: number): StudioPostProgress | null;
   failedPublicationTargets(postId: number): FailedPublicationTarget[];
-  retryPublicationTargets(postId: number, targets: string[]): PublicationRetryResult[];
+  publicationSource(postId: number): Record<string, unknown>;
 };
 
 export type ConversationSessionKind = "post" | "video";
@@ -165,7 +159,6 @@ export type StudioQueueStore = {
   failedPostIds(postIds: number[]): number[];
   failedStoryCardDraftIds(draftIds: number[]): number[];
   videoTargets(publicationIds: number[]): StudioQueueVideoTarget[];
-  effectivePostTargets(targets: Record<string, boolean>): Record<string, boolean>;
 };
 
 export type StudioQueuePost = {
@@ -369,7 +362,6 @@ export type ChannelStore = {
   get(id: string): ChannelConnectionRecord | null;
   upsert(input: Omit<ChannelConnectionRecord, "createdAt" | "updatedAt">, now: string): void;
   disable(id: string, now: string): void;
-  hasAny(): boolean;
   find(platform: string, locale: string): ChannelConnectionRecord | null;
 };
 
@@ -385,7 +377,17 @@ export type DraftStore = {
 export type EventStore = { record(input: DomainEventInput): boolean };
 
 /** Story-card generation is a content side effect, not a database concern. */
-type StoryCardQueue = { queue(draftId: number): void };
+export type StoryPublishMode = "all" | "site_only";
+
+/** Story cards as an application service uses them: the queue, the two reads a
+ * post screen needs, and the publish mode. Only the fields a caller reads — the
+ * adapter selects rows, and the row type is not the port's business. */
+type StoryCardStore = {
+  queue(draftId: number): void;
+  forDraft(draftId: number): Array<{ locale: string; status: string; localPath: string | null }>;
+  readyMedia(draftId: number): Record<"ru" | "en", Record<string, unknown>> | null;
+  setPublishMode(draftId: number, mode: StoryPublishMode): void;
+};
 
 /** Composition-root dependencies passed into application use cases. */
 export type ApplicationPorts = {
@@ -401,5 +403,5 @@ export type ApplicationPorts = {
   studioVideos: StudioVideoStore;
   entityEnrichment: EntityEnrichmentStore;
   channels: ChannelStore;
-  storyCards: StoryCardQueue;
+  storyCards: StoryCardStore;
 };

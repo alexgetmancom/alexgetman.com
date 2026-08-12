@@ -36,7 +36,7 @@ because a call looked like it failed is worse than reporting the uncertainty.
 
 ## Diagnosing
 
-Start with `ops_guide`, then:
+Start with `ops_status` — the guide is a CLI command, not a tool an agent can call — then:
 
 - `ops_audit` — failed jobs, stuck targets and inconsistencies across the text and video pipelines.
 - `ops_recent` — the last posts, their targets, and the targets each one is missing. This is the

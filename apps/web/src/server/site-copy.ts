@@ -1,4 +1,5 @@
 import type { SiteLocale } from "../utils/locale";
+import { socialProfiles } from "../utils/profiles";
 
 /**
  * Every string the machine-facing endpoints emit — RSS, JSON feed, the AI feed,
@@ -36,6 +37,17 @@ export type SiteCopy = {
   social: [label: string, url: string][];
 };
 
+/** The four profiles llms.txt lists, in its established order. */
+function labelledProfiles(locale: SiteLocale): Array<[string, string]> {
+  const profiles = socialProfiles(locale);
+  return [
+    ["Telegram", profiles.telegram],
+    ["Threads", profiles.threads],
+    ["GitHub", profiles.github],
+    ["YouTube", profiles.youtube],
+  ];
+}
+
 const en: SiteCopy = {
   feedTitle: "Alex Getman | AI, automation and self-hosted systems",
   feedDescription: "English updates from Alex Getman: AI news, automation, developer tools and self-hosted systems.",
@@ -58,12 +70,7 @@ const en: SiteCopy = {
   labelSitemap: "Sitemap",
   labelMarkdownIndex: "Markdown overview",
   noPosts: "No posts yet.",
-  social: [
-    ["Telegram", "https://t.me/alexgetmancom"],
-    ["Threads", "https://www.threads.net/@alexgetmanco"],
-    ["GitHub", "https://github.com/alexgetmancom"],
-    ["YouTube", "https://www.youtube.com/@alexgetmancom"],
-  ],
+  social: labelledProfiles("en"),
 };
 
 const ru: SiteCopy = {
@@ -88,12 +95,7 @@ const ru: SiteCopy = {
   labelSitemap: "Карта сайта",
   labelMarkdownIndex: "Обзор в Markdown",
   noPosts: "Пока постов нет.",
-  social: [
-    ["Telegram", "https://t.me/alexgetmancom"],
-    ["Threads", "https://www.threads.net/@alexgetmanru"],
-    ["GitHub", "https://github.com/alexgetmancom"],
-    ["YouTube", "https://www.youtube.com/@alexgetmancom"],
-  ],
+  social: labelledProfiles("ru"),
 } satisfies SiteCopy;
 
 const catalog: Record<SiteLocale, SiteCopy> = { en, ru };

@@ -1,6 +1,5 @@
 import { isPublishableVideoPlatform } from "../../channels/destinations.js";
-import { type ChannelConnectInput, persistChannelConnection } from "../../channels/management.js";
-import { listChannels } from "../../channels/registry.js";
+import { type ChannelInput, listChannels, registerChannel } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { requestJson } from "../../foundation/http.js";
@@ -23,8 +22,8 @@ export function channelService(backendDb: BackendDb, config: BackendConfig, fetc
     isPublishablePlatform(platform: string): boolean {
       return isPublishableVideoPlatform(platform);
     },
-    connect(input: Omit<ChannelConnectInput, "source">) {
-      return persistChannelConnection(backendDb, { ...input, source: "interface" });
+    connect(input: Omit<ChannelInput, "source">) {
+      return registerChannel(backendDb, { ...input, source: "interface" });
     },
     async discoverZernioAccounts(): Promise<StudioZernioAccount[]> {
       if (!config.ZERNIO_API_KEY) throw new Error("Zernio API key is not configured.");

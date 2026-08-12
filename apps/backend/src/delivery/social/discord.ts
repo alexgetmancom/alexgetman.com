@@ -1,10 +1,9 @@
 import fs from "node:fs";
 import type { BackendConfig } from "../../foundation/config.js";
-import { externalFetch, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
+import { externalFetch } from "../../foundation/http.js";
 import { log } from "../../foundation/logger.js";
-import { redactExternalSecrets } from "../../foundation/redact.js";
 import type { PublishResult } from "../../publishing/errors.js";
-import { HttpPublishError } from "../../publishing/errors.js";
+import { type HttpPublishError, httpPublishError, publishJson } from "../../publishing/errors.js";
 import { platformProfile } from "../../publishing/platform-profiles.js";
 import { ambiguousExternalMutation } from "../ambiguous-publication.js";
 import { guessContentType, mediaExtension, payloadMedia, payloadText, splitText } from "./payload.js";
@@ -74,7 +73,7 @@ export async function verifyDiscordMessage(
   const response = await discordFetch(credentials, `/channels/${credentials.channelId}/messages/${encodeURIComponent(id)}`, fetchImpl, {
     method: "GET",
   });
-  const message = await jsonResponse<DiscordMessage>(response, "Discord message verify");
+  const message = await publishJson<DiscordMessage>(response, "Discord message verify");
   if (message.id !== id) throw new Error("Discord verification did not return the expected message");
   return { id, url: messageUrl(credentials, id) };
 }
@@ -99,7 +98,7 @@ export async function editDiscordMessage(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
   });
-  return await jsonResponse<Record<string, unknown>>(response, "Discord message edit");
+  return await publishJson<Record<string, unknown>>(response, "Discord message edit");
 }
 
 async function createMessage(
@@ -113,7 +112,7 @@ async function createMessage(
     ? { method: "POST", body: attachmentForm(content, media) }
     : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content }) };
   const response = await ambiguousExternalMutation("discord", () => discordFetch(credentials, path, fetchImpl, init));
-  return await jsonResponse<DiscordMessage>(response, "Discord message create");
+  return await publishJson<DiscordMessage>(response, "Discord message create");
 }
 
 /**
@@ -160,22 +159,6 @@ function discordFetch(credentials: DiscordCredentials, path: string, fetchImpl: 
   });
 }
 
-async function jsonResponse<T>(response: Response, label: string): Promise<T> {
-  const body = await response.text();
-  if (!response.ok) throw await httpError(response, body, label);
-  return body ? (JSON.parse(body) as T) : ({} as T);
-}
-
 async function responseError(response: Response, label: string): Promise<HttpPublishError> {
-  return await httpError(response, await response.text(), label);
-}
-
-async function httpError(response: Response, body: string, label: string): Promise<HttpPublishError> {
-  const safeBody = redactExternalSecrets(body);
-  return new HttpPublishError(
-    `${label} ${response.status}: ${safeBody}`,
-    response.status,
-    safeBody,
-    retryAfterSecondsFromHeaders(response.headers),
-  );
+  return httpPublishError(response, await response.text(), label);
 }

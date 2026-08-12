@@ -1,24 +1,18 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import { and, eq } from "drizzle-orm";
-import type { ApplicationPorts } from "../application/ports.js";
+import type { StoryPublishMode } from "../application/ports.js";
 import { draftStoryCards, drafts } from "../db/schema.js";
-import { unsafeDb } from "../db/unsafe.js";
+import type { BackendDatabase } from "../db/types.js";
 import { log } from "../foundation/logger.js";
 import { buildStoryCardCopy } from "./copy.js";
 
-export type StoryPublishMode = "all" | "site_only";
-
-export function queueDraftStoryCards(backendDb: ApplicationPorts, draftId: number): void {
-  const draft = unsafeDb(backendDb).db.select().from(drafts).where(eq(drafts.id, draftId)).get();
+export function queueDraftStoryCards(db: BackendDatabase, draftId: number): void {
+  const draft = db.select().from(drafts).where(eq(drafts.id, draftId)).get();
   if (!draft) throw new Error(`draft ${draftId} not found`);
   if (mediaCount(draft.mediaRuJson) > 0 || mediaCount(draft.mediaEnJson) > 0) {
-    discardDraftStoryCards(backendDb, draftId);
-    unsafeDb(backendDb)
-      .db.update(drafts)
-      .set({ storyPublishMode: null, updatedAt: new Date().toISOString() })
-      .where(eq(drafts.id, draftId))
-      .run();
+    discardDraftStoryCards(db, draftId);
+    db.update(drafts).set({ storyPublishMode: null, updatedAt: new Date().toISOString() }).where(eq(drafts.id, draftId)).run();
     return;
   }
   const now = new Date().toISOString();
@@ -27,7 +21,7 @@ export function queueDraftStoryCards(backendDb: ApplicationPorts, draftId: numbe
     ru: draft.textRu,
     en: draft.textEnApproved ?? draft.textEnMachine ?? draft.textRu,
   } as const;
-  unsafeDb(backendDb).db.transaction((tx) => {
+  db.transaction((tx) => {
     let requeued = false;
     for (const locale of ["ru", "en"] as const) {
       const copy = buildStoryCardCopy(content[locale]);
@@ -90,12 +84,12 @@ export function queueDraftStoryCards(backendDb: ApplicationPorts, draftId: numbe
   removeFiles(stalePaths);
 }
 
-export function storyCardsForDraft(backendDb: ApplicationPorts, draftId: number) {
-  return unsafeDb(backendDb).db.select().from(draftStoryCards).where(eq(draftStoryCards.draftId, draftId)).all();
+export function storyCardsForDraft(db: BackendDatabase, draftId: number) {
+  return db.select().from(draftStoryCards).where(eq(draftStoryCards.draftId, draftId)).all();
 }
 
-export function readyStoryCardMedia(backendDb: ApplicationPorts, draftId: number): Record<"ru" | "en", Record<string, unknown>> | null {
-  const rows = storyCardsForDraft(backendDb, draftId);
+export function readyStoryCardMedia(db: BackendDatabase, draftId: number): Record<"ru" | "en", Record<string, unknown>> | null {
+  const rows = storyCardsForDraft(db, draftId);
   const byLocale = new Map(rows.map((row) => [row.locale, row]));
   const ru = byLocale.get("ru");
   const en = byLocale.get("en");
@@ -106,14 +100,14 @@ export function readyStoryCardMedia(backendDb: ApplicationPorts, draftId: number
   };
 }
 
-export function setStoryPublishMode(backendDb: ApplicationPorts, draftId: number, mode: StoryPublishMode): void {
+export function setStoryPublishMode(db: BackendDatabase, draftId: number, mode: StoryPublishMode): void {
   const now = new Date().toISOString();
-  unsafeDb(backendDb).db.update(drafts).set({ storyPublishMode: mode, updatedAt: now }).where(eq(drafts.id, draftId)).run();
+  db.update(drafts).set({ storyPublishMode: mode, updatedAt: now }).where(eq(drafts.id, draftId)).run();
 }
 
-export function discardDraftStoryCards(backendDb: ApplicationPorts, draftId: number): void {
-  const paths = storyCardsForDraft(backendDb, draftId).flatMap((card) => (card.localPath ? [card.localPath] : []));
-  unsafeDb(backendDb).db.delete(draftStoryCards).where(eq(draftStoryCards.draftId, draftId)).run();
+export function discardDraftStoryCards(db: BackendDatabase, draftId: number): void {
+  const paths = storyCardsForDraft(db, draftId).flatMap((card) => (card.localPath ? [card.localPath] : []));
+  db.delete(draftStoryCards).where(eq(draftStoryCards.draftId, draftId)).run();
   removeFiles(paths);
 }
 

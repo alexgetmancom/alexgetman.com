@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { targetLocale } from "../botTargets.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { postTargets } from "../db/schema.js";
@@ -32,8 +32,35 @@ export async function removePublishedTargets(
         results.push({ target: row.target, ok: false, skipped: true, error: "missing external id" });
         continue;
       }
-      await removeTarget(row.target, ids, config, fetchImpl);
+      const { deleted, remaining, error } = await removeTarget(row.target, ids, config, fetchImpl);
       const now = new Date().toISOString();
+      // Only the row that still names the objects just deleted. Between the read
+      // above and this write the target can have been requeued and published
+      // again, and the delete of the old post used to mark the new one deleted.
+      const sameRemoteObject = and(
+        eq(postTargets.postKey, row.postKey),
+        eq(postTargets.target, row.target),
+        eq(postTargets.status, "published"),
+        row.externalId == null ? isNull(postTargets.externalId) : eq(postTargets.externalId, row.externalId),
+      );
+      if (remaining.length) {
+        // A post split across several messages deletes them one at a time, and
+        // the survivors have to stay on the row: retrying from the original id
+        // list starts on an object that is already gone and never reaches them.
+        unsafeDb(backendDb)
+          .db.update(postTargets)
+          .set({
+            externalId: remaining[0] ?? null,
+            externalIdsJson: remaining,
+            error: error ?? "partial remote deletion",
+            updatedAt: now,
+            rawJson: JSON.stringify({ deleted, remaining }),
+          })
+          .where(sameRemoteObject)
+          .run();
+        results.push({ target: row.target, ok: false, deleted: deleted.length, remaining: remaining.length, error });
+        continue;
+      }
       unsafeDb(backendDb)
         .db.update(postTargets)
         .set({
@@ -42,10 +69,12 @@ export async function removePublishedTargets(
           externalIdsJson: null,
           url: null,
           error: null,
+          publishedAt: null,
+          verifiedAt: null,
           updatedAt: now,
           rawJson: JSON.stringify({ deleted: true, ids }),
         })
-        .where(and(eq(postTargets.postKey, row.postKey), eq(postTargets.target, row.target)))
+        .where(sameRemoteObject)
         .run();
       results.push({ target: row.target, ok: true, deleted: ids.length });
     } catch (error) {
@@ -55,29 +84,47 @@ export async function removePublishedTargets(
   return results;
 }
 
-async function removeTarget(target: string, ids: string[], config: BackendConfig, fetchImpl: typeof fetch): Promise<void> {
+type RemovalOutcome = { deleted: string[]; remaining: string[]; error?: string };
+
+/** Deletes every id it was given, rather than stopping at the first failure:
+ * the ones behind it are the tail of a split post, and abandoning them leaves a
+ * publication half-visible with no record of which half. */
+async function removeTarget(target: string, ids: string[], config: BackendConfig, fetchImpl: typeof fetch): Promise<RemovalOutcome> {
+  const remove = removeOne(target, config, fetchImpl);
+  const deleted: string[] = [];
+  const remaining: string[] = [];
+  let error: string | undefined;
+  for (const id of ids) {
+    try {
+      await remove(id);
+      deleted.push(id);
+    } catch (failure) {
+      remaining.push(id);
+      error ??= failure instanceof Error ? failure.message : String(failure);
+    }
+  }
+  return { deleted, remaining, ...(error ? { error } : {}) };
+}
+
+function removeOne(target: string, config: BackendConfig, fetchImpl: typeof fetch): (id: string) => Promise<unknown> {
   if (target === "telegram") {
     if (!config.controllerBotToken) throw new Error("missing CONTROLLER_BOT_TOKEN");
-    for (const id of ids)
-      await requestJson(fetchImpl, `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/bot${config.controllerBotToken}/deleteMessage`, {
+    const token = config.controllerBotToken;
+    return (id) =>
+      requestJson(fetchImpl, `${config.TELEGRAM_API_BASE_URL.replace(/\/$/, "")}/bot${token}/deleteMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: config.TELEGRAM_CHANNEL_USERNAME, message_id: Number(id) }),
       });
-    return;
   }
   if (target === "threads_en" || target === "threads_ru") {
     const token = target === "threads_en" ? config.THREADS_EN_ACCESS_TOKEN : config.THREADS_RU_ACCESS_TOKEN;
     if (!token) throw new Error(`missing ${target === "threads_en" ? "THREADS_EN_ACCESS_TOKEN" : "THREADS_RU_ACCESS_TOKEN"}`);
-    for (const id of ids)
-      await requestJson(fetchImpl, `https://graph.threads.net/v1.0/${encodeURIComponent(id)}?access_token=${encodeURIComponent(token)}`, {
+    return (id) =>
+      requestJson(fetchImpl, `https://graph.threads.net/v1.0/${encodeURIComponent(id)}?access_token=${encodeURIComponent(token)}`, {
         method: "DELETE",
       });
-    return;
   }
-  if (target === "discord") {
-    for (const id of ids) await deleteDiscordMessage(id, config, fetchImpl);
-    return;
-  }
+  if (target === "discord") return (id) => deleteDiscordMessage(id, config, fetchImpl);
   throw new Error(`remote deletion is not supported for ${target}`);
 }

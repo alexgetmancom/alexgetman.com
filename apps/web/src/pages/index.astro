@@ -3,6 +3,7 @@ import HomeNewsPage from "../components/HomeNewsPage.astro";
 import Layout from "../layouts/Layout.astro";
 import { loadFeedItems } from "../server/public-site";
 import { sortedHomePosts } from "../utils/home-posts";
+import { socialProfileUrls } from "../utils/profiles";
 
 export const prerender = false;
 
@@ -23,15 +24,7 @@ const schema = JSON.stringify({
       name: "Alex Getman",
       url: "https://alexgetman.com/",
       image: "https://alexgetman.com/avatar.png",
-      sameAs: [
-        "https://t.me/alexgetmancom",
-        "https://www.threads.net/@alexgetmanco",
-        "https://www.youtube.com/@alexgetmancom",
-        "https://www.twitch.tv/alexgetmancom",
-        "https://github.com/alexgetmancom",
-        "https://www.instagram.com/alexgetmancom/",
-        "https://discord.gg/Z7sSm56rcb",
-      ],
+      sameAs: socialProfileUrls("en"),
     },
     {
       "@type": "WebSite",

@@ -36,7 +36,7 @@ export function enrichPublishedPostEntities(backendDb: BackendDb, postId: number
     (isFocus ? focus : mentions).add(entity.id);
     if (entity.parentEntityId != null) mentions.add(entity.parentEntityId);
   }
-  const now = new Date().toISOString();
+  const now = backendDb.clock.now().toISOString();
   for (const entityId of mentions) insertLink(backendDb, postId, entityId, "mention", now);
   for (const entityId of focus) insertLink(backendDb, postId, entityId, "focus", now);
   return new Set([...mentions, ...focus]).size;

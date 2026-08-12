@@ -16,7 +16,14 @@ function sourceFiles(relativeDirectory: string): string[] {
   });
 }
 
-/** Keep exceptions explicit and shrinking. New application files are covered automatically. */
+/** This reads the text of the application files themselves and deliberately
+ * does not follow imports: Studio calling `publishDraftToQueue` is allowed —
+ * Publishing owns its transactions — and a transitive check would call that a
+ * violation. What must stay true is that these files hold no persistence of
+ * their own.
+ *
+ * Keep exceptions explicit and shrinking. New application files are covered
+ * automatically. */
 const applicationPersistenceExceptions = new Set<string>();
 
 describe("architecture fitness", () => {
@@ -38,6 +45,9 @@ describe("architecture fitness", () => {
   });
 
   it("keeps Studio and content application services behind persistence ports", () => {
+    // The rule is that this set is empty, so the set being empty is the
+    // assertion: an exception added later would otherwise pass silently.
+    expect([...applicationPersistenceExceptions]).toEqual([]);
     const files = ["apps/backend/src/studio", "apps/backend/src/content"].flatMap(sourceFiles);
     for (const file of files) {
       if (applicationPersistenceExceptions.has(file)) continue;
@@ -82,6 +92,6 @@ describe("architecture fitness", () => {
     const client = source("apps/backend/src/db/client.ts");
     expect(client).toContain("createDraftStore(db, clock)");
     expect(client).toContain("createEventStore(db, clock)");
-    expect(client).toContain("storyCards: { queue:");
+    expect(client).toContain("queue: (draftId) => queueDraftStoryCards(db, draftId)");
   });
 });

@@ -40,7 +40,7 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
     copyDraftSources(tx, draftId, publicationId, now);
     copyAcceptedEntities(tx, draftId, publicationId, now);
     const registeredTargets = registeredPostTargetIds(backendDb);
-    const storyCards = readyStoryCardMedia(backendDb, draftId);
+    const storyCards = readyStoryCardMedia(unsafeDb(backendDb).db, draftId);
     if (storyCards && draft.story_publish_mode !== "all" && draft.story_publish_mode !== "site_only")
       throw new Error("Story delivery decision is required for a text-only post");
     const publicationPlan = createPublicationPlan(

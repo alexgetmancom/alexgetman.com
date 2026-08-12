@@ -7,6 +7,7 @@ import type { StudioLocale } from "../foundation/locale.js";
 import { isVideoPreviewView, videoPreview } from "../interfaces/telegram/video-preview.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
+import { settingsService } from "../studio/services/settings.js";
 import type { PublicationEffect } from "./effects.js";
 import { draftPreview, isDraftView } from "./preview.js";
 
@@ -73,4 +74,18 @@ export function publicationCardEffect(
 
 function cardRef(card: PublicationCard): { kind: "post" | "video"; draftId: number } {
   return { kind: card.kind, draftId: card.draftId };
+}
+
+/** The post card as every Telegram path renders it: the same renderer, the same
+ * services and the actor's own locale. Three call sites spelled it out and one
+ * of them could have drifted on which locale it passed. */
+export function postPreviewCard(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number) {
+  return publicationRenderers(backendDb, config).post.card({
+    backendDb,
+    pipeline: createStudioServices(backendDb, config).posts,
+    actorId,
+    publicationId: draftId,
+    config,
+    locale: settingsService(backendDb).locale(actorId),
+  });
 }

@@ -103,7 +103,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
                 platform,
                 locale: discovered.locale,
                 provider: "zernio",
-                ...(account._id ? { accountId: account._id } : {}),
+                ...(account._id ? { providerAccountId: account._id } : {}),
                 label: `${channelPlatformLabel(platform)} ${discovered.locale.toUpperCase()} · @${account.username ?? account.displayName ?? account._id}`,
               });
               discoveredAccounts.delete(actorId);

@@ -280,7 +280,9 @@ function shiftDays(date: Date, days: number): Date {
   return shifted;
 }
 
-function filterPipeline(data: PipelineData | null, targetIds: readonly string[]): PipelineData | null {
+/** Posts that reached at least one of these targets — by delivery status, by a
+ * legacy Telegram url, or by having metrics for it. */
+export function filterPipeline(data: PipelineData | null, targetIds: readonly string[]): PipelineData | null {
   if (!data) return null;
   return { ...data, posts: (data.posts ?? []).filter((post) => targetIds.some((target) => postHasTarget(post, target))) };
 }

@@ -30,7 +30,11 @@ export function parseArguments(argv: string[]): Arguments {
       // A boolean field reads from `flags` alone, so `--apply=true` parsed as a
       // value would leave the mutation unarmed and still report `ok`.
       if (["true", "false"].includes(value.toLowerCase())) {
+        // The last spelling wins, the way it does for a value: `--apply=true
+        // --apply=false` left the mutation armed when `false` only failed to
+        // add the flag its predecessor had already set.
         if (value.toLowerCase() === "true") flags.add(name);
+        else flags.delete(name);
       } else record(name, value);
       continue;
     }

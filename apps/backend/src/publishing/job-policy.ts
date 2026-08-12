@@ -70,6 +70,22 @@ export function requeuedPublishJobColumns(payload: JsonObject, now: string) {
  * social, ops for the site, Studio's retry -- have to agree on it exactly; they
  * each spelled it out instead, which is how the publish-job column set drifted. */
 export function requeuedPostTarget(postKey: string, target: string, now: string) {
-  const patch = { status: "queued" as const, error: null, skipped: 0, updatedAt: now, rawJson: JSON.stringify({ requeued: true }) };
+  const patch = {
+    status: "queued" as const,
+    error: null,
+    skipped: 0,
+    // The identity of the remote object this row used to name. A requeued row
+    // is about to describe a different one, and leaving the old id, url and
+    // timestamps behind is how `verify` reported a deleted post as live and
+    // `delete` aimed at something that was no longer there.
+    externalId: null,
+    externalIdsJson: null,
+    url: null,
+    publishedAt: null,
+    confirmationSource: null,
+    verifiedAt: null,
+    updatedAt: now,
+    rawJson: JSON.stringify({ requeued: true }),
+  };
   return { values: { postKey, target, ...patch }, patch };
 }

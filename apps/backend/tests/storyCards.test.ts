@@ -96,10 +96,10 @@ describe("text Story cards", () => {
       media: [],
     });
 
-    expect(storyCardsForDraft(backendDb, draftId).map((card) => card.status)).toEqual(["queued", "queued"]);
+    expect(storyCardsForDraft(backendDb.db, draftId).map((card) => card.status)).toEqual(["queued", "queued"]);
     expect(await runStoryCardCycle(config, backendDb)).toBe(1);
     expect(await runStoryCardCycle(config, backendDb)).toBe(1);
-    const media = readyStoryCardMedia(backendDb, draftId);
+    const media = readyStoryCardMedia(backendDb.db, draftId);
     expect(media?.ru.role).toBe("text_story_card");
     const metadata = await sharp(String(media?.ru.localPath)).metadata();
     expect(metadata).toMatchObject({ width: 1080, height: 1920, format: "jpeg" });
@@ -253,7 +253,7 @@ describe("text Story cards", () => {
     });
     const posts = postService(backendDb, config);
     const draftId = posts.create(42, { text: "Text", textEn: "Text", entities: [], media: [] });
-    setStoryPublishMode(backendDb, draftId, "all");
+    setStoryPublishMode(backendDb.db, draftId, "all");
     const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null });
 
     expect(await runStoryCardCycle(config, backendDb)).toBe(1);
@@ -275,7 +275,7 @@ describe("text Story cards", () => {
   it("stores the final bundle decision durably", () => {
     backendDb = openStoryDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Text", textEn: "Text", entities: [], media: [] });
-    setStoryPublishMode(backendDb, draftId, "all");
+    setStoryPublishMode(backendDb.db, draftId, "all");
     expect(backendDb.db.select().from(drafts).where(eq(drafts.id, draftId)).get()?.storyPublishMode).toBe("all");
   });
 
@@ -295,13 +295,13 @@ describe("text Story cards", () => {
       entities: [],
       media: [],
     });
-    discardDraftStoryCards(backendDb, draftId);
+    discardDraftStoryCards(backendDb.db, draftId);
     const postId = publishDraftToQueue(backendDb, draftId);
     const socialJobsBefore = backendDb.db.select().from(publishJobs).all().length;
 
     const dryRun = await backfillTextStoryCards(backendDb, config, `post:${postId}`, false);
     expect(dryRun).toMatchObject({ applied: false, count: 2 });
-    expect(storyCardsForDraft(backendDb, draftId)).toHaveLength(0);
+    expect(storyCardsForDraft(backendDb.db, draftId)).toHaveLength(0);
 
     const applied = await backfillTextStoryCards(backendDb, config, `post:${postId}`, true);
     expect(applied).toMatchObject({ applied: true, count: 2 });

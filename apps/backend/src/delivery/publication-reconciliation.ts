@@ -29,7 +29,10 @@ export async function runPublicationReconciliation(
   let resolved = 0;
   const nowIso = new Date().toISOString();
   const reconciliationWorker = `${workerId("reconciliation")}:${crypto.randomUUID()}`;
-  const staleBefore = new Date(Date.now() - config.METRIC_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
+  // This claims publish and video jobs, so it ages out on the publish lock —
+  // the metrics timeout is a different worker's setting and tuning that one
+  // silently moved when reconciliation may steal a claim.
+  const staleBefore = new Date(Date.now() - config.PUBLISH_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
   const ordinary = unsafeDb(backendDb)
     .db.select({ job: publishJobs, target: postTargets })
     .from(publishJobs)
@@ -83,8 +86,13 @@ export async function runPublicationReconciliation(
       continue;
     }
     const now = new Date().toISOString();
-    unsafeDb(backendDb).db.transaction((tx) => {
-      tx.update(publishJobs)
+    // The job update is fenced by this worker's claim, and the target write only
+    // happens if that fence held: a reconciliation whose lock had been taken
+    // over used to publish the target anyway, leaving a job someone else owned
+    // beside a target this worker had already marked published.
+    const confirmed = unsafeDb(backendDb).db.transaction((tx) => {
+      const won = tx
+        .update(publishJobs)
         .set({ status: "published", currentPhase: null, lockedBy: null, lockedAt: null, lastError: null, updatedAt: now })
         .where(
           and(
@@ -93,7 +101,9 @@ export async function runPublicationReconciliation(
             eq(publishJobs.lockedBy, reconciliationWorker),
           ),
         )
-        .run();
+        .returning({ jobId: publishJobs.jobId })
+        .get();
+      if (!won) return false;
       tx.update(postTargets)
         .set({
           status: "published",
@@ -106,7 +116,9 @@ export async function runPublicationReconciliation(
         })
         .where(and(eq(postTargets.postKey, row.target.postKey), eq(postTargets.target, row.target.target)))
         .run();
+      return true;
     });
+    if (!confirmed) continue;
     reconcilePublication(backendDb, row.job.postId);
     recordDomainEvent(backendDb.events, {
       ref: row.target.postKey,
@@ -177,7 +189,22 @@ export async function runPublicationReconciliation(
       continue;
     }
     const now = new Date().toISOString();
-    unsafeDb(backendDb).db.transaction((tx) => {
+    // Same order as the social case above: win the job's fence first, and only
+    // then say the target is published.
+    const confirmedVideo = unsafeDb(backendDb).db.transaction((tx) => {
+      const won = tx
+        .update(videoJobs)
+        .set({ status: "completed", lastError: null, lockedAt: null, lockedBy: null, updatedAt: now })
+        .where(
+          and(
+            eq(videoJobs.videoTargetId, row.target.id),
+            eq(videoJobs.status, "verification_required"),
+            eq(videoJobs.lockedBy, reconciliationWorker),
+          ),
+        )
+        .returning({ id: videoJobs.id })
+        .get();
+      if (!won) return false;
       tx.update(videoTargets)
         .set({
           status: "published",
@@ -191,17 +218,9 @@ export async function runPublicationReconciliation(
         })
         .where(and(eq(videoTargets.id, row.target.id), eq(videoTargets.status, "verification_required")))
         .run();
-      tx.update(videoJobs)
-        .set({ status: "completed", lastError: null, lockedAt: null, lockedBy: null, updatedAt: now })
-        .where(
-          and(
-            eq(videoJobs.videoTargetId, row.target.id),
-            eq(videoJobs.status, "verification_required"),
-            eq(videoJobs.lockedBy, reconciliationWorker),
-          ),
-        )
-        .run();
+      return true;
     });
+    if (!confirmedVideo) continue;
     refreshVideoDraftStatus(backendDb, row.target.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
     recordDomainEvent(backendDb.events, {
       ref: publicationRef("video", row.target.videoDraftId),

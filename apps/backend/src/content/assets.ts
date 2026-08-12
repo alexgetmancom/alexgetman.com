@@ -54,7 +54,7 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
     await fs.promises.copyFile(input.localPath, storedPath);
     await fs.promises.chmod(storedPath, 0o640);
   }
-  const now = new Date().toISOString();
+  const now = backendDb.clock.now().toISOString();
   // The insert is guarded by the unique (actor_id, sha256) index rather than by
   // the lookup above: two concurrent imports of one file both miss the select.
   // `onConflictDoNothing` + re-read makes the loser adopt the winner's row.

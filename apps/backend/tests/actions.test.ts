@@ -324,7 +324,7 @@ describe("command center actions", () => {
 
       const result = await runOperationCommand(backendDb, { action: "retry", ref: "post:61", target: "threads_en", apply: true });
 
-      expect(result).toMatchObject({ ok: false, results: [{ target: "threads_en", outcome: "publishing" }] });
+      expect(result).toMatchObject({ ok: false, results: [{ target: "threads_en", outcome: "not_retryable", status: "publishing" }] });
       // Untouched: stealing the lock would make the worker discard a publication
       // that already went out, and the next claim would send it again.
       const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();

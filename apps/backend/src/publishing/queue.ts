@@ -7,6 +7,7 @@ import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js"
 import { type JsonObject, publishJobs } from "../db/schema.js";
 import { insertPublishJobSchema } from "../db/validation.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { log } from "../foundation/logger.js";
 import { recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
 import { classifyPublishError, normalizePublishResult, type PublishResult } from "./errors.js";
 import { failedJobTransition, reconciliationTransition } from "./job-policy.js";
@@ -16,6 +17,7 @@ import {
   durationSince,
   externalIds,
   insertEvent,
+  PublishLockLostError,
   parsePayload,
   publicationConfirmationSource,
   publishRetryPolicy,
@@ -98,6 +100,21 @@ export function claimDuePublishJobs(
   return claimed;
 }
 
+/** Runs a settlement transaction and reports whether it stuck. A settlement
+ * fenced by a lease that has since been taken over rolls itself back rather
+ * than overwriting the new owner's result, and that is a normal outcome of a
+ * slow provider call, not an error for the worker loop to fail on. */
+function withLease(backendDb: BackendDb, jobId: number, settle: (tx: UnsafeBackendDb["db"]) => void): boolean {
+  try {
+    unsafeDb(backendDb).db.transaction(settle);
+    return true;
+  } catch (error) {
+    if (!(error instanceof PublishLockLostError)) throw error;
+    log("warn", "publish settlement discarded: lock lost", { jobId });
+    return false;
+  }
+}
+
 export function recoverStalePublishJobs(
   backendDb: BackendDb,
   config: BackendConfig,
@@ -117,7 +134,6 @@ export function recoverStalePublishJobs(
       const error = job.lastError || "worker_lost: publishing lock expired before completion";
       const publicMutationMayHaveRun = job.currentPhase === "provider.publish";
       const recoveredStatus = publicMutationMayHaveRun ? "verification_required" : "queued";
-      deleteSupersededJobs(tx, job, job.jobId, job.postKey);
       const updated = tx
         .update(publishJobs)
         .set({
@@ -133,7 +149,11 @@ export function recoverStalePublishJobs(
         .where(and(eq(publishJobs.jobId, job.jobId), eq(publishJobs.status, "publishing"), eq(publishJobs.lockedAt, lockedAt)))
         .returning({ jobId: publishJobs.jobId })
         .get();
+      // Another worker settled this job between the read and the write, so it
+      // owns the outcome — and the rows superseded by *its* result, which is why
+      // nothing is deleted until this update is known to have won.
       if (!updated) continue;
+      deleteSupersededJobs(tx, job, job.jobId, job.postKey);
       const postKey = job.postKey;
       settleJob(
         tx,
@@ -196,6 +216,7 @@ export function completePublishJob(
       "Threads partial publication",
       result,
       now,
+      lockId,
     );
     if (!retry) reconcilePublication(backendDb, job.postId);
     return;
@@ -214,12 +235,13 @@ export function completePublishJob(
       "external publication requires reconciliation",
       result,
       now,
+      lockId,
     );
     if (!retry) reconcilePublication(backendDb, job.postId);
     return;
   }
   const normalized = normalizePublishResult(result);
-  unsafeDb(backendDb).db.transaction((tx) => {
+  const settled = withLease(backendDb, jobId, (tx) => {
     const published = normalized.status === "published";
     // `post_targets` is the canonical external-publication reference for every
     // platform. Legacy Telegram message columns remain readable for history,
@@ -264,9 +286,11 @@ export function completePublishJob(
           result,
         },
       },
+      lockId,
     );
     deleteSupersededJobs(tx, job, jobId, postKey);
   });
+  if (!settled) return;
   if (normalized.status === "published") recordAuthSuccess(backendDb, job.target);
   else if (normalized.status === "failed" && classifyPublishError(normalized.error) === "auth") recordAuthFailure(backendDb, job.target);
   if (normalized.status === "published" && job.target === "x" && normalized.externalId)
@@ -291,12 +315,13 @@ function settleRetryableIds(
   fallbackError: string,
   result: PublishResult,
   now: string,
+  lockId: string | undefined,
 ): boolean {
   const { attempt, status, nextAttemptAt } = reconciliationTransition(job.attemptCount, publishRetryPolicy(config));
   const retry = status === "queued";
   const error = String(result.error ?? fallbackError);
   const payload = { ...parsePayload(job.payloadJson), [payloadKey]: ids };
-  unsafeDb(backendDb).db.transaction((tx) => {
+  const settled = withLease(backendDb, jobId, (tx) => {
     // A queued row is unique per (post_key, target); clear any competing one
     // before this job re-enters the queue, and clear superseded rows once this
     // one is terminal — exactly what failPublishJob does for the same states.
@@ -324,8 +349,10 @@ function settleRetryableIds(
         message: error,
         details: { job_id: jobId, ids, attempt, next_attempt_at: nextAttemptAt },
       },
+      lockId,
     );
   });
+  if (!settled) return false;
   if (!retry && classifyPublishError(error) === "auth") recordAuthFailure(backendDb, job.target);
   return retry;
 }
@@ -343,7 +370,7 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
   } = failedJobTransition(error, job.attemptCount, publishRetryPolicy(config));
   const shouldRetry = status === "queued";
   const errorText = String(error instanceof Error ? error.message : error);
-  unsafeDb(backendDb).db.transaction((tx) => {
+  const settled = withLease(backendDb, jobId, (tx) => {
     // Before this job re-enters the queue (or becomes the terminal record for
     // its target), no other queued/failed row for the same target may remain:
     // a queued row is unique per (post_key, target).
@@ -383,8 +410,10 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
           duration_ms: durationSince(job.lockedAt, now),
         },
       },
+      lockId,
     );
   });
+  if (!settled) return;
   if (errorClass === "auth") recordAuthFailure(backendDb, job.target);
   if (!shouldRetry) reconcilePublication(backendDb, job.postId);
 }
@@ -396,7 +425,7 @@ export function requirePublishVerification(backendDb: BackendDb, jobId: number, 
   const postKey = job.postKey;
   const errorText = error instanceof Error ? error.message : String(error);
   let updated = false;
-  unsafeDb(backendDb).db.transaction((tx) => {
+  withLease(backendDb, jobId, (tx) => {
     deleteSupersededJobs(tx, job, jobId, postKey);
     settleJob(
       tx,
@@ -425,6 +454,7 @@ export function requirePublishVerification(backendDb: BackendDb, jobId: number, 
           duration_ms: durationSince(job.lockedAt, now),
         },
       },
+      lockId,
     );
     updated = true;
   });

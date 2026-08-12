@@ -5,7 +5,15 @@ import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { STUDIO_LOCALES } from "../foundation/locale.js";
 import { log } from "../foundation/logger.js";
-import { inputJsonSchema, type OperationDef, operationCatalog, operationDef, operationJsonSchema } from "../operations/registry.js";
+import {
+  inputJsonSchema,
+  type OperationDef,
+  OperationInputError,
+  operationCatalog,
+  operationDef,
+  operationJsonSchema,
+  runOperation,
+} from "../operations/registry.js";
 import { createStudioServices, type StudioServices } from "../studio/services/index.js";
 
 const feedbackHits = new Map<string, number[]>();
@@ -640,9 +648,9 @@ async function runStudioTool(
   return result;
 }
 
-/** Validation is re-done here rather than through `runOperation` so a bad
- * argument comes back as -32602 with the offending field named, the way every
- * other MCP tool reports it; the schema and handler are still the registry's. */
+/** Dispatched through `runOperation`, the same entry the CLI uses: validating
+ * here as well is how a rejected field on one surface becomes an accepted one
+ * on the other. Only the error shape is MCP's — -32602 with the field named. */
 async function runOpsTool(
   backendDb: BackendDb,
   config: BackendConfig,
@@ -652,17 +660,20 @@ async function runOpsTool(
   args: JsonObject,
 ): Promise<unknown> {
   const def = operationDef(operation) as OperationDef;
-  const input = parseArgs(def.schema, args);
   // The server owns this handle and this config; the operation borrows both and
   // must not close what it did not open.
-  const result = await def.handler(
+  const result = await runOperation(
+    operation,
     { dbPath: config.PIPELINE_DB, config: () => config, db: () => backendDb, fetchImpl: fetch, actorType: "ops-mcp" },
-    input,
-  );
+    args,
+  ).catch((error) => {
+    if (error instanceof OperationInputError) throw new McpToolError(-32602, error.message);
+    throw error;
+  });
   if (def.mutates)
     try {
       recordDomainEvent(backendDb.events, {
-        ref: typeof (input as { ref?: unknown }).ref === "string" ? (input as { ref: string }).ref : null,
+        ref: typeof args.ref === "string" ? args.ref : null,
         type: "operations.mcp.command",
         severity: "info",
         target: "mcp",

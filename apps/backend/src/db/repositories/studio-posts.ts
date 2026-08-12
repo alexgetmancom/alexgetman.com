@@ -1,35 +1,26 @@
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { desc, eq, or } from "drizzle-orm";
 import type {
   DraftEntityCandidate,
   DraftSource,
   FailedPublicationTarget,
   PostEventRecord,
-  PublicationRetryResult,
   StudioPostStore,
 } from "../../application/ports.js";
 import { publicationRef } from "../../application/publication-ref.js";
 import { isSiteTarget } from "../../botTargets.js";
 import { jsonObject } from "../../json.js";
-import { requeuedPostTarget, requeuedPublishJobColumns } from "../../publishing/job-policy.js";
-import { localizeTargetPayload } from "../../publishing/payload.js";
 import {
   draftEntityCandidates,
   draftSources,
   drafts,
   postEvents,
   posts,
-  postTargets,
   publicationSources,
-  publications,
   publishJobs,
   siteJobs,
   siteSourceItems,
-  studioNotificationSettings,
 } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
-
-type BackendTransaction = Parameters<BackendDatabase["transaction"]>[0] extends (tx: infer T) => unknown ? T : never;
-type RetryJobRow = { jobId: number; status: string };
 
 /** SQLite adapter for Studio post-specific persistence operations. */
 export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
@@ -68,16 +59,6 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
       db.update(draftEntityCandidates).set({ status: "accepted", updatedAt: now }).where(eq(draftEntityCandidates.draftId, draftId)).run();
     },
 
-    notificationSettings(actorIds: number[]) {
-      return actorIds.length
-        ? db
-            .select({ actorId: studioNotificationSettings.actorId, remindersEnabled: studioNotificationSettings.remindersEnabled })
-            .from(studioNotificationSettings)
-            .where(inArray(studioNotificationSettings.actorId, actorIds))
-            .all()
-        : [];
-    },
-
     history(draftId: number, postId: number | null, limit: number): PostEventRecord[] {
       const scope =
         postId == null
@@ -114,6 +95,10 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
       };
     },
 
+    publicationSource(postId: number): Record<string, unknown> {
+      return publicationSource(db, postId);
+    },
+
     failedPublicationTargets(postId: number): FailedPublicationTarget[] {
       const social = db
         .select({ target: publishJobs.target, status: publishJobs.status, error: publishJobs.lastError, jobId: publishJobs.jobId })
@@ -140,109 +125,7 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
         return [{ target, status: row.status, error: row.error }];
       });
     },
-
-    retryPublicationTargets(postId: number, targets: string[]): PublicationRetryResult[] {
-      const requested = [...new Set(targets)];
-      const now = new Date().toISOString();
-      const results: PublicationRetryResult[] = [];
-      let source: Record<string, unknown> | null = null;
-      let changed = false;
-
-      db.transaction((tx) => {
-        for (const target of requested) {
-          let result: PublicationRetryResult;
-
-          if (isSiteTarget(target)) {
-            result = retryPublicationTarget({
-              target,
-              latest: () =>
-                tx
-                  .select()
-                  .from(siteJobs)
-                  .where(and(eq(siteJobs.postId, postId), eq(siteJobs.reason, target)))
-                  .orderBy(desc(siteJobs.jobId))
-                  .get(),
-              queued: () =>
-                tx
-                  .select({ jobId: siteJobs.jobId })
-                  .from(siteJobs)
-                  .where(and(eq(siteJobs.postId, postId), eq(siteJobs.reason, target), eq(siteJobs.status, "queued")))
-                  .get() != null,
-              requeue: (row) => {
-                tx.update(siteJobs)
-                  .set({
-                    status: "queued",
-                    attemptCount: 0,
-                    nextAttemptAt: null,
-                    lockedBy: null,
-                    lockedAt: null,
-                    lastError: null,
-                    updatedAt: now,
-                  })
-                  .where(and(eq(siteJobs.jobId, row.jobId), inArray(siteJobs.status, ["failed", "verification_required"])))
-                  .run();
-                mirrorRequeuedTarget(tx, postId, target, now);
-              },
-            });
-          } else {
-            result = retryPublicationTarget({
-              target,
-              latest: () =>
-                tx
-                  .select()
-                  .from(publishJobs)
-                  .where(and(eq(publishJobs.postId, postId), eq(publishJobs.target, target)))
-                  .orderBy(desc(publishJobs.jobId))
-                  .get(),
-              queued: () =>
-                tx
-                  .select({ jobId: publishJobs.jobId })
-                  .from(publishJobs)
-                  .where(and(eq(publishJobs.postId, postId), eq(publishJobs.target, target), eq(publishJobs.status, "queued")))
-                  .get() != null,
-              requeue: (row) => {
-                let publicationPayload = source;
-                if (publicationPayload === null) {
-                  publicationPayload = publicationSource(db, postId);
-                  source = publicationPayload;
-                }
-                const payload = localizeTargetPayload(
-                  Object.keys(publicationPayload).length > 0 ? publicationPayload : jsonObject(row.payloadJson),
-                  target,
-                );
-                tx.update(publishJobs)
-                  .set(requeuedPublishJobColumns(payload, now))
-                  .where(and(eq(publishJobs.jobId, row.jobId), inArray(publishJobs.status, ["failed", "verification_required"])))
-                  .run();
-                mirrorRequeuedTarget(tx, postId, target, now);
-              },
-            });
-          }
-
-          results.push(result);
-          if (result.outcome === "requeued") changed = true;
-        }
-        if (changed) tx.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, postId)).run();
-      });
-      return results;
-    },
   };
-}
-
-function retryPublicationTarget<T extends RetryJobRow>(input: {
-  target: string;
-  latest: () => T | undefined;
-  queued: () => boolean;
-  requeue: (row: T) => void;
-}): PublicationRetryResult {
-  const row = input.latest();
-  if (!row) return { target: input.target, outcome: "not_failed" };
-  if (input.queued()) return { target: input.target, outcome: "already_queued" };
-  if (row.status !== "failed" && row.status !== "verification_required") {
-    return { target: input.target, outcome: "not_failed" };
-  }
-  input.requeue(row);
-  return { target: input.target, outcome: "requeued" };
 }
 
 function publicationSource(db: BackendDatabase, postId: number): Record<string, unknown> {
@@ -259,14 +142,6 @@ function publicationSource(db: BackendDatabase, postId: number): Record<string, 
       )
     : {};
   return Object.keys(siteSource).length > 0 ? siteSource : jsonObject(post?.rawJson);
-}
-
-function mirrorRequeuedTarget(db: BackendTransaction, postId: number, target: string, now: string): void {
-  const mirrored = requeuedPostTarget(`post:${postId}`, target, now);
-  db.insert(postTargets)
-    .values(mirrored.values)
-    .onConflictDoUpdate({ target: [postTargets.postKey, postTargets.target], set: mirrored.patch })
-    .run();
 }
 
 function sourceLabel(url: string): string {

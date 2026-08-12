@@ -98,7 +98,10 @@ function locatesMedia(item: Record<string, unknown>): boolean {
   return ["file_id", "fileId", "local_path", "localPath", "path", "asset_id"].some((key) => item[key] != null);
 }
 
-function updateSource(db: UnsafeBackendDb["db"], ref: ResolvedPublicationRef, patch: Record<string, unknown>, now: string): void {
+/** Merges a patch into the durable publication source and the site's copy of
+ * it. Both rows carry the same object, so writing one without the other is how
+ * a repair reached the site and not the queue — or the reverse. */
+export function updateSource(db: UnsafeBackendDb["db"], ref: ResolvedPublicationRef, patch: Record<string, unknown>, now: string): void {
   const row =
     ref.postId == null
       ? null

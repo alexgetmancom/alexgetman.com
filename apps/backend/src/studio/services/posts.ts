@@ -1,4 +1,4 @@
-import type { DraftPatch, DraftRecord } from "../../application/ports.js";
+import type { DraftPatch, DraftRecord, StoryPublishMode } from "../../application/ports.js";
 import type { PublicationPipeline, PublicationSchedule } from "../../application/publication-pipeline.js";
 import { publicationRef } from "../../application/publication-ref.js";
 import { isStoryTarget, PRESETS, presetName, TARGETS, targetLocale } from "../../botTargets.js";
@@ -17,9 +17,10 @@ import { cancelDraft, cancelPendingPostJobs } from "../../publishing/draft-lifec
 import { mediaPolicyForTarget } from "../../publishing/media-policy.js";
 import { publicationPreflight } from "../../publishing/preflight.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
+import { RETRY_AFTER_FAILURE, requeuePublicationTargets } from "../../publishing/requeue.js";
 import { assertFutureSchedule, assertValidScheduleDate, parseManualSchedule, publicationSlotTime } from "../../publishing/schedule.js";
 import { parseTargets } from "../../publishing/targets.js";
-import { readyStoryCardMedia, type StoryPublishMode, setStoryPublishMode, storyCardsForDraft } from "../../story-cards/store.js";
+
 import { accessibleStudioActorIds } from "../access.js";
 import { postDeliveryProjections } from "../projections.js";
 import { draftMedia, requireMutableDraft, requireOwnedDraft, requirePostEditAllowed } from "./post-access.js";
@@ -58,7 +59,7 @@ export function replanScheduledPostAfterStoryCards(backendDb: BackendDb, config:
     backendDb,
     config,
     draftId,
-    (draft) => isStoryPublishMode(draft) && Boolean(readyStoryCardMedia(backendDb, draftId)),
+    (draft) => isStoryPublishMode(draft) && Boolean(backendDb.storyCards.readyMedia(draftId)),
   );
 }
 
@@ -71,7 +72,7 @@ export function replanScheduledPostAfterStoryCardFailure(backendDb: BackendDb, c
     (draft) =>
       isStoryPublishMode(draft) &&
       hasStoryTarget(backendDb, draft) &&
-      storyCardsForDraft(backendDb, draftId).some((card) => card.status === "failed"),
+      backendDb.storyCards.forDraft(draftId).some((card) => card.status === "failed"),
   );
   if (!replanned) return false;
   recordDomainEvent(backendDb.events, {
@@ -89,13 +90,13 @@ export function replanScheduledPostAfterStoryCardFailure(backendDb: BackendDb, c
 function replanScheduledPostAfterMutation(backendDb: BackendDb, config: BackendConfig, draftId: number): boolean {
   return replanScheduled(backendDb, config, draftId, (draft) => {
     const hasMedia = draftMedia(draft, "ru").length > 0 || draftMedia(draft, "en").length > 0;
-    const hasFailedStoryCard = storyCardsForDraft(backendDb, draftId).some((card) => card.status === "failed");
+    const hasFailedStoryCard = backendDb.storyCards.forDraft(draftId).some((card) => card.status === "failed");
     return !(
       isStoryPublishMode(draft) &&
       hasStoryTarget(backendDb, draft) &&
       !hasMedia &&
       !hasFailedStoryCard &&
-      !readyStoryCardMedia(backendDb, draftId)
+      !backendDb.storyCards.readyMedia(draftId)
     );
   });
 }
@@ -148,7 +149,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
       const ruContent = draftLocaleContent(draft, "ru");
       const enContent = draftLocaleContent(draft, "en");
-      const storyCards = storyCardsForDraft(backendDb, draftId);
+      const storyCards = backendDb.storyCards.forDraft(draftId);
       const storyCardsReady = ["ru", "en"].every((locale) =>
         storyCards.some((card) => card.locale === locale && card.status === "ready" && card.localPath),
       );
@@ -256,7 +257,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
     },
     setStoryPublishMode(actorId: number, draftId: number, mode: StoryPublishMode): void {
       requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now());
-      setStoryPublishMode(backendDb, draftId, mode);
+      backendDb.storyCards.setPublishMode(draftId, mode);
       replanScheduledPostAfterMutation(backendDb, config, draftId);
     },
     replaceSources(actorId: number, draftId: number, urls: string[]): void {
@@ -300,9 +301,12 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       const failed = backendDb.studioPosts.failedPublicationTargets(draft.post_id);
       const selected = target ? failed.filter((item) => item.target === target) : failed;
       if (selected.length === 0) throw new StudioError("err.retry-only-failed");
-      const results = backendDb.studioPosts.retryPublicationTargets(
-        draft.post_id,
+      const postId = draft.post_id;
+      const results = requeuePublicationTargets(
+        backendDb,
+        { postId, postKey: publicationRef("post", postId), messageId: null },
         selected.map((item) => item.target),
+        { from: RETRY_AFTER_FAILURE, source: () => backendDb.studioPosts.publicationSource(postId) },
       );
       const requeued = results.filter((item) => item.outcome === "requeued").length;
       const alreadyQueued = results.filter((item) => item.outcome === "already_queued").length;

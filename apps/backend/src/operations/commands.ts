@@ -27,10 +27,9 @@ const commandFlag = z
  * One name per action and one field per value: the locale is an argument, so
  * `edit_en`, `replace_en_media`, `text_en` and `media_en_json` were the English
  * case spelled twice, and every dispatch below had to test for both. */
-export const commandActionSchema = z.object({
+export const commandActionSchema = z.strictObject({
   action: z.string().default(""),
   ref: z.string().optional(),
-  message_id: z.coerce.number().optional(),
   target: z.string().optional(),
   locale: z.preprocess((value) => (value === "" ? undefined : value), z.enum(["ru", "en"]).optional()),
   text: z.string().optional(),
@@ -61,7 +60,7 @@ export async function runOperationCommand(
   // Parsed here rather than at each caller so `apply` and `republish` cannot
   // reach the dispatch as undefined: an unarmed gate must fail closed.
   const input = commandActionSchema.parse(raw);
-  const ref = input.ref || (input.message_id == null ? "" : String(input.message_id));
+  const ref = input.ref?.trim() ?? "";
   if (!ref) throw new Error("missing publication ref");
   const publicationRef = resolvePublicationRef(backendDb, ref);
   if (!publicationRef) throw new Error(`publication not found: ${ref}`);
@@ -103,7 +102,15 @@ export async function runOperationCommand(
         config,
         fetchImpl,
       );
-      result.replaced = await replaceTextFallbackTargets(backendDb, publicationRef, config, input.target, locale, fetchImpl);
+      result.replaced = await replaceTextFallbackTargets(
+        backendDb,
+        publicationRef,
+        config,
+        input.target,
+        locale,
+        fetchImpl,
+        result.external as Array<Record<string, unknown>>,
+      );
     }
   } else if (input.action === "replace_media") {
     const locale = input.locale ?? "en";
@@ -120,7 +127,18 @@ export async function runOperationCommand(
   } else if (input.action === "use_other_media") {
     const locale = input.locale ?? "en";
     result = replaceLocaleMedia(backendDb, publicationRef, locale, null);
-    result.republish = requeuePublicationScope(backendDb, publicationRef, input.target, locale);
+    if (config) {
+      // The same shape as replace_media: this changes the media a published
+      // post carries, so the published object has to come down first. Requeuing
+      // on its own left the original standing and published a second copy.
+      result.removed = await removePublishedTargets(
+        backendDb,
+        config,
+        { postKey: publicationRef.postKey, ...(input.target ? { target: input.target } : {}), locale },
+        fetchImpl,
+      );
+      result.republish = requeueAfterRemoval(backendDb, publicationRef, result.removed as Array<Record<string, unknown>>, input.target);
+    } else result.republish = requeuePublicationScope(backendDb, publicationRef, input.target, locale);
   } else if (input.action === "delete") {
     if (!config) throw new Error("external removal requires runtime config");
     result = {

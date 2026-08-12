@@ -93,7 +93,15 @@ export function removeVideoTarget(backendDb: BackendDb, videoDraftId: number, ta
   const remaining = unsafeDb(backendDb).db.transaction((tx) => {
     // FK cascade (see replaceVideoTargets): removing the target row deletes its
     // comments, metric snapshots, schedule and platform jobs.
-    tx.delete(videoTargets).where(eq(videoTargets.id, target.id)).run();
+    // Fenced on the status the editability check above read: a worker can
+    // publish this target between that read and this delete, and deleting it
+    // then would drop a live publication and its whole history.
+    const deleted = tx
+      .delete(videoTargets)
+      .where(and(eq(videoTargets.id, target.id), eq(videoTargets.status, target.status)))
+      .returning({ id: videoTargets.id })
+      .get();
+    if (!deleted) throw new StudioError("err.video-target-locked");
     const remainingTargets = tx.select({ id: videoTargets.id }).from(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).all();
     if (remainingTargets.length === 0)
       tx.update(videoDrafts)
@@ -171,7 +179,12 @@ export function scheduleVideo(
         durationSeconds != null && durationSeconds > 0 && metadata.videoDurationMs == null
           ? { ...metadata, videoDurationMs: Math.round(durationSeconds * 1_000) }
           : metadata;
-      tx.update(videoTargets)
+      // Fenced on the status `isVideoTargetSchedulable` was checked against.
+      // That check happens before the transaction, and the comment above says
+      // exactly what it exists to prevent — so the condition has to reach the
+      // write, or a target published in that window is armed a second time.
+      const scheduled = tx
+        .update(videoTargets)
         .set({
           scheduledAt: publishAt,
           status: "scheduled",
@@ -181,8 +194,10 @@ export function scheduleVideo(
           providerAccountId: route.accountId ?? null,
           updatedAt: now.toISOString(),
         })
-        .where(eq(videoTargets.id, target.id))
-        .run();
+        .where(and(eq(videoTargets.id, target.id), eq(videoTargets.status, target.status)))
+        .returning({ id: videoTargets.id })
+        .get();
+      if (!scheduled) throw new StudioError("err.video-target-not-schedulable");
       insertVideoJob(tx, videoDraftId, target.id, "prepare", preparedAt.toISOString());
       insertVideoJob(tx, videoDraftId, target.id, "publish", publishAt);
     }

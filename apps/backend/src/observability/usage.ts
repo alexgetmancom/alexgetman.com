@@ -74,7 +74,9 @@ function usageBufferFor(backendDb: BackendDb): UsageBuffer {
   return created;
 }
 
-/** Buffers one operation so request latency never includes a telemetry write. */
+/** Buffers one operation, so all but one request a minute costs nothing but a
+ * map write. The exception is the request that crosses the flush interval: it
+ * pays for the whole batch, synchronously and on its own thread. */
 export function recordUsage(backendDb: BackendDb, featureKey: string, success: boolean, durationMs: number, now = new Date()): void {
   if (!featureKeyPattern.test(featureKey)) {
     log("warn", "invalid runtime usage feature key", { featureKey });

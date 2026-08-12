@@ -1,4 +1,5 @@
 import { targetLocale } from "../../botTargets.js";
+import { effectivePostTargets } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { truncateUnicode } from "../../foundation/text.js";
@@ -103,7 +104,7 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
 }
 
 function enabledPostTargets(backendDb: BackendDb, value: string): number {
-  return Object.values(backendDb.studioQueue.effectivePostTargets(parseTargets(value))).filter(Boolean).length;
+  return Object.values(effectivePostTargets(backendDb, parseTargets(value))).filter(Boolean).length;
 }
 
 function earliestFutureDate(nowMs: number, ...values: Array<string | null>): Date | null {
@@ -122,7 +123,8 @@ function hasUnscheduledLocale(
 ): boolean {
   const parsed = parseJsonValue(targetsJson);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
-  const targets = backendDb.studioQueue.effectivePostTargets(
+  const targets = effectivePostTargets(
+    backendDb,
     Object.fromEntries(Object.entries(parsed as Record<string, unknown>).map(([target, enabled]) => [target, Boolean(enabled)])),
   );
   const hasRu = Object.entries(targets).some(([target, enabled]) => enabled && targetLocale(target) === "ru");

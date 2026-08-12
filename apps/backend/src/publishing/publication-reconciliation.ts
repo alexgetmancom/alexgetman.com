@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { publicationRef } from "../application/publication-ref.js";
-import { targetLocale } from "../botTargets.js";
+import { isSiteTarget, targetLocale } from "../botTargets.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { drafts, postEvents, publicationPlans, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
@@ -22,11 +22,16 @@ export function reconcilePublication(backendDb: BackendDb, postId: number): void
     .from(publishJobs)
     .where(eq(publishJobs.postId, postId))
     .all();
+  // Only the canonical site rows. A site job's reason is either a delivery
+  // target (`site_ru`, `site_en`) or a repair (`edit_en`, `refresh_en_site`),
+  // and counting repairs as targets meant one failed repair held the whole
+  // publication in `failed` even after the real site page had published.
   const site = unsafeDb(backendDb)
     .db.select({ target: siteJobs.reason, status: siteJobs.status, error: siteJobs.lastError })
     .from(siteJobs)
     .where(eq(siteJobs.postId, postId))
-    .all();
+    .all()
+    .filter((job) => isSiteTarget(job.target));
   const all: PublicationJob[] = [...social, ...site];
   const plan = publicationPlan(backendDb, postId);
   emitLocaleCompletion(backendDb, postId, all, plan);
