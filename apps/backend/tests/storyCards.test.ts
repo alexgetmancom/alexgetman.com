@@ -32,6 +32,7 @@ function openStoryDb(): UnsafeBackendDb {
 const temporaryDirectories: string[] = [];
 const storyCardAssets = fileURLToPath(new URL("../assets/story-card/", import.meta.url));
 const storyCardRenderer = fileURLToPath(new URL("../src/story-cards/renderer-process.ts", import.meta.url));
+const testStoryCardRenderer = fileURLToPath(new URL("./fixtures/story-card-renderer.ts", import.meta.url));
 
 afterEach(() => {
   backendDb?.close();
@@ -216,8 +217,7 @@ describe("text Story cards", () => {
       CONTROLLER_ADMIN_IDS: "42",
       DATA_DIR: directory,
       STORY_CARD_DIR: directory,
-      STORY_CARD_ASSETS_DIR: storyCardAssets,
-      STORY_CARD_RENDERER_ENTRY: storyCardRenderer,
+      STORY_CARD_RENDERER_ENTRY: testStoryCardRenderer,
     });
     const posts = postService(backendDb, config);
     const draftId = posts.create(42, { text: "Before", textEn: "Before", entities: [], media: [] });
@@ -287,7 +287,7 @@ describe("text Story cards", () => {
       DATA_DIR: directory,
       STORY_CARD_DIR: directory,
       STORY_CARD_ASSETS_DIR: storyCardAssets,
-      STORY_CARD_RENDERER_ENTRY: storyCardRenderer,
+      STORY_CARD_RENDERER_ENTRY: testStoryCardRenderer,
     });
     const draftId = createDraftFromMessage(backendDb, 42, {
       text: "🚨 СЛИВ: Две модели OpenAI появились в DesignArena.",

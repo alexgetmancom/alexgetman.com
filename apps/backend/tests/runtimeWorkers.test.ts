@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, jest } from "bun:test";
 import { eq } from "drizzle-orm";
 import { workerState } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
@@ -22,9 +22,14 @@ const EXPECTED_WORKERS = [
   "observability",
 ];
 
-function wait(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+
+afterEach(() => {
+  if (jest.isFakeTimers()) jest.clearAllTimers();
+  jest.useRealTimers();
+});
 
 describe("core worker runtime", () => {
   it("starts every enabled loop and persists lifecycle heartbeats", async () => {
@@ -37,7 +42,8 @@ describe("core worker runtime", () => {
 
       try {
         expect(loops.map((loop) => loop.name)).toEqual(EXPECTED_WORKERS);
-        await wait(1_100);
+        jest.advanceTimersByTime(1_000);
+        await Promise.resolve();
 
         const states = backendDb.db
           .select()
@@ -52,7 +58,8 @@ describe("core worker runtime", () => {
         ).toEqual({ name: "observability" });
       } finally {
         for (const loop of loops) loop.stop();
-        await wait(50);
+        jest.useRealTimers();
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
     });
   });
@@ -80,7 +87,8 @@ describe("core worker runtime", () => {
         ]);
       } finally {
         for (const loop of loops) loop.stop();
-        await wait(50);
+        jest.useRealTimers();
+        await new Promise((resolve) => setTimeout(resolve, 50));
       }
     });
   });

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, jest } from "bun:test";
 import { Window } from "happy-dom";
 import { createStoryViewTracker } from "./analytics.js";
 import { preloadAdjacentMedia } from "./media.js";
@@ -28,9 +28,15 @@ function installDom(url = "https://example.test/stories/"): Window {
 }
 
 afterEach(() => {
+  jest.clearAllTimers();
+  jest.useRealTimers();
   Object.assign(globalThis, originalGlobals);
   if (originalLocalStorage) Object.defineProperty(globalThis, "localStorage", originalLocalStorage);
   else Reflect.deleteProperty(globalThis, "localStorage");
+});
+
+beforeEach(() => {
+  jest.useFakeTimers();
 });
 
 function post(overrides: Partial<StoryPost> = {}): StoryPost {
@@ -84,11 +90,11 @@ describe("story player DOM behavior", () => {
     });
 
     progress.resetForStory();
-    await Bun.sleep(720);
+    jest.advanceTimersByTime(720);
     expect(progress.debugState().advanceTimer).not.toBeNull();
     progress.handleVideoWaiting();
     expect(progress.debugState().advanceTimer).toBeNull();
-    await Bun.sleep(400);
+    jest.advanceTimersByTime(400);
     expect(advances).toBe(0);
   });
 
@@ -118,15 +124,15 @@ describe("story player DOM behavior", () => {
     // right away instead of sitting empty for the story-transition delay.
     const slide = controller();
     slide.resetForSlide();
-    await Bun.sleep(120);
+    jest.advanceTimersByTime(120);
     expect(fill.style.animation).toContain("storyProgressHorizontal");
 
     fill.style.animation = "none";
     const story = controller();
     story.resetForStory();
-    await Bun.sleep(120);
+    jest.advanceTimersByTime(120);
     expect(fill.style.animation).toBe("none");
-    await Bun.sleep(400);
+    jest.advanceTimersByTime(400);
     expect(fill.style.animation).toContain("storyProgressHorizontal");
   });
 
@@ -153,7 +159,7 @@ describe("story player DOM behavior", () => {
     Object.defineProperty(currentVideo, "currentTime", { value: 0, configurable: true });
 
     progress.handleVideoPlaying();
-    await Bun.sleep(400);
+    jest.advanceTimersByTime(400);
     expect(advances).toBe(0);
     progress.handleVideoEnded();
     expect(advances).toBe(1);
@@ -206,11 +212,11 @@ describe("story player DOM behavior", () => {
     progress.resetForStory({ keepProgressIdle: true });
     progress.resumeAfterManualNavigation();
     expect(progress.debugState()).toEqual(expect.objectContaining({ progressRestartBlocked: true, advanceTimer: null }));
-    await Bun.sleep(600);
+    jest.advanceTimersByTime(600);
     expect(advances).toBe(0);
-    await Bun.sleep(650);
+    jest.advanceTimersByTime(650);
     expect(progress.debugState().progressRestartBlocked).toBe(false);
-    await Bun.sleep(300);
+    jest.advanceTimersByTime(300);
     expect(advances).toBe(1);
   });
 
@@ -220,7 +226,7 @@ describe("story player DOM behavior", () => {
     const tracker = createStoryViewTracker({ activeIndex: () => 0, normalizedPath, dwellMs: DWELL_MS });
 
     tracker.scheduleStoryView(post({ url: "/stories/other/" }));
-    await Bun.sleep(DWELL_MS + 60);
+    jest.advanceTimersByTime(DWELL_MS + 60);
     expect(beacons).toHaveLength(0);
   });
 
@@ -230,7 +236,7 @@ describe("story player DOM behavior", () => {
     const tracker = createStoryViewTracker({ activeIndex: () => 0, normalizedPath, dwellMs: DWELL_MS });
 
     tracker.scheduleStoryView(post({ url: "/stories/example/" }));
-    await Bun.sleep(DWELL_MS + 60);
+    jest.advanceTimersByTime(DWELL_MS + 60);
     expect(beacons).toHaveLength(0);
   });
 
@@ -240,11 +246,11 @@ describe("story player DOM behavior", () => {
     const tracker = createStoryViewTracker({ activeIndex: () => 0, normalizedPath, dwellMs: DWELL_MS });
 
     tracker.scheduleStoryView(post({ url: "/stories/other/", id: "post-1" }));
-    await Bun.sleep(DWELL_MS + 60);
+    jest.advanceTimersByTime(DWELL_MS + 60);
     expect(beacons).toEqual(["/stats/pageview"]);
 
     tracker.scheduleStoryView(post({ url: "/stories/other/", id: "post-1" }));
-    await Bun.sleep(DWELL_MS + 60);
+    jest.advanceTimersByTime(DWELL_MS + 60);
     expect(beacons).toHaveLength(1);
   });
 
@@ -256,7 +262,7 @@ describe("story player DOM behavior", () => {
 
     tracker.scheduleStoryView(post({ url: "/stories/other/" }));
     active = 1;
-    await Bun.sleep(DWELL_MS + 60);
+    jest.advanceTimersByTime(DWELL_MS + 60);
     expect(beacons).toHaveLength(0);
   });
 });

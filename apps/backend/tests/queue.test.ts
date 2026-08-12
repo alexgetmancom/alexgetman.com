@@ -1,4 +1,4 @@
-import { describe, expect, it, setSystemTime } from "bun:test";
+import { describe, expect, it, jest, setSystemTime } from "bun:test";
 import { eq } from "drizzle-orm";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { type JsonObject, postEvents, postTargets, publishJobs } from "../src/db/schema.js";
@@ -43,6 +43,16 @@ function testPorts(entries: Record<string, DeliveryPublisher | DeliveryAdapter>)
   return Object.fromEntries(
     Object.entries(entries).map(([target, entry]) => [target, typeof entry === "function" ? testAdapter(entry) : entry]),
   ) as DeliveryPorts;
+}
+
+async function withFakeTimers<T>(run: () => Promise<T>): Promise<T> {
+  jest.useFakeTimers();
+  try {
+    return await run();
+  } finally {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+  }
 }
 
 describe("publish queue", () => {
@@ -255,6 +265,10 @@ describe("publish queue", () => {
       let maxActiveSlow = 0;
       let fastElapsedMs: number | null = null;
       let sameLaneStatuses: string[] = [];
+      let releaseSlow: (() => void) | undefined;
+      const slowGate = new Promise<void>((resolve) => {
+        releaseSlow = resolve;
+      });
       const start = Date.now();
       const publishers = testPorts({
         "slow-target": async () => {
@@ -267,12 +281,13 @@ describe("publish queue", () => {
               .where(eq(publishJobs.target, "slow-target"))
               .all()
               .map((job) => job.status);
-          await Bun.sleep(50);
+          await slowGate;
           activeSlow -= 1;
           return { ok: true, id: "slow" };
         },
         "fast-target": async () => {
           fastElapsedMs = Date.now() - start;
+          releaseSlow?.();
           return { ok: true, id: "fast" };
         },
       });
@@ -287,31 +302,46 @@ describe("publish queue", () => {
     }));
 
   it("heartbeats a job's lock while a slow publish call is in flight", () =>
-    withDb(async (backendDb) => {
-      const id = enqueuePublishJob(backendDb, { messageId: 700, target: "slow-target", payload: { title: "Queued" } });
-      let lockedAtDuringPublish: string | null | undefined;
-      await runPublishCycle(
-        loadConfig({ PUBLISH_HEARTBEAT_INTERVAL_SECONDS: "1" }),
-        backendDb,
-        testPorts({
-          "slow-target": async () => {
-            await Bun.sleep(1100);
-            lockedAtDuringPublish = backendDb.db
-              .select({ lockedAt: publishJobs.lockedAt })
-              .from(publishJobs)
-              .where(eq(publishJobs.jobId, id))
-              .get()?.lockedAt;
-            return { ok: true, id: "slow" };
-          },
-        }),
-      );
-      const claimedAt = backendDb.db.select({ lockedAt: publishJobs.lockedAt }).from(publishJobs).where(eq(publishJobs.jobId, id)).get();
-      // The job already completed by the time we read it back, so lockedAt is
-      // cleared; what matters is the heartbeat fired at least once mid-publish.
-      expect(lockedAtDuringPublish).not.toBeUndefined();
-      expect(lockedAtDuringPublish).not.toBeNull();
-      expect(claimedAt?.lockedAt).toBeNull();
-    }));
+    withFakeTimers(() =>
+      withDb(async (backendDb) => {
+        const id = enqueuePublishJob(backendDb, { messageId: 700, target: "slow-target", payload: { title: "Queued" } });
+        let lockedAtDuringPublish: string | null | undefined;
+        let publishStarted: () => void = () => {};
+        const publishHasStarted = new Promise<void>((resolve) => {
+          publishStarted = resolve;
+        });
+        let releasePublish: () => void = () => {};
+        const publishGate = new Promise<void>((resolve) => {
+          releasePublish = resolve;
+        });
+        const cycle = runPublishCycle(
+          loadConfig({ PUBLISH_HEARTBEAT_INTERVAL_SECONDS: "1" }),
+          backendDb,
+          testPorts({
+            "slow-target": async () => {
+              publishStarted();
+              await publishGate;
+              lockedAtDuringPublish = backendDb.db
+                .select({ lockedAt: publishJobs.lockedAt })
+                .from(publishJobs)
+                .where(eq(publishJobs.jobId, id))
+                .get()?.lockedAt;
+              return { ok: true, id: "slow" };
+            },
+          }),
+        );
+        await publishHasStarted;
+        jest.advanceTimersByTime(1_000);
+        releasePublish();
+        await cycle;
+        const claimedAt = backendDb.db.select({ lockedAt: publishJobs.lockedAt }).from(publishJobs).where(eq(publishJobs.jobId, id)).get();
+        // The job already completed by the time we read it back, so lockedAt is
+        // cleared; what matters is the heartbeat fired at least once mid-publish.
+        expect(lockedAtDuringPublish).not.toBeUndefined();
+        expect(lockedAtDuringPublish).not.toBeNull();
+        expect(claimedAt?.lockedAt).toBeNull();
+      }),
+    ));
 
   it("retries transient publisher failures", () =>
     withDb(async (backendDb) => {
@@ -408,72 +438,94 @@ describe("publish queue", () => {
     }));
 
   it("keeps a whole-job timeout retryable because preparation may not have reached the provider", () =>
-    withDb(async (backendDb) => {
-      const id = enqueuePublishJob(backendDb, {
-        messageId: 105,
-        target: "slow-provider",
-        payload: { title: "Queued" },
-      });
-      await runPublishCycle(
-        loadConfig({ PUBLISH_JOB_TIMEOUT_SECONDS: "1" }),
-        backendDb,
-        testPorts({
-          "slow-provider": testAdapter(async () => ({ ok: true }), {
-            prepare: async () => await new Promise<never>(() => undefined),
+    withFakeTimers(() =>
+      withDb(async (backendDb) => {
+        const id = enqueuePublishJob(backendDb, {
+          messageId: 105,
+          target: "slow-provider",
+          payload: { title: "Queued" },
+        });
+        let prepareStarted: () => void = () => {};
+        const preparationHasStarted = new Promise<void>((resolve) => {
+          prepareStarted = resolve;
+        });
+        const cycle = runPublishCycle(
+          loadConfig({ PUBLISH_JOB_TIMEOUT_SECONDS: "1" }),
+          backendDb,
+          testPorts({
+            "slow-provider": testAdapter(async () => ({ ok: true }), {
+              prepare: async () => {
+                prepareStarted();
+                return await new Promise<never>(() => undefined);
+              },
+            }),
           }),
-        }),
-      );
-      expect(
-        backendDb.db
-          .select({ status: publishJobs.status, attemptCount: publishJobs.attemptCount, lastError: publishJobs.lastError })
-          .from(publishJobs)
-          .where(eq(publishJobs.jobId, id))
-          .get(),
-      ).toEqual({
-        status: "failed",
-        attemptCount: 1,
-        lastError: "delivery_execution_timeout: slow-provider exceeded 1s during prepare",
-      });
-    }));
+        );
+        await preparationHasStarted;
+        jest.advanceTimersByTime(1_000);
+        await cycle;
+        expect(
+          backendDb.db
+            .select({ status: publishJobs.status, attemptCount: publishJobs.attemptCount, lastError: publishJobs.lastError })
+            .from(publishJobs)
+            .where(eq(publishJobs.jobId, id))
+            .get(),
+        ).toEqual({
+          status: "failed",
+          attemptCount: 1,
+          lastError: "delivery_execution_timeout: slow-provider exceeded 1s during prepare",
+        });
+      }),
+    ));
 
   it("fences delayed preparation from publishing after its worker timed out", () =>
-    withDb(async (backendDb) => {
-      const id = enqueuePublishJob(backendDb, {
-        messageId: 1051,
-        target: "slow-prepare",
-        payload: { title: "Queued" },
-      });
-      let releasePreparation: (() => void) | undefined;
-      let publishCalls = 0;
-      const preparation = new Promise<void>((resolve) => {
-        releasePreparation = resolve;
-      });
-      await runPublishCycle(
-        loadConfig({ PUBLISH_JOB_TIMEOUT_SECONDS: "1" }),
-        backendDb,
-        testPorts({
-          "slow-prepare": testAdapter(
-            async () => {
-              publishCalls += 1;
-              return { ok: true };
-            },
-            {
-              prepare: async (job) => {
-                await preparation;
-                return job;
+    withFakeTimers(() =>
+      withDb(async (backendDb) => {
+        const id = enqueuePublishJob(backendDb, {
+          messageId: 1051,
+          target: "slow-prepare",
+          payload: { title: "Queued" },
+        });
+        let releasePreparation: (() => void) | undefined;
+        let publishCalls = 0;
+        const preparation = new Promise<void>((resolve) => {
+          releasePreparation = resolve;
+        });
+        let prepareStarted: () => void = () => {};
+        const preparationHasStarted = new Promise<void>((resolve) => {
+          prepareStarted = resolve;
+        });
+        const cycle = runPublishCycle(
+          loadConfig({ PUBLISH_JOB_TIMEOUT_SECONDS: "1" }),
+          backendDb,
+          testPorts({
+            "slow-prepare": testAdapter(
+              async () => {
+                publishCalls += 1;
+                return { ok: true };
               },
-            },
-          ),
-        }),
-      );
-      releasePreparation?.();
-      await new Promise((resolve) => setTimeout(resolve, 0));
+              {
+                prepare: async (job) => {
+                  prepareStarted();
+                  await preparation;
+                  return job;
+                },
+              },
+            ),
+          }),
+        );
+        await preparationHasStarted;
+        jest.advanceTimersByTime(1_000);
+        await cycle;
+        releasePreparation?.();
+        await Promise.resolve();
 
-      expect(publishCalls).toBe(0);
-      expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
-        status: "failed",
-      });
-    }));
+        expect(publishCalls).toBe(0);
+        expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
+          status: "failed",
+        });
+      }),
+    ));
 
   it("holds a stale publishing lock for verification instead of risking a duplicate", () =>
     withDb((backendDb) => {
