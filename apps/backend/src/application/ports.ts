@@ -280,7 +280,6 @@ type StudioVideoDraftRecord = {
   studioMediaAssetId: number;
   status: string;
   scheduledAt: string | null;
-  reminderSentAt: string | null;
   retentionUntil: string | null;
   sourcePrunedAt: string | null;
   controlChatId: number | null;

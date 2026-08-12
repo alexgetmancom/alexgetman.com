@@ -237,11 +237,8 @@ function videoCardEffects(
 ): PublicationEffect[] {
   clearVideoState(backendDb, actorId);
   const preview = publicationRenderers(backendDb, config, services).video.card({
-    backendDb,
-    pipeline: services.videos,
     actorId,
     publicationId: draftId,
-    config,
     locale: settingsService(backendDb).locale(actorId),
   });
   return publicationCardEffect(preview, { mode: "reply" });

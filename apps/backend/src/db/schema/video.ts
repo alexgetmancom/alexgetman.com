@@ -15,7 +15,6 @@ export const videoDrafts = sqliteTable(
       .references(() => studioMediaAssets.id),
     status: text().notNull().default("draft"),
     scheduledAt: text(),
-    reminderSentAt: text(),
     retentionUntil: text(),
     /** Set once the source file has been reclaimed. Retention deadlines are
      * recomputed on every target change, so they cannot say whether the file is

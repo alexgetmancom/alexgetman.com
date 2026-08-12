@@ -1,6 +1,5 @@
 import type { InlineKeyboard } from "grammy";
 import type { PublicationKind } from "../application/conversation-flow.js";
-import type { PublicationPipeline } from "../application/publication-pipeline.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import type { StudioLocale } from "../foundation/locale.js";
@@ -19,11 +18,8 @@ export type PublicationCard = {
 };
 
 type PublicationRendererInput = {
-  backendDb: BackendDb;
-  pipeline: PublicationPipeline;
   actorId: number;
   publicationId: number;
-  config: BackendConfig;
   locale: StudioLocale;
   view?: string | undefined;
   target?: VideoTarget | undefined;
@@ -81,11 +77,8 @@ function cardRef(card: PublicationCard): { kind: "post" | "video"; draftId: numb
  * of them could have drifted on which locale it passed. */
 export function postPreviewCard(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number) {
   return publicationRenderers(backendDb, config).post.card({
-    backendDb,
-    pipeline: createStudioServices(backendDb, config).posts,
     actorId,
     publicationId: draftId,
-    config,
     locale: settingsService(backendDb).locale(actorId),
   });
 }

@@ -70,11 +70,8 @@ async function handleToggle(args: PostActionArgs): Promise<PublicationActionResu
   if (!target) throw new StudioError("action.unknown");
   args.pipeline.toggleTarget(args.actorId, args.draftId, target);
   const card = args.renderer.card({
-    backendDb: args.backendDb,
-    pipeline: args.pipeline,
     actorId: args.actorId,
     publicationId: args.draftId,
-    config: args.config,
     locale: args.locale,
     view: "platforms",
   });
@@ -83,11 +80,8 @@ async function handleToggle(args: PostActionArgs): Promise<PublicationActionResu
 
 async function handleCancel(args: PostActionArgs): Promise<PublicationActionResult> {
   const card = args.renderer.card({
-    backendDb: args.backendDb,
-    pipeline: args.pipeline,
     actorId: args.actorId,
     publicationId: args.draftId,
-    config: args.config,
     locale: args.locale,
     view: args.args.view ?? "confirm_cancel",
   });
@@ -304,7 +298,7 @@ async function commitLocaleSchedule(
   value: Date,
   immediateLocale?: "ru" | "en",
 ): Promise<PublicationEffect[]> {
-  const { services, backendDb, config, actorId, draftId } = args;
+  const { services, backendDb, actorId, draftId } = args;
   const posts = services.posts;
   const { ruAt, enAt } = posts.scheduleAt(actorId, draftId, scheduleLocale, value);
   posts.schedule(actorId, draftId, {
@@ -322,11 +316,8 @@ async function commitLocaleSchedule(
     { type: "toast", text: t(uiLocale, "common.scheduled") },
     ...publicationCardEffect(
       args.renderer.card({
-        backendDb,
-        pipeline: posts,
         actorId,
         publicationId: draftId,
-        config,
         locale: uiLocale,
         view: "overview",
       }),
@@ -335,15 +326,12 @@ async function commitLocaleSchedule(
 }
 
 function sendPublishConfirmation(args: PostActionArgs): PublicationEffect[] {
-  const { services, backendDb, config, actorId, draftId } = args;
+  const { services, backendDb, actorId, draftId } = args;
   const delivery = services.posts.preview(actorId, draftId).delivery;
   const uiLocale = settingsService(backendDb).locale(actorId);
   const card = args.renderer.card({
-    backendDb,
-    pipeline: services.posts,
     actorId,
     publicationId: draftId,
-    config,
     locale: uiLocale,
     view: "confirm_publish",
   });
@@ -394,11 +382,8 @@ async function showPublicationPreflight(args: PostActionArgs): Promise<Publicati
 
 function previewEffects(args: PostActionArgs, view: DraftView = "overview", callbackText?: string): PublicationEffect[] {
   const card = args.renderer.card({
-    backendDb: args.backendDb,
-    pipeline: args.services.posts,
     actorId: args.actorId,
     publicationId: args.draftId,
-    config: args.config,
     locale: args.locale,
     view,
   });

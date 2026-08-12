@@ -47,11 +47,8 @@ function renderPostScheduleConfirmation(
   const posts = createStudioServices(backendDb, config).posts;
   const timeConfig = createStudioServices(backendDb, config).settings.timeConfig(actorId, config);
   const card = publicationRenderers(backendDb, config).post.card({
-    backendDb,
-    pipeline: posts,
     actorId,
     publicationId: draftId,
-    config,
     locale,
   });
   const engine = createPublicationScheduleEngine({

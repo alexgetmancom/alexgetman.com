@@ -157,62 +157,36 @@ function fetchPostRows(
   const ru = alias(postLocales, "pipeline_ru");
   const en = alias(postLocales, "pipeline_en");
   const boundedContent = includeContent && contentLimit !== null;
-  const publicationRows = (
-    includeContent && !boundedContent
-      ? unsafeDb(backendDb)
-          .db.select({
-            postId: publications.postId,
-            telegramMessageId: publications.telegramMessageId,
-            createdAt: publications.createdAt,
-            updatedAt: publications.updatedAt,
-            textRu: ru.text,
-            mediaRuJson: ru.mediaJson,
+  const publicationRows = unsafeDb(backendDb)
+    .db.select({
+      postId: publications.postId,
+      telegramMessageId: publications.telegramMessageId,
+      createdAt: publications.createdAt,
+      updatedAt: publications.updatedAt,
+      ...(includeContent
+        ? {
             siteRu: ru.siteEnabled,
             slugRu: ru.slug,
-            textEn: en.text,
-            mediaEnJson: en.mediaJson,
             siteEn: en.siteEnabled,
             slugEn: en.slug,
-          })
-          .from(publications)
-          .leftJoin(ru, and(eq(ru.postId, publications.postId), eq(ru.locale, "ru")))
-          .leftJoin(en, and(eq(en.postId, publications.postId), eq(en.locale, "en")))
-          .where(and(gte(publications.createdAt, start), lte(publications.createdAt, end)))
-          .orderBy(desc(publications.createdAt))
-          .limit(rowLimit)
-          .all()
-      : boundedContent
-        ? unsafeDb(backendDb)
-            .db.select({
-              postId: publications.postId,
-              telegramMessageId: publications.telegramMessageId,
-              createdAt: publications.createdAt,
-              updatedAt: publications.updatedAt,
-              siteRu: ru.siteEnabled,
-              slugRu: ru.slug,
-              siteEn: en.siteEnabled,
-              slugEn: en.slug,
-            })
-            .from(publications)
-            .leftJoin(ru, and(eq(ru.postId, publications.postId), eq(ru.locale, "ru")))
-            .leftJoin(en, and(eq(en.postId, publications.postId), eq(en.locale, "en")))
-            .where(and(gte(publications.createdAt, start), lte(publications.createdAt, end)))
-            .orderBy(desc(publications.createdAt))
-            .limit(rowLimit)
-            .all()
-        : unsafeDb(backendDb)
-            .db.select({
-              postId: publications.postId,
-              telegramMessageId: publications.telegramMessageId,
-              createdAt: publications.createdAt,
-              updatedAt: publications.updatedAt,
-            })
-            .from(publications)
-            .where(and(gte(publications.createdAt, start), lte(publications.createdAt, end)))
-            .orderBy(desc(publications.createdAt))
-            .limit(rowLimit)
-            .all()
-  ) as PublicationQueryRow[];
+          }
+        : {}),
+      ...(includeContent && !boundedContent
+        ? {
+            textRu: ru.text,
+            mediaRuJson: ru.mediaJson,
+            textEn: en.text,
+            mediaEnJson: en.mediaJson,
+          }
+        : {}),
+    })
+    .from(publications)
+    .leftJoin(ru, and(eq(ru.postId, publications.postId), eq(ru.locale, "ru")))
+    .leftJoin(en, and(eq(en.postId, publications.postId), eq(en.locale, "en")))
+    .where(and(gte(publications.createdAt, start), lte(publications.createdAt, end)))
+    .orderBy(desc(publications.createdAt))
+    .limit(rowLimit)
+    .all() as PublicationQueryRow[];
   if (boundedContent) {
     const contentPostIds = publicationRows
       .slice(0, Math.max(0, Math.min(rowLimit, Math.floor(contentLimit ?? 0))))

@@ -6,13 +6,7 @@ import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { alertDedup, drafts, postEvents } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { log } from "../../foundation/logger.js";
-import {
-  notifyFinalVideoFailure,
-  refreshVideoControlCard,
-  sendStudioCompletion,
-  sendStudioReminder,
-  sendVideoReminder,
-} from "./video-notifications.js";
+import { notifyFinalVideoFailure, refreshVideoControlCard, sendStudioCompletion, sendStudioReminder } from "./video-notifications.js";
 
 const TELEGRAM_EVENT_TYPES = [
   "delivery.post.settled",
@@ -21,7 +15,6 @@ const TELEGRAM_EVENT_TYPES = [
   "publish.job.published",
   "publish.job.failed",
   "publish.job.retry",
-  "video.reminder.due",
   "video.target.failed",
   "video.job.completed",
   "video.job.failed",
@@ -37,7 +30,7 @@ const TELEGRAM_EVENT_TYPES = [
 // hours late, so it keeps a short window. A failure or completion describes
 // something that already happened and must survive an outage or deploy that
 // outlasts the short window, so it gets a much longer one.
-const REMINDER_EVENT_TYPES = ["video.reminder.due", "studio.notification.reminder.due"];
+const REMINDER_EVENT_TYPES = ["studio.notification.reminder.due"];
 const REMINDER_EVENT_MAX_AGE_MS = 30 * 60 * 1000;
 const OUTCOME_EVENT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -110,9 +103,7 @@ async function deliverEvent(backendDb: BackendDb, bot: Bot, config: BackendConfi
     const draft =
       postId == null ? null : unsafeDb(backendDb).db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, postId)).get();
     if (draft) await refreshPostControlCard(backendDb, bot, draft.id);
-  } else if (event.eventType === "video.reminder.due" && videoDraftId != null)
-    await sendVideoReminder(backendDb, bot, config, videoDraftId, videoTargetId);
-  else if (event.eventType === "video.target.failed" && videoDraftId != null)
+  } else if (event.eventType === "video.target.failed" && videoDraftId != null)
     await notifyFinalVideoFailure(backendDb, bot, config, videoDraftId, videoTargetId);
   else if (videoDraftId != null) await refreshVideoControlCard(backendDb, bot, config, videoDraftId);
 }

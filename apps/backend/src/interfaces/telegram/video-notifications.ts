@@ -81,37 +81,6 @@ export async function refreshVideoControlCard(
   }
 }
 
-export async function sendVideoReminder(
-  backendDb: BackendDb,
-  bot: Bot | null,
-  config: StudioTimeConfig & Pick<BackendConfig, "CONTROLLER_ADMIN_IDS">,
-  videoDraftId: number,
-  videoTargetId: number | null,
-): Promise<void> {
-  const draft = getVideoDraft(backendDb, videoDraftId);
-  const target =
-    videoTargetId == null ? null : unsafeDb(backendDb).db.select().from(videoTargets).where(eq(videoTargets.id, videoTargetId)).get();
-  if (!bot || !target || draft.status !== "scheduled") return;
-  await forEachAdmin(config.CONTROLLER_ADMIN_IDS, async (actorId) => {
-    const preference = settingsService(backendDb).notifications(actorId);
-    if (!preference.remindersEnabled) return;
-    const locale = settingsService(backendDb).locale(actorId);
-    const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
-    const title = draft.label || t(locale, "common.untitled");
-    const text = `${t(locale, "notif.reminder-head", { minutes: preference.reminderMinutes })}\n\n🎬 ${title}\n${localeName(draft.locale === "en" ? "en" : "ru", locale)}\n\n• ${videoTargetLabel(target.target as VideoTarget)}\n\n${formatVideoTime(target.scheduledAt, locale, timeConfig)}`;
-    await bot.api.sendMessage(actorId, text, {
-      reply_markup: new InlineKeyboard()
-        .text(t(locale, "notif.open"), publicationCallback("video", "view", [draft.id, "overview"]))
-        .text(t(locale, "notif.cancel-btn"), publicationCallback("video", "cancel_confirm", [draft.id])),
-    });
-  });
-  unsafeDb(backendDb)
-    .db.update(videoDrafts)
-    .set({ reminderSentAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
-    .where(eq(videoDrafts.id, draft.id))
-    .run();
-}
-
 /** Telegram delivery adapter for Studio events. The event and preference live above Telegram. */
 export async function sendStudioReminder(
   backendDb: BackendDb,

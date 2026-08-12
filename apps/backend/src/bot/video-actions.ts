@@ -115,18 +115,14 @@ function requireVideoSession(
  * by returning to (or refreshing) the same card. */
 function showVideoCard(
   backendDb: BackendDb,
-  services: StudioServices,
   config: BackendConfig,
   actorId: number,
   id: number,
   locale: StudioLocale,
 ): PublicationEffect[] {
   const card = publicationRenderers(backendDb, config).video.card({
-    backendDb,
-    pipeline: services.videos,
     actorId,
     publicationId: id,
-    config,
     locale,
   });
   return publicationCardEffect(card);
@@ -135,18 +131,15 @@ function showVideoCard(
 /** Asks a yes/no question on top of the draft's own card. "Back" always returns
  * to that same card, so a declined confirmation costs the operator nothing. */
 function videoConfirmationEffect(
-  args: Pick<VideoActionArgs, "backendDb" | "config" | "actorId" | "locale" | "services">,
+  args: Pick<VideoActionArgs, "backendDb" | "config" | "actorId" | "locale">,
   id: number,
   view: "confirm_now" | "confirm_cancel" | "confirm_remove",
   revision?: number,
   target?: VideoTarget,
 ): PublicationEffect[] {
   const card = publicationRenderers(args.backendDb, args.config).video.card({
-    backendDb: args.backendDb,
-    pipeline: args.services.videos,
     actorId: args.actorId,
     publicationId: id,
-    config: args.config,
     locale: args.locale,
     view,
     revision,
@@ -179,14 +172,14 @@ async function handleLocale({ backendDb, actorId, locale, args }: VideoActionArg
   ];
 }
 
-async function handleCancelDialog({ backendDb, config, actorId, locale, mainMenu, services }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleCancelDialog({ backendDb, config, actorId, locale, mainMenu }: VideoActionArgs): Promise<VideoActionResult> {
   const session = getVideoState(backendDb, actorId);
   clearVideoState(backendDb, actorId);
   // The draft already exists once a video file was uploaded (even mid-wizard):
   // cancel returns to that draft's own card so nothing is lost or orphaned,
   // rather than dropping into a menu with no way back to it.
   if (session?.draftId != null) {
-    return showVideoCard(backendDb, services, config, actorId, session.draftId, locale);
+    return showVideoCard(backendDb, config, actorId, session.draftId, locale);
   }
   if (!mainMenu) throw new StudioError("err.video-restart");
   // Cancelling is pure navigation, not a content change: turn this same
@@ -426,7 +419,7 @@ async function handleRemove({ backendDb, config, actorId, locale, args, draftId,
     ];
   }
   return [
-    ...showVideoCard(backendDb, services, config, actorId, draftId, locale),
+    ...showVideoCard(backendDb, config, actorId, draftId, locale),
     { type: "toast", text: t(locale, "video.removed", { label: videoTargetLabel(target) }) },
   ];
 }

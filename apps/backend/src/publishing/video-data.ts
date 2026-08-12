@@ -7,7 +7,7 @@ import { isVideoTargetFinal, videoDraftStatus } from "./state.js";
 type VideoDraft = typeof videoDrafts.$inferSelect;
 type VideoTargetRow = typeof videoTargets.$inferSelect;
 export type VideoJob = typeof videoJobs.$inferSelect;
-type VideoJobKind = "prepare" | "publish" | "reminder";
+type VideoJobKind = "prepare" | "publish";
 
 export function getVideoDraft(backendDb: BackendDb, id: number): VideoDraft {
   const draft = unsafeDb(backendDb).db.select().from(videoDrafts).where(eq(videoDrafts.id, id)).get();

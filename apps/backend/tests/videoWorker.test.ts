@@ -291,34 +291,6 @@ describe("video job execution", () => {
     });
   });
 
-  it("records a reminder without touching any platform", async () => {
-    reset();
-    await withDirectory(async (directory) => {
-      const backendDb = testDb.open();
-      const config = videoConfig(directory);
-      const draftId = dueDraft(backendDb, directory, ["youtube_shorts"]);
-      // Only the reminder should run: scheduling creates prepare and publish
-      // jobs, and a reminder is queued separately.
-      backendDb.sqlite.prepare("DELETE FROM video_jobs").run();
-      const past = new Date(Date.now() - 1_000).toISOString();
-      backendDb.sqlite
-        .prepare(
-          "INSERT INTO video_jobs (video_draft_id, kind, status, run_at, attempt_count, created_at, updated_at) VALUES (?,'reminder','queued',?,0,?,?)",
-        )
-        .run(draftId, past, past, past);
-
-      await runVideoCycle(config, backendDb);
-
-      expect(seen).toHaveLength(0);
-      const events = backendDb.sqlite
-        .prepare("SELECT event_type FROM post_events WHERE post_key = ?")
-        .all(`publication:video:${draftId}`) as {
-        event_type: string;
-      }[];
-      expect(events.map((event) => event.event_type)).toContain("video.reminder.due");
-    });
-  });
-
   it("does nothing for a target that was already cancelled before the cycle", async () => {
     reset();
     await withDirectory(async (directory) => {

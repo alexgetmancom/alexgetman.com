@@ -212,7 +212,6 @@ export function scheduleVideo(
       .set({
         status: "scheduled",
         scheduledAt: common == null ? null : new Date(common).toISOString(),
-        reminderSentAt: null,
         retentionUntil: null,
         updatedAt: now.toISOString(),
       })

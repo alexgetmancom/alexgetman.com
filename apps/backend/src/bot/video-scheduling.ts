@@ -102,11 +102,8 @@ async function showScheduledVideo(
 ): Promise<PublicationEffect[]> {
   if (!session.draftId) throw new StudioError("err.video-missing");
   const preview = publicationRenderers(backendDb, config, services).video.card({
-    backendDb,
-    pipeline: services.videos,
     actorId,
     publicationId: session.draftId,
-    config,
     locale,
   });
   const reminderMinutes = services.settings.notifications(actorId).reminderMinutes;

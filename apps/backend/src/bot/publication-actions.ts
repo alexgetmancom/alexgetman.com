@@ -46,11 +46,8 @@ export function describePublicationError(locale: StudioLocale, error: unknown, c
 
 async function handleView(context: PublicationDraftActionContext): Promise<PublicationActionResult> {
   const card = context.renderer.card({
-    backendDb: context.backendDb,
-    pipeline: context.pipeline,
     actorId: context.actorId,
     publicationId: context.draftId,
-    config: context.config,
     locale: context.locale,
     view: context.args.view,
   });
@@ -66,11 +63,8 @@ async function handleRetry(context: PublicationDraftActionContext): Promise<Publ
   };
   if (context.args.origin !== "card") return [toast];
   const card = context.renderer.card({
-    backendDb: context.backendDb,
-    pipeline: context.pipeline,
     actorId: context.actorId,
     publicationId: context.draftId,
-    config: context.config,
     locale: context.locale,
   });
   return [toast, ...publicationCardEffect(card)];

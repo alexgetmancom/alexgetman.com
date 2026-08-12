@@ -137,16 +137,6 @@ function claimVideoJobs(backendDb: BackendDb, limit: number): VideoJob[] {
 }
 
 async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job: VideoJob): Promise<void> {
-  if (job.kind === "reminder") {
-    recordDomainEvent(backendDb.events, {
-      ref: publicationRef("video", job.videoDraftId),
-      type: "video.reminder.due",
-      severity: "info",
-      message: `Video reminder due for draft #${job.videoDraftId}`,
-      details: { videoDraftId: job.videoDraftId, videoTargetId: job.videoTargetId },
-    });
-    return;
-  }
   if (!job.videoTargetId) throw new Error("Video platform job has no target.");
   const target = unsafeDb(backendDb).db.select().from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
   const draft = getVideoDraft(backendDb, job.videoDraftId);
@@ -350,25 +340,7 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
   });
   if (!failed) return false;
   refreshVideoDraftStatus(backendDb, job.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
-  if (!retry) {
-    const target =
-      job.videoTargetId == null
-        ? null
-        : unsafeDb(backendDb)
-            .db.select({ target: videoTargets.target })
-            .from(videoTargets)
-            .where(eq(videoTargets.id, job.videoTargetId))
-            .get();
-    recordDomainEvent(backendDb.events, {
-      ref: publicationRef("video", job.videoDraftId),
-      type: "video.target.failed",
-      severity: "error",
-      target: target?.target ?? "video",
-      message: error,
-      details: { videoDraftId: job.videoDraftId, videoTargetId: job.videoTargetId, jobId: job.id, kind: job.kind },
-      cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
-    });
-  }
+  if (!retry) recordVideoTargetOutcome(backendDb, job, error, "failed", config.ALERT_COOLDOWN_SECONDS);
   return true;
 }
 
@@ -397,23 +369,7 @@ function requireVideoVerification(backendDb: BackendDb, job: VideoJob, cause: un
   });
   if (!settled) return false;
   refreshVideoDraftStatus(backendDb, job.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
-  const target =
-    job.videoTargetId == null
-      ? null
-      : unsafeDb(backendDb)
-          .db.select({ target: videoTargets.target })
-          .from(videoTargets)
-          .where(eq(videoTargets.id, job.videoTargetId))
-          .get();
-  recordDomainEvent(backendDb.events, {
-    ref: publicationRef("video", job.videoDraftId),
-    type: "video.target.verification_required",
-    severity: "warn",
-    target: target?.target ?? "video",
-    message: error,
-    details: { videoDraftId: job.videoDraftId, videoTargetId: job.videoTargetId, jobId: job.id, kind: job.kind },
-    cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
-  });
+  recordVideoTargetOutcome(backendDb, job, error, "verification_required", config.ALERT_COOLDOWN_SECONDS);
   return true;
 }
 
@@ -520,26 +476,42 @@ export function recoverVideoLocks(backendDb: BackendDb, config: BackendConfig): 
   });
   for (const job of stale) refreshVideoDraftStatus(backendDb, job.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
   for (const { job, error, verificationRequired } of terminalFailures) {
-    const target =
-      job.videoTargetId == null
-        ? null
-        : unsafeDb(backendDb)
-            .db.select({ target: videoTargets.target })
-            .from(videoTargets)
-            .where(eq(videoTargets.id, job.videoTargetId))
-            .get();
-    recordDomainEvent(backendDb.events, {
-      ref: publicationRef("video", job.videoDraftId),
-      type: verificationRequired ? "video.target.verification_required" : "video.target.failed",
-      severity: verificationRequired ? "warn" : "error",
-      target: target?.target ?? "video",
-      message: error,
-      details: { videoDraftId: job.videoDraftId, videoTargetId: job.videoTargetId, jobId: job.id, kind: job.kind },
-      cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
-    });
+    recordVideoTargetOutcome(
+      backendDb,
+      job,
+      error,
+      verificationRequired ? "verification_required" : "failed",
+      config.ALERT_COOLDOWN_SECONDS,
+    );
     recordVideoCompletionIfFinal(backendDb, job.videoDraftId);
   }
   return recovered;
+}
+
+function recordVideoTargetOutcome(
+  backendDb: BackendDb,
+  job: VideoJob,
+  error: string,
+  outcome: "failed" | "verification_required",
+  cooldownSeconds: number,
+): void {
+  const target =
+    job.videoTargetId == null
+      ? null
+      : unsafeDb(backendDb)
+          .db.select({ target: videoTargets.target })
+          .from(videoTargets)
+          .where(eq(videoTargets.id, job.videoTargetId))
+          .get();
+  recordDomainEvent(backendDb.events, {
+    ref: publicationRef("video", job.videoDraftId),
+    type: `video.target.${outcome}`,
+    severity: outcome === "failed" ? "error" : "warn",
+    target: target?.target ?? "video",
+    message: error,
+    details: { videoDraftId: job.videoDraftId, videoTargetId: job.videoTargetId, jobId: job.id, kind: job.kind },
+    cooldownSeconds,
+  });
 }
 
 function ownsVideoJob(backendDb: BackendDb, job: VideoJob): boolean {
