@@ -284,7 +284,7 @@ try {
   const sources = await inContainer([
     "sh",
     "-c",
-    "ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc=size=640x480:rate=10 -t 2 -pix_fmt yuv420p -y /tmp/src.mp4 " +
+    "ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc=size=640x480:rate=5 -t 0.8 -pix_fmt yuv420p -y /tmp/src.mp4 " +
       "&& ffmpeg -hide_banner -loglevel error -i /tmp/src.mp4 -frames:v 1 -y /tmp/src.jpg",
   ]);
   check(sources.code === 0, "ffmpeg builds the smoke sources", sources.out.trim().slice(0, 200));
