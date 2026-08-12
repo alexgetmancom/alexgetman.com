@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import type { BackendConfig } from "../../foundation/config.js";
 import { externalFetch, retryAfterSecondsFromHeaders } from "../../foundation/http.js";
+import { log } from "../../foundation/logger.js";
 import { redactExternalSecrets } from "../../foundation/redact.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { HttpPublishError } from "../../publishing/errors.js";
@@ -52,6 +53,7 @@ export async function publishToDiscord(
     const message = await createMessage(credentials, part, last ? media : [], fetchImpl);
     if (!message.id) throw new Error("Discord message create returned no id");
     ids.push(message.id);
+    await crosspost(credentials, message.id, fetchImpl);
   }
 
   const first = ids[0] ?? null;
@@ -112,6 +114,22 @@ async function createMessage(
     : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content }) };
   const response = await ambiguousExternalMutation("discord", () => discordFetch(credentials, path, fetchImpl, init));
   return await jsonResponse<DiscordMessage>(response, "Discord message create");
+}
+
+/**
+ * The channel is an announcement channel, so a message only reaches the servers
+ * following it once it is published. That is a second call, and its failure is
+ * deliberately not the publication's failure: the message is already in the
+ * channel, and throwing here would retry the job and post it a second time.
+ */
+async function crosspost(credentials: DiscordCredentials, id: string, fetchImpl: typeof fetch): Promise<void> {
+  const path = `/channels/${credentials.channelId}/messages/${encodeURIComponent(id)}/crosspost`;
+  try {
+    const response = await discordFetch(credentials, path, fetchImpl, { method: "POST" });
+    if (!response.ok) throw await responseError(response, "Discord crosspost");
+  } catch (error) {
+    log("warn", "Discord crosspost failed", { messageId: id, channelId: credentials.channelId, error: String(error) });
+  }
 }
 
 function attachmentForm(content: string, media: ReturnType<typeof payloadMedia>): FormData {
