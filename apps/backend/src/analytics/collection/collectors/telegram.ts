@@ -1,6 +1,7 @@
 import type { BackendConfig } from "../../../foundation/config.js";
 import { createChannelStoryClient } from "../../../foundation/external/telegram-session.js";
 import { requestText } from "../../../foundation/http.js";
+import { withTimeout } from "../../../foundation/runtime/timeout.js";
 import type { MetricTask } from "../metric-schedule.js";
 import { TerminalMetricError } from "./errors.js";
 import type { MetricResult } from "./types.js";
@@ -40,9 +41,14 @@ export async function collectTelegramStory(task: MetricTask, config: BackendConf
     throw new Error("missing_telegram_story_credentials_or_id");
   if (!/^\d+$/.test(task.externalId)) throw new TerminalMetricError(`invalid_telegram_story_id:${task.externalId}`);
   const instance = createChannelStoryClient(config);
-  await instance.connect();
   try {
-    const story = (await instance.getStoriesById(config.TELEGRAM_CHANNEL_USERNAME.replace(/^@/, ""), Number(task.externalId)))[0];
+    await withTimeout(instance.connect(), 30_000, "telegram_story_metrics_connect_timeout");
+    const stories = await withTimeout(
+      instance.getStoriesById(config.TELEGRAM_CHANNEL_USERNAME.replace(/^@/, ""), Number(task.externalId)),
+      30_000,
+      "telegram_story_metrics_read_timeout",
+    );
+    const story = stories[0];
     if (!story) throw new TerminalMetricError(`telegram_story_not_found:${task.externalId}`);
     const interactions = story.interactions;
     const reactions = Number(interactions?.reactionsCount ?? 0);
@@ -59,7 +65,12 @@ export async function collectTelegramStory(task: MetricTask, config: BackendConf
       raw: { story_id: task.externalId },
     };
   } finally {
-    await instance.destroy();
+    try {
+      await withTimeout(instance.destroy(), 5_000, "telegram_story_metrics_destroy_timeout");
+    } catch {
+      // The read has already completed. Teardown belongs to this process, not
+      // to the metric result, and the next cycle creates a fresh client.
+    }
   }
 }
 

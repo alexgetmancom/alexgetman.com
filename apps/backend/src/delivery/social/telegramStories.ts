@@ -39,12 +39,12 @@ async function publishChannelStory(
   if (!uploadPath) return { ok: false, skipped: true, reason: "missing_media_path" };
   let cleanupPath: string | null = null;
   const clientInstance = createChannelStoryClient(config);
-  await withTimeout(clientInstance.connect(), 30_000, "telegram_channel_story_connect_timeout");
-  // Stories are posted on behalf of the authenticated channel. Load the
-  // account once so mtcute has its own peer cached before resolving the
-  // target channel and sending media.
-  await withTimeout(clientInstance.getMe(), 30_000, "telegram_channel_story_identity_timeout");
   try {
+    await withTimeout(clientInstance.connect(), 30_000, "telegram_channel_story_connect_timeout");
+    // Stories are posted on behalf of the authenticated channel. Load the
+    // account once so mtcute has its own peer cached before resolving the
+    // target channel and sending media.
+    await withTimeout(clientInstance.getMe(), 30_000, "telegram_channel_story_identity_timeout");
     const metadata = await probeVideo(uploadPath, media);
     if (media.type === "VIDEO" && fs.statSync(uploadPath).size > STORY_MAX_BYTES) {
       cleanupPath = path.join(os.tmpdir(), `tg_story_${Date.now()}.mp4`);

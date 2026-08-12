@@ -8,6 +8,7 @@ import { oauthAuthorization } from "../../foundation/external/x-oauth.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { zernioAccount, zernioRequest } from "../../foundation/external/zernio.js";
 import { requestJson } from "../../foundation/http.js";
+import { withTimeout } from "../../foundation/runtime/timeout.js";
 import { claimSync, markSynced, metricNumber, recordProfileSnapshot } from "../snapshots/creator-store.js";
 import { queryYouTubeAnalytics, youtubeAnalyticsDateRange } from "./youtube-analytics.js";
 
@@ -370,14 +371,23 @@ async function collectTelegramChannelStats(config: BackendConfig): Promise<Recor
   if (!config.TELEGRAM_CHANNEL_STORIES_API_ID || !config.TELEGRAM_CHANNEL_STORIES_API_HASH || !config.TELEGRAM_CHANNEL_STORIES_SESSION)
     return null;
   const client = createChannelStoryClient(config);
-  await client.connect();
   try {
-    const channel = await client.resolveChannel(`@${channelHandle(config)}`, true);
-    const stats = (await client.call({ _: "stats.getBroadcastStats", channel })) as TelegramBroadcastStats;
+    await withTimeout(client.connect(), 30_000, "telegram_profile_connect_timeout");
+    const channel = await withTimeout(client.resolveChannel(`@${channelHandle(config)}`, true), 30_000, "telegram_profile_resolve_timeout");
+    const stats = (await withTimeout(
+      client.call({ _: "stats.getBroadcastStats", channel }),
+      30_000,
+      "telegram_profile_stats_timeout",
+    )) as TelegramBroadcastStats;
     if (stats._ !== "stats.broadcastStats") throw new Error("Telegram returned an unexpected channel statistics response");
     return telegramChannelMetrics(stats);
   } finally {
-    await client.destroy();
+    try {
+      await withTimeout(client.destroy(), 5_000, "telegram_profile_destroy_timeout");
+    } catch {
+      // Metrics are already collected. A stalled process-local teardown must
+      // not turn a successful provider read into a failed sync.
+    }
   }
 }
 
