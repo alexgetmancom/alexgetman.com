@@ -50,7 +50,12 @@ export function renderMainMenuHeadline(
   if (!item) return t(locale, "menu.queue-empty");
   const prefix = activity.upcoming ? "⏭" : "✅";
   const kind = item.kind === "post" ? "📝" : "🎬";
-  return `${prefix} ${formatActivityTime(item.time, now, locale, timeZone)} · ${kind} ${truncateUnicode(item.label, 38)}`;
+  return `${prefix} ${formatActivityTime(item.time, now, locale, timeZone)} · ${kind} ${headlineLabel(item.label)}`;
+}
+
+function headlineLabel(value: string): string {
+  const limit = 20;
+  return Array.from(value).length > limit ? `${truncateUnicode(value, limit)}...` : value;
 }
 
 const menuFormatterCache = new Map<string, Intl.DateTimeFormat>();

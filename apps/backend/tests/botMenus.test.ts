@@ -77,13 +77,25 @@ describe("buildMainMenu", () => {
 
   it("uses calendar-relative labels for recent and upcoming activity", () => {
     const now = new Date("2026-08-13T18:00:00.000Z");
-    const published = { id: 1, label: "Published yesterday", time: new Date("2026-08-12T12:08:00.000Z"), kind: "post" as const };
-    const upcoming = { id: 2, label: "Coming tomorrow", time: new Date("2026-08-14T17:00:00.000Z"), kind: "video" as const };
+    const published = {
+      id: 1,
+      label: "🚨 DeepSeek больше не дешевый",
+      time: new Date("2026-08-12T12:08:00.000Z"),
+      kind: "post" as const,
+    };
+    const upcoming = {
+      id: 2,
+      label: "УКРАЛИ ВСЁ И СБЕЖАЛИ НА ВЕРТОЛЕТЕ?!",
+      time: new Date("2026-08-14T17:00:00.000Z"),
+      kind: "video" as const,
+    };
 
     expect(renderMainMenuHeadline({ upcoming: null, published }, "ru", "Europe/Moscow", now)).toBe(
-      "✅ Вчера, 15:08 · 📝 Published yesterday",
+      "✅ Вчера, 15:08 · 📝 🚨 DeepSeek больше не...",
     );
-    expect(renderMainMenuHeadline({ upcoming, published }, "ru", "Europe/Moscow", now)).toBe("⏭ Завтра, 20:00 · 🎬 Coming tomorrow");
+    expect(renderMainMenuHeadline({ upcoming, published }, "ru", "Europe/Moscow", now)).toBe(
+      "⏭ Завтра, 20:00 · 🎬 УКРАЛИ ВСЁ И СБЕЖАЛИ...",
+    );
   });
 
   it("offers post creation, video creation and analytics", async () => {

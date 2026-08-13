@@ -14,13 +14,13 @@ describe("Telegram work queue", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const postPublishedAt = "2026-08-12T12:00:00.000Z";
-      const videoPublishedAt = "2026-08-13T12:00:00.000Z";
+      const videoPublishedAt = "2026-08-11T12:00:00.000Z";
       backendDb.db
         .insert(drafts)
         .values({
           actorId: 7,
           status: "published",
-          textRu: "Published post",
+          textRu: "Published post\nTogether with a body that must stay out of the menu",
           targetsJson: "{}",
           postId: 10,
           createdAt: postPublishedAt,
@@ -77,10 +77,10 @@ describe("Telegram work queue", () => {
         .run();
 
       expect(queueService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "7" })).headline(7).published).toEqual({
-        id: video.id,
-        label: "Published video",
-        kind: "video",
-        time: new Date(videoPublishedAt),
+        id: 1,
+        label: "Published post",
+        kind: "post",
+        time: new Date(postPublishedAt),
       });
     } finally {
       backendDb.close();

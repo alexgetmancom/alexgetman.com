@@ -44,7 +44,12 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
       return {
         upcoming,
         published: published
-          ? { id: published.id, label: shorten(published.label), time: new Date(published.publishedAt), kind: published.kind }
+          ? {
+              id: published.id,
+              label: shorten(published.kind === "post" ? (published.label.split("\n")[0]?.trim() ?? published.label) : published.label),
+              time: new Date(published.publishedAt),
+              kind: published.kind,
+            }
           : null,
       };
     },
