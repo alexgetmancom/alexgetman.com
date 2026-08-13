@@ -1,3 +1,4 @@
+# Canonical Maru production config, deployed verbatim with the compose file.
 # The second Studio (Maru) has no public site. Publishing destinations come
 # from the channel registry; text, video and analytics always run.
 timezone: Europe/Moscow

@@ -1,4 +1,5 @@
-# User-facing feature selection. Secrets always live in an ignored .env file.
+# Canonical Alex production config, deployed verbatim with the compose file.
+# Secrets always live in an ignored .env file.
 # IANA zone used for every displayed schedule time; timezone_label is the short
 # suffix shown next to it (e.g. "18:30 MSK").
 timezone: Europe/Moscow
