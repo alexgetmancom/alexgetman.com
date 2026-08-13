@@ -6,9 +6,6 @@ timezone_label: MSK
 
 site_enabled: false
 
-analytics:
-  default_tab: video
-
 video:
   prepare_lead_minutes: 15
   reminder_minutes: 5

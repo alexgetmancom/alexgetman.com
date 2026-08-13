@@ -5,7 +5,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
-import { defaultAnalyticsSection, showAnalyticsDashboard } from "./analytics-screen.js";
+import { showAnalyticsDashboard } from "./analytics-screen.js";
 import { openPostScreen } from "./post-screen.js";
 import { showQueue } from "./queue.js";
 import { SETTINGS_MENU_ID } from "./settings-screen.js";
@@ -45,7 +45,7 @@ export function buildMainMenu(
   );
   menu.text(
     (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.analytics"),
-    (ctx) => showAnalyticsDashboard(ctx, backendDb, config, defaultAnalyticsSection(config), 1),
+    (ctx) => showAnalyticsDashboard(ctx, backendDb, config, "overview", 1),
   );
   menu.submenu(
     (ctx) => {

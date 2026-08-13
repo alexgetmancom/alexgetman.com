@@ -7,13 +7,6 @@ const studioSchema = z
     timezone: z.string().default("Europe/Moscow"),
     timezone_label: z.string().default("MSK"),
     site_enabled: z.boolean().default(true),
-    analytics: z
-      .object({
-        /** First analytics card to open. This is a Studio decision, not a UI guess. */
-        default_tab: z.enum(["overview", "posts", "video"]).default("overview"),
-      })
-      .strict()
-      .prefault({}),
     video: z
       .object({
         prepare_lead_minutes: z.number().int().min(1).max(120).default(15),
@@ -29,7 +22,6 @@ export type StudioConfig = {
   timezone: string;
   timezoneLabel: string;
   siteEnabled: boolean;
-  analytics: { defaultTab: "overview" | "posts" | "video" };
   video: { prepare_lead_minutes: number; reminder_minutes: number; retention_hours: number };
 };
 
@@ -42,7 +34,6 @@ export function loadStudioConfig(path = process.env.STUDIO_CONFIG ?? "studio.yam
     timezone: parsed.timezone,
     timezoneLabel: parsed.timezone_label,
     siteEnabled: parsed.site_enabled,
-    analytics: { defaultTab: parsed.analytics.default_tab },
     video: parsed.video,
   };
 }

@@ -66,7 +66,7 @@ Copy the secret template:
 cp apps/backend/secrets.env.example apps/backend/secrets.env
 ```
 
-`studio.yaml` contains only deployment behavior that is not a publishing connection: whether this Studio serves the public site, its time zone, analytics landing tab, and video timing. Credentials stay in the ignored `apps/backend/secrets.env`; connected destinations live in the channel registry. Text posting, video posting and analytics always run. The second Studio is included as `studio.maru.example.yaml`.
+`studio.yaml` contains only deployment behavior that is not a publishing connection: whether this Studio serves the public site, its time zone, and video timing. Credentials stay in the ignored `apps/backend/secrets.env`; connected destinations live in the channel registry. Text posting, video posting and analytics always run. The second Studio is included as `studio.maru.example.yaml`.
 
 The private Telegram bot and MCP endpoint operate the same Studio services. Posts created through either interface land in the same drafts, schedules, publication jobs, and analytics.
 

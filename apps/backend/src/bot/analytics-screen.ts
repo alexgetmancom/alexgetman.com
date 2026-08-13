@@ -30,7 +30,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   }
   if (data === "analytics_home") {
     await ctx.answerCallbackQuery();
-    await showAnalyticsDashboard(ctx, backendDb, config, defaultAnalyticsSection(config), 1);
+    await showAnalyticsDashboard(ctx, backendDb, config, "overview", 1);
     return true;
   }
   if (data === "archive_home") {
@@ -46,7 +46,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   if (data === "analytics_total" || data.startsWith("analytics_period:")) {
     const days = data.startsWith("analytics_period:") ? Number(data.slice("analytics_period:".length)) : 7;
     await ctx.answerCallbackQuery();
-    await showAnalyticsDashboard(ctx, backendDb, config, defaultAnalyticsSection(config), analyticsPeriod(days));
+    await showAnalyticsDashboard(ctx, backendDb, config, "overview", analyticsPeriod(days));
     return true;
   }
   if (data.startsWith("analytics_section:")) {
@@ -207,10 +207,6 @@ function analyticsKeyboard(locale: StudioLocale, section: AnalyticsSection, days
   );
   keyboard.row().text(t(locale, "common.menu"), "menu_home");
   return keyboard;
-}
-
-export function defaultAnalyticsSection(config: BackendConfig): AnalyticsSection {
-  return config.studio.analytics.defaultTab;
 }
 
 function periodButtonLabel(locale: StudioLocale, period: 1 | 7 | 30, selected: 1 | 7 | 30): string {

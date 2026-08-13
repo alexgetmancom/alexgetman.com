@@ -86,6 +86,10 @@ describe("loadConfig", () => {
       const unknown = join(directory, "unknown.yaml");
       writeFileSync(unknown, "site_enabled: false\ncommand_center:\n  default_mode: video\n");
       expect(() => loadStudioConfig(unknown)).toThrow(/command_center/);
+
+      const retiredAnalyticsDefault = join(directory, "retired-analytics-default.yaml");
+      writeFileSync(retiredAnalyticsDefault, "site_enabled: true\nanalytics:\n  default_tab: posts\n");
+      expect(() => loadStudioConfig(retiredAnalyticsDefault)).toThrow(/analytics/);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
