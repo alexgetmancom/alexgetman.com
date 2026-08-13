@@ -179,6 +179,18 @@ jobs:
             docker run --rm -v "$PWD/$file:/etc/caddy/Caddyfile:ro" \
               -e DOMAIN=publisher.example.com -e ACME_EMAIL=ci@example.com \
               caddy:2.10-alpine sh -c 'caddy fmt /etc/caddy/Caddyfile >/dev/null && caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile'
+            # Assert on what Caddy builds, not on what the file says. A snippet
+            # that silently fails to expand leaves every visitor arriving as the
+            # proxy, which turns the application's rate limit into one global
+            # budget and looks completely healthy from outside. Caddy
+            # canonicalises the header to X-Real-Ip, so match that spelling.
+            adapted=$(docker run --rm -v "$PWD/$file:/etc/caddy/Caddyfile:ro" \
+              -e DOMAIN=publisher.example.com -e ACME_EMAIL=ci@example.com \
+              caddy:2.10-alpine caddy adapt --adapter caddyfile --config /etc/caddy/Caddyfile)
+            proxies=$(grep -o '"handler":"reverse_proxy"' <<<"$adapted" | wc -l)
+            addressed=$(grep -o '"X-Real-Ip"' <<<"$adapted" | wc -l)
+            test "$proxies" -gt 0
+            test "$proxies" = "$addressed" || { echo "$file: $proxies proxies but $addressed set the client address"; exit 1; }
           done
 
   quality-tests:

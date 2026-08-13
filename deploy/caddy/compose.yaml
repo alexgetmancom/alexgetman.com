@@ -17,7 +17,10 @@ services:
       - ./data:/data
       - ./config:/config
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:80"]
+      # The admin API, not port 80: every site here is HTTPS, so :80 answers a
+      # 308 to a name this probe cannot present as SNI, and the check fails
+      # while the proxy is serving perfectly.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:2019/config/"]
       interval: 30s
       timeout: 5s
       retries: 3
