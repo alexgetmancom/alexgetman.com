@@ -130,8 +130,6 @@ describe("video callback dispatch", () => {
   it("asks every platform for its own time before confirming a per-target schedule", async () => {
     backendDb = openVideoDb();
     const bothPlatforms = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
-    bothPlatforms.studio.modules.youtube = true;
-    bothPlatforms.studio.modules.instagram = true;
     const draftId = createTestVideoDraft(backendDb, 42, "clip.mp4", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
     setTelegramVideoCard(backendDb, draftId, 100, 10);

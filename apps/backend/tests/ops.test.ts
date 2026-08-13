@@ -161,7 +161,7 @@ describe("TypeScript operations tooling", () => {
     }
   });
 
-  it("keeps text Studio status compact while reporting publication health", () => {
+  it("keeps publication status compact while reporting publication health", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();

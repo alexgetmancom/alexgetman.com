@@ -105,8 +105,6 @@ function videoConfig(directory: string, overrides: Record<string, string> = {}) 
     PUBLIC_MEDIA_BASE_URL: "https://alexgetman.com/media",
     ...overrides,
   });
-  config.studio.modules.youtube = true;
-  config.studio.modules.instagram = true;
   return { ...config, VIDEO_MEDIA_DIR: directory, STUDIO_MEDIA_DIR: directory };
 }
 

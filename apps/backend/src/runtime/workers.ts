@@ -58,7 +58,7 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
   // request that was only just interrupted at the provider boundary.
   const recoveredAtStartup = recoverStalePublishJobs(backendDb, config, PUBLISH_RESTART_LOCK_GRACE_SECONDS);
   if (recoveredAtStartup) log("warn", "recovered interrupted publishing locks on worker startup", { recovered: recoveredAtStartup });
-  if (config.studio.modules.site) {
+  if (config.studio.siteEnabled) {
     const recoveredSiteAtStartup = recoverStaleSiteJobs(backendDb, SITE_JOB_RESTART_LOCK_GRACE_SECONDS);
     if (recoveredSiteAtStartup)
       log("warn", "recovered interrupted site build locks on worker startup", { recovered: recoveredSiteAtStartup });
@@ -132,14 +132,14 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
         log("error", "failed to prune old metric samples", { error: error instanceof Error ? error.message : String(error) });
       }
     }),
-    ...(config.studio.modules.site
+    ...(config.studio.siteEnabled
       ? [
           startWorkerLoop("site", SITE_JOB_POLL_INTERVAL_SECONDS * 1000, async () => {
             await runTimedCycle("publishing.site.cycle", "claimed", () => runSiteJobCycle(config, backendDb));
           }),
         ]
       : []),
-    ...(config.studio.modules.site
+    ...(config.studio.siteEnabled
       ? [
           startWorkerLoop("site-watchdog", WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
             const recovered = recoverStaleSiteJobs(backendDb);

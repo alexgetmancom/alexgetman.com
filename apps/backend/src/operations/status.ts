@@ -100,9 +100,7 @@ export function compactOperationsStatus(config: BackendConfig, backendDb: Backen
     ok: !unhealthy,
     generatedAt: new Date().toISOString(),
     gitRevision: gitRevision(),
-    modules: Object.entries(config.studio.modules)
-      .filter(([, enabled]) => enabled)
-      .map(([name]) => name),
+    siteEnabled: config.studio.siteEnabled,
     database: {
       path: config.PIPELINE_DB,
       exists: fs.existsSync(config.PIPELINE_DB),

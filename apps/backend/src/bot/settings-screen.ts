@@ -3,6 +3,7 @@ import { Menu, type MenuFlavor } from "@grammyjs/menu";
 import type { Bot, Context } from "grammy";
 import { importManualAnalytics, manualThreadsFollowers } from "../analytics/import-manual-analytics.js";
 import { importXAnalyticsCsv } from "../analytics/import-x-csv.js";
+import { listChannels } from "../channels/registry.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { materializeTelegramFile } from "../foundation/external/telegram-files.js";
@@ -362,7 +363,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
         await ctx.editMessageText(channelsText(backendDb, config, locale));
       })
       .row();
-    if (config.studio.modules.youtube)
+    if (listChannels(backendDb).some((channel) => channel.platform === "youtube"))
       range
         .submenu(t(locale, "settings.youtube-signature"), YOUTUBE_SIGNATURE_MENU_ID, async (ctx) => {
           await ctx.answerCallbackQuery();

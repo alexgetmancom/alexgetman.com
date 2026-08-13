@@ -17,9 +17,7 @@ type AnalyticsPeriod = 1 | 7 | 30;
 export function analyticsService(backendDb: BackendDb, config: BackendConfig) {
   return {
     dashboard(section: AnalyticsSection, days: AnalyticsPeriod, locale: StudioLocale) {
-      return trackUsageSync(backendDb, "studio.analytics.dashboard.read", () =>
-        studioAnalyticsDashboard(backendDb, config, section, days, locale),
-      );
+      return trackUsageSync(backendDb, "studio.analytics.dashboard.read", () => studioAnalyticsDashboard(backendDb, section, days, locale));
     },
     postArchive(offset: number, locale: StudioLocale) {
       return trackUsageSync(backendDb, "studio.analytics.post.read", () => creatorPostArchive(backendDb, offset, locale));

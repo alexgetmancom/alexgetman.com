@@ -6,9 +6,8 @@ export type DataDirectoryCheck = { name: string; path: string; writable: boolean
 
 /** Every host path the running process must be able to create files/directories
  * under. A bind-mounted host path that didn't exist yet is auto-created by
- * Docker as root; only the module-relevant directories are listed here so a
- * Studio without a public site never reports a false unwritable-directory
- * failure for a path the app will never touch. */
+ * Docker as root. The public-site directory is deployment-specific; every
+ * other pipeline is always active. */
 export function requiredDataDirectories(config: BackendConfig): { name: string; path: string }[] {
   const entries = [
     { name: "DATA_DIR", path: config.DATA_DIR },
@@ -16,7 +15,7 @@ export function requiredDataDirectories(config: BackendConfig): { name: string; 
     { name: "VIDEO_MEDIA_DIR", path: config.VIDEO_MEDIA_DIR },
     { name: "MEDIA_CACHE_DIR", path: config.MEDIA_CACHE_DIR },
     { name: "STORY_CARD_DIR", path: config.STORY_CARD_DIR },
-    ...(config.studio.modules.site ? [{ name: "SITE_PUBLIC_DIR", path: config.SITE_PUBLIC_DIR }] : []),
+    ...(config.studio.siteEnabled ? [{ name: "SITE_PUBLIC_DIR", path: config.SITE_PUBLIC_DIR }] : []),
   ];
   const seen = new Set<string>();
   return entries.filter((entry) => {

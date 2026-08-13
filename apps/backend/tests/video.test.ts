@@ -31,10 +31,7 @@ import { createTestVideoDraft } from "./helpers/video.js";
 const testDb = useBackendDb(VIDEO_TEST_CHANNELS);
 
 function videoConfig() {
-  const config = loadConfig({});
-  config.studio.modules.youtube = true;
-  config.studio.modules.instagram = true;
-  return config;
+  return loadConfig({});
 }
 
 function videoContext(input: { text?: string; callback?: string } = {}) {

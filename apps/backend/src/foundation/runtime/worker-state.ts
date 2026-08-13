@@ -52,7 +52,7 @@ export function expectedWorkerNames(config: BackendConfig): string[] {
     "metrics",
     "creator-analytics",
     "metric-retention",
-    ...(config.studio.modules.site ? ["site", "site-watchdog"] : []),
+    ...(config.studio.siteEnabled ? ["site", "site-watchdog"] : []),
     "media-cache",
     "operational-retention",
     "observability",

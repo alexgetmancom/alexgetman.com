@@ -14,7 +14,7 @@ export function studioCapabilityService(config: BackendConfig, backendDb?: Backe
     report() {
       const readiness = new Map(capabilityReport(config, backendDb).map((entry) => [entry.target, entry]));
       return {
-        modules: { ...config.studio.modules },
+        siteEnabled: config.studio.siteEnabled,
         platforms: Object.values(PLATFORM_PROFILES)
           .filter((profile) => {
             if (!backendDb) return true;

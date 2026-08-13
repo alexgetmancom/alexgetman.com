@@ -187,7 +187,7 @@ async function handleCancelDialog({ backendDb, config, actorId, locale, mainMenu
   return [{ type: "screen", mode: "edit", text: t(locale, "menu.control-panel"), options: { reply_markup: mainMenu } }];
 }
 
-async function handleToggle({ backendDb, config, actorId, locale, args, services }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleToggle({ backendDb, actorId, locale, args, services }: VideoActionArgs): Promise<VideoActionResult> {
   const target = parseVideoTarget(args.target ?? "");
   const session = getVideoState(backendDb, actorId);
   requireFlowStep(session?.step, ["targets"], "err.video-restart");
@@ -195,7 +195,7 @@ async function handleToggle({ backendDb, config, actorId, locale, args, services
   const selected = session.selected.includes(target) ? session.selected.filter((item) => item !== target) : [...session.selected, target];
   services.videos.toggleTarget(actorId, session.draftId, target);
   const next = saveVideoState(backendDb, actorId, { ...session, selected });
-  return [{ type: "edit-reply-markup", keyboard: targetKeyboard(config, selected, locale, next.revision) }];
+  return [{ type: "edit-reply-markup", keyboard: targetKeyboard(backendDb, selected, locale, next.revision) }];
 }
 
 async function handleTargetsDone({ backendDb, config, actorId, services }: VideoActionArgs): Promise<VideoActionResult> {

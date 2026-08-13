@@ -1,7 +1,6 @@
 import { listChannels } from "../../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { creatorProfiles, socialComments } from "../../db/schema.js";
-import type { BackendConfig } from "../../foundation/config.js";
 import { escapeHtml } from "../../foundation/html.js";
 import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale } from "../../foundation/locale.js";
@@ -45,7 +44,6 @@ function tableBlock(headers: string[], rows: string[][]): Block {
  */
 export function studioAnalyticsDashboard(
   backendDb: BackendDb,
-  config: BackendConfig,
   section: AnalyticsSection,
   days: AnalyticsPeriod,
   locale: StudioLocale,
@@ -56,10 +54,10 @@ export function studioAnalyticsDashboard(
 
   if (section === "audience") {
     blocks.push(textBlock(`👥 *${t(locale, "sdash.header-audience", { period })}*`));
-    const profiles = audienceProfiles(backendDb, config, since, days, period, locale);
+    const profiles = audienceProfiles(backendDb, since, days, period, locale);
     blocks.push(...(profiles.length ? profiles : [textBlock(t(locale, "sdash.no-audience"))]));
   } else {
-    blocks.push(...unifiedAnalyticsTable(backendDb, config, section, since, days, locale));
+    blocks.push(...unifiedAnalyticsTable(backendDb, section, since, days, locale));
   }
   return { text: blocksToText(blocks), richHtml: blocksToHtml(blocks), hasComments: hasAudienceComments(backendDb) };
 }
@@ -99,20 +97,13 @@ function richInlineHtml(value: string): string {
   return escapeHtml(value).replace(/\*([^*]+)\*/g, "<b>$1</b>");
 }
 
-function audienceProfiles(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  since: string,
-  days: AnalyticsPeriod,
-  period: string,
-  locale: StudioLocale,
-): Block[] {
+function audienceProfiles(backendDb: BackendDb, since: string, days: AnalyticsPeriod, period: string, locale: StudioLocale): Block[] {
   const growth = audienceGrowthByPlatform(backendDb, since, days);
   return unsafeDb(backendDb)
     .db.select()
     .from(creatorProfiles)
     .all()
-    .filter((row) => dashboardAudiencePlatforms(backendDb, config).has(row.platform))
+    .filter((row) => dashboardAudiencePlatforms(backendDb).has(row.platform))
     .sort((left, right) => {
       const rightFollowers = metricNumber(right.dataJson.subscriberCount ?? right.dataJson.followersCount);
       const leftFollowers = metricNumber(left.dataJson.subscriberCount ?? left.dataJson.followersCount);
@@ -134,7 +125,6 @@ function audienceProfiles(
 
 function unifiedAnalyticsTable(
   backendDb: BackendDb,
-  config: BackendConfig,
   section: Exclude<AnalyticsSection, "audience">,
   since: string,
   days: AnalyticsPeriod,
@@ -144,10 +134,10 @@ function unifiedAnalyticsTable(
     .db.select()
     .from(creatorProfiles)
     .all()
-    .filter((row) => audiencePlatformsForSection(backendDb, config, section).has(row.platform));
+    .filter((row) => audiencePlatformsForSection(backendDb, section).has(row.platform));
   const accountMetrics = new Map(profiles.map((row) => [row.platform, contentMetricsFromProfile(row.dataJson, days)]));
   const content = accountContentMetricsForSection(backendDb, section, since, accountMetrics);
-  if (days === 1 && section !== "posts" && config.studio.modules.youtube) {
+  if (days === 1 && section !== "posts" && [...dashboardVideoPlatforms(backendDb)].some((platform) => platform.startsWith("youtube_"))) {
     for (const platform of [...content.keys()].filter((key) => key === "youtube" || key.startsWith("youtube_"))) {
       const liveViews = youtubeChannelViewDeltaSince(backendDb, since, platform);
       const youtube = content.get(platform);
@@ -209,9 +199,7 @@ function unifiedAnalyticsTable(
   ]);
   return [
     tableBlock(headers, tableRows),
-    ...(section === "posts"
-      ? publishedPostTable(backendDb, since, locale)
-      : publishedVideoTable(backendDb, config, section, since, locale)),
+    ...(section === "posts" ? publishedPostTable(backendDb, since, locale) : publishedVideoTable(backendDb, section, since, locale)),
   ];
 }
 
@@ -257,19 +245,15 @@ function accountContentMetricsForSection(
  * videos published in the selected period performing since they went live? */
 function publishedVideoTable(
   backendDb: BackendDb,
-  config: BackendConfig,
   section: Exclude<AnalyticsSection, "audience">,
   since: string,
   locale: StudioLocale,
 ): Block[] {
   if (section === "posts") return [];
+  const connectedPlatforms = new Set(listChannels(backendDb).map((channel) => channel.platform));
   const rows = latestVideoMetrics(backendDb, since)
     .filter((row) => row.publishedAt != null && row.publishedAt >= since)
-    .filter((row) =>
-      row.platform === "instagram_reels"
-        ? config.studio.modules.instagram
-        : row.platform === "youtube_shorts" && config.studio.modules.youtube,
-    )
+    .filter((row) => connectedPlatforms.has(row.platform === "instagram_reels" ? "instagram" : "youtube"))
     // A target with no observed metric is normally a removed or rolled-back
     // publication; it must not look like a real zero-performance video.
     .filter((row) => Object.values(contentMetrics(row)).some((value) => value > 0))
@@ -345,31 +329,22 @@ function shortLabel(value: string): string {
   return compact.length > 10 ? `${compact.slice(0, 9)}…` : compact || "—";
 }
 
-function audiencePlatformsForSection(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  section: Exclude<AnalyticsSection, "audience">,
-): Set<string> {
-  if (section === "video") return dashboardVideoPlatforms(backendDb, config);
+function audiencePlatformsForSection(backendDb: BackendDb, section: Exclude<AnalyticsSection, "audience">): Set<string> {
+  if (section === "video") return dashboardVideoPlatforms(backendDb);
   if (section === "posts") return dashboardTextPlatforms(backendDb);
-  return dashboardAudiencePlatforms(backendDb, config);
+  return dashboardAudiencePlatforms(backendDb);
 }
 
-function dashboardVideoPlatforms(backendDb: BackendDb, config: BackendConfig): Set<string> {
+function dashboardVideoPlatforms(backendDb: BackendDb): Set<string> {
   return new Set(
     listChannels(backendDb)
-      .filter(
-        (channel) =>
-          audienceGroup(channel.platform) === "video" &&
-          (channel.platform !== "youtube" || config.studio.modules.youtube) &&
-          (channel.platform !== "instagram" || config.studio.modules.instagram),
-      )
+      .filter((channel) => audienceGroup(channel.platform) === "video")
       .map((channel) => channel.id),
   );
 }
 
-function dashboardAudiencePlatforms(backendDb: BackendDb, config: BackendConfig): Set<string> {
-  return new Set([...dashboardTextPlatforms(backendDb), ...dashboardVideoPlatforms(backendDb, config)]);
+function dashboardAudiencePlatforms(backendDb: BackendDb): Set<string> {
+  return new Set([...dashboardTextPlatforms(backendDb), ...dashboardVideoPlatforms(backendDb)]);
 }
 
 function dashboardTextPlatforms(backendDb: BackendDb): Set<string> {

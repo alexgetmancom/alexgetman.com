@@ -30,7 +30,6 @@ describe("creator analytics collection", () => {
         YOUTUBE_RU_CLIENT_SECRET: "secret",
         YOUTUBE_RU_REFRESH_TOKEN: "refresh",
       });
-      config.studio.modules.youtube = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
         if (url === "https://oauth2.googleapis.com/token") return new Response(JSON.stringify({ access_token: "access" }));
@@ -66,18 +65,9 @@ describe("creator analytics collection", () => {
     });
   });
 
-  it("does not call analytics collectors when Analytics itself is disabled", async () => {
-    await withDb(async (backendDb) => {
-      const config = loadConfig({});
-      expect(await runAnalyticsCycle(config, backendDb)).toBe(0);
-    });
-  });
-
   it("does not count empty scheduler ticks as video metric collections", async () => {
     await withDb(async (backendDb) => {
       const config = loadConfig({});
-      config.studio.modules.youtube = false;
-      config.studio.modules.instagram = false;
 
       expect(await runAnalyticsCycle(config, backendDb)).toBe(0);
       flushUsage(backendDb);
@@ -130,7 +120,6 @@ describe("creator analytics collection", () => {
         INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
         INSTAGRAM_EN_USER_ID: "en-user",
       });
-      config.studio.modules.instagram = true;
       const requested: string[] = [];
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
@@ -141,7 +130,7 @@ describe("creator analytics collection", () => {
 
       await runAnalyticsCycle(config, backendDb, fetchMock);
 
-      expect(requested).toHaveLength(2);
+      expect(requested.filter((url) => url.includes("ru-user") || url.includes("en-user"))).toHaveLength(2);
       const ruRequest = requested.find((url) => url.includes("ru-user"));
       const enRequest = requested.find((url) => url.includes("en-user"));
       expect(ruRequest).toContain("access_token=ru-token");
@@ -175,8 +164,6 @@ describe("creator analytics collection", () => {
         INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
         INSTAGRAM_EN_USER_ID: "en-user",
       });
-      config.studio.modules.instagram = true;
-      config.studio.modules.youtube = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
         if (url.includes("/comments")) return new Response(JSON.stringify({ data: [] }));
@@ -255,7 +242,6 @@ describe("creator analytics collection", () => {
         externalId: "missing-reel",
       });
       const config = loadConfig({ INSTAGRAM_RU_ACCESS_TOKEN: "token", INSTAGRAM_RU_USER_ID: "user" });
-      config.studio.modules.instagram = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
         if (url.includes("missing-reel")) return new Response(JSON.stringify({ error: { message: "media not found" } }), { status: 404 });
@@ -338,7 +324,6 @@ describe("creator analytics collection", () => {
         externalId: "native-comments",
       });
       const config = loadConfig({ INSTAGRAM_RU_ACCESS_TOKEN: "token", INSTAGRAM_RU_USER_ID: "user" });
-      config.studio.modules.instagram = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
         if (url.includes("fields=like_count"))
@@ -540,7 +525,6 @@ describe("creator analytics collection", () => {
       const config = loadConfig({
         ZERNIO_API_KEY: "a".repeat(16),
       });
-      config.studio.modules.instagram = true;
       registerChannel(backendDb, {
         platform: "instagram",
         locale: "ru",

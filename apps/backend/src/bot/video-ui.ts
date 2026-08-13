@@ -1,5 +1,6 @@
 import { type Context, InlineKeyboard } from "grammy";
 import { backFlow } from "../application/conversation-flow.js";
+import { videoDestinations } from "../channels/destinations.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
@@ -24,9 +25,9 @@ export type VideoConversationState = ConversationState & {
 export type VideoConversationInput = Omit<VideoConversationState, "kind" | "revision" | "controlMessageId"> &
   Partial<Pick<VideoConversationState, "controlMessageId" | "revision">>;
 
-export function targetKeyboard(config: BackendConfig, selected: VideoTarget[], locale: StudioLocale, revision?: number): InlineKeyboard {
+export function targetKeyboard(backendDb: BackendDb, selected: VideoTarget[], locale: StudioLocale, revision?: number): InlineKeyboard {
   const keyboard = new InlineKeyboard();
-  for (const target of enabledVideoTargets(config)) {
+  for (const target of connectedVideoTargets(backendDb)) {
     keyboard
       .text(
         `${selected.includes(target) ? "✓" : "○"} ${videoTargetLabel(target)}`,
@@ -55,11 +56,9 @@ export function startVideoEffects(ctx: Context, backendDb: BackendDb, actorId: n
   ];
 }
 
-export function enabledVideoTargets(config: BackendConfig): VideoTarget[] {
-  return VIDEO_TARGETS.filter(
-    (target) =>
-      (target !== "youtube_shorts" || config.studio.modules.youtube) && (target !== "instagram_reels" || config.studio.modules.instagram),
-  );
+export function connectedVideoTargets(backendDb: BackendDb): VideoTarget[] {
+  const connected = new Set(videoDestinations(backendDb).map((destination) => destination.target));
+  return VIDEO_TARGETS.filter((target) => connected.has(target));
 }
 
 export function getVideoState(backendDb: BackendDb, actorId: number): VideoConversationState | null {

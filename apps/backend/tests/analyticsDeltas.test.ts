@@ -28,7 +28,6 @@ describe("creator analytics deltas", () => {
         .values({ videoTargetId: targetId, platform: "youtube_shorts", metricsJson: { views: 180, likes: 8 }, sampledAt: now })
         .run();
       const config = loadConfig({});
-      config.studio.modules.youtube = true;
 
       expect(creatorDashboard(backendDb, config, 1).text).toContain("Видео: 80 просмотров · 3 взаимодействий");
     });
@@ -50,7 +49,6 @@ describe("creator analytics deltas", () => {
         ])
         .run();
       const config = loadConfig({});
-      config.studio.modules.site = true;
       const text = creatorDashboard(backendDb, config, 1).text;
       expect(text).toContain("Сайт: 45 просмотров материалов");
       expect(text).toContain("Посты: 30 просмотров · 5 взаимодействий");
@@ -96,10 +94,8 @@ describe("creator analytics deltas", () => {
           },
         ])
         .run();
-      const config = loadConfig({});
-
-      const week = studioAnalyticsDashboard(backendDb, config, "audience", 7, "ru").text;
-      const month = studioAnalyticsDashboard(backendDb, config, "audience", 30, "ru").text;
+      const week = studioAnalyticsDashboard(backendDb, "audience", 7, "ru").text;
+      const month = studioAnalyticsDashboard(backendDb, "audience", 30, "ru").text;
       expect(week).toContain("Аудитория · 7 дней");
       expect(week).toContain("прирост · 7 дней: *+30*");
       expect(month).toContain("Аудитория · 30 дней");
@@ -173,11 +169,9 @@ describe("creator analytics deltas", () => {
           updatedAt: current,
         })
         .run();
-      const config = loadConfig({});
-      config.studio.modules.youtube = true;
       registerChannel(backendDb, { platform: "youtube", locale: "ru", provider: "native", label: "YouTube RU" });
 
-      const dashboard = studioAnalyticsDashboard(backendDb, config, "video", 1, "ru");
+      const dashboard = studioAnalyticsDashboard(backendDb, "video", 1, "ru");
       expect(dashboard.text).toContain("| ▶️ YouTube RU | 124 | +2 | 50 | 2 | 1 | — | — |");
     });
   });

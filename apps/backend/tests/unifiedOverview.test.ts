@@ -281,7 +281,6 @@ describe("unified overview video read model", () => {
     try {
       seedVideo(backendDb, new Date().toISOString());
       const config = loadConfig({});
-      config.studio.modules.youtube = true;
 
       const readModel = loadDashboardReadModel(
         config,
@@ -996,7 +995,6 @@ describe("unified overview rendering", () => {
       expect(html).toContain('class="overview-track overview-track--video');
       expect(html).toContain("video_view=youtube_shorts%3Aru");
       expect(html).toContain("view=telegram");
-      expect(html).not.toContain("overview-split--single");
     } finally {
       backendDb.close();
     }

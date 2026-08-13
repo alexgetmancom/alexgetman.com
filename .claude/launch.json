@@ -9,23 +9,8 @@
       "env": {
         "PIPELINE_DB": "/Users/alex/projects/alexgetman.com/.dev-fixture/pipeline.db",
         "SITE_PUBLIC_DIR": "/Users/alex/projects/alexgetman.com/.dev-fixture/site",
-        "DISABLE_WORKERS": "1",
         "COMMAND_CENTER_TOKEN": "dev",
         "COMMAND_CENTER_URL": "http://localhost:4321/command-center"
-      }
-    },
-    {
-      "name": "web-dev-unified",
-      "runtimeExecutable": "bun",
-      "runtimeArgs": ["--bun", "astro", "dev"],
-      "port": 4321,
-      "env": {
-        "PIPELINE_DB": "/Users/alex/projects/alexgetman.com/.dev-fixture/pipeline.db",
-        "SITE_PUBLIC_DIR": "/Users/alex/projects/alexgetman.com/.dev-fixture/site",
-        "DISABLE_WORKERS": "1",
-        "COMMAND_CENTER_TOKEN": "dev",
-        "COMMAND_CENTER_URL": "http://localhost:4321/command-center",
-        "STUDIO_CONFIG": "studio.yaml"
       }
     },
     {
@@ -36,7 +21,6 @@
       "env": {
         "PIPELINE_DB": "/Users/alex/projects/alexgetman.com/.dev-fixture/pipeline.db",
         "SITE_PUBLIC_DIR": "/Users/alex/projects/alexgetman.com/.dev-fixture/site",
-        "DISABLE_WORKERS": "1",
         "COMMAND_CENTER_TOKEN": "dev",
         "COMMAND_CENTER_URL": "http://localhost:4321/command-center",
         "STUDIO_CONFIG": "studio.maru.example.yaml"
@@ -50,7 +34,6 @@
       "env": {
         "PIPELINE_DB": "/Users/alex/projects/alexgetman.com/.dev-fixture-mock/pipeline.db",
         "SITE_PUBLIC_DIR": "/Users/alex/projects/alexgetman.com/.dev-fixture-mock/site",
-        "DISABLE_WORKERS": "1",
         "COMMAND_CENTER_TOKEN": "dev",
         "COMMAND_CENTER_URL": "http://localhost:4322/command-center",
         "STUDIO_CONFIG": "studio.yaml",

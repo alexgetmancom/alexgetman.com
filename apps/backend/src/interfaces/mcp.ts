@@ -113,7 +113,7 @@ function tool<S extends z.ZodType>(def: ToolDef<S>): ToolDef<S> {
 
 const studioToolDefs = {
   studio_capabilities: tool({
-    description: "Read enabled Studio modules and sanitized platform readiness before selecting a command.",
+    description: "Read Studio capabilities and sanitized platform readiness before selecting a command.",
     schema: z.object({}),
     handler: (studio) => studio.capabilities.report(),
   }),
@@ -441,7 +441,7 @@ const studioToolDefs = {
     },
   }),
   studio_video_schedule: tool({
-    description: "Schedule one or both configured video targets at future ISO datetimes.",
+    description: "Schedule one or both connected video targets at future ISO datetimes.",
     schema: z
       .object({ video_draft_id: positiveInt, youtube_shorts_at: isoDateOrNull(80), instagram_reels_at: isoDateOrNull(80) })
       .refine((value) => value.youtube_shorts_at || value.instagram_reels_at, {
@@ -464,7 +464,7 @@ const studioToolDefs = {
     handler: (studio, actorId, input) => studio.videos.technicalCheck(actorId, input.video_draft_id),
   }),
   studio_video_publish: tool({
-    description: "Queue all configured video targets for immediate publication.",
+    description: "Queue all connected video targets for immediate publication.",
     schema: z.object({ video_draft_id: positiveInt }),
     mutates: true,
     ref: (input) => publicationRef("video", input.video_draft_id),

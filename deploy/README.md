@@ -113,8 +113,8 @@ The channel registry adds the `telegram` channel as soon as a bot token and a
 channel name exist. Verify with `ops channels`, which must list
 `telegram · ru · native` with the account.
 
-The site module stays off for Maru: a Studio can publish text to Telegram
-without publishing a website.
+Maru keeps `site_enabled: false`: a Studio can publish text to Telegram without
+publishing a website.
 
 ## Operating a Studio from its own machine
 

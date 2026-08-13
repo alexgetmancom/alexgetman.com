@@ -257,8 +257,6 @@ describe("Telegram card freshness", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
       const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
-      config.studio.modules.youtube = true;
-      config.studio.modules.instagram = true;
       const draftId = createTestVideoDraft(backendDb, 42, "clip.mp4", 24);
       replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
       setTelegramVideoCard(backendDb, draftId, 100, 10);

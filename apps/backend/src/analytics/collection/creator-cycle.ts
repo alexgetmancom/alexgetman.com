@@ -40,8 +40,6 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
   let profiles = 0;
   const channels = listChannels(backendDb);
   for (const channel of channels) {
-    if (channel.platform === "youtube" && !config.studio.modules.youtube) continue;
-    if (channel.platform === "instagram" && !config.studio.modules.instagram) continue;
     const standardProfile = channel.platform === "youtube" || channel.platform === "instagram";
     const profileSupported = standardProfile || (channel.provider === "zernio" && !standardProfile);
     if (!profileSupported) continue;

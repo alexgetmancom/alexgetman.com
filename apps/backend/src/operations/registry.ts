@@ -128,16 +128,15 @@ const operationDefs = {
       const config = context.config();
       const dataDirectories = checkDataDirectoriesWritable(requiredDataDirectories(config));
       const { requiredChecks, checks } = doctorChecks(config, dataDirectories);
+      const capabilities = capabilityReport(config, context.db());
       return {
-        ok: Object.values(requiredChecks).every(Boolean),
-        modules: Object.entries(config.studio.modules)
-          .filter(([, value]) => value)
-          .map(([key]) => key),
+        ok: Object.values(requiredChecks).every(Boolean) && capabilities.every((capability) => capability.status === "ready"),
+        siteEnabled: config.studio.siteEnabled,
         video: config.studio.video,
         publicBaseUrl: config.PUBLIC_BASE_URL,
         checks,
         dataDirectories,
-        capabilities: capabilityReport(config, context.db()),
+        capabilities,
       };
     },
   }),

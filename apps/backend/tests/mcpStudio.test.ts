@@ -72,7 +72,7 @@ describe("Studio MCP", () => {
       const [content] = capabilityResponse.result.content;
       expect(content).toBeDefined();
       const capabilityPayload = JSON.parse(content?.text ?? "") as Record<string, unknown>;
-      expect(capabilityPayload).toHaveProperty("modules");
+      expect(capabilityPayload).toHaveProperty("siteEnabled", true);
       expect(capabilityPayload).toHaveProperty("platforms");
       // Capabilities describe what is enabled, never what is missing: a leaked
       // `required` list would expose which credentials the owner has not set.

@@ -17,7 +17,7 @@ import { publicationCardEffect, publicationRenderers } from "./publication-rende
 import { applyVideoScheduleDate } from "./video-scheduling.js";
 import {
   clearVideoState,
-  enabledVideoTargets,
+  connectedVideoTargets,
   getVideoState,
   startVideoEffects,
   targetKeyboard,
@@ -104,8 +104,8 @@ async function acceptVideoMessage(args: VideoMessageArgs): Promise<PublicationEf
 async function acceptVideoAsset({ ctx, backendDb, config, actorId, session, services }: VideoMessageArgs): Promise<PublicationEffect[]> {
   // Nothing about this depends on the upload, so fail before spending a
   // Telegram download and before a draft row exists to be orphaned.
-  const selected = enabledVideoTargets(config);
-  if (!selected.length) throw new StudioError("err.no-video-platforms-config");
+  const selected = connectedVideoTargets(backendDb);
+  if (!selected.length) throw new StudioError("err.no-video-platforms-connected");
   const stored = await storeTelegramVideo(ctx, backendDb, config, actorId);
   const videos = services.videos;
   const draftId = videos.create(actorId, stored.assetId, session.data.videoLocale === "en" ? "en" : "ru");
@@ -139,7 +139,7 @@ async function acceptVideoLabel({ backendDb, config, actorId, session, text, ser
   return videoControlEffects(
     saved,
     t(locale, "video.choose-platforms-next"),
-    targetKeyboard(config, saved.selected, locale, saved.revision),
+    targetKeyboard(backendDb, saved.selected, locale, saved.revision),
   );
 }
 

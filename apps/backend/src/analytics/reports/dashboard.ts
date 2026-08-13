@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { listChannels } from "../../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { creatorProfiles, socialComments } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -19,13 +20,13 @@ export function creatorDashboard(
   const latest = latestVideoMetrics(backendDb, since);
   const period = days === 1 ? t(locale, "report.period-today") : t(locale, "report.period-days", { days });
   const lines = [`📊 *${t(locale, "report.stats-for", { period })}*`];
-  if (config.studio.modules.site)
+  if (config.studio.siteEnabled)
     lines.push(`🌐 ${t(locale, "report.site")}: ${siteTotal(backendDb, since)} ${t(locale, "report.material-views")}`);
   const text = textTotals(backendDb, since);
   lines.push(
     `📝 ${t(locale, "report.posts")}: ${text.views} ${t(locale, "report.views")} · ${text.interactions} ${t(locale, "report.interactions-lc")}`,
   );
-  appendVideoDashboard(lines, latest, backendDb, config, locale);
+  appendVideoDashboard(lines, latest, backendDb, locale);
   lines.push(`\n${t(locale, "report.data-refresh")}`);
   return { text: lines.join("\n"), hasComments };
 }
@@ -36,8 +37,9 @@ function overallDashboard(
   hasComments: boolean,
   locale: StudioLocale,
 ): { text: string; hasComments: boolean } {
+  const connectedPlatforms = new Set(listChannels(backendDb).map((channel) => channel.platform));
   const lines = [`🌐 *${t(locale, "report.overall-stats")}*`];
-  if (config.studio.modules.site)
+  if (config.studio.siteEnabled)
     lines.push(
       `\n🌐 ${t(locale, "report.site")}: ${siteTotal(backendDb, "0000-01-01T00:00:00.000Z")} ${t(locale, "report.material-views")}`,
     );
@@ -45,7 +47,7 @@ function overallDashboard(
   lines.push(
     `📝 ${t(locale, "report.posts")}: ${overallText.views} ${t(locale, "report.views")} · ${overallText.interactions} ${t(locale, "report.interactions-lc")}`,
   );
-  if (config.studio.modules.youtube) {
+  if (connectedPlatforms.has("youtube")) {
     const profileData = profile(backendDb, "youtube");
     lines.push(`\n${t(locale, "dash.youtube-channel")}`);
     if (!profileData) lines.push(t(locale, "dash.channel-not-synced"));
@@ -63,7 +65,7 @@ function overallDashboard(
       );
     }
   }
-  if (config.studio.modules.instagram) {
+  if (connectedPlatforms.has("instagram")) {
     const profileData = profile(backendDb, "instagram");
     lines.push(`\n${t(locale, "dash.instagram-profile")}`);
     if (!profileData) lines.push(t(locale, "dash.profile-not-synced"));
@@ -87,26 +89,21 @@ function overallDashboard(
   return { text: lines.join("\n"), hasComments };
 }
 
-function appendVideoDashboard(
-  lines: string[],
-  latest: VideoMetricRow[],
-  backendDb: BackendDb,
-  config: BackendConfig,
-  locale: StudioLocale,
-): void {
+function appendVideoDashboard(lines: string[], latest: VideoMetricRow[], backendDb: BackendDb, locale: StudioLocale): void {
+  const connectedPlatforms = new Set(listChannels(backendDb).map((channel) => channel.platform));
   const youtube = latest.filter((row) => row.platform === "youtube_shorts");
   const instagram = latest.filter((row) => row.platform === "instagram_reels");
   const all = [...youtube, ...instagram];
   lines.push(
     `🎬 ${t(locale, "report.videos")}: ${sum(all, "views")} ${t(locale, "report.views")} · ${sum(all, "likes") + sum(all, "comments")} ${t(locale, "report.interactions-lc")}`,
   );
-  if (config.studio.modules.youtube) {
+  if (connectedPlatforms.has("youtube")) {
     const data = profile(backendDb, "youtube");
     lines.push(
       `${t(locale, "dash.yt-summary", { views: sum(youtube, "views"), likes: sum(youtube, "likes") })}${data ? t(locale, "dash.subs-suffix", { n: metricNumber(data.subscriberCount) }) : ""}`,
     );
   }
-  if (config.studio.modules.instagram) {
+  if (connectedPlatforms.has("instagram")) {
     const data = profile(backendDb, "instagram");
     lines.push(
       `${t(locale, "dash.ig-summary", { views: sum(instagram, "views"), likes: sum(instagram, "likes"), comments: sum(instagram, "comments") })}${data ? t(locale, "dash.followers-suffix", { n: metricNumber(data.followersCount) }) : ""}`,

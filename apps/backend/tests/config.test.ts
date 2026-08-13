@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadConfig } from "../src/foundation/config.js";
+import { loadStudioConfig } from "../src/studio.js";
 
 describe("loadConfig", () => {
   it("keeps production data paths compatible", () => {
@@ -70,5 +74,20 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ STUDIO_ACTOR_IDS: "7", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "8" })).toThrow(
       "MCP_STUDIO_ACTOR_ID must belong to STUDIO_ACTOR_IDS",
     );
+  });
+
+  it("rejects retired feature switches and unknown Studio sections", () => {
+    const directory = mkdtempSync(join(tmpdir(), "studio-config-"));
+    try {
+      const retired = join(directory, "retired.yaml");
+      writeFileSync(retired, "site_enabled: true\nmodules:\n  text_posting: true\n");
+      expect(() => loadStudioConfig(retired)).toThrow(/modules/);
+
+      const unknown = join(directory, "unknown.yaml");
+      writeFileSync(unknown, "site_enabled: false\ncommand_center:\n  default_mode: video\n");
+      expect(() => loadStudioConfig(unknown)).toThrow(/command_center/);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

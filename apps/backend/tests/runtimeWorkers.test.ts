@@ -35,7 +35,6 @@ describe("core worker runtime", () => {
   it("starts every enabled loop and persists lifecycle heartbeats", async () => {
     await withDb(async (backendDb) => {
       const config = loadConfig({ WORKER_HEARTBEAT_INTERVAL_SECONDS: "1" });
-      config.studio.modules.site = true;
       const loops = startCoreWorkers(config, backendDb);
 
       try {
@@ -65,7 +64,7 @@ describe("core worker runtime", () => {
   it("does not start site workers for a Studio without a public site", async () => {
     await withDb(async (backendDb) => {
       const config = loadConfig({ WORKER_HEARTBEAT_INTERVAL_SECONDS: "60" });
-      config.studio.modules.site = false;
+      config.studio.siteEnabled = false;
       const loops = startCoreWorkers(config, backendDb);
 
       try {

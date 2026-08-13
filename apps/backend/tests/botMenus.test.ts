@@ -5,6 +5,7 @@ import { buildMainMenu } from "../src/bot/navigation.js";
 import { buildNotificationsMenu } from "../src/bot/notifications-screen.js";
 import { buildSettingsMenu } from "../src/bot/settings-screen.js";
 import { isAdmin } from "../src/bot.js";
+import { registerChannel } from "../src/channels/registry.js";
 import type { BackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { openBackendDb } from "./helpers/open-db.js";
@@ -101,19 +102,18 @@ describe("buildSettingsMenu", () => {
     expect(labels.some((text) => /import x csv/i.test(text))).toBe(true);
   });
 
-  it("shows the YouTube signature entry under publishing when the module is enabled", async () => {
+  it("shows the YouTube signature entry when a YouTube channel is connected", async () => {
     backendDb = openBackendDb(":memory:");
     const config = loadConfig({});
-    config.studio.modules.youtube = true;
+    registerChannel(backendDb, { platform: "youtube", locale: "ru", provider: "native" });
 
     const labels = await settingsMenuLabels(config, backendDb, "settings-publishing");
     expect(labels.some((text) => /youtube/i.test(text))).toBe(true);
   });
 
-  it("hides the YouTube signature entry when the module is disabled", async () => {
+  it("hides the YouTube signature entry when no YouTube channel is connected", async () => {
     backendDb = openBackendDb(":memory:");
     const config = loadConfig({});
-    config.studio.modules.youtube = false;
 
     const labels = await settingsMenuLabels(config, backendDb, "settings-publishing");
     expect(labels.some((text) => /youtube/i.test(text))).toBe(false);

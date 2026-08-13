@@ -6,7 +6,7 @@ import { settingsService } from "../src/studio/services/settings.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 describe("weekly analytics summary", () => {
-  it("uses one Studio-wide setting, sends to every administrator, and does not require video posting", async () => {
+  it("uses one Studio-wide setting and sends to every administrator", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42,7" });

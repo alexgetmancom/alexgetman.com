@@ -1,12 +1,9 @@
-# The second Studio (Maru): no public site, and YouTube publishing on. Text,
-# video and analytics need no declaration — every Studio runs all three.
+# The second Studio (Maru) has no public site. Publishing destinations come
+# from the channel registry; text, video and analytics always run.
 timezone: Europe/Moscow
 timezone_label: MSK
 
-modules:
-  site: false
-  youtube: true
-  instagram: true
+site_enabled: false
 
 analytics:
   default_tab: video
