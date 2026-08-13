@@ -4,13 +4,12 @@
 timezone: Europe/Moscow
 timezone_label: MSK
 
+# Text posting, video posting and analytics are unconditional: every Studio
+# runs all three. What remains here is what genuinely differs per deployment.
 modules:
   site: true
-  text_posting: true
-  video_posting: false
   youtube: false
-  instagram: false
-  analytics: true
+  instagram: true
 
 analytics:
   # The primary analytics card for this Studio. Maru uses "video".

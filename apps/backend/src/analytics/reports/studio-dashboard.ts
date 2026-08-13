@@ -146,7 +146,7 @@ function unifiedAnalyticsTable(
     .all()
     .filter((row) => audiencePlatformsForSection(backendDb, config, section).has(row.platform));
   const accountMetrics = new Map(profiles.map((row) => [row.platform, contentMetricsFromProfile(row.dataJson, days)]));
-  const content = accountContentMetricsForSection(backendDb, config, section, since, accountMetrics);
+  const content = accountContentMetricsForSection(backendDb, section, since, accountMetrics);
   if (days === 1 && section !== "posts" && config.studio.modules.youtube) {
     for (const platform of [...content.keys()].filter((key) => key === "youtube" || key.startsWith("youtube_"))) {
       const liveViews = youtubeChannelViewDeltaSince(backendDb, since, platform);
@@ -210,13 +210,12 @@ function unifiedAnalyticsTable(
   return [
     tableBlock(headers, tableRows),
     ...(section === "posts"
-      ? publishedPostTable(backendDb, config, since, locale)
+      ? publishedPostTable(backendDb, since, locale)
       : publishedVideoTable(backendDb, config, section, since, locale)),
   ];
 }
 
-function publishedPostTable(backendDb: BackendDb, config: BackendConfig, since: string, locale: StudioLocale): Block[] {
-  if (!config.studio.modules.text_posting) return [];
+function publishedPostTable(backendDb: BackendDb, since: string, locale: StudioLocale): Block[] {
   const rows = latestTextPostMetrics(backendDb, since).filter((row) => Object.keys(row.metrics).length > 0);
   if (!rows.length) return [];
   const values = rows.map(contentMetrics);
@@ -235,13 +234,12 @@ function publishedPostTable(backendDb: BackendDb, config: BackendConfig, since: 
  * videos and are rendered in their own table below. */
 function accountContentMetricsForSection(
   backendDb: BackendDb,
-  config: BackendConfig,
   section: Exclude<AnalyticsSection, "audience">,
   since: string,
   accountMetrics: Map<string, ContentMetrics | undefined>,
 ): Map<string, ContentMetrics> {
   const values = new Map<string, ContentMetrics>();
-  if (section !== "posts" && config.studio.modules.video_posting)
+  if (section !== "posts")
     for (const [platform, metrics] of accountMetrics)
       if (
         platform === "instagram" ||
@@ -251,8 +249,7 @@ function accountContentMetricsForSection(
         platform.startsWith("tiktok_")
       )
         values.set(platform, metrics ?? emptyMetrics());
-  if (section !== "video" && config.studio.modules.text_posting)
-    for (const [platform, metrics] of textContentMetricsByPlatform(backendDb, since)) values.set(platform, metrics);
+  if (section !== "video") for (const [platform, metrics] of textContentMetricsByPlatform(backendDb, since)) values.set(platform, metrics);
   return values;
 }
 
@@ -265,7 +262,7 @@ function publishedVideoTable(
   since: string,
   locale: StudioLocale,
 ): Block[] {
-  if (section === "posts" || !config.studio.modules.video_posting) return [];
+  if (section === "posts") return [];
   const rows = latestVideoMetrics(backendDb, since)
     .filter((row) => row.publishedAt != null && row.publishedAt >= since)
     .filter((row) =>
@@ -354,12 +351,11 @@ function audiencePlatformsForSection(
   section: Exclude<AnalyticsSection, "audience">,
 ): Set<string> {
   if (section === "video") return dashboardVideoPlatforms(backendDb, config);
-  if (section === "posts") return dashboardTextPlatforms(backendDb, config);
+  if (section === "posts") return dashboardTextPlatforms(backendDb);
   return dashboardAudiencePlatforms(backendDb, config);
 }
 
 function dashboardVideoPlatforms(backendDb: BackendDb, config: BackendConfig): Set<string> {
-  if (!config.studio.modules.video_posting) return new Set();
   return new Set(
     listChannels(backendDb)
       .filter(
@@ -373,11 +369,10 @@ function dashboardVideoPlatforms(backendDb: BackendDb, config: BackendConfig): S
 }
 
 function dashboardAudiencePlatforms(backendDb: BackendDb, config: BackendConfig): Set<string> {
-  return new Set([...dashboardTextPlatforms(backendDb, config), ...dashboardVideoPlatforms(backendDb, config)]);
+  return new Set([...dashboardTextPlatforms(backendDb), ...dashboardVideoPlatforms(backendDb, config)]);
 }
 
-function dashboardTextPlatforms(backendDb: BackendDb, config: BackendConfig): Set<string> {
-  if (!config.studio.modules.text_posting) return new Set();
+function dashboardTextPlatforms(backendDb: BackendDb): Set<string> {
   return new Set(
     listChannels(backendDb)
       .filter((channel) => channel.targetId && audienceGroup(channel.platform) === "text")

@@ -37,8 +37,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     clearTelegramAnalyticsDashboard(backendDb, actorId);
     const summary = analytics.archiveSummary(locale);
     const keyboard = new InlineKeyboard().text(t(locale, "analytics.posts-btn", { count: summary.posts }), "analytics_post_archive:0");
-    if (config.studio.modules.video_posting)
-      keyboard.row().text(t(locale, "analytics.videos-btn", { count: summary.videos }), "analytics_archive:0");
+    keyboard.row().text(t(locale, "analytics.videos-btn", { count: summary.videos }), "analytics_archive:0");
     keyboard.row().text(t(locale, "common.menu"), "menu_home");
     await ctx.answerCallbackQuery();
     await editScreen(ctx, summary.text, { parse_mode: "Markdown", reply_markup: keyboard });
@@ -53,7 +52,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   if (data.startsWith("analytics_section:")) {
     const [, sectionValue, daysValue] = data.split(":");
     const requested: AnalyticsSection = sectionValue === "posts" || sectionValue === "video" ? sectionValue : "overview";
-    const section = requested === "overview" && !showOverview(config) ? defaultAnalyticsSection(config) : requested;
+    const section = requested;
     await ctx.answerCallbackQuery();
     await showAnalyticsDashboard(ctx, backendDb, config, section, analyticsPeriod(Number(daysValue)));
     return true;
@@ -149,7 +148,7 @@ export async function showAnalyticsDashboard(
   const actorId = Number(ctx.from?.id);
   const locale = settingsService(backendDb).locale(actorId);
   const dashboard = createStudioServices(backendDb, config).analytics.dashboard(section, days, locale);
-  const keyboard = analyticsKeyboard(config, locale, section, days);
+  const keyboard = analyticsKeyboard(locale, section, days);
   await editScreen(ctx, { html: dashboard.richHtml }, { reply_markup: keyboard });
   const messageId = ctx.callbackQuery?.message?.message_id;
   if (Number.isSafeInteger(actorId) && messageId && ctx.chat?.id)
@@ -162,7 +161,7 @@ export async function refreshTelegramAnalyticsDashboards(bot: Bot, backendDb: Ba
   const analytics = createStudioServices(backendDb, config).analytics;
   const results = await Promise.all(
     telegramAnalyticsDashboards(backendDb).map(async (card) => {
-      const section = card.section === "overview" && !showOverview(config) ? defaultAnalyticsSection(config) : card.section;
+      const section = card.section;
       const locale = settingsService(backendDb).locale(card.actorId);
       const dashboard = analytics.dashboard(section, card.days, locale);
       try {
@@ -171,7 +170,7 @@ export async function refreshTelegramAnalyticsDashboards(bot: Bot, backendDb: Ba
           card.messageId,
           { html: dashboard.richHtml },
           {
-            reply_markup: analyticsKeyboard(config, locale, section, card.days),
+            reply_markup: analyticsKeyboard(locale, section, card.days),
           },
         );
         return true;
@@ -186,7 +185,7 @@ export async function refreshTelegramAnalyticsDashboards(bot: Bot, backendDb: Ba
   return results.filter(Boolean).length;
 }
 
-function analyticsKeyboard(config: BackendConfig, locale: StudioLocale, section: AnalyticsSection, days: 1 | 7 | 30): InlineKeyboard {
+function analyticsKeyboard(locale: StudioLocale, section: AnalyticsSection, days: 1 | 7 | 30): InlineKeyboard {
   const callback = (nextDays: 1 | 7 | 30) => `analytics_section:${section}:${nextDays}`;
   const keyboard = new InlineKeyboard();
   keyboard
@@ -194,38 +193,24 @@ function analyticsKeyboard(config: BackendConfig, locale: StudioLocale, section:
     .text(periodButtonLabel(locale, 7, days), callback(7))
     .text(periodButtonLabel(locale, 30, days), callback(30))
     .row();
-  if (showOverview(config))
-    keyboard.text(
-      t(locale, section === "overview" ? "analytics.overview-active" : "analytics.overview"),
-      `analytics_section:overview:${days}`,
-    );
-  if (config.studio.modules.text_posting)
-    keyboard.text(
-      t(locale, section === "posts" ? "analytics.posts-section-active" : "analytics.posts-section"),
-      `analytics_section:posts:${days}`,
-    );
-  if (config.studio.modules.video_posting)
-    keyboard.text(
-      t(locale, section === "video" ? "analytics.video-section-active" : "analytics.video-section"),
-      `analytics_section:video:${days}`,
-    );
+  keyboard.text(
+    t(locale, section === "overview" ? "analytics.overview-active" : "analytics.overview"),
+    `analytics_section:overview:${days}`,
+  );
+  keyboard.text(
+    t(locale, section === "posts" ? "analytics.posts-section-active" : "analytics.posts-section"),
+    `analytics_section:posts:${days}`,
+  );
+  keyboard.text(
+    t(locale, section === "video" ? "analytics.video-section-active" : "analytics.video-section"),
+    `analytics_section:video:${days}`,
+  );
   keyboard.row().text(t(locale, "common.menu"), "menu_home");
   return keyboard;
 }
 
 export function defaultAnalyticsSection(config: BackendConfig): AnalyticsSection {
-  const preferred = config.studio.analytics.defaultTab;
-  if (preferred === "posts" && config.studio.modules.text_posting) return preferred;
-  if (preferred === "video" && config.studio.modules.video_posting) return preferred;
-  // Overview only exists with both modules on; otherwise the preference names a
-  // module this Studio does not run, and the fallback has to be the one it does
-  // — landing on a section with no button would leave nothing highlighted.
-  if (showOverview(config)) return "overview";
-  return config.studio.modules.video_posting ? "video" : "posts";
-}
-
-function showOverview(config: BackendConfig): boolean {
-  return config.studio.modules.text_posting && config.studio.modules.video_posting;
+  return config.studio.analytics.defaultTab;
 }
 
 function periodButtonLabel(locale: StudioLocale, period: 1 | 7 | 30, selected: 1 | 7 | 30): string {

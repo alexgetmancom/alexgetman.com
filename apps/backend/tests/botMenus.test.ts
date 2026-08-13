@@ -59,37 +59,13 @@ describe("isAdmin", () => {
 });
 
 describe("buildMainMenu", () => {
-  it("shows post creation, no video creation, and analytics for a text+analytics studio", async () => {
+  it("offers post creation, video creation and analytics", async () => {
     backendDb = openBackendDb(":memory:");
     const config = loadConfig({});
-    config.studio.modules.text_posting = true;
-    config.studio.modules.video_posting = false;
-    config.studio.modules.analytics = true;
-
     const labels = await mainMenuLabels(config, backendDb);
     expect(labels.some((text) => /new post/i.test(text))).toBe(true);
-    expect(labels.some((text) => /new video/i.test(text))).toBe(false);
-    expect(labels.some((text) => /analytics/i.test(text))).toBe(true);
-  });
-
-  it("shows video creation, no post creation, for a video-only studio", async () => {
-    backendDb = openBackendDb(":memory:");
-    const config = loadConfig({});
-    config.studio.modules.text_posting = false;
-    config.studio.modules.video_posting = true;
-
-    const labels = await mainMenuLabels(config, backendDb);
     expect(labels.some((text) => /new video/i.test(text))).toBe(true);
-    expect(labels.some((text) => /new post/i.test(text))).toBe(false);
-  });
-
-  it("hides the analytics button when the module is disabled", async () => {
-    backendDb = openBackendDb(":memory:");
-    const config = loadConfig({});
-    config.studio.modules.analytics = false;
-
-    const labels = await mainMenuLabels(config, backendDb);
-    expect(labels.some((text) => /analytics/i.test(text))).toBe(false);
+    expect(labels.some((text) => /analytics/i.test(text))).toBe(true);
   });
 });
 
@@ -97,19 +73,8 @@ describe("buildSettingsMenu", () => {
   it("groups every setting under a category instead of one flat list", async () => {
     backendDb = openBackendDb(":memory:");
     const config = loadConfig({});
-    config.studio.modules.analytics = true;
-
     const labels = await settingsMenuLabels(config, backendDb);
     expect(labels).toEqual(["📡 Publishing", "🔔 Notifications", "📊 Analytics", "⚙️ General", "← Menu"]);
-  });
-
-  it("hides the analytics category when the module is disabled", async () => {
-    backendDb = openBackendDb(":memory:");
-    const config = loadConfig({});
-    config.studio.modules.analytics = false;
-
-    const labels = await settingsMenuLabels(config, backendDb);
-    expect(labels.some((text) => /analytics/i.test(text))).toBe(false);
   });
 
   it("keeps the news digest under notifications", async () => {
@@ -131,8 +96,6 @@ describe("buildSettingsMenu", () => {
   it("offers the manual analytics inputs no platform API provides", async () => {
     backendDb = openBackendDb(":memory:");
     const config = loadConfig({});
-    config.studio.modules.analytics = true;
-
     const labels = await settingsMenuLabels(config, backendDb, "settings-analytics");
     expect(labels.some((text) => /threads followers/i.test(text))).toBe(true);
     expect(labels.some((text) => /import x csv/i.test(text))).toBe(true);

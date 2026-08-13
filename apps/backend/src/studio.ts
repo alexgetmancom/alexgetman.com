@@ -8,11 +8,8 @@ const studioSchema = z.object({
   modules: z
     .object({
       site: z.boolean().default(true),
-      text_posting: z.boolean().default(true),
-      video_posting: z.boolean().default(false),
       youtube: z.boolean().default(false),
       instagram: z.boolean().default(false),
-      analytics: z.boolean().default(true),
     })
     .prefault({}),
   analytics: z
@@ -33,7 +30,7 @@ const studioSchema = z.object({
 export type StudioConfig = {
   timezone: string;
   timezoneLabel: string;
-  modules: { site: boolean; text_posting: boolean; video_posting: boolean; youtube: boolean; instagram: boolean; analytics: boolean };
+  modules: { site: boolean; youtube: boolean; instagram: boolean };
   analytics: { defaultTab: "overview" | "posts" | "video" };
   video: { prepare_lead_minutes: number; reminder_minutes: number; retention_hours: number };
 };

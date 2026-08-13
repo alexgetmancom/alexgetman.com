@@ -242,21 +242,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
   }
   const studio = loadStudioConfig(parsed.STUDIO_CONFIG);
   // The channel default exists for the first deployment and is a hazard for
-  // every one after it: a second Studio that enables text posting without
-  // naming its own channel would publish into the first Studio's, because the
-  // default is a real, live username. Development keeps the convenience.
-  if (parsed.NODE_ENV === "production" && studio.modules.text_posting && !env.TELEGRAM_CHANNEL_USERNAME)
-    throw new Error("TELEGRAM_CHANNEL_USERNAME must be set explicitly when text posting is enabled");
-  if (studio.modules.youtube && studio.modules.video_posting) {
+  // every one after it: a second Studio that does not name its own channel
+  // would publish into the first Studio's, because the default is a real, live
+  // username. Development keeps the convenience.
+  if (parsed.NODE_ENV === "production" && !env.TELEGRAM_CHANNEL_USERNAME)
+    throw new Error("TELEGRAM_CHANNEL_USERNAME must be set explicitly in production");
+  if (studio.modules.youtube) {
     for (const key of ["YOUTUBE_RU_CLIENT_ID", "YOUTUBE_RU_CLIENT_SECRET", "YOUTUBE_RU_REFRESH_TOKEN"] as const) {
       if (!parsed[key]) throw new Error(`${key} is required when YouTube video publishing is enabled`);
     }
   }
-  if (
-    studio.modules.instagram &&
-    studio.modules.video_posting &&
-    Boolean(parsed.INSTAGRAM_EN_ACCESS_TOKEN) !== Boolean(parsed.INSTAGRAM_EN_USER_ID)
-  )
+  if (studio.modules.instagram && Boolean(parsed.INSTAGRAM_EN_ACCESS_TOKEN) !== Boolean(parsed.INSTAGRAM_EN_USER_ID))
     throw new Error("INSTAGRAM_EN_ACCESS_TOKEN and INSTAGRAM_EN_USER_ID must be set together");
   if (parsed.MEDIA_PROCESSOR_PROVIDER === "remote_http" && (!parsed.MEDIA_PROCESSOR_URL || !parsed.MEDIA_PROCESSOR_TOKEN)) {
     throw new Error("MEDIA_PROCESSOR_URL and MEDIA_PROCESSOR_TOKEN are required when MEDIA_PROCESSOR_PROVIDER=remote_http");

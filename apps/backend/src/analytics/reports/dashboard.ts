@@ -21,13 +21,11 @@ export function creatorDashboard(
   const lines = [`📊 *${t(locale, "report.stats-for", { period })}*`];
   if (config.studio.modules.site)
     lines.push(`🌐 ${t(locale, "report.site")}: ${siteTotal(backendDb, since)} ${t(locale, "report.material-views")}`);
-  if (config.studio.modules.text_posting) {
-    const text = textTotals(backendDb, since);
-    lines.push(
-      `📝 ${t(locale, "report.posts")}: ${text.views} ${t(locale, "report.views")} · ${text.interactions} ${t(locale, "report.interactions-lc")}`,
-    );
-  }
-  if (config.studio.modules.video_posting) appendVideoDashboard(lines, latest, backendDb, config, locale);
+  const text = textTotals(backendDb, since);
+  lines.push(
+    `📝 ${t(locale, "report.posts")}: ${text.views} ${t(locale, "report.views")} · ${text.interactions} ${t(locale, "report.interactions-lc")}`,
+  );
+  appendVideoDashboard(lines, latest, backendDb, config, locale);
   lines.push(`\n${t(locale, "report.data-refresh")}`);
   return { text: lines.join("\n"), hasComments };
 }
@@ -43,12 +41,10 @@ function overallDashboard(
     lines.push(
       `\n🌐 ${t(locale, "report.site")}: ${siteTotal(backendDb, "0000-01-01T00:00:00.000Z")} ${t(locale, "report.material-views")}`,
     );
-  if (config.studio.modules.text_posting) {
-    const text = textTotals(backendDb, "0000-01-01T00:00:00.000Z");
-    lines.push(
-      `📝 ${t(locale, "report.posts")}: ${text.views} ${t(locale, "report.views")} · ${text.interactions} ${t(locale, "report.interactions-lc")}`,
-    );
-  }
+  const overallText = textTotals(backendDb, "0000-01-01T00:00:00.000Z");
+  lines.push(
+    `📝 ${t(locale, "report.posts")}: ${overallText.views} ${t(locale, "report.views")} · ${overallText.interactions} ${t(locale, "report.interactions-lc")}`,
+  );
   if (config.studio.modules.youtube) {
     const profileData = profile(backendDb, "youtube");
     lines.push(`\n${t(locale, "dash.youtube-channel")}`);

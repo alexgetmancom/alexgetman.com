@@ -65,7 +65,6 @@ function fixture(backendDb: UnsafeBackendDb, targets = ["instagram_reels"]): Vid
     STUDIO_MEDIA_DIR: directory,
     VIDEO_MEDIA_DIR: directory,
   });
-  config.studio.modules.video_posting = true;
   config.studio.modules.instagram = true;
   return { config, directory, draftId };
 }

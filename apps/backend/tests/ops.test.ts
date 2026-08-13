@@ -209,7 +209,7 @@ describe("TypeScript operations tooling", () => {
     }
   });
 
-  it("reports actionable video failures in video Studio status", () => {
+  it("reports actionable video failures in Studio status", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
@@ -228,12 +228,9 @@ describe("TypeScript operations tooling", () => {
         .prepare("INSERT INTO video_jobs(video_draft_id,kind,run_at,status,created_at,updated_at) VALUES (1,'publish',?,'failed',?,?)")
         .run(now, now, now);
       const config = loadConfig({ PIPELINE_DB: ":memory:" });
-      config.studio.modules.video_posting = true;
-
       const status = compactOperationsStatus(config, backendDb);
 
       expect(status.ok).toBe(false);
-      expect(status.modules).toContain("video_posting");
       expect(status.videos).toEqual({
         drafts: { total: 1, byStatus: { partial: 1 } },
         targets: { total: 1, byStatus: { failed: 1 }, actionableFailures: 1 },

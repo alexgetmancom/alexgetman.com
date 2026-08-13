@@ -55,8 +55,8 @@ state belongs to Delivery.
 
 `bun run ops:prod [--as alex|maru] <command>` is the only production route, and every run prints
 what it resolved to. A request that names Maru means `--as maru` throughout, including the follow-up
-commands; one that names neither means alex. Maru is video-only, so `expected targets: telegram` and
-a short `recent` list are correct there, not a gap.
+commands; one that names neither means alex. Both Studios publish text and video and collect
+analytics; what differs is the public site (alex only) and the video platforms each one publishes to.
 
 Start any worker, queue, configuration, publication or error investigation with
 `ops guide --json`; it is read-only and it is the source of truth for routing, the command catalog

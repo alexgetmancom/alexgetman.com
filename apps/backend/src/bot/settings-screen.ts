@@ -449,13 +449,12 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
         await ctx.editMessageText(t(locale, "settings.category-notifications-body"));
       })
       .row();
-    if (config.studio.modules.analytics)
-      range
-        .submenu(t(locale, "settings.category-analytics"), ANALYTICS_MENU_ID, async (ctx) => {
-          await ctx.answerCallbackQuery();
-          await ctx.editMessageText(analyticsText(backendDb, locale), { parse_mode: "Markdown" });
-        })
-        .row();
+    range
+      .submenu(t(locale, "settings.category-analytics"), ANALYTICS_MENU_ID, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(analyticsText(backendDb, locale), { parse_mode: "Markdown" });
+      })
+      .row();
     range
       .submenu(t(locale, "settings.category-general"), GENERAL_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();

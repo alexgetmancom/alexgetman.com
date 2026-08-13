@@ -105,7 +105,6 @@ function videoConfig(directory: string, overrides: Record<string, string> = {}) 
     PUBLIC_MEDIA_BASE_URL: "https://alexgetman.com/media",
     ...overrides,
   });
-  config.studio.modules.video_posting = true;
   config.studio.modules.youtube = true;
   config.studio.modules.instagram = true;
   return { ...config, VIDEO_MEDIA_DIR: directory, STUDIO_MEDIA_DIR: directory };
@@ -352,19 +351,6 @@ describe("video job execution", () => {
 
       await runVideoCycle(config, backendDb);
 
-      expect(seen).toHaveLength(0);
-    });
-  });
-
-  it("stays idle while the video module is switched off", async () => {
-    reset();
-    await withDirectory(async (directory) => {
-      const backendDb = testDb.open();
-      const config = videoConfig(directory);
-      dueDraft(backendDb, directory, ["youtube_shorts"]);
-      const disabled = { ...config, studio: { ...config.studio, modules: { ...config.studio.modules, video_posting: false } } };
-
-      expect(await runVideoCycle(disabled, backendDb)).toBe(0);
       expect(seen).toHaveLength(0);
     });
   });

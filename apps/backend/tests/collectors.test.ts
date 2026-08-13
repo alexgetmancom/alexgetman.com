@@ -18,6 +18,7 @@ const config = loadConfig({
   THREADS_EN_ACCESS_TOKEN: "en-token",
   INSTAGRAM_RU_ACCESS_TOKEN: "shared-token",
   INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
+  INSTAGRAM_EN_USER_ID: "en-user",
 });
 
 function task(overrides: Partial<MetricTask> = {}): MetricTask {
@@ -254,7 +255,12 @@ describe("collectInstagramStory", () => {
   });
 
   it("routes an IG-prefixed token to graph.instagram.com and anything else to graph.facebook.com", async () => {
-    const igConfig = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", INSTAGRAM_EN_ACCESS_TOKEN: "IGtoken" });
+    const igConfig = loadConfig({
+      CONTROLLER_ADMIN_IDS: "42",
+      CONTROLLER_BOT_TOKEN: "t",
+      INSTAGRAM_EN_ACCESS_TOKEN: "IGtoken",
+      INSTAGRAM_EN_USER_ID: "en-user",
+    });
     const ig = recordingFetch(() => json({ data: [] }));
     await collectInstagramStory(storyTask(), igConfig, ig.fetch);
     expect(ig.calls[0]?.url).toStartWith("https://graph.instagram.com/");

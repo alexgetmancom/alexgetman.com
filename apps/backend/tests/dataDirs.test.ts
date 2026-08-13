@@ -26,7 +26,7 @@ afterEach(() => {
 });
 
 describe("requiredDataDirectories", () => {
-  it("excludes video/site directories when their module is disabled", () => {
+  it("lists every always-required directory plus the site for a Studio that has one", () => {
     const root = tempRoot();
     const config = loadConfig({
       DATA_DIR: join(root, "data"),
@@ -35,22 +35,22 @@ describe("requiredDataDirectories", () => {
       VIDEO_MEDIA_DIR: join(root, "video-media"),
       SITE_PUBLIC_DIR: join(root, "site"),
     });
-    // Repo studio.yaml: site enabled, video_posting disabled.
+    // Repo studio.yaml: site enabled. Video directories are always required.
     const names = requiredDataDirectories(config).map((entry) => entry.name);
     expect(names).toContain("DATA_DIR");
     expect(names).toContain("MEDIA_CACHE_DIR");
     expect(names).toContain("SITE_PUBLIC_DIR");
-    expect(names).not.toContain("STUDIO_MEDIA_DIR");
-    expect(names).not.toContain("VIDEO_MEDIA_DIR");
+    // STUDIO_MEDIA_DIR and VIDEO_MEDIA_DIR resolve to one path here: listed once.
+    expect(names).toContain("STUDIO_MEDIA_DIR");
   });
 
-  it("includes video directories and dedupes an identical path when video is enabled", () => {
+  it("omits the site directory for a Studio without a public site", () => {
     const root = tempRoot();
     // Absolute path: loadStudioConfig resolves a relative STUDIO_CONFIG against
     // process.cwd(), which differs between a root-level `bun test` run and
     // `bun run --filter @alexgetman/backend test` (cwd apps/backend).
     const config = loadConfig({
-      STUDIO_CONFIG: join(import.meta.dir, "../../../studio.video-only.example.yaml"),
+      STUDIO_CONFIG: join(import.meta.dir, "../../../studio.maru.example.yaml"),
       YOUTUBE_RU_CLIENT_ID: "test",
       YOUTUBE_RU_CLIENT_SECRET: "test",
       YOUTUBE_RU_REFRESH_TOKEN: "test",

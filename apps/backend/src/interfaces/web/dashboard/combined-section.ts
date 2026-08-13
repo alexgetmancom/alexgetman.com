@@ -76,8 +76,6 @@ export type CombinedSectionInput = {
   textView?: string | undefined;
   /** The selected video destination, if that half is filtered. */
   videoView?: string | undefined;
-  /** False only when this Studio publishes no video at all. */
-  showVideo?: boolean;
 };
 
 const TEXT_COLOR = "var(--series-text)";
@@ -87,11 +85,6 @@ export function renderCombinedSection(input: CombinedSectionInput, locale: Studi
   const { periodDays } = input;
   const posts = input.data?.posts ?? [];
   const extraX = additionalXActivityPosts(posts, input.xItems);
-
-  // Both halves stay on screen whatever is filtered: a filter narrows its own
-  // half, it does not take the other one away.
-  const showText = true;
-  const showVideo = input.showVideo ?? true;
 
   const previousVideoTotals =
     periodDays === 1
@@ -103,22 +96,24 @@ export function renderCombinedSection(input: CombinedSectionInput, locale: Studi
         };
   const textHero = textHeroMetrics(input, posts.length, locale);
   const videoHero = videoHeroMetrics(input, periodDays, previousVideoTotals, locale);
-  const textColumn = showText ? renderOverviewColumn("text", input, textHero, posts, extraX, showText && !showVideo, locale) : "";
-  const videoColumn = showVideo ? renderOverviewColumn("video", input, videoHero, [], [], showVideo && !showText, locale) : "";
+  // Both halves stay on screen whatever is filtered: a filter narrows its own
+  // half, it does not take the other one away.
+  const textColumn = renderOverviewColumn("text", input, textHero, posts, extraX, locale);
+  const videoColumn = renderOverviewColumn("video", input, videoHero, [], [], locale);
 
   // Both halves reserve the same number of destination rows — the tallest of the
   // four columns — so their publication lists start on one line without either
   // side padding out a fixed block of empty space.
   const platformRowCount = Math.max(
     1,
-    ...[overviewPlatformRows(input, "text", locale), ...(showVideo ? [overviewPlatformRows(input, "video", locale)] : [])].flatMap((rows) =>
+    ...[overviewPlatformRows(input, "text", locale), overviewPlatformRows(input, "video", locale)].flatMap((rows) =>
       ["ru", "en"].map(
         (locale) => rows.filter((row) => row.locale?.toLowerCase() === locale && (row.views > 0 || row.followers !== null)).length,
       ),
     ),
   );
   return `<section class="pipeline-overview" style="--platform-rows:${Math.min(PLATFORM_SLOTS, platformRowCount)}">
-    <div class="overview-split${showText && showVideo ? "" : " overview-split--single"}">
+    <div class="overview-split">
       ${textColumn}
       ${videoColumn}
     </div>
@@ -147,7 +142,6 @@ function renderOverviewColumn(
   hero: TextHeroMetrics,
   posts: PipelinePost[],
   extraX: PipelinePost[],
-  single: boolean,
   locale: StudioLocale,
 ): string;
 function renderOverviewColumn(
@@ -156,7 +150,6 @@ function renderOverviewColumn(
   hero: VideoHeroMetrics,
   posts: PipelinePost[],
   extraX: PipelinePost[],
-  single: boolean,
   locale: StudioLocale,
 ): string;
 function renderOverviewColumn(
@@ -165,7 +158,6 @@ function renderOverviewColumn(
   hero: TextHeroMetrics | VideoHeroMetrics,
   posts: PipelinePost[],
   extraX: PipelinePost[],
-  single: boolean,
   locale: StudioLocale,
 ): string {
   const color = kind === "text" ? TEXT_COLOR : VIDEO_COLOR;
@@ -173,7 +165,7 @@ function renderOverviewColumn(
   const textTargetIds = selectedTextTargetIds(input);
   const history = overviewHistory(input, kind);
   const platformRows = overviewPlatformRows(input, kind, locale);
-  const showMetricFilter = single || kind === "text";
+  const showMetricFilter = kind === "text";
   // The list loader is per half: each one asks only for its own publications.
   const moreParams = new URLSearchParams({ period: String(input.periodDays), week_offset: String(input.weekOffset), track: kind });
   if (locale === "en") moreParams.set("locale", "en");
@@ -202,7 +194,7 @@ function renderOverviewColumn(
     : "";
   const historyLabel = t(locale, input.periodDays === 1 ? "cc.overview.history-30" : "cc.overview.period-start");
   const historyRightLabel = t(locale, input.periodDays === 1 ? "cc.overview.today" : "cc.overview.period-end");
-  return `<section class="overview-track overview-track--${kind}${single ? " overview-track--single" : ""}">
+  return `<section class="overview-track overview-track--${kind}">
     ${filterChip}
     ${heroMarkup}
     ${renderOverviewSparkline(history, color, t(locale, "cc.overview.views-over-time", { track: title }), historyLabel, historyRightLabel, locale)}

@@ -20,23 +20,20 @@ export function buildMainMenu(
   notificationsMenu: Menu<Context>,
 ): Menu<Context> {
   const menu = new Menu<Context>(MAIN_MENU_ID);
-  // Creation is the primary action and deliberately gets its own full row.
-  // A video-only Studio (such as Maru) therefore has the compact two-row
-  // layout, while a mixed Studio still keeps post and video creation obvious.
-  if (config.studio.modules.text_posting)
-    menu
-      .text(
-        (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.new-post"),
-        (ctx) => openPostScreen(ctx, backendDb),
-      )
-      .row();
-  if (config.studio.modules.video_posting)
-    menu
-      .text(
-        (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.new-video"),
-        (ctx) => startVideoConversation(ctx, backendDb),
-      )
-      .row();
+  // Creation is the primary action and deliberately gets its own full row, so
+  // post and video creation both stay obvious.
+  menu
+    .text(
+      (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.new-post"),
+      (ctx) => openPostScreen(ctx, backendDb),
+    )
+    .row();
+  menu
+    .text(
+      (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.new-video"),
+      (ctx) => startVideoConversation(ctx, backendDb),
+    )
+    .row();
   menu.text(
     (ctx) => {
       const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
@@ -46,11 +43,10 @@ export function buildMainMenu(
     },
     (ctx) => showQueue(ctx, backendDb, config),
   );
-  if (config.studio.modules.analytics)
-    menu.text(
-      (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.analytics"),
-      (ctx) => showAnalyticsDashboard(ctx, backendDb, config, defaultAnalyticsSection(config), 1),
-    );
+  menu.text(
+    (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.analytics"),
+    (ctx) => showAnalyticsDashboard(ctx, backendDb, config, defaultAnalyticsSection(config), 1),
+  );
   menu.submenu(
     (ctx) => {
       const locale = settingsService(backendDb).locale(Number(ctx.from?.id));

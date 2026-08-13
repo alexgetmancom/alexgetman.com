@@ -106,9 +106,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     await showSettings(ctx, backendDb, settingsMenu);
   });
   bot.hears(localizedTextVariants(["menu.new-video"]), async (ctx) => {
-    const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
     if (!isAdmin(config, ctx.from?.id)) return;
-    if (!config.studio.modules.video_posting) return void (await ctx.reply(t(locale, "bot.video-disabled")));
     await startVideoConversation(ctx, backendDb);
   });
   bot.hears(localizedTextVariants(["menu.new-post"]), async (ctx) => {

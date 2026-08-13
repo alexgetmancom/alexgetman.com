@@ -112,7 +112,6 @@ export function creatorPostMedia(backendDb: BackendDb, postId: number, locale: S
 
 export function creatorArchiveSummary(
   backendDb: BackendDb,
-  hasVideo: boolean,
   locale: StudioLocale = "en",
 ): {
   text: string;
@@ -120,25 +119,21 @@ export function creatorArchiveSummary(
   videos: number;
 } {
   const postCount = publishedPostCount(backendDb);
-  const videos = hasVideo
-    ? Number(
-        unsafeDb(backendDb)
-          .db.select({ count: sql<number>`count(distinct ${videoTargets.videoDraftId})` })
-          .from(videoTargets)
-          .where(eq(videoTargets.status, "published"))
-          .get()?.count ?? 0,
-      )
-    : 0;
+  const videos = Number(
+    unsafeDb(backendDb)
+      .db.select({ count: sql<number>`count(distinct ${videoTargets.videoDraftId})` })
+      .from(videoTargets)
+      .where(eq(videoTargets.status, "published"))
+      .get()?.count ?? 0,
+  );
   return {
     text: [
       `📚 *${t(locale, "report.archive-title")}*`,
       "",
       t(locale, "report.archive-desc"),
       `${t(locale, "report.posts")}: *${postCount}*`,
-      hasVideo ? `${t(locale, "report.videos")}: *${videos}*` : "",
-    ]
-      .filter(Boolean)
-      .join("\n"),
+      `${t(locale, "report.videos")}: *${videos}*`,
+    ].join("\n"),
     posts: postCount,
     videos,
   };

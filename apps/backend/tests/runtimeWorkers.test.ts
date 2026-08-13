@@ -35,8 +35,6 @@ describe("core worker runtime", () => {
   it("starts every enabled loop and persists lifecycle heartbeats", async () => {
     await withDb(async (backendDb) => {
       const config = loadConfig({ WORKER_HEARTBEAT_INTERVAL_SECONDS: "1" });
-      config.studio.modules.video_posting = true;
-      config.studio.modules.analytics = true;
       config.studio.modules.site = true;
       const loops = startCoreWorkers(config, backendDb);
 
@@ -64,17 +62,17 @@ describe("core worker runtime", () => {
     });
   });
 
-  it("does not start text and site workers for a video-only Studio", async () => {
+  it("does not start site workers for a Studio without a public site", async () => {
     await withDb(async (backendDb) => {
       const config = loadConfig({ WORKER_HEARTBEAT_INTERVAL_SECONDS: "60" });
-      config.studio.modules.text_posting = false;
       config.studio.modules.site = false;
-      config.studio.modules.video_posting = true;
-      config.studio.modules.analytics = true;
       const loops = startCoreWorkers(config, backendDb);
 
       try {
         expect(loops.map((loop) => loop.name)).toEqual([
+          "story-cards",
+          "queue",
+          "publish-watchdog",
           "publication-reconciliation",
           "notifications",
           "video",

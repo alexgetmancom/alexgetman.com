@@ -30,8 +30,6 @@ describe("creator analytics collection", () => {
         YOUTUBE_RU_CLIENT_SECRET: "secret",
         YOUTUBE_RU_REFRESH_TOKEN: "refresh",
       });
-      config.studio.modules.analytics = true;
-      config.studio.modules.video_posting = true;
       config.studio.modules.youtube = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
@@ -71,7 +69,6 @@ describe("creator analytics collection", () => {
   it("does not call analytics collectors when Analytics itself is disabled", async () => {
     await withDb(async (backendDb) => {
       const config = loadConfig({});
-      config.studio.modules.analytics = false;
       expect(await runAnalyticsCycle(config, backendDb)).toBe(0);
     });
   });
@@ -79,9 +76,6 @@ describe("creator analytics collection", () => {
   it("does not count empty scheduler ticks as video metric collections", async () => {
     await withDb(async (backendDb) => {
       const config = loadConfig({});
-      config.studio.modules.analytics = true;
-      config.studio.modules.text_posting = false;
-      config.studio.modules.video_posting = true;
       config.studio.modules.youtube = false;
       config.studio.modules.instagram = false;
 
@@ -109,9 +103,6 @@ describe("creator analytics collection", () => {
         X_ACCESS_TOKEN_SECRET: "access-secret",
         ZERNIO_API_KEY: "a".repeat(16),
       });
-      config.studio.modules.analytics = true;
-      config.studio.modules.text_posting = false;
-      config.studio.modules.video_posting = false;
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
         if (url.includes("api.x.com"))
@@ -139,8 +130,6 @@ describe("creator analytics collection", () => {
         INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
         INSTAGRAM_EN_USER_ID: "en-user",
       });
-      config.studio.modules.text_posting = false;
-      config.studio.modules.video_posting = true;
       config.studio.modules.instagram = true;
       const requested: string[] = [];
       const fetchMock = (async (input: URL | RequestInfo) => {
@@ -186,7 +175,6 @@ describe("creator analytics collection", () => {
         INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
         INSTAGRAM_EN_USER_ID: "en-user",
       });
-      config.studio.modules.video_posting = true;
       config.studio.modules.instagram = true;
       config.studio.modules.youtube = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
@@ -223,7 +211,6 @@ describe("creator analytics collection", () => {
         YOUTUBE_RU_CLIENT_SECRET: "secret",
         YOUTUBE_RU_REFRESH_TOKEN: "refresh",
       });
-      config.studio.modules.video_posting = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
         if (url === "https://oauth2.googleapis.com/token") return new Response(JSON.stringify({ access_token: "access" }));
@@ -268,7 +255,6 @@ describe("creator analytics collection", () => {
         externalId: "missing-reel",
       });
       const config = loadConfig({ INSTAGRAM_RU_ACCESS_TOKEN: "token", INSTAGRAM_RU_USER_ID: "user" });
-      config.studio.modules.video_posting = true;
       config.studio.modules.instagram = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
@@ -303,7 +289,6 @@ describe("creator analytics collection", () => {
         YOUTUBE_RU_CLIENT_SECRET: "secret",
         YOUTUBE_RU_REFRESH_TOKEN: "refresh",
       });
-      config.studio.modules.video_posting = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
         if (url === "https://oauth2.googleapis.com/token") return new Response(JSON.stringify({ access_token: "access" }));
@@ -353,7 +338,6 @@ describe("creator analytics collection", () => {
         externalId: "native-comments",
       });
       const config = loadConfig({ INSTAGRAM_RU_ACCESS_TOKEN: "token", INSTAGRAM_RU_USER_ID: "user" });
-      config.studio.modules.video_posting = true;
       config.studio.modules.instagram = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
@@ -395,8 +379,6 @@ describe("creator analytics collection", () => {
         .values({ videoTargetId: targetId, checkpointIndex: 1, lastCheckedAt, nextCheckAt: oldNextCheckAt, updatedAt: lastCheckedAt })
         .run();
       const config = loadConfig({});
-      config.studio.modules.video_posting = true;
-
       expect(
         await runVideoMetricSchedule(config, backendDb, (async () => {
           throw new Error("provider should not be called");
@@ -425,7 +407,6 @@ describe("creator analytics collection", () => {
         YOUTUBE_RU_CLIENT_SECRET: "secret",
         YOUTUBE_RU_REFRESH_TOKEN: "refresh",
       });
-      config.studio.modules.video_posting = true;
       const requested: string[] = [];
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
@@ -517,7 +498,6 @@ describe("creator analytics collection", () => {
         YOUTUBE_RU_CLIENT_SECRET: "secret",
         YOUTUBE_RU_REFRESH_TOKEN: "revoked",
       });
-      config.studio.modules.video_posting = true;
       let refreshRequests = 0;
       const fetchMock = (async (input: URL | RequestInfo) => {
         if (String(input) === "https://oauth2.googleapis.com/token") {
@@ -560,8 +540,6 @@ describe("creator analytics collection", () => {
       const config = loadConfig({
         ZERNIO_API_KEY: "a".repeat(16),
       });
-      config.studio.modules.analytics = true;
-      config.studio.modules.video_posting = true;
       config.studio.modules.instagram = true;
       registerChannel(backendDb, {
         platform: "instagram",

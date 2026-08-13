@@ -56,20 +56,16 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
   // locks behind. Do not wait the ordinary 15-minute crash TTL before the new
   // process can resume the same targets; the short grace still avoids racing a
   // request that was only just interrupted at the provider boundary.
-  if (config.studio.modules.text_posting) {
-    const recoveredAtStartup = recoverStalePublishJobs(backendDb, config, PUBLISH_RESTART_LOCK_GRACE_SECONDS);
-    if (recoveredAtStartup) log("warn", "recovered interrupted publishing locks on worker startup", { recovered: recoveredAtStartup });
-  }
+  const recoveredAtStartup = recoverStalePublishJobs(backendDb, config, PUBLISH_RESTART_LOCK_GRACE_SECONDS);
+  if (recoveredAtStartup) log("warn", "recovered interrupted publishing locks on worker startup", { recovered: recoveredAtStartup });
   if (config.studio.modules.site) {
     const recoveredSiteAtStartup = recoverStaleSiteJobs(backendDb, SITE_JOB_RESTART_LOCK_GRACE_SECONDS);
     if (recoveredSiteAtStartup)
       log("warn", "recovered interrupted site build locks on worker startup", { recovered: recoveredSiteAtStartup });
   }
-  if (config.studio.modules.text_posting) {
-    const recoveredStoryCardsAtStartup = recoverStoryCardJobs(backendDb);
-    if (recoveredStoryCardsAtStartup)
-      log("warn", "recovered interrupted Story card locks on worker startup", { recovered: recoveredStoryCardsAtStartup });
-  }
+  const recoveredStoryCardsAtStartup = recoverStoryCardJobs(backendDb);
+  if (recoveredStoryCardsAtStartup)
+    log("warn", "recovered interrupted Story card locks on worker startup", { recovered: recoveredStoryCardsAtStartup });
   const startWorkerLoop = (name: string, intervalMs: number, task: () => void | Promise<void>) => {
     const heartbeatIntervalMs = config.WORKER_HEARTBEAT_INTERVAL_SECONDS * 1000;
     let publishStartupHeartbeat = true;
@@ -97,61 +93,45 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
     });
   };
   return [
-    ...(config.studio.modules.text_posting
-      ? [
-          startWorkerLoop("story-cards", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
-            await runTimedCycle("content.story_card.cycle", "claimed", () => runStoryCardCycle(config, backendDb));
-          }),
-          startWorkerLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
-            await runTimedCycle("publishing.social.cycle", "claimed", () => runPublishCycle(config, backendDb));
-          }),
-          startWorkerLoop("publish-watchdog", WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
-            const recovered = runPublishWatchdog(config, backendDb);
-            if (recovered) log("warn", "recovered stale publishing locks", { recovered });
-          }),
-        ]
-      : []),
-    ...(config.studio.modules.text_posting || config.studio.modules.video_posting
-      ? [
-          startWorkerLoop("publication-reconciliation", Math.max(60, config.IDLE_POLL_INTERVAL_SECONDS) * 1000, async () => {
-            const result = await runPublicationReconciliation(backendDb, config);
-            log("debug", "publication reconciliation loop tick", result);
-          }),
-        ]
-      : []),
+    startWorkerLoop("story-cards", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
+      await runTimedCycle("content.story_card.cycle", "claimed", () => runStoryCardCycle(config, backendDb));
+    }),
+    startWorkerLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
+      await runTimedCycle("publishing.social.cycle", "claimed", () => runPublishCycle(config, backendDb));
+    }),
+    startWorkerLoop("publish-watchdog", WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
+      const recovered = runPublishWatchdog(config, backendDb);
+      if (recovered) log("warn", "recovered stale publishing locks", { recovered });
+    }),
+    startWorkerLoop("publication-reconciliation", Math.max(60, config.IDLE_POLL_INTERVAL_SECONDS) * 1000, async () => {
+      const result = await runPublicationReconciliation(backendDb, config);
+      log("debug", "publication reconciliation loop tick", result);
+    }),
     startWorkerLoop("notifications", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
       const delivered = runNotificationCycle(backendDb);
       log("debug", "notification loop tick", { delivered });
     }),
-    ...(config.studio.modules.video_posting
-      ? [
-          startWorkerLoop("video", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
-            await runTimedCycle("publishing.video.cycle", "claimed", () => runVideoCycle(config, backendDb));
-          }),
-        ]
-      : []),
-    ...(config.studio.modules.analytics
-      ? [
-          // Two independent collectors on one schedule. They do not share a
-          // failure: a provider outage on one must not silently stop the other.
-          startWorkerLoop("metrics", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
-            await runTimedCycle("analytics.metrics.cycle", "checked", () => runMetricsCycle(config, backendDb));
-          }),
-          startWorkerLoop("creator-analytics", PROFILE_POLL_INTERVAL_SECONDS * 1000, async () => {
-            await runTimedCycle("analytics.creator_cycle", "completed", () => runAnalyticsCycle(config, backendDb));
-          }),
-          // Retention is a housekeeping concern, not a collection one: it used
-          // to run on every metrics tick (10s by default), scanning
-          // metric_samples for a window that moves by a day at a time.
-          startWorkerLoop("metric-retention", 60 * 60 * 1000, async () => {
-            try {
-              pruneMetricSamples(backendDb);
-            } catch (error) {
-              log("error", "failed to prune old metric samples", { error: error instanceof Error ? error.message : String(error) });
-            }
-          }),
-        ]
-      : []),
+    startWorkerLoop("video", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
+      await runTimedCycle("publishing.video.cycle", "claimed", () => runVideoCycle(config, backendDb));
+    }),
+    // Two independent collectors on one schedule. They do not share a
+    // failure: a provider outage on one must not silently stop the other.
+    startWorkerLoop("metrics", config.METRICS_REFRESH_INTERVAL_SECONDS * 1000, async () => {
+      await runTimedCycle("analytics.metrics.cycle", "checked", () => runMetricsCycle(config, backendDb));
+    }),
+    startWorkerLoop("creator-analytics", PROFILE_POLL_INTERVAL_SECONDS * 1000, async () => {
+      await runTimedCycle("analytics.creator_cycle", "completed", () => runAnalyticsCycle(config, backendDb));
+    }),
+    // Retention is a housekeeping concern, not a collection one: it used
+    // to run on every metrics tick (10s by default), scanning
+    // metric_samples for a window that moves by a day at a time.
+    startWorkerLoop("metric-retention", 60 * 60 * 1000, async () => {
+      try {
+        pruneMetricSamples(backendDb);
+      } catch (error) {
+        log("error", "failed to prune old metric samples", { error: error instanceof Error ? error.message : String(error) });
+      }
+    }),
     ...(config.studio.modules.site
       ? [
           startWorkerLoop("site", SITE_JOB_POLL_INTERVAL_SECONDS * 1000, async () => {

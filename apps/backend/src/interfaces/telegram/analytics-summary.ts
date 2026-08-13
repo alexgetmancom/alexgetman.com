@@ -16,7 +16,7 @@ export async function sendWeeklyAnalyticsSummary(
   bot: Bot | null,
   now = new Date(),
 ): Promise<boolean> {
-  if (!bot || !config.studio.modules.analytics) return false;
+  if (!bot) return false;
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-CA", {
       timeZone: config.TIMEZONE,

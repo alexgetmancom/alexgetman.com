@@ -31,9 +31,7 @@ export function analyticsService(backendDb: BackendDb, config: BackendConfig) {
       return trackUsageSync(backendDb, "studio.analytics.post.read", () => creatorPostMedia(backendDb, postId, locale));
     },
     archiveSummary(locale: StudioLocale) {
-      return trackUsageSync(backendDb, "studio.analytics.post.read", () =>
-        creatorArchiveSummary(backendDb, config.studio.modules.video_posting, locale),
-      );
+      return trackUsageSync(backendDb, "studio.analytics.post.read", () => creatorArchiveSummary(backendDb, locale));
     },
     videoArchive(offset: number, locale: StudioLocale) {
       return trackUsageSync(backendDb, "studio.analytics.video.read", () => creatorVideoArchive(backendDb, offset, locale));

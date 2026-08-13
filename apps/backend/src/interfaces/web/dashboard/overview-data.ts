@@ -13,13 +13,7 @@ import { rollingPeriodDates } from "./period-controls.js";
 import { type TextOverview, textOverviewOf } from "./text-overview.js";
 import { xActivityReachSeries } from "./text-reach.js";
 import type { PipelineData, PipelinePost } from "./types.js";
-import {
-  createVideoOverviewCache,
-  emptyVideoOverview,
-  setVideoOverviewCacheRange,
-  type VideoOverview,
-  videoOverview,
-} from "./video-overview.js";
+import { createVideoOverviewCache, setVideoOverviewCacheRange, type VideoOverview, videoOverview } from "./video-overview.js";
 
 type OverviewService = ReturnType<typeof createOperationsService>;
 type OverviewCache = ReturnType<typeof createVideoOverviewCache>;
@@ -45,7 +39,6 @@ type DashboardReadModel = {
     median: VideoOverview;
   };
   text: TextOverview;
-  videoEnabled: boolean;
   videoView: string | null;
   followers: Array<{ key: string; label: string; followers: number | null }>;
   rangeStart: Date;
@@ -77,9 +70,6 @@ export function loadDashboardReadModel(
   const previousEnd = periodDays === 1 ? yesterdayEnd : rollingPeriodDates(weekOffset + 1, periodDays, config.TIMEZONE)[1];
   const previousStart =
     periodDays === 1 ? shiftDays(yesterdayEnd, -29) : rollingPeriodDates(weekOffset + 1, periodDays, config.TIMEZONE)[0];
-  // A text filter no longer removes the video half: the two halves are filtered
-  // independently, on the same screen.
-  const videoEnabled = config.studio.modules.video_posting;
   const medianOffsetDays = weekOffset * periodDays + periodDays;
   const medianPeriodOffset = medianOffsetDays / 30;
   const [medianStart, medianEnd] = rollingPeriodDates(medianPeriodOffset, 30, config.TIMEZONE);
@@ -109,20 +99,12 @@ export function loadDashboardReadModel(
   );
   setVideoOverviewCacheRange(videoCache, videoHistoryStart, videoHistoryEnd, periodDays <= 7 ? 60 * 60 : 24 * 60 * 60);
   const video = timed("videoMs", () => ({
-    current: videoEnabled ? videoForDates(backendDb, config.TIMEZONE, videoCache, start, end, true, videoView) : emptyVideoOverview(),
-    history: videoEnabled
-      ? videoForDates(backendDb, config.TIMEZONE, videoCache, videoHistoryStart, end, true, videoView)
-      : emptyVideoOverview(),
-    comparison: videoEnabled
-      ? videoForDates(backendDb, config.TIMEZONE, videoCache, previousStart, previousEnd, true, videoView)
-      : emptyVideoOverview(),
+    current: videoForDates(backendDb, config.TIMEZONE, videoCache, start, end, true, videoView),
+    history: videoForDates(backendDb, config.TIMEZONE, videoCache, videoHistoryStart, end, true, videoView),
+    comparison: videoForDates(backendDb, config.TIMEZONE, videoCache, previousStart, previousEnd, true, videoView),
     dayComparison:
-      videoEnabled && periodDays === 1
-        ? videoForDates(backendDb, config.TIMEZONE, videoCache, yesterdayStart, yesterdayEnd, true, videoView)
-        : null,
-    median: videoEnabled
-      ? videoForDates(backendDb, config.TIMEZONE, videoCache, medianStart, medianEnd, true, videoView)
-      : emptyVideoOverview(),
+      periodDays === 1 ? videoForDates(backendDb, config.TIMEZONE, videoCache, yesterdayStart, yesterdayEnd, true, videoView) : null,
+    median: videoForDates(backendDb, config.TIMEZONE, videoCache, medianStart, medianEnd, true, videoView),
   }));
   const text = timed("textMs", () => {
     const textHistoryDays = periodDays + 30;
@@ -155,7 +137,6 @@ export function loadDashboardReadModel(
     xActivity,
     video,
     text,
-    videoEnabled,
     videoView: videoView ?? null,
     followers,
     rangeStart: start,
@@ -217,7 +198,6 @@ export function buildOverviewData(
     medianXItems: selectX(readModel.xActivity.median),
     medianVideo: readModel.video.median,
     videoReach: readModel.video.history.dailyByDay,
-    showVideo: readModel.videoEnabled,
     videoView: readModel.videoView ?? undefined,
     textReach: readModel.text,
     followers: readModel.followers,

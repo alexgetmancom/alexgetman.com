@@ -32,7 +32,6 @@ const testDb = useBackendDb(VIDEO_TEST_CHANNELS);
 
 function videoConfig() {
   const config = loadConfig({});
-  config.studio.modules.video_posting = true;
   config.studio.modules.youtube = true;
   config.studio.modules.instagram = true;
   return config;

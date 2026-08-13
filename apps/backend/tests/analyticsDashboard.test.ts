@@ -35,7 +35,6 @@ describe("creator analytics dashboards", () => {
         .run();
 
       const config = loadConfig({});
-      config.studio.modules.video_posting = true;
       config.studio.modules.youtube = true;
       const dashboard = creatorDashboard(backendDb, config, 7);
       expect(dashboard.text).toContain("Видео: 1200 просмотров · 96 взаимодействий");
@@ -82,7 +81,6 @@ describe("creator analytics dashboards", () => {
 
       const config = loadConfig({});
       config.studio.modules.site = true;
-      config.studio.modules.text_posting = true;
       config.studio.modules.youtube = true;
       config.studio.modules.instagram = true;
 
@@ -113,7 +111,6 @@ describe("creator analytics dashboards", () => {
         ])
         .run();
       const config = loadConfig({});
-      config.studio.modules.text_posting = true;
       const overview = studioAnalyticsDashboard(backendDb, config, "overview", 1, "ru").text;
       const postsView = studioAnalyticsDashboard(backendDb, config, "posts", 1, "ru").text;
 
@@ -149,7 +146,6 @@ describe("creator analytics dashboards", () => {
         .values({ platform: "instagram_ru", dataJson: { followersCount: 306, views1d: 63_394, likes1d: 1_227 }, updatedAt: now })
         .run();
       const config = loadConfig({});
-      config.studio.modules.video_posting = true;
       config.studio.modules.instagram = true;
       config.studio.modules.youtube = true;
 
@@ -190,8 +186,6 @@ describe("creator analytics dashboards", () => {
         ])
         .run();
       const config = loadConfig({});
-      config.studio.modules.text_posting = true;
-
       const dashboard = studioAnalyticsDashboard(backendDb, config, "posts", 1, "ru");
       expect(dashboard.text).toContain("| Пост | 👁 | ♥ | 💬 | ↗ | 🔖 |");
       expect(dashboard.text).toContain("| Все | 200 | 20 | 0 | 7 | — |");
@@ -232,15 +226,13 @@ describe("creator analytics dashboards", () => {
         .run();
       pruneMetricSamples(backendDb);
       const config = loadConfig({});
-      config.studio.modules.text_posting = true;
-
       // 50 views of growth, not 950 lifetime and not a dropped row: with the
       // baseline pruned there is no third answer the report could give.
       expect(studioAnalyticsDashboard(backendDb, config, "posts", 30, "ru").text).toContain("| ✈️ Telegram | 0 | — | 50 |");
     });
   });
 
-  it("scopes a video-only Studio audience to its enabled video platforms", async () => {
+  it("scopes the audience to the video platforms this Studio has enabled", async () => {
     await withDb(async (backendDb) => {
       const now = new Date().toISOString();
       backendDb.db
@@ -252,18 +244,20 @@ describe("creator analytics dashboards", () => {
         ])
         .run();
       const config = loadConfig({});
-      config.studio.modules.text_posting = false;
-      config.studio.modules.video_posting = true;
       config.studio.modules.youtube = true;
       config.studio.modules.instagram = true;
 
       const overview = studioAnalyticsDashboard(backendDb, config, "overview", 7, "ru").text;
       const audience = studioAnalyticsDashboard(backendDb, config, "audience", 7, "ru").text;
-      expect(overview).toContain("| 📊 Все | 426 | —");
-      expect(overview).not.toContain("556");
+      expect(overview).toContain("| 📊 Все | 556 | —");
       expect(audience).toContain("Instagram");
       expect(audience).toContain("YouTube");
-      expect(audience).not.toContain("Telegram");
+      expect(audience).toContain("Telegram");
+
+      config.studio.modules.instagram = false;
+      const withoutInstagram = studioAnalyticsDashboard(backendDb, config, "audience", 7, "ru").text;
+      expect(withoutInstagram).not.toContain("Instagram");
+      expect(withoutInstagram).toContain("YouTube");
     });
   });
 
@@ -275,8 +269,6 @@ describe("creator analytics dashboards", () => {
         .values({ postKey: "post:1", target: "telegram", metricName: "views", value: 10, sampledAt: now })
         .run();
       const config = loadConfig({});
-      config.studio.modules.text_posting = true;
-
       const dashboard = studioAnalyticsDashboard(backendDb, config, "posts", 30, "en").text;
       expect(dashboard).not.toContain("History has been collected since");
     });

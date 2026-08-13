@@ -105,7 +105,6 @@ describe("creator profile sync boundary", () => {
         THREADS_RU_ACCESS_TOKEN: "threads-token",
         TELEGRAM_CHANNEL_USERNAME: "@alexchannel",
       });
-      config.studio.modules.text_posting = true;
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
         if (url.includes("getChatMemberCount")) return new Response(JSON.stringify({ ok: true, result: 512 }));

@@ -64,10 +64,9 @@ Copy the secret template and select the modules you actually use:
 
 ```bash
 cp apps/backend/secrets.env.example apps/backend/secrets.env
-cp studio.unified.example.yaml studio.yaml
 ```
 
-`studio.yaml` is the committed, secret-free feature switchboard. Credentials stay in the ignored `apps/backend/secrets.env`. A text-only Studio can run the website and Telegram path without configuring the video platforms; a video-only example is included as `studio.video-only.example.yaml`.
+`studio.yaml` is the committed, secret-free feature switchboard. Credentials stay in the ignored `apps/backend/secrets.env`. Text posting, video posting and analytics always run; what a Studio declares is its public site and which video platforms it publishes to. The second Studio is included as `studio.maru.example.yaml`.
 
 The private Telegram bot and MCP endpoint operate the same Studio services. Posts created through either interface land in the same drafts, schedules, publication jobs, and analytics.
 

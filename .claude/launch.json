@@ -25,11 +25,11 @@
         "DISABLE_WORKERS": "1",
         "COMMAND_CENTER_TOKEN": "dev",
         "COMMAND_CENTER_URL": "http://localhost:4321/command-center",
-        "STUDIO_CONFIG": "studio.unified.example.yaml"
+        "STUDIO_CONFIG": "studio.yaml"
       }
     },
     {
-      "name": "web-dev-video-only",
+      "name": "web-dev-maru",
       "runtimeExecutable": "bun",
       "runtimeArgs": ["--bun", "astro", "dev"],
       "port": 4321,
@@ -39,7 +39,7 @@
         "DISABLE_WORKERS": "1",
         "COMMAND_CENTER_TOKEN": "dev",
         "COMMAND_CENTER_URL": "http://localhost:4321/command-center",
-        "STUDIO_CONFIG": "studio.video-only.example.yaml"
+        "STUDIO_CONFIG": "studio.maru.example.yaml"
       }
     },
     {
@@ -53,7 +53,7 @@
         "DISABLE_WORKERS": "1",
         "COMMAND_CENTER_TOKEN": "dev",
         "COMMAND_CENTER_URL": "http://localhost:4322/command-center",
-        "STUDIO_CONFIG": "studio.unified.example.yaml",
+        "STUDIO_CONFIG": "studio.yaml",
         "CONTROLLER_BOT_TOKEN": "mock",
         "THREADS_RU_ACCESS_TOKEN": "mock",
         "THREADS_EN_ACCESS_TOKEN": "mock",

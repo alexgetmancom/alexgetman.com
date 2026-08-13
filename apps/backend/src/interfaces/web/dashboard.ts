@@ -50,8 +50,6 @@ function dashboardCacheKey(
 ): string {
   return JSON.stringify({
     timezone: config.TIMEZONE,
-    textPosting: config.studio.modules.text_posting,
-    videoPosting: config.studio.modules.video_posting,
     studioActorId: config.MCP_STUDIO_ACTOR_ID ?? null,
     request: [
       weekOffset,
@@ -144,14 +142,10 @@ export function renderDashboard(
   const hasAttention = ops ? opsNeedsAttention(ops) : commandCenterAttentionState(service.attention());
   const attentionMs = Date.now() - attentionStartedAt;
   const periodDays = [1, 7, 30, 90, 365].includes(Number(requestedPeriod)) ? Number(requestedPeriod) : 1;
-  const activeView =
-    showPosts && config.studio.modules.text_posting && AUDIENCE_VIEWS.includes(requestedView as AudienceView)
-      ? (requestedView as AudienceView)
-      : undefined;
+  const activeView = showPosts && AUDIENCE_VIEWS.includes(requestedView as AudienceView) ? (requestedView as AudienceView) : undefined;
   const platformMetric: PlatformMetric = requestedMetric === "followers" ? "followers" : "reach";
   // `target:locale`, the same key the video destination registry uses.
-  const videoView =
-    showPosts && config.studio.modules.video_posting && /^[a-z_]+:(ru|en)$/.test(requestedVideoView ?? "") ? requestedVideoView : undefined;
+  const videoView = showPosts && /^[a-z_]+:(ru|en)$/.test(requestedVideoView ?? "") ? requestedVideoView : undefined;
   const localeParam = localeQuery(locale);
   const panelLink = (value: DashboardPanel) =>
     `/command-center?tab=posts&panel=${value}${periodDays !== 1 ? `&period=${periodDays}` : ""}${localeParam}`;
@@ -266,7 +260,7 @@ export function renderDashboardPublicationDetails(
 ): PublicationDetailsResult {
   // Each half asks for its own list. Without the track the endpoint answered
   // both at once, so "показать ещё" under the clips appended posts.
-  const wantsVideo = track !== "text" && config.studio.modules.video_posting;
+  const wantsVideo = track !== "text";
   const wantsText = track !== "video";
   const targetIds = dashboardTargetIds(requestedView);
   const data = wantsText

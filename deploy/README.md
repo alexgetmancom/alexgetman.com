@@ -96,36 +96,25 @@ with `DEPLOY_RETRY_ATTEMPTS`, `DEPLOY_RETRY_BACKOFF_MS` and
 `DEPLOY_RETRY_MAX_BACKOFF_MS` in the host environment. Permanent image errors such
 as an unknown digest are not retried.
 
-## Enabling text posting for a second Studio
+## Naming the Telegram channel of a second Studio
 
-Text posting is off for Maru because a Studio publishes to its own channel, and
-until that channel is named there is nothing safe to publish to. `TELEGRAM_CHANNEL_USERNAME`
-carries a default that is a real, live username — the first Studio's — so a
-second Studio that enables `text_posting` without setting it would publish into
-someone else's channel. The application now refuses to start in production in
+Every Studio publishes text, so every Studio must name its own channel.
+`TELEGRAM_CHANNEL_USERNAME` carries a default that is a real, live username —
+the first Studio's — so a second Studio that leaves it unset would publish into
+someone else's channel. The application refuses to start in production in
 exactly that state rather than doing it silently.
-
-To enable it, both files change together:
 
 ```dotenv
 # /home/deploy/maru/secrets.env
 TELEGRAM_CHANNEL_USERNAME=marux_play
 ```
 
-```yaml
-# /home/deploy/maru/studio.yaml
-modules:
-  text_posting: true
-```
+The channel registry adds the `telegram` channel as soon as a bot token and a
+channel name exist. Verify with `ops channels`, which must list
+`telegram · ru · native` with the account.
 
-Then recreate the container. Nothing else is required: the channel registry adds
-the `telegram` channel as soon as a bot token and a channel name exist, and the
-Command Center gains the `Все / Текст / Видео` filter because the Studio now has
-two halves to compare. Verify with `ops channels`, which must list
-`telegram · ru · native` with the new account.
-
-The site module stays off: a Studio can publish text to Telegram without
-publishing a website.
+The site module stays off for Maru: a Studio can publish text to Telegram
+without publishing a website.
 
 ## Operating a Studio from its own machine
 

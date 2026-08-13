@@ -51,7 +51,6 @@ export async function handleVideoConversationMessage(
   backendDb: BackendDb,
   config: BackendConfig,
 ): Promise<PublicationMessageResult> {
-  if (!config.studio.modules.video_posting) return { handled: false, effects: [] };
   const actorId = Number(ctx.from?.id);
   const session = getVideoState(backendDb, actorId);
   if (!session) return { handled: false, effects: [] };

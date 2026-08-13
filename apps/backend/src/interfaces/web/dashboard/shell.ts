@@ -230,7 +230,6 @@ export function renderDashboardShell(body: string, locale: StudioLocale): string
     .overview-track { min-width:0; padding:0; border:0; border-radius:0; background:transparent; overflow:visible; line-height:1.5; }
     .overview-track--text { padding-right:38px; }
     .overview-track--video { padding-left:38px; border-left:1px solid var(--border-soft); }
-    .overview-split--single .overview-track { padding-left:0; padding-right:0; border-left:0; }
     .overview-track .hero-card { min-width:0; margin:0; padding:0; border:0; border-radius:0; background:transparent; }
     /* No min-height. The dashboard does not set a global border-box, so 48px of
        declared minimum landed on top of the 26px of padding and opened a 27px

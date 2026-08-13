@@ -199,20 +199,10 @@ describe("creatorArchiveSummary", () => {
       publishedPost(backendDb, { postId: 2, text: "two" });
       insertPublishedVideo(backendDb, { target: "youtube_shorts", publishedAt: at });
 
-      const summary = creatorArchiveSummary(backendDb, true);
+      const summary = creatorArchiveSummary(backendDb);
       expect(summary).toMatchObject({ posts: 2, videos: 1 });
       expect(summary.text).toContain("Posts: *2*");
       expect(summary.text).toContain("Videos: *1*");
-    });
-  });
-
-  it("omits the video line entirely when the account has no video pipeline", () => {
-    return withDb((backendDb) => {
-      insertPublishedVideo(backendDb, { target: "youtube_shorts", publishedAt: at });
-
-      const summary = creatorArchiveSummary(backendDb, false);
-      expect(summary.videos).toBe(0);
-      expect(summary.text).not.toContain("Videos");
     });
   });
 
@@ -221,7 +211,7 @@ describe("creatorArchiveSummary", () => {
       publishedPost(backendDb, { postId: 1, text: "published" });
       publishedPost(backendDb, { postId: 2, text: "draft", status: "draft" });
 
-      expect(creatorArchiveSummary(backendDb, false).posts).toBe(creatorPostArchive(backendDb).total);
+      expect(creatorArchiveSummary(backendDb).posts).toBe(creatorPostArchive(backendDb).total);
     });
   });
 });

@@ -28,7 +28,6 @@ describe("creator analytics deltas", () => {
         .values({ videoTargetId: targetId, platform: "youtube_shorts", metricsJson: { views: 180, likes: 8 }, sampledAt: now })
         .run();
       const config = loadConfig({});
-      config.studio.modules.video_posting = true;
       config.studio.modules.youtube = true;
 
       expect(creatorDashboard(backendDb, config, 1).text).toContain("Видео: 80 просмотров · 3 взаимодействий");
@@ -52,8 +51,6 @@ describe("creator analytics deltas", () => {
         .run();
       const config = loadConfig({});
       config.studio.modules.site = true;
-      config.studio.modules.text_posting = true;
-
       const text = creatorDashboard(backendDb, config, 1).text;
       expect(text).toContain("Сайт: 45 просмотров материалов");
       expect(text).toContain("Посты: 30 просмотров · 5 взаимодействий");
@@ -177,7 +174,6 @@ describe("creator analytics deltas", () => {
         })
         .run();
       const config = loadConfig({});
-      config.studio.modules.video_posting = true;
       config.studio.modules.youtube = true;
       registerChannel(backendDb, { platform: "youtube", locale: "ru", provider: "native", label: "YouTube RU" });
 

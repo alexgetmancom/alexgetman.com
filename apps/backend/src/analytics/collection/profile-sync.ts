@@ -304,12 +304,8 @@ export async function syncCommunityProfiles(
   const jobs: Promise<void>[] = [];
   const interval = config.CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS;
   const ownerPrefix = owner ?? `community:${crypto.randomUUID()}`;
-  // A controller bot is not itself a Telegram publishing channel. In a
-  // video-only Studio (such as Maru) TELEGRAM_CHANNEL_USERNAME may merely fall back to
-  // the legacy default, so collecting it would leak another creator's audience
-  // into this dashboard.
+  // A controller bot is not itself a Telegram publishing channel.
   if (
-    config.studio.modules.text_posting &&
     config.controllerBotToken &&
     claimSync(backendDb, "telegram_profile", { intervalSeconds: interval, owner: `${ownerPrefix}:telegram` })
   )

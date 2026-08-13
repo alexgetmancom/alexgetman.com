@@ -36,7 +36,6 @@ async function step(backendDb: BackendDb, name: string, featureKey: string, run:
 
 /** Runs the transport-neutral analytics collection cycle. */
 export async function runAnalyticsCycle(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): Promise<number> {
-  if (!config.studio.modules.analytics) return 0;
   const profileInterval = config.CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS;
   let profiles = 0;
   const channels = listChannels(backendDb);
@@ -82,10 +81,9 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
       syncCommunityProfiles(config, backendDb, fetchImpl, `community:${crypto.randomUUID()}`),
     );
   evaluateAudienceMilestones(backendDb);
-  if (config.studio.modules.video_posting)
-    profiles += await step(backendDb, "video_metrics", "analytics.video_metrics.collect", () =>
-      runVideoMetricSchedule(config, backendDb, fetchImpl),
-    );
+  profiles += await step(backendDb, "video_metrics", "analytics.video_metrics.collect", () =>
+    runVideoMetricSchedule(config, backendDb, fetchImpl),
+  );
   // A successful collection is worker telemetry, not a creator notification.
   // Keeping it out of the domain event journal prevents every metrics cycle
   // from becoming an unread Inbox item in every Studio interface.

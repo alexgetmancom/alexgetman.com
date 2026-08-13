@@ -1,0 +1,17 @@
+# The second Studio (Maru): no public site, and YouTube publishing on. Text,
+# video and analytics need no declaration — every Studio runs all three.
+timezone: Europe/Moscow
+timezone_label: MSK
+
+modules:
+  site: false
+  youtube: true
+  instagram: true
+
+analytics:
+  default_tab: video
+
+video:
+  prepare_lead_minutes: 15
+  reminder_minutes: 5
+  retention_hours: 24

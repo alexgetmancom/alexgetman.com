@@ -35,7 +35,6 @@ import { pruneExpiredVideos } from "./video-retention.js";
 import { publishZernioInstagramReel } from "./zernio.js";
 
 export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb): Promise<number> {
-  if (!config.studio.modules.video_posting) return 0;
   recoverVideoLocks(backendDb, config);
   let claimed = 0;
   // Deliberately serial, unlike the social pipeline's per-target lanes

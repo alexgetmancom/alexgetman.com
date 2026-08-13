@@ -485,7 +485,6 @@ const en = {
   "editorial.kind-roundup": "Roundup",
   "editorial.kind-idea": "Idea",
   "editorial.posts": "Posts",
-  "bot.video-disabled": "Video publishing is disabled in studio.yaml.",
   "bot.command-start": "Restore bot menu",
   "weekly.digest": "Weekly digest",
   // Domain error codes (thrown as StudioError, rendered by the adapter)
@@ -1161,7 +1160,6 @@ const ru = {
   "editorial.kind-roundup": "Итог",
   "editorial.kind-idea": "Идея",
   "editorial.posts": "Посты",
-  "bot.video-disabled": "Видеопубликация выключена в studio.yaml.",
   "bot.command-start": "Восстановить меню бота",
   "weekly.digest": "Итоги недели",
   // Domain error codes (thrown as StudioError, rendered by the adapter)

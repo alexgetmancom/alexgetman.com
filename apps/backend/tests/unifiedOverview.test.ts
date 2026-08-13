@@ -281,7 +281,6 @@ describe("unified overview video read model", () => {
     try {
       seedVideo(backendDb, new Date().toISOString());
       const config = loadConfig({});
-      config.studio.modules.video_posting = true;
       config.studio.modules.youtube = true;
 
       const readModel = loadDashboardReadModel(
