@@ -29,12 +29,25 @@ export type StudioQueueSnapshot = {
   attention: StudioQueueAttentionItem[];
 };
 
+export type StudioQueueActivity = Pick<StudioQueueItem, "id" | "label" | "time" | "kind">;
+
 const MAX_QUEUE_ROWS = 100;
 
 /** Read-only work inbox for every Studio interface. It deliberately returns
  * entity references, not Telegram callbacks or display markup. */
 export function queueService(backendDb: BackendDb, config: BackendConfig) {
   return {
+    headline(actorId: number): { upcoming: StudioQueueActivity | null; published: StudioQueueActivity | null } {
+      const actorIds = accessibleStudioActorIds(config, actorId);
+      const upcoming = this.snapshot(actorId).upcoming[0] ?? null;
+      const published = backendDb.studioQueue.latestPublished(actorIds);
+      return {
+        upcoming,
+        published: published
+          ? { id: published.id, label: shorten(published.label), time: new Date(published.publishedAt), kind: published.kind }
+          : null,
+      };
+    },
     snapshot(actorId: number, limit = MAX_QUEUE_ROWS): StudioQueueSnapshot {
       return trackUsageSync(backendDb, "studio.queue.read", () => {
         const upcoming: StudioQueueItem[] = [];

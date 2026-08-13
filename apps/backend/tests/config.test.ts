@@ -6,11 +6,6 @@ import { loadConfig } from "../src/foundation/config.js";
 import { loadStudioConfig } from "../src/studio.js";
 
 describe("loadConfig", () => {
-  it("loads the display name of each production Studio", () => {
-    expect(loadStudioConfig(join(import.meta.dir, "../../../studio.alex.yaml")).displayName).toBe("Alex Studio");
-    expect(loadStudioConfig(join(import.meta.dir, "../../../studio.maru.yaml")).displayName).toBe("Maru Studio");
-  });
-
   it("keeps production data paths compatible", () => {
     const config = loadConfig({});
     expect(config.PIPELINE_DB).toBe("/data/pipeline.db");

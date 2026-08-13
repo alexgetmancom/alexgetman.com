@@ -7,6 +7,7 @@ import { settingsService } from "../studio/services/settings.js";
 import { clearConversationState, getConversationState } from "./conversation-state.js";
 import { cancelPromptKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
+import { mainMenuText } from "./menu-render.js";
 import { type PostWizardStep, postStateStep, postStepData } from "./post-flow.js";
 import { showStoryCardChoice } from "./post-story-cards.js";
 import { canEditLocale, type DraftView, modeLabel } from "./preview.js";
@@ -105,7 +106,9 @@ async function handleCancelConfirm(args: PostActionArgs): Promise<PublicationAct
 async function handleCancelDialog(args: PostActionArgs): Promise<PublicationActionResult> {
   return [
     { type: "session", operation: "clear", kind: args.callback.kind, actorId: args.actorId },
-    ...(args.mainMenu ? [{ type: "main-menu", menu: args.mainMenu, text: args.config.studio.displayName, edit: true } as const] : []),
+    ...(args.mainMenu
+      ? [{ type: "main-menu", menu: args.mainMenu, text: mainMenuText(args.backendDb, args.config, args.actorId), edit: true } as const]
+      : []),
   ];
 }
 

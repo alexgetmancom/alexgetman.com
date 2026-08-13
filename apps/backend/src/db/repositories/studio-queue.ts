@@ -1,6 +1,12 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
-import type { StudioQueuePost, StudioQueueStore, StudioQueueVideo, StudioQueueVideoTarget } from "../../application/ports.js";
-import { draftStoryCards, drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../schema.js";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import type {
+  StudioQueuePost,
+  StudioQueuePublished,
+  StudioQueueStore,
+  StudioQueueVideo,
+  StudioQueueVideoTarget,
+} from "../../application/ports.js";
+import { draftStoryCards, drafts, posts, postTargets, publishJobs, siteJobs, videoDrafts, videoTargets } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite adapter for the transport-neutral Studio queue projection. */
@@ -46,6 +52,32 @@ export function createStudioQueueStore(db: BackendDatabase): StudioQueueStore {
           .limit(limit)
           .all()
       );
+    },
+
+    latestPublished(actorIds: number[]): StudioQueuePublished | null {
+      const post = db
+        .select({ id: drafts.id, label: drafts.textRu, publishedAt: postTargets.publishedAt })
+        .from(drafts)
+        .innerJoin(posts, eq(posts.postId, drafts.postId))
+        .innerJoin(postTargets, eq(postTargets.postKey, posts.postKey))
+        .where(and(inArray(drafts.actorId, actorIds), eq(postTargets.status, "published"), isNotNull(postTargets.publishedAt)))
+        .orderBy(desc(postTargets.publishedAt))
+        .limit(1)
+        .get();
+      const video = db
+        .select({ id: videoDrafts.id, label: videoDrafts.label, publishedAt: videoTargets.publishedAt })
+        .from(videoDrafts)
+        .innerJoin(videoTargets, eq(videoTargets.videoDraftId, videoDrafts.id))
+        .where(and(inArray(videoDrafts.actorId, actorIds), eq(videoTargets.status, "published"), isNotNull(videoTargets.publishedAt)))
+        .orderBy(desc(videoTargets.publishedAt))
+        .limit(1)
+        .get();
+      if (!post?.publishedAt && !video?.publishedAt) return null;
+      if (post?.publishedAt && (!video?.publishedAt || post.publishedAt >= video.publishedAt)) {
+        return { id: post.id, label: post.label, kind: "post", publishedAt: post.publishedAt };
+      }
+      if (!video?.publishedAt) return null;
+      return { id: video.id, label: video.label, kind: "video", publishedAt: video.publishedAt };
     },
 
     failedPostIds(postIds: number[]): number[] {

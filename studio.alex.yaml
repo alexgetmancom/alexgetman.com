@@ -1,7 +1,5 @@
 # Canonical Alex production config, deployed verbatim with the compose file.
 # Secrets always live in an ignored .env file.
-display_name: Alex Studio
-
 # IANA zone used for every displayed schedule time; timezone_label is the short
 # suffix shown next to it (e.g. "18:30 MSK").
 timezone: Europe/Moscow

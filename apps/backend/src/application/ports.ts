@@ -156,9 +156,17 @@ type StudioPostProgress = {
 export type StudioQueueStore = {
   posts(actorIds: number[], limit: number): StudioQueuePost[];
   videos(actorIds: number[], limit: number): StudioQueueVideo[];
+  latestPublished(actorIds: number[]): StudioQueuePublished | null;
   failedPostIds(postIds: number[]): number[];
   failedStoryCardDraftIds(draftIds: number[]): number[];
   videoTargets(publicationIds: number[]): StudioQueueVideoTarget[];
+};
+
+export type StudioQueuePublished = {
+  id: number;
+  label: string;
+  kind: "post" | "video";
+  publishedAt: string;
 };
 
 export type StudioQueuePost = {

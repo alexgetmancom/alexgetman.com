@@ -15,7 +15,7 @@ import type { StudioZernioAccount } from "../studio/services/channels.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
 import { clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
-import { persistentKeyboard } from "./menu-render.js";
+import { mainMenuText, persistentKeyboard } from "./menu-render.js";
 
 export const SETTINGS_MENU_ID = "settings-menu";
 const PUBLISHING_MENU_ID = "settings-publishing";
@@ -458,7 +458,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
       .row()
       .back(t(locale, "common.menu"), async (ctx) => {
         await ctx.answerCallbackQuery();
-        await ctx.editMessageText(config.studio.displayName);
+        await ctx.editMessageText(mainMenuText(backendDb, config, Number(ctx.from?.id)));
       });
   });
   publishing.register(channels);

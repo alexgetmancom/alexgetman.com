@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { join } from "node:path";
 import type { Menu } from "@grammyjs/menu";
 import type { Context } from "grammy";
-import { showMainMenu } from "../src/bot/menu-render.js";
+import { renderMainMenuHeadline, showMainMenu } from "../src/bot/menu-render.js";
 import { buildMainMenu } from "../src/bot/navigation.js";
 import { buildSettingsMenu } from "../src/bot/settings-screen.js";
 import { isAdmin } from "../src/bot.js";
@@ -60,9 +59,9 @@ describe("isAdmin", () => {
 });
 
 describe("buildMainMenu", () => {
-  it("renders the configured Studio name above the menu", async () => {
+  it("renders an empty queue status above the menu", async () => {
     backendDb = openBackendDb(":memory:");
-    const config = loadConfig({ STUDIO_CONFIG: join(import.meta.dir, "../../../studio.alex.yaml") });
+    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "1" });
     const mainMenu = buildMainMenu(config, backendDb, buildSettingsMenu(config, backendDb));
     let text = "";
     const ctx = {
@@ -71,9 +70,20 @@ describe("buildMainMenu", () => {
       },
     } as unknown as Context;
 
-    await showMainMenu(ctx, config, mainMenu);
+    await showMainMenu(ctx, backendDb, config, mainMenu);
 
-    expect(text).toBe("Alex Studio");
+    expect(text).toBe("✅ Queue is empty");
+  });
+
+  it("uses calendar-relative labels for recent and upcoming activity", () => {
+    const now = new Date("2026-08-13T18:00:00.000Z");
+    const published = { id: 1, label: "Published yesterday", time: new Date("2026-08-12T12:08:00.000Z"), kind: "post" as const };
+    const upcoming = { id: 2, label: "Coming tomorrow", time: new Date("2026-08-14T17:00:00.000Z"), kind: "video" as const };
+
+    expect(renderMainMenuHeadline({ upcoming: null, published }, "ru", "Europe/Moscow", now)).toBe(
+      "✅ Вчера, 15:08 · 📝 Published yesterday",
+    );
+    expect(renderMainMenuHeadline({ upcoming, published }, "ru", "Europe/Moscow", now)).toBe("⏭ Завтра, 20:00 · 🎬 Coming tomorrow");
   });
 
   it("offers post creation, video creation and analytics", async () => {

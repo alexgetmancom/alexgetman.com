@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Context } from "grammy";
 import { queueScreen, showQueue } from "../src/bot/queue.js";
-import { draftStoryCards, drafts, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
+import { draftStoryCards, drafts, posts, postTargets, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import type { StudioQueueSnapshot } from "../src/studio/services/queue.js";
 import { queueService } from "../src/studio/services/queue.js";
@@ -10,6 +10,83 @@ import { openBackendDb } from "./helpers/open-db.js";
 import { createTestVideoAsset } from "./helpers/video.js";
 
 describe("Telegram work queue", () => {
+  it("finds the latest successful publication across posts and videos", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const postPublishedAt = "2026-08-12T12:00:00.000Z";
+      const videoPublishedAt = "2026-08-13T12:00:00.000Z";
+      backendDb.db
+        .insert(drafts)
+        .values({
+          actorId: 7,
+          status: "published",
+          textRu: "Published post",
+          targetsJson: "{}",
+          postId: 10,
+          createdAt: postPublishedAt,
+          updatedAt: postPublishedAt,
+        })
+        .run();
+      backendDb.db
+        .insert(posts)
+        .values({
+          postKey: "post:10",
+          postId: 10,
+          channel: "studio",
+          messageId: 10,
+          dateUtc: postPublishedAt,
+          text: "Published post",
+          createdAt: postPublishedAt,
+          updatedAt: postPublishedAt,
+        })
+        .run();
+      backendDb.db
+        .insert(postTargets)
+        .values({
+          postKey: "post:10",
+          target: "telegram",
+          status: "published",
+          publishedAt: postPublishedAt,
+          updatedAt: postPublishedAt,
+        })
+        .run();
+      const video = backendDb.db
+        .insert(videoDrafts)
+        .values({
+          actorId: 7,
+          studioMediaAssetId: createTestVideoAsset(backendDb, 7),
+          label: "Published video",
+          status: "published",
+          createdAt: videoPublishedAt,
+          updatedAt: videoPublishedAt,
+        })
+        .returning({ id: videoDrafts.id })
+        .get();
+      if (!video) throw new Error("video draft missing");
+      backendDb.db
+        .insert(videoTargets)
+        .values({
+          videoDraftId: video.id,
+          target: "youtube_shorts",
+          metadataJson: {},
+          status: "published",
+          publishedAt: videoPublishedAt,
+          createdAt: videoPublishedAt,
+          updatedAt: videoPublishedAt,
+        })
+        .run();
+
+      expect(queueService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "7" })).headline(7).published).toEqual({
+        id: video.id,
+        label: "Published video",
+        kind: "video",
+        time: new Date(videoPublishedAt),
+      });
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("separates upcoming work, unfinished drafts and actual failed targets", () => {
     const backendDb = openBackendDb(":memory:");
     try {

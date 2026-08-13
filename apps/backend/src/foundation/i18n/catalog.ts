@@ -26,6 +26,7 @@ const en = {
   "common.schedule-parse-error": "I couldn't read that date and time. Send `HH:MM` or `DD.MM.YYYY HH:MM` in {timezone}.",
   "common.scheduled": "Scheduled",
   "common.today": "Today",
+  "common.yesterday": "Yesterday",
   "common.tomorrow": "Tomorrow",
   "common.untitled": "Untitled",
   // Navigation
@@ -35,6 +36,7 @@ const en = {
   "menu.work-queue-count": "📋 Work queue · {count}",
   "menu.analytics": "📊 Analytics",
   "menu.button": "☰ Menu",
+  "menu.queue-empty": "✅ Queue is empty",
   "settings.title": "⚙️ Settings",
   "settings.category-publishing": "📡 Publishing",
   "settings.category-notifications": "🔔 Notifications",
@@ -687,6 +689,7 @@ const ru = {
   "common.schedule-parse-error": "Не удалось распознать дату и время. Отправьте `ЧЧ:ММ` или `ДД.ММ.ГГГГ ЧЧ:ММ` по {timezone}.",
   "common.scheduled": "Запланировано",
   "common.today": "Сегодня",
+  "common.yesterday": "Вчера",
   "common.tomorrow": "Завтра",
   "common.untitled": "Без названия",
   // Navigation
@@ -696,6 +699,7 @@ const ru = {
   "menu.work-queue-count": "📋 Очередь · {count}",
   "menu.analytics": "📊 Статистика",
   "menu.button": "☰ Меню",
+  "menu.queue-empty": "✅ Очередь пуста",
   "settings.title": "⚙️ Настройки",
   "settings.category-publishing": "📡 Публикация",
   "settings.category-notifications": "🔔 Уведомления",

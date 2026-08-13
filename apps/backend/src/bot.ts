@@ -92,12 +92,12 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     await ctx.reply(t(locale, "start.menu-hint"), {
       reply_markup: persistentKeyboard(locale),
     });
-    await showMainMenu(ctx, config, mainMenu);
+    await showMainMenu(ctx, backendDb, config, mainMenu);
   };
   bot.command("start", showBotMenu);
   bot.hears(localizedTextVariants(["menu.button"]), async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return;
-    await showMainMenu(ctx, config, mainMenu);
+    await showMainMenu(ctx, backendDb, config, mainMenu);
   });
   bot.hears("⚙️", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return;
@@ -169,7 +169,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       handle: async (ctx) => {
         clearTelegramAnalyticsDashboard(backendDb, Number(ctx.from?.id));
         await ctx.answerCallbackQuery();
-        await showMainMenu(ctx, config, mainMenu, true);
+        await showMainMenu(ctx, backendDb, config, mainMenu, true);
         return true;
       },
     },
