@@ -1,0 +1,60 @@
+name: solo-publisher
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN to the hostname this Studio answers on}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    depends_on:
+      - app
+
+  app:
+    image: ${SOLO_PUBLISHER_IMAGE:-ghcr.io/alexgetmancom/solo-publisher:latest}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /data
+      PIPELINE_DB: /data/pipeline.db
+      SITE_PUBLIC_DIR: /data/site
+      MEDIA_CACHE_DIR: /data/media-cache
+      VIDEO_MEDIA_DIR: /data/video-media
+      STORY_CARD_DIR: /data/story-cards
+      STUDIO_CONFIG: /app/studio.yaml
+      PUBLIC_BASE_URL: https://${DOMAIN:?set DOMAIN to the hostname this Studio answers on}
+      NODE_ENV: production
+      DEPLOYMENT_ENV: production
+      # Caddy terminates TLS and is the only thing that can reach this port, so
+      # the address it forwards is the real client's.
+      TRUSTED_CLIENT_IP_HEADER: x-real-ip
+      BIND_HOST: 0.0.0.0
+      PORT: "8788"
+    volumes:
+      - ./studio.yaml:/app/studio.yaml:ro
+      - app-data:/data
+    # No published ports: the application is reachable only through Caddy.
+    expose:
+      - "8788"
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:8788/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  app-data:
+  caddy-data:
+  caddy-config:

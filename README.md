@@ -6,7 +6,7 @@
 
 Solo Publisher is an agent-native, self-hosted publishing studio for solo creators. Write from Telegram or an MCP client such as Codex, then publish to your website and social channels with durable scheduling, independent retries, media processing, and creator analytics.
 
-[Live site](https://alexgetman.com) · [Quick start](#quick-start) · [Production architecture](#how-it-works)
+[Live site](https://alexgetman.com) · [Install](#install) · [Production architecture](#how-it-works)
 
 ![A live publication powered by Solo Publisher](docs/assets/live-site.png)
 
@@ -40,13 +40,40 @@ Solo Publisher deliberately serves one owner instead of reproducing agency softw
 
 ![Solo Publisher Command Center with text and video analytics](docs/assets/command-center.png)
 
-## Quick start
+## Install
 
-Requirements: [Bun 1.3.14](https://bun.sh/) and the native build prerequisites required by `sharp`.
+Requirements: Docker, and a domain whose DNS already points at the machine.
 
 ```bash
 git clone https://github.com/alexgetmancom/solo-publisher.git
 cd solo-publisher
+cp .env.example .env
+```
+
+Set `DOMAIN` in `.env`, then generate the two secrets it asks for:
+
+```bash
+openssl rand -hex 32
+```
+
+```bash
+docker compose up -d
+```
+
+Caddy obtains and renews the TLS certificate itself, so there is no certbot and no renewal timer to set up. Within a minute:
+
+- Public site: `https://your-domain/`
+- Command Center: `https://your-domain/command-center`
+
+Only Caddy publishes ports; the application is reachable through it alone. Nothing else in `.env` is required to start — a Studio with no credentials serves its site and its Command Center and publishes nowhere. Add a Telegram bot, then connect destinations from the Command Center or over MCP; `docker compose exec app bun /app/ops/cli.js doctor` lists what each one still needs.
+
+`studio.yaml` holds deployment behavior that is not a publishing connection: whether this Studio serves a public site, its time zone, and video timing. Update with `docker compose pull && docker compose up -d`; diagnose with `docker compose logs -f app`.
+
+## Try it without installing
+
+Requirements: [Bun 1.3.14](https://bun.sh/) and the native build prerequisites required by `sharp`.
+
+```bash
 bun install --frozen-lockfile
 bun run demo
 ```
@@ -58,7 +85,7 @@ The demo creates deterministic fixture content, builds the production Astro bund
 
 The fixture is deliberately not all-green: it includes enough history, delivery state, and analytics to make the operational views useful. Stop the server with `Ctrl+C`; run `bun run demo` again to rebuild the fixture from scratch.
 
-## Connect your own Studio
+## Running it from source
 
 Copy the secret template:
 
@@ -66,7 +93,7 @@ Copy the secret template:
 cp apps/backend/secrets.env.example apps/backend/secrets.env
 ```
 
-`studio.yaml` contains only deployment behavior that is not a publishing connection: whether this Studio serves the public site, its time zone, and video timing. Credentials stay in the ignored `apps/backend/secrets.env`; connected destinations live in the channel registry. Text posting, video posting and analytics always run. The second Studio is included as `studio.maru.example.yaml`.
+`studio.yaml` contains only deployment behavior that is not a publishing connection: whether this Studio serves the public site, its time zone, and video timing. Credentials stay in the ignored `apps/backend/secrets.env`; connected destinations live in the channel registry. Text posting, video posting and analytics always run. The second Studio is included as `studio.maru.yaml`.
 
 The private Telegram bot and MCP endpoint operate the same Studio services. Posts created through either interface land in the same drafts, schedules, publication jobs, and analytics.
 
@@ -117,7 +144,7 @@ Heavy media processing can run locally with ffmpeg or through the included remot
 - SQLite and Drizzle ORM
 - MCP over HTTP
 - ffmpeg and sharp
-- Docker Compose, nginx, and immutable-image deployment
+- Docker Compose, Caddy, and immutable-image deployment
 
 There is no Redis, RabbitMQ, separate database server, or multi-tenant application layer.
 

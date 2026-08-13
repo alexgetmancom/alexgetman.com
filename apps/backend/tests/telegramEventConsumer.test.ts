@@ -8,9 +8,10 @@ import { setTelegramPostCard, setTelegramPostProgressCard, setTelegramVideoCard 
 import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";
 import { refreshVideoControlCard, sendStudioCompletion, sendStudioReminder } from "../src/interfaces/telegram/video-notifications.js";
 import { withDb } from "./helpers/db.js";
+import { MSK_STUDIO_CONFIG } from "./helpers/studio-config.js";
 import { createTestVideoAsset } from "./helpers/video.js";
 
-const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+const config = loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, CONTROLLER_ADMIN_IDS: "42" });
 
 function milestone(message: string) {
   return { type: "analytics.milestone.reached", severity: "info" as const, message };
@@ -174,7 +175,7 @@ describe("Telegram event consumer", () => {
         options,
       }));
       const bot = { api: { sendMessage } } as unknown as Bot;
-      const sharedConfig = loadConfig({ CONTROLLER_ADMIN_IDS: "42,7" });
+      const sharedConfig = loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, CONTROLLER_ADMIN_IDS: "42,7" });
 
       await sendStudioReminder(backendDb, bot, sharedConfig, {
         postKey: "publication:video:10",

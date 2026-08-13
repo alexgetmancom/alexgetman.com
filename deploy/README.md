@@ -21,7 +21,7 @@ socket and can only request a rollback using a private bearer-authenticated rout
    ```
 
    `deploy-image.env` must initially contain the immutable image that is currently
-   working, for example `BACKEND_IMAGE=ghcr.io/alexgetmancom/alexgetman-backend@sha256:...`.
+   working, for example `BACKEND_IMAGE=ghcr.io/alexgetmancom/solo-publisher@sha256:...`.
    Never seed it with `latest`; rollback is deliberately refused without a digest.
 
    Both compose files are committed — [alex.compose.yaml](alex.compose.yaml) and
@@ -124,9 +124,9 @@ work lands in the same workspace the owner sees in the Telegram bot. `ops doctor
 `studioTransportConfigured` when both are set. Media travels separately, as a raw body to
 `/api/studio/media`.
 
-Both routes are on the public site of the first Studio already. The second Studio's nginx server
-block is an allowlist that ends in `return 404`, so each route it should answer is named in
-[nginx/production/marux.ru.conf](nginx/production/marux.ru.conf) explicitly.
+Both routes are on the public site of the first Studio already. The second Studio is an allowlist
+in the host proxy that ends in `respond 404`, so each route it should answer is named in
+[caddy/Caddyfile](caddy/Caddyfile) explicitly.
 
 The operator's machine installs the `studio` plugin, which carries both the MCP server and the
 skill that drives it. That setup is driven by an agent rather than by hand:

@@ -99,8 +99,8 @@ describe("generateStoryMedia source resolution", () => {
 
     const [item] = await generateStoryMedia([{ type: "photo", file_id: "AgACAgIA" }], 9, "ru", config(root), fetchImpl);
 
-    expect(urls[0]).toBe("http://bot-api:8081/botbot-token/getFile");
-    expect(urls[1]).toBe("http://bot-api:8081/file/botbot-token/photos/file_1.jpg");
+    expect(urls[0]).toBe("https://api.telegram.org/botbot-token/getFile");
+    expect(urls[1]).toBe("https://api.telegram.org/file/botbot-token/photos/file_1.jpg");
     expect(fs.existsSync(path.join(root, "story-media", "draft-9-ru-source.jpg"))).toBe(true);
     expect(item?.storyLocalPath).toBeString();
   });

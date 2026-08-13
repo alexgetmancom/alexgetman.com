@@ -27,7 +27,7 @@ import { storyFfmpegArgs } from "../deploy/media-processor/story-encode.js";
 
 const image = process.env.IMAGE;
 if (!image) {
-  console.error("IMAGE is required, e.g. IMAGE=ghcr.io/owner/alexgetman-backend:tag");
+  console.error("IMAGE is required, e.g. IMAGE=ghcr.io/owner/solo-publisher:tag");
   process.exit(1);
 }
 
@@ -127,8 +127,6 @@ try {
     "-e",
     "SITE_PUBLIC_DIR=/data/site",
     "-e",
-    "-e",
-    "-e",
     "MEDIA_CACHE_DIR=/data/media-cache",
     "-e",
     "VIDEO_MEDIA_DIR=/data/video-media",
@@ -139,7 +137,7 @@ try {
     "-e",
     "PORT=8788",
     "-e",
-    "TELEGRAM_CHANNEL_USERNAME=alexgetmancom",
+    "TELEGRAM_CHANNEL_USERNAME=smoke-channel",
     image,
   ]);
   if (created.code !== 0) throw new Error(`docker create failed: ${created.out}`);

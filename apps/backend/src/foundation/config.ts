@@ -20,15 +20,17 @@ const envSchema = z
     DATA_DIR: z.string().default("/data"),
     STUDIO_CONFIG: z.string().default("studio.yaml"),
     PIPELINE_DB: z.string().default("/data/pipeline.db"),
-    TELEGRAM_API_BASE_URL: z.string().default("http://bot-api:8081"),
+    // Telegram's own API. A deployment that runs a local Bot API server — the
+    // way to lift the 50 MB download limit for video — points this at it
+    // instead; the default must work for an install that does not.
+    TELEGRAM_API_BASE_URL: z.string().default("https://api.telegram.org"),
     CONTROLLER_BOT_TOKEN: z.string().optional(),
     CLIENT_IP_HASH_SALT: z.string().min(16).default("development-only"),
-    // Defaulted, not optional: every production nginx vhost sets X-Real-IP, and
+    // Defaulted, not optional: the host proxy sets X-Real-IP on every route, and
     // when this was unset the whole internet collapsed onto one visitor identity
     // (see engagement/identity.ts), making the public rate limit one global budget.
     TRUSTED_CLIENT_IP_HEADER: z.enum(["x-real-ip", "cf-connecting-ip"]).default("x-real-ip"),
     COMMAND_CENTER_TOKEN: z.string().optional(),
-    COMMAND_CENTER_URL: z.string().default("https://alexgetman.com/command-center"),
     MCP_STUDIO_TOKEN: z.string().min(16).optional(),
     MCP_STUDIO_ACTOR_ID: z.coerce.number().int().positive().optional(),
     DEEPSEEK_API_KEY: z.string().optional(),
@@ -154,7 +156,10 @@ const envSchema = z
     TELEGRAM_CHANNEL_STORIES_API_HASH: z.string().optional(),
     TELEGRAM_CHANNEL_STORIES_SESSION: z.string().optional(),
     REMOTE_MEDIA_PATH: z.string().default("/feed-data/media"),
-    PUBLIC_MEDIA_BASE_URL: z.string().default("https://alexgetman.com/media"),
+    // Only Studios that hand a platform a fetchable media URL set this. It is
+    // optional rather than defaulted because a default here is someone else's
+    // domain, and it is resolved against PUBLIC_BASE_URL below.
+    PUBLIC_MEDIA_BASE_URL: z.string().optional(),
     PUBLIC_BASE_URL: z.string().default("https://alexgetman.com"),
     DEPLOY_AGENT_URL: z.url().optional(),
     DEPLOY_AGENT_TOKEN: z.string().min(16).optional(),
@@ -227,6 +232,13 @@ export type BackendConfig = z.infer<typeof envSchema> & {
   TIMEZONE_LABEL: string;
   controllerBotToken: string | undefined;
   commandCenterToken: string | undefined;
+  /** Where this Studio's dashboard lives. Derived, never configured: it is
+   * PUBLIC_BASE_URL with one fixed path, and two settings for one address drift
+   * into a same-origin check that rejects the real login form. */
+  COMMAND_CENTER_URL: string;
+  /** Resolved against PUBLIC_BASE_URL when this Studio does not serve its media
+   * from a separate location. */
+  PUBLIC_MEDIA_BASE_URL: string;
   studio: StudioConfig;
 };
 
@@ -247,6 +259,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
   // username. Development keeps the convenience.
   if (parsed.NODE_ENV === "production" && !env.TELEGRAM_CHANNEL_USERNAME)
     throw new Error("TELEGRAM_CHANNEL_USERNAME must be set explicitly in production");
+  // Same hazard, different surface: the default is a live site, so a Studio
+  // that does not name its own would put the first one's domain in its feeds,
+  // its sitemap and its canonical URLs.
+  if (parsed.NODE_ENV === "production" && !env.PUBLIC_BASE_URL) throw new Error("PUBLIC_BASE_URL must be set explicitly in production");
   if (parsed.MEDIA_PROCESSOR_PROVIDER === "remote_http" && (!parsed.MEDIA_PROCESSOR_URL || !parsed.MEDIA_PROCESSOR_TOKEN)) {
     throw new Error("MEDIA_PROCESSOR_URL and MEDIA_PROCESSOR_TOKEN are required when MEDIA_PROCESSOR_PROVIDER=remote_http");
   }
@@ -259,6 +275,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
     TIMEZONE_LABEL: studio.timezoneLabel,
     controllerBotToken: parsed.CONTROLLER_BOT_TOKEN,
     commandCenterToken: parsed.COMMAND_CENTER_TOKEN,
+    COMMAND_CENTER_URL: `${parsed.PUBLIC_BASE_URL.replace(/\/$/, "")}/command-center`,
+    PUBLIC_MEDIA_BASE_URL: parsed.PUBLIC_MEDIA_BASE_URL ?? `${parsed.PUBLIC_BASE_URL.replace(/\/$/, "")}/media`,
     studio,
   };
 }

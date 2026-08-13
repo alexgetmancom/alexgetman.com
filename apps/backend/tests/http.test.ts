@@ -254,7 +254,7 @@ describe("Astro endpoint controller", () => {
       const app = createApiApp(
         loadConfig({
           COMMAND_CENTER_TOKEN: "secret",
-          COMMAND_CENTER_URL: "https://marux.ru/command-center",
+          PUBLIC_BASE_URL: "https://marux.ru",
           SITE_PUBLIC_DIR: dir,
         }),
         backendDb,

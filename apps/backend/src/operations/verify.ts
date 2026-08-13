@@ -27,7 +27,7 @@ export async function verifyPostTargets(backendDb: BackendDb, ref: string): Prom
       if (!record.url) return { ...record, ok: true, reason: "no_public_url_known" };
       try {
         const response = await fetch(record.url, {
-          headers: { "user-agent": "alexgetman-backend-verify/1.0" },
+          headers: { "user-agent": "solo-publisher-verify/1.0" },
           redirect: "follow",
           signal: AbortSignal.timeout(15_000),
         });

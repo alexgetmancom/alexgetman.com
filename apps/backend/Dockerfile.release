@@ -1,5 +1,5 @@
 # Commit-specific backend image assembled from the stable runtime base.
-ARG RUNTIME_BASE_IMAGE=ghcr.io/alexgetmancom/alexgetman-backend:runtime-base
+ARG RUNTIME_BASE_IMAGE=ghcr.io/alexgetmancom/solo-publisher:runtime-base
 FROM ${RUNTIME_BASE_IMAGE} AS app
 
 WORKDIR /app

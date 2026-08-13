@@ -1,0 +1,13 @@
+# Fixture for tests whose subject is scheduling in a non-UTC zone: the weekly
+# digest weekday, the daily inbox hour, dashboard time buckets. They must not
+# read the product's default studio.yaml, because changing that default would
+# then break tests that have nothing to do with it.
+timezone: Europe/Moscow
+timezone_label: MSK
+
+site_enabled: true
+
+video:
+  prepare_lead_minutes: 15
+  reminder_minutes: 5
+  retention_hours: 24

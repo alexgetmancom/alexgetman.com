@@ -4,6 +4,7 @@ import { loadConfig } from "../src/foundation/config.js";
 import { type GrokSpawn, sendDailyNewsDigest } from "../src/interfaces/telegram/news-digest.js";
 import { settingsService } from "../src/studio/services/settings.js";
 import { withDb } from "./helpers/db.js";
+import { MSK_STUDIO_CONFIG } from "./helpers/studio-config.js";
 
 const textEncoder = new TextEncoder();
 
@@ -46,7 +47,7 @@ describe("daily news digest", () => {
           },
         },
       } as unknown as Bot;
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42,7" });
+      const config = loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, CONTROLLER_ADMIN_IDS: "42,7" });
       const now = new Date("2026-07-20T07:30:00.000Z");
 
       expect(await sendDailyNewsDigest(config, backendDb, bot, now, { spawn })).toEqual({ status: "sent" });
@@ -95,7 +96,7 @@ describe("daily news digest", () => {
         };
       };
       const bot = { api: { sendDocument: async () => undefined } } as unknown as Bot;
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+      const config = loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, CONTROLLER_ADMIN_IDS: "42" });
       const now = new Date("2026-07-20T07:30:00.000Z");
 
       expect(await sendDailyNewsDigest(config, backendDb, bot, now, { spawn })).toEqual({ status: "disabled" });
@@ -133,7 +134,7 @@ describe("daily news digest", () => {
           },
         },
       } as unknown as Bot;
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+      const config = loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, CONTROLLER_ADMIN_IDS: "42" });
 
       const result = await sendDailyNewsDigest(config, backendDb, bot, new Date("2026-07-20T07:30:00.000Z"), { spawn });
 
@@ -167,7 +168,7 @@ describe("daily news digest", () => {
           },
         },
       } as unknown as Bot;
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+      const config = loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, CONTROLLER_ADMIN_IDS: "42" });
 
       const result = await sendDailyNewsDigest(config, backendDb, bot, new Date("2026-07-20T07:30:00.000Z"), { spawn });
 
@@ -194,7 +195,7 @@ describe("daily news digest", () => {
           },
         },
       } as unknown as Bot;
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+      const config = loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, CONTROLLER_ADMIN_IDS: "42" });
 
       const result = await sendDailyNewsDigest(config, backendDb, bot, new Date("2026-07-20T07:30:00.000Z"), { spawn });
 
@@ -210,7 +211,7 @@ describe("daily news digest", () => {
         throw new Error("Grok should not start before the schedule");
       };
       const bot = { api: { sendDocument: async () => undefined } } as unknown as Bot;
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+      const config = loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, CONTROLLER_ADMIN_IDS: "42" });
 
       expect(await sendDailyNewsDigest(config, backendDb, bot, new Date("2026-07-20T06:59:00.000Z"), { spawn })).toEqual({
         status: "not_due",

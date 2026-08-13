@@ -9,7 +9,7 @@ describe("loadConfig", () => {
   it("keeps production data paths compatible", () => {
     const config = loadConfig({});
     expect(config.PIPELINE_DB).toBe("/data/pipeline.db");
-    expect(config.TELEGRAM_API_BASE_URL).toBe("http://bot-api:8081");
+    expect(config.TELEGRAM_API_BASE_URL).toBe("https://api.telegram.org");
     expect(config.LOG_LEVEL).toBe("info");
     expect(config.STUDIO_MEDIA_MAX_BYTES).toBe(1_000_000_000);
     expect(config.VIDEO_MAX_BYTES).toBe(1_000_000_000);
@@ -26,8 +26,32 @@ describe("loadConfig", () => {
         COMMAND_CENTER_TOKEN: "b".repeat(16),
         CLIENT_IP_HASH_SALT: "s".repeat(16),
         TELEGRAM_CHANNEL_USERNAME: "example",
+        PUBLIC_BASE_URL: "https://studio.example.com",
       }).NODE_ENV,
     ).toBe("production");
+  });
+
+  it("refuses to publish another Studio's domain", () => {
+    // The default is a live site. Without this, a self-hosted Studio's feeds,
+    // sitemap and canonical URLs all point at alexgetman.com.
+    const production = {
+      NODE_ENV: "production",
+      DEPLOYMENT_ENV: "production",
+      COMMAND_CENTER_TOKEN: "b".repeat(16),
+      CLIENT_IP_HASH_SALT: "s".repeat(16),
+      TELEGRAM_CHANNEL_USERNAME: "example",
+    };
+    expect(() => loadConfig(production)).toThrow("PUBLIC_BASE_URL");
+
+    // One address, one setting: the dashboard URL and the media base follow the
+    // site rather than being configured a second time.
+    const config = loadConfig({ ...production, PUBLIC_BASE_URL: "https://studio.example.com/" });
+    expect(config.COMMAND_CENTER_URL).toBe("https://studio.example.com/command-center");
+    expect(config.PUBLIC_MEDIA_BASE_URL).toBe("https://studio.example.com/media");
+    expect(
+      loadConfig({ ...production, PUBLIC_BASE_URL: "https://s.example.com", PUBLIC_MEDIA_BASE_URL: "https://cdn.example.com/m" })
+        .PUBLIC_MEDIA_BASE_URL,
+    ).toBe("https://cdn.example.com/m");
   });
 
   it("uses controller token as primary bot token", () => {

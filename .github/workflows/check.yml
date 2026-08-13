@@ -34,7 +34,7 @@ jobs:
       backend_image_changed: ${{ steps.filter.outputs.backend_image }}
       runtime_config_changed: ${{ steps.filter.outputs.runtime_config }}
       deploy_agent_changed: ${{ steps.filter.outputs.deploy_agent }}
-      nginx_config_changed: ${{ steps.filter.outputs.nginx_config }}
+      caddy_config_changed: ${{ steps.filter.outputs.caddy_config }}
       deployment_required: ${{ steps.filter.outputs.deployment }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -60,7 +60,7 @@ jobs:
           backend_image=false
           runtime_config=false
           deploy_agent=false
-          nginx_config=false
+          caddy_config=false
           deployment=false
 
           while IFS= read -r path; do
@@ -78,7 +78,7 @@ jobs:
                 backend_image=true
                 deployment=true
                 ;;
-              deploy/alex.compose.yaml | deploy/maru.compose.yaml | studio.yaml | studio.maru.example.yaml)
+              deploy/alex.compose.yaml | deploy/maru.compose.yaml | studio.alex.yaml | studio.maru.yaml)
                 runtime_config=true
                 deployment=true
                 ;;
@@ -86,8 +86,8 @@ jobs:
                 deploy_agent=true
                 deployment=true
                 ;;
-              deploy/nginx/production/*)
-                nginx_config=true
+              deploy/caddy/*)
+                caddy_config=true
                 deployment=true
                 ;;
               .github/workflows/check.yml)
@@ -103,11 +103,11 @@ jobs:
             echo "backend_image=$backend_image"
             echo "runtime_config=$runtime_config"
             echo "deploy_agent=$deploy_agent"
-            echo "nginx_config=$nginx_config"
+            echo "caddy_config=$caddy_config"
             echo "deployment=$deployment"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Changed areas: media=$media dependencies=$dependencies backend_image=$backend_image runtime_config=$runtime_config nginx_config=$nginx_config deployment=$deployment"
+          echo "Changed areas: media=$media dependencies=$dependencies backend_image=$backend_image runtime_config=$runtime_config caddy_config=$caddy_config deployment=$deployment"
 
   deployment-status-pending:
     name: Production deployment
@@ -165,6 +165,21 @@ jobs:
         run: bun run check:layers
       - name: Dockerfile workspace manifests
         run: bun run check:docker
+      - name: Self-host stack
+        # The install path published in the README is not exercised by anything
+        # else here: nothing in this repository runs it, so without this it
+        # rots silently and the first person to find out is a stranger.
+        run: |
+          set -euo pipefail
+          sed 's/^DOMAIN=.*/DOMAIN=publisher.example.com/' .env.example > .env
+          docker compose -f compose.yaml config --quiet
+          rm -f .env
+          docker compose -f deploy/caddy/compose.yaml config --quiet
+          for file in Caddyfile deploy/caddy/Caddyfile; do
+            docker run --rm -v "$PWD/$file:/etc/caddy/Caddyfile:ro" \
+              -e DOMAIN=publisher.example.com -e ACME_EMAIL=ci@example.com \
+              caddy:2.10-alpine sh -c 'caddy fmt /etc/caddy/Caddyfile >/dev/null && caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile'
+          done
 
   quality-tests:
     name: Tests with coverage threshold
@@ -228,8 +243,9 @@ jobs:
           bun build apps/backend/src/runtime/config-check.ts --outdir entrypoint --target bun --minify --sourcemap=external
           test -f entrypoint/docker-entrypoint.js
           test -f entrypoint/config-check.js
+          STUDIO_CONFIG="$PWD/studio.alex.yaml" bun entrypoint/config-check.js
+          STUDIO_CONFIG="$PWD/studio.maru.yaml" bun entrypoint/config-check.js
           STUDIO_CONFIG="$PWD/studio.yaml" bun entrypoint/config-check.js
-          STUDIO_CONFIG="$PWD/studio.maru.example.yaml" bun entrypoint/config-check.js
           grep -q '"/app/entrypoint/docker-entrypoint.js"' apps/backend/Dockerfile
           grep -q '"/app/entrypoint/docker-entrypoint.js"' apps/backend/Dockerfile.release
           bun build apps/backend/src/story-cards/renderer-process.ts --outdir story-renderer --target bun --minify --sourcemap=external
@@ -308,7 +324,7 @@ jobs:
         id: reuse
         if: needs.scope.outputs.backend_image_changed != 'true'
         env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend:latest
+          IMAGE: ghcr.io/${{ github.repository_owner }}/solo-publisher:latest
         run: |
           set -euo pipefail
 
@@ -333,7 +349,7 @@ jobs:
         id: runtime_base
         if: needs.scope.outputs.backend_image_changed == 'true' || steps.reuse.outputs.digest == ''
         env:
-          BASE_IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend:runtime-${{ hashFiles('bun.lock', 'apps/backend/package.json', 'tools/knip/package.json', 'tools/svelte-check/package.json', 'tools/layer-checker/package.json', 'apps/backend/Dockerfile.runtime-base') }}
+          BASE_IMAGE: ghcr.io/${{ github.repository_owner }}/solo-publisher:runtime-${{ hashFiles('bun.lock', 'apps/backend/package.json', 'tools/knip/package.json', 'tools/svelte-check/package.json', 'tools/layer-checker/package.json', 'apps/backend/Dockerfile.runtime-base') }}
         run: |
           echo "image=$BASE_IMAGE" >> "$GITHUB_OUTPUT"
           if docker buildx imagetools inspect "$BASE_IMAGE" >/dev/null 2>&1; then
@@ -354,9 +370,9 @@ jobs:
           push: true
           tags: |
             ${{ steps.runtime_base.outputs.image }}
-            ghcr.io/${{ github.repository_owner }}/alexgetman-backend:runtime-base
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/alexgetman-backend:buildcache-runtime
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/alexgetman-backend:buildcache-runtime,mode=max
+            ghcr.io/${{ github.repository_owner }}/solo-publisher:runtime-base
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/solo-publisher:buildcache-runtime
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/solo-publisher:buildcache-runtime,mode=max
       - name: Build and publish backend image
         id: build_image
         if: needs.scope.outputs.backend_image_changed == 'true' || steps.reuse.outputs.digest == ''
@@ -371,7 +387,7 @@ jobs:
           push: true
           # `latest` is moved by the deploy job, not here: the reuse path above
           # reads it, so it must mean "the image production is running".
-          tags: ghcr.io/${{ github.repository_owner }}/alexgetman-backend:${{ github.sha }}
+          tags: ghcr.io/${{ github.repository_owner }}/solo-publisher:${{ github.sha }}
           # No build cache here on purpose: this stage is COPY of per-commit
           # artifacts onto the runtime base, so nothing is ever reusable and the
           # export was writing ~70s of cache no build could hit.
@@ -395,7 +411,7 @@ jobs:
           bun-version: 1.3.14
       - name: Image smoke test
         env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend@${{ steps.image.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/solo-publisher@${{ steps.image.outputs.digest }}
           DRIZZLE_MIGRATIONS_DIR: apps/backend/drizzle
         run: bun smoke/image-smoke.js
 
@@ -461,13 +477,13 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_AGENT_TOKEN: ${{ secrets.DEPLOY_AGENT_TOKEN }}
-          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend@${{ needs.backend-image.outputs.image_digest }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/solo-publisher@${{ needs.backend-image.outputs.image_digest }}
           MEDIA_PROCESSOR_IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor@${{ needs.media-processor-image.outputs.image_digest }}
           RELEASE: ${{ github.sha }}
           MARU_DEPLOY_ENABLED: ${{ vars.MARU_DEPLOY_ENABLED }}
           RUNTIME_CONFIG_CHANGED: ${{ needs.scope.outputs.runtime_config_changed }}
           DEPLOY_AGENT_CHANGED: ${{ needs.scope.outputs.deploy_agent_changed }}
-          NGINX_CONFIG_CHANGED: ${{ needs.scope.outputs.nginx_config_changed }}
+          CADDY_CONFIG_CHANGED: ${{ needs.scope.outputs.caddy_config_changed }}
         run: |
           phase_started=$SECONDS
           phase() {
@@ -483,41 +499,45 @@ jobs:
           ssh "${ssh_opts[@]}" "$remote" "install -d -m 0700 /var/lib/alexgetman-deploy"
           ssh "${ssh_opts[@]}" "$remote" "umask 077; printf '%s\\n' '$media_release' > /var/lib/alexgetman-deploy/media-processor-release.json"
           runtime=/home/deploy/alexgetman-runtime
+          caddy_runtime=/home/deploy/caddy
           release_files="$runtime/release-files/$RELEASE"
           ssh "${ssh_opts[@]}" "$remote" "install -d -m 0700 '$release_files'"
           release_paths=()
           if [ "$RUNTIME_CONFIG_CHANGED" = "true" ]; then
-            release_paths+=(deploy/alex.compose.yaml deploy/maru.compose.yaml studio.yaml studio.maru.example.yaml)
+            release_paths+=(deploy/alex.compose.yaml deploy/maru.compose.yaml studio.alex.yaml studio.maru.yaml)
           fi
           if [ "$DEPLOY_AGENT_CHANGED" = "true" ]; then
             release_paths+=(deploy/deploy-agent.ts deploy/retry.ts)
           fi
-          if [ "$NGINX_CONFIG_CHANGED" = "true" ]; then
-            release_paths+=(deploy/nginx/production/*.conf)
+          if [ "$CADDY_CONFIG_CHANGED" = "true" ]; then
+            release_paths+=(deploy/caddy/Caddyfile deploy/caddy/compose.yaml)
           fi
           if [ "${#release_paths[@]}" -gt 0 ]; then
             tar -cf - "${release_paths[@]}" | ssh "${ssh_opts[@]}" "$remote" "tar -xf - -C '$release_files'"
           fi
           if [ "$RUNTIME_CONFIG_CHANGED" = "true" ]; then
-            ssh "${ssh_opts[@]}" "$remote" "set -e; cp '$release_files/deploy/alex.compose.yaml' $runtime/compose.yaml.next; cp '$release_files/studio.yaml' $runtime/studio.yaml.next; docker compose --env-file $runtime/deploy-image.env -f $runtime/compose.yaml.next config --quiet; mv $runtime/compose.yaml.next $runtime/compose.yaml; mv $runtime/studio.yaml.next $runtime/studio.yaml"
+            ssh "${ssh_opts[@]}" "$remote" "set -e; cp '$release_files/deploy/alex.compose.yaml' $runtime/compose.yaml.next; cp '$release_files/studio.alex.yaml' $runtime/studio.yaml.next; docker compose --env-file $runtime/deploy-image.env -f $runtime/compose.yaml.next config --quiet; mv $runtime/compose.yaml.next $runtime/compose.yaml; mv $runtime/studio.yaml.next $runtime/studio.yaml"
           fi
           if [ "$DEPLOY_AGENT_CHANGED" = "true" ]; then
             ssh "${ssh_opts[@]}" "$remote" "set -e; install -m 0644 '$release_files/deploy/deploy-agent.ts' /home/deploy/repos/alexgetman.com/deploy/deploy-agent.ts; install -m 0644 '$release_files/deploy/retry.ts' /home/deploy/repos/alexgetman.com/deploy/retry.ts; sudo systemctl restart alexgetman-deploy-agent; for attempt in 1 2 3 4 5; do curl --fail --silent http://127.0.0.1:9899/healthz && exit 0; sleep 1; done; exit 1"
           fi
-          ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$runtime; image=\$(bun -e 'const state=JSON.parse(await Bun.file(\"/var/lib/alexgetman-deploy/state.json\").text()); process.stdout.write(state.current?.image ?? \"\")'); printf '%s\\n' \"\$image\" | grep -Eq '^ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' || exit 1; if ! grep -Eq '^BACKEND_IMAGE=ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' \"\$runtime/deploy-image.env\"; then tmp=\"\$runtime/deploy-image.env.next\"; { grep -v '^BACKEND_IMAGE=' \"\$runtime/deploy-image.env\" || true; printf 'BACKEND_IMAGE=%s\\n' \"\$image\"; } > \"\$tmp\"; mv \"\$tmp\" \"\$runtime/deploy-image.env\"; fi"
+          ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$runtime; image=\$(bun -e 'const state=JSON.parse(await Bun.file(\"/var/lib/alexgetman-deploy/state.json\").text()); process.stdout.write(state.current?.image ?? \"\")'); printf '%s\\n' \"\$image\" | grep -Eq '^ghcr.io/alexgetmancom/solo-publisher@sha256:[0-9a-fA-F]{64}\$' || exit 1; if ! grep -Eq '^BACKEND_IMAGE=ghcr.io/alexgetmancom/solo-publisher@sha256:[0-9a-fA-F]{64}\$' \"\$runtime/deploy-image.env\"; then tmp=\"\$runtime/deploy-image.env.next\"; { grep -v '^BACKEND_IMAGE=' \"\$runtime/deploy-image.env\" || true; printf 'BACKEND_IMAGE=%s\\n' \"\$image\"; } > \"\$tmp\"; mv \"\$tmp\" \"\$runtime/deploy-image.env\"; fi"
           if [ "$MARU_DEPLOY_ENABLED" = "true" ]; then
             maru_runtime=/home/deploy/maru
-            ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$maru_runtime; image_id=\$(docker inspect --format '{{.Image}}' maru-backend); image=\$(docker image inspect --format '{{index .RepoDigests 0}}' \"\$image_id\"); printf '%s\\n' \"\$image\" | grep -Eq '^ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' || exit 1; if ! grep -Eq '^BACKEND_IMAGE=ghcr.io/alexgetmancom/alexgetman-backend@sha256:[0-9a-fA-F]{64}\$' \"\$runtime/deploy-image.env\" 2>/dev/null; then tmp=\"\$runtime/deploy-image.env.next\"; { grep -v '^BACKEND_IMAGE=' \"\$runtime/deploy-image.env\" 2>/dev/null || true; printf 'BACKEND_IMAGE=%s\\n' \"\$image\"; } > \"\$tmp\"; mv \"\$tmp\" \"\$runtime/deploy-image.env\"; fi"
+            ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$maru_runtime; image_id=\$(docker inspect --format '{{.Image}}' maru-backend); image=\$(docker image inspect --format '{{index .RepoDigests 0}}' \"\$image_id\"); printf '%s\\n' \"\$image\" | grep -Eq '^ghcr.io/alexgetmancom/solo-publisher@sha256:[0-9a-fA-F]{64}\$' || exit 1; if ! grep -Eq '^BACKEND_IMAGE=ghcr.io/alexgetmancom/solo-publisher@sha256:[0-9a-fA-F]{64}\$' \"\$runtime/deploy-image.env\" 2>/dev/null; then tmp=\"\$runtime/deploy-image.env.next\"; { grep -v '^BACKEND_IMAGE=' \"\$runtime/deploy-image.env\" 2>/dev/null || true; printf 'BACKEND_IMAGE=%s\\n' \"\$image\"; } > \"\$tmp\"; mv \"\$tmp\" \"\$runtime/deploy-image.env\"; fi"
             if [ "$RUNTIME_CONFIG_CHANGED" = "true" ]; then
-              ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$maru_runtime; cp '$release_files/deploy/maru.compose.yaml' \$runtime/maru.compose.yaml.next; cp '$release_files/studio.maru.example.yaml' \$runtime/studio.yaml.next; docker compose --env-file \$runtime/deploy-image.env -f \$runtime/maru.compose.yaml.next config --quiet; mv \$runtime/maru.compose.yaml.next \$runtime/maru.compose.yaml; mv \$runtime/studio.yaml.next \$runtime/studio.yaml"
+              ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$maru_runtime; cp '$release_files/deploy/maru.compose.yaml' \$runtime/maru.compose.yaml.next; cp '$release_files/studio.maru.yaml' \$runtime/studio.yaml.next; docker compose --env-file \$runtime/deploy-image.env -f \$runtime/maru.compose.yaml.next config --quiet; mv \$runtime/maru.compose.yaml.next \$runtime/maru.compose.yaml; mv \$runtime/studio.yaml.next \$runtime/studio.yaml"
             fi
           fi
           phase runtime-config
-          if [ "$NGINX_CONFIG_CHANGED" = "true" ]; then
-            nginx_files="$release_files/deploy/nginx/production"
-            ssh "${ssh_opts[@]}" "$remote" "set -e; sudo install -d -m 0755 /etc/nginx/snippets; sudo install -m 0644 '$nginx_files/shared443.conf' /etc/nginx/stream-conf.d/shared443.conf; sudo install -m 0644 '$nginx_files/marux.ru-ssl.conf' /etc/nginx/sites-enabled/marux.ru-ssl; sudo install -m 0644 '$nginx_files/marux.ru.conf' /etc/nginx/sites-enabled/marux.ru; sudo rm -f /etc/nginx/sites-enabled/marux.ru-bootstrap; sudo install -m 0644 '$nginx_files/alexgetman.com-ssl.conf' /etc/nginx/sites-enabled/alexgetman.com-ssl; sudo install -m 0644 '$nginx_files/alexgetman.com.conf' /etc/nginx/sites-enabled/alexgetman.com; sudo rm -f /etc/nginx/sites-enabled/ialexey.ru-ssl /etc/nginx/sites-enabled/ialexey.ru; sudo install -m 0644 '$nginx_files/alexgetman-proxy-headers.conf' /etc/nginx/snippets/alexgetman-proxy-headers.conf; sudo rm -f /etc/nginx/snippets/alexgetman-cache.conf /etc/nginx/snippets/alexgetman-command-center.conf; sudo nginx -t; sudo systemctl reload nginx"
+          if [ "$CADDY_CONFIG_CHANGED" = "true" ]; then
+            caddy_files="$release_files/deploy/caddy"
+            # `caddy validate` parses the file the container will read, so a
+            # typo fails here instead of taking every domain down on reload.
+            # A reload keeps connections; it does not restart the proxy.
+            ssh "${ssh_opts[@]}" "$remote" "set -e; cp '$caddy_files/Caddyfile' $caddy_runtime/Caddyfile.next; cp '$caddy_files/compose.yaml' $caddy_runtime/compose.yaml.next; docker compose -f $caddy_runtime/compose.yaml.next config --quiet; docker exec -i caddy caddy validate --adapter caddyfile --config - < $caddy_runtime/Caddyfile.next; mv $caddy_runtime/Caddyfile.next $caddy_runtime/Caddyfile; mv $caddy_runtime/compose.yaml.next $caddy_runtime/compose.yaml; docker exec caddy caddy reload --config /etc/caddy/Caddyfile"
           fi
-          phase nginx-config
+          phase caddy-config
           payload=$(printf '{"image":"%s","release":"%s"}' "$IMAGE" "$RELEASE")
           ssh "${ssh_opts[@]}" "$remote" "curl --fail-with-body --silent --show-error --max-time 180 -H 'Authorization: Bearer $DEPLOY_AGENT_TOKEN' -H 'Content-Type: application/json' --data '$payload' http://127.0.0.1:9899/v1/deploy"
           phase backend-activation
@@ -546,7 +566,7 @@ jobs:
       # the image job can never pick up something that was never deployed.
       - name: Point latest at the deployed image
         env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-backend
+          IMAGE: ghcr.io/${{ github.repository_owner }}/solo-publisher
           DIGEST: ${{ needs.backend-image.outputs.image_digest }}
         run: docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE@$DIGEST"
       # Published here rather than from a follow-up job: a whole runner boot for

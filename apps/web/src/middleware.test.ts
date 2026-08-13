@@ -22,7 +22,7 @@ async function handle(pathname: string, accept?: string): Promise<Rewritten> {
 
 describe("site middleware", () => {
   it("serves the Markdown twin at the canonical URL", async () => {
-    // nginx did this with four rewrites. Moved here it ships in the image, so a
+    // The host proxy did this with four rewrites. Moved here it ships in the image, so a
     // self-hosted Studio gets the behaviour the README promises.
     expect((await handle("/", "text/markdown")).rewrote).toBe("/index.md");
     expect((await handle("/ru/", "text/markdown")).rewrote).toBe("/ru/index.md");

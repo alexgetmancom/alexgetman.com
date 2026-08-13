@@ -13,7 +13,7 @@ export async function collectTelegram(task: MetricTask, config: BackendConfig, f
   const messageId = task.externalId ?? telegramMessageIdFromUrl(task.url, channel);
   if (!messageId || !/^\d+$/.test(messageId)) throw new TerminalMetricError(`invalid_telegram_message_id:${messageId ?? "missing"}`);
   const html = await requestText(fetchImpl, `https://t.me/${channel}/${messageId}?embed=1&mode=tme`, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; alexgetman-backend/1.0)" },
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; solo-publisher/1.0)" },
     signal: AbortSignal.timeout(TELEGRAM_METRICS_TIMEOUT_MS),
   });
   // `posts.message_id` is a local Studio reference for newly-created drafts.

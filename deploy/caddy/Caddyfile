@@ -1,0 +1,83 @@
+# Reverse proxy for this host. Caddy terminates TLS for every domain and gets
+# its own certificates, which is why there is no certbot, no renewal timer, no
+# SNI stream multiplexer in front of per-domain TLS terminators, and no
+# bootstrap virtual host to obtain the first certificate with.
+#
+# What each site decides is only routing. Cache lifetimes, retired URLs, the
+# Markdown twin, the Link header and noindex on operator surfaces all live in
+# the application, so they reach every install of the image rather than this
+# machine alone.
+{
+	email {$ACME_EMAIL}
+}
+
+(client_address) {
+	# Both Studios attribute and rate-limit visitors by client address, reading
+	# the header named by TRUSTED_CLIENT_IP_HEADER. Without this every visitor
+	# arrives as the proxy and the public rate limit becomes one global budget.
+	header_up X-Real-IP {remote_host}
+}
+
+www.alexgetman.com {
+	redir https://alexgetman.com{uri} permanent
+}
+
+alexgetman.com {
+	encode zstd gzip
+	# Video and image uploads arrive through the Command Center.
+	request_body {
+		max_size 1GB
+	}
+
+	# A separate product on this host (telemostbot), not Solo Publisher.
+	handle /zoom/webhook* {
+		reverse_proxy 127.0.0.1:8799 {
+			import client_address
+		}
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8788 {
+			import client_address
+		}
+	}
+}
+
+# The second Studio is operated from another machine over MCP and serves no
+# public site. Everything not named here does not exist, so this list is the
+# security boundary, not a convenience.
+marux.ru {
+	encode zstd gzip
+	request_body {
+		max_size 1GB
+	}
+	header X-Robots-Tag "noindex, nofollow"
+
+	@allowed path /healthz /readyz /command-center /api/command-center /api/command-center/action /api/mcp /api/studio/media /media/video/asset/*
+	handle @allowed {
+		reverse_proxy 127.0.0.1:8789 {
+			import client_address
+			# MCP streams, and a media upload is one large body: neither may be
+			# buffered whole before it moves.
+			flush_interval -1
+			transport http {
+				response_header_timeout 1h
+			}
+		}
+	}
+
+	handle {
+		respond 404
+	}
+}
+
+# Fusionaly analytics, reached through Cloudflare. Cloudflare terminates the
+# public certificate and connects back over its own TLS, so this origin uses
+# Caddy's internal CA — a public certificate is neither obtainable here
+# (Cloudflare answers the ACME challenge) nor of any use.
+data.alexgetman.com {
+	tls internal
+	reverse_proxy 127.0.0.1:8790 {
+		import client_address
+	}
+}

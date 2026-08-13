@@ -50,7 +50,7 @@ describe("requiredDataDirectories", () => {
     // process.cwd(), which differs between a root-level `bun test` run and
     // `bun run --filter @alexgetman/backend test` (cwd apps/backend).
     const config = loadConfig({
-      STUDIO_CONFIG: join(import.meta.dir, "../../../studio.maru.example.yaml"),
+      STUDIO_CONFIG: join(import.meta.dir, "../../../studio.maru.yaml"),
       YOUTUBE_RU_CLIENT_ID: "test",
       YOUTUBE_RU_CLIENT_SECRET: "test",
       YOUTUBE_RU_REFRESH_TOKEN: "test",

@@ -10,7 +10,7 @@
         "PIPELINE_DB": "/Users/alex/projects/alexgetman.com/.dev-fixture/pipeline.db",
         "SITE_PUBLIC_DIR": "/Users/alex/projects/alexgetman.com/.dev-fixture/site",
         "COMMAND_CENTER_TOKEN": "dev",
-        "COMMAND_CENTER_URL": "http://localhost:4321/command-center"
+        "PUBLIC_BASE_URL": "http://localhost:4321"
       }
     },
     {
@@ -22,8 +22,8 @@
         "PIPELINE_DB": "/Users/alex/projects/alexgetman.com/.dev-fixture/pipeline.db",
         "SITE_PUBLIC_DIR": "/Users/alex/projects/alexgetman.com/.dev-fixture/site",
         "COMMAND_CENTER_TOKEN": "dev",
-        "COMMAND_CENTER_URL": "http://localhost:4321/command-center",
-        "STUDIO_CONFIG": "studio.maru.example.yaml"
+        "PUBLIC_BASE_URL": "http://localhost:4321",
+        "STUDIO_CONFIG": "studio.maru.yaml"
       }
     },
     {
@@ -35,7 +35,7 @@
         "PIPELINE_DB": "/Users/alex/projects/alexgetman.com/.dev-fixture-mock/pipeline.db",
         "SITE_PUBLIC_DIR": "/Users/alex/projects/alexgetman.com/.dev-fixture-mock/site",
         "COMMAND_CENTER_TOKEN": "dev",
-        "COMMAND_CENTER_URL": "http://localhost:4322/command-center",
+        "PUBLIC_BASE_URL": "http://localhost:4322",
         "STUDIO_CONFIG": "studio.yaml",
         "CONTROLLER_BOT_TOKEN": "mock",
         "THREADS_RU_ACCESS_TOKEN": "mock",

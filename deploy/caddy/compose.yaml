@@ -1,0 +1,24 @@
+# Host reverse proxy. Both Studios and the other services on this machine are
+# reached only through it; each of them publishes its port on 127.0.0.1, so
+# host networking is what lets Caddy reach them without joining every network.
+name: caddy
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    container_name: caddy
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - path: ./caddy.env
+        required: false
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data:/data
+      - ./config:/config
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:80"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

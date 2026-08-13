@@ -1,15 +1,19 @@
-# Canonical Alex production config, deployed verbatim with the compose file.
-# Secrets always live in an ignored .env file.
-# IANA zone used for every displayed schedule time; timezone_label is the short
-# suffix shown next to it (e.g. "18:30 MSK").
-timezone: Europe/Moscow
-timezone_label: MSK
+# Deployment behaviour that is not a publishing connection. Credentials live in
+# .env; where this Studio publishes comes from the channel registry, which you
+# fill in from the Command Center or over MCP.
 
-# Alex serves the public site. Publishing destinations come from the channel
-# registry; text, video and analytics always run.
+# IANA zone used for every displayed schedule time; timezone_label is the short
+# suffix shown next to it (e.g. "18:30 CET").
+timezone: UTC
+timezone_label: UTC
+
+# Whether this Studio serves a public website. Text posting, video posting and
+# analytics always run and are not configured here.
 site_enabled: true
 
 video:
+  # How long before a scheduled slot the video is prepared, and how long before
+  # it you are reminded. Retention is how long prepared media is kept.
   prepare_lead_minutes: 15
   reminder_minutes: 5
   retention_hours: 24

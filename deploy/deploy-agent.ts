@@ -42,7 +42,7 @@ const config = {
   host: Bun.env.DEPLOY_AGENT_HOST ?? "172.17.0.1",
   port: Number(Bun.env.DEPLOY_AGENT_PORT ?? "9899"),
   token: required("DEPLOY_AGENT_TOKEN"),
-  repository: Bun.env.DEPLOY_IMAGE_REPOSITORY ?? "ghcr.io/alexgetmancom/alexgetman-backend",
+  repository: Bun.env.DEPLOY_IMAGE_REPOSITORY ?? "ghcr.io/alexgetmancom/solo-publisher",
   defaultTarget: Bun.env.DEPLOY_DEFAULT_TARGET ?? "alex",
   notificationToken: Bun.env.DEPLOY_NOTIFICATION_BOT_TOKEN ?? Bun.env.CONTROLLER_BOT_TOKEN,
   notificationChatId: Bun.env.DEPLOY_NOTIFICATION_CHAT_ID,
