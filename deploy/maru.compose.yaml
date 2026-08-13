@@ -25,8 +25,10 @@ services:
       NODE_ENV: production
       DEPLOYMENT_ENV: production
       # This is a media-only public endpoint for Meta to fetch Reels source
-      # files. It does not make Maru serve the public site.
-      PUBLIC_BASE_URL: ${MARU_PUBLIC_BASE_URL:-https://alexgetman.com/maru-media}
+      # files. It does not make Maru serve the public site. There is no default:
+      # a wrong value here hands a publishing platform a URL on someone else's
+      # domain, and the request that proves it wrong comes from Meta, not a test.
+      PUBLIC_BASE_URL: ${MARU_PUBLIC_BASE_URL:?set this Studio's public base URL}
       TRUSTED_CLIENT_IP_HEADER: x-real-ip
       TELEGRAM_API_BASE_URL: http://alexgetman-telegram-bot-api:8081
       BIND_HOST: 0.0.0.0

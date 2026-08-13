@@ -4,5 +4,5 @@ import { publicLlmsResponse } from "../../server/public-feed";
 export const prerender = false;
 
 export function GET(context: APIContext) {
-  return publicLlmsResponse(context, "ru");
+  return publicLlmsResponse(context, "ru", "text/markdown; charset=utf-8");
 }

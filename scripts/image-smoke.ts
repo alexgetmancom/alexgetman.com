@@ -195,6 +195,13 @@ try {
     ["/feed-ai.json", 500],
     ["/sitemap.xml", 300],
     ["/robots.txt", 50],
+    // Discovery documents live under a dotfile directory, which is exactly the
+    // kind of path a build or artifact step drops without failing. They reached
+    // production as 404s once already.
+    ["/.well-known/api-catalog", 100],
+    ["/.well-known/mcp/server-card.json", 50],
+    ["/.well-known/oauth-protected-resource", 50],
+    ["/.well-known/agent-skills/index.json", 50],
   ];
   const probed = await Promise.all(
     routes.map(async ([route, minimumBytes]) => {

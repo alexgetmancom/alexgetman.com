@@ -38,8 +38,7 @@
     "check:language": "bun scripts/enforce-typescript.ts",
     "check:all": "bun scripts/check-all.ts",
     "check:prepush": "bun scripts/check-prepush.ts",
-    "ops:prod": "bun scripts/ops-prod.ts",
-    "sync:production-web": "bun scripts/web-sync.ts"
+    "ops:prod": "bun scripts/ops-prod.ts"
   },
   "dependencies": {
     "@astrojs/node": "^11.1.0",

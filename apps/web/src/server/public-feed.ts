@@ -133,7 +133,7 @@ export async function publicMarkdownResponse(context: APIContext, locale: SiteLo
  * is a link, including the posts — a full-text dump belongs behind the `.md`
  * URLs each row points at, not in the index itself.
  */
-export async function publicLlmsResponse(context: APIContext, locale: SiteLocale): Promise<Response> {
+export async function publicLlmsResponse(context: APIContext, locale: SiteLocale, contentType: string): Promise<Response> {
   const timeZone = getRuntime().config.TIMEZONE;
   const items = sortedPublishedItems(loadFeedItems(), locale);
   const copy = siteCopy(locale);
@@ -181,9 +181,9 @@ export async function publicLlmsResponse(context: APIContext, locale: SiteLocale
     }
   }
 
-  return new Response(`${lines.join("\n")}\n`, {
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-    },
-  });
+  // One document, two addresses: /llms.txt by the convention's name, and
+  // /index.md as the Markdown twin of the home page. They differ only in what
+  // the caller says the body is, so the type is an argument rather than a
+  // branch on which route arrived here.
+  return new Response(`${lines.join("\n")}\n`, { headers: { "Content-Type": contentType } });
 }
