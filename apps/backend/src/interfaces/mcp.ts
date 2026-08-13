@@ -102,7 +102,7 @@ type ToolDef<S extends z.ZodType = z.ZodType> = {
   list?: z.ZodType;
   /** Set for commands that change state; query tools omit it and skip the audit event. */
   mutates?: boolean;
-  /** Domain-event ref for a mutating command; omit for none (e.g. notification ack). */
+  /** Domain-event ref for a mutating command; omit when the command has none. */
   ref?: (input: z.infer<S>, result: unknown) => string | null;
   handler: (studio: StudioServices, actorId: number, input: z.infer<S>) => unknown | Promise<unknown>;
 };
@@ -126,11 +126,6 @@ const studioToolDefs = {
     description: "List post drafts visible to the authenticated Studio operator.",
     schema: z.object({ limit: positiveInt.max(100).optional() }),
     handler: (studio, actorId, input) => studio.posts.list(actorId, input.limit ?? 50),
-  }),
-  studio_notifications: tool({
-    description: "Read the shared durable Studio notification inbox.",
-    schema: z.object({ limit: positiveInt.max(100).optional() }),
-    handler: (studio, actorId, input) => studio.notifications.inbox(actorId, input.limit ?? 50),
   }),
   studio_notification_settings: tool({
     description: "Read the authenticated owner's Studio notification policy.",
@@ -218,12 +213,6 @@ const studioToolDefs = {
     description: "List reusable media assets visible to the authenticated Studio operator.",
     schema: z.object({ limit: positiveInt.max(100).optional() }),
     handler: (studio, actorId, input) => studio.posts.mediaAssets(actorId, input.limit ?? 50),
-  }),
-  studio_acknowledge_notification: tool({
-    description: "Mark one visible Studio notification as read.",
-    schema: z.object({ id: positiveInt }),
-    mutates: true,
-    handler: (studio, actorId, input) => ({ acknowledged: studio.notifications.acknowledge(actorId, input.id) }),
   }),
   studio_post_create: tool({
     description: "Create a text-post draft for the authenticated owner.",

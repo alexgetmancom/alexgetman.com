@@ -6,8 +6,10 @@ export type AudienceGroup = "text" | "video";
 
 const AUDIENCE_GROUPS: Record<string, AudienceGroup> = {
   telegram: "text",
+  telegram_stories: "text",
   threads: "text",
   x: "text",
+  instagram_stories: "text",
   instagram: "video",
   youtube: "video",
 };

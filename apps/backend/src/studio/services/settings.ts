@@ -5,7 +5,7 @@ import { StudioError } from "../../foundation/errors.js";
 import { parseStudioLocale, type StudioLocale } from "../../foundation/locale.js";
 import { isValidTimeZone, timeZoneOffsetLabel } from "../../foundation/time.js";
 
-type SettingsDependencies = Pick<ApplicationPorts, "clock" | "studioNotifications" | "studioSettings">;
+type SettingsDependencies = Pick<ApplicationPorts, "clock" | "studioSettings">;
 
 /** Read as a plain function, not a method: the service is an object literal, so
  * a method reading it through `this` breaks the moment it is destructured. */
@@ -131,7 +131,7 @@ export function settingsService(backendDb: SettingsDependencies) {
         completionEnabled: Number(next.completionEnabled),
         updatedAt: now,
       });
-      if (current.remindersEnabled && !next.remindersEnabled) backendDb.studioNotifications.cancelQueuedReminders(actorId, now);
+      if (current.remindersEnabled && !next.remindersEnabled) backendDb.studioSettings.cancelQueuedReminders(actorId, now);
       return next;
     },
     youtubeSignature(actorId: number): string {

@@ -13,22 +13,13 @@ import { startVideoConversation } from "./video-conversation.js";
 
 const MAIN_MENU_ID = "main-menu";
 
-export function buildMainMenu(
-  config: BackendConfig,
-  backendDb: BackendDb,
-  settingsMenu: Menu<Context>,
-  notificationsMenu: Menu<Context>,
-): Menu<Context> {
+export function buildMainMenu(config: BackendConfig, backendDb: BackendDb, settingsMenu: Menu<Context>): Menu<Context> {
   const menu = new Menu<Context>(MAIN_MENU_ID);
-  // Creation is the primary action and deliberately gets its own full row, so
-  // post and video creation both stay obvious.
   menu
     .text(
       (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.new-post"),
       (ctx) => openPostScreen(ctx, backendDb),
     )
-    .row();
-  menu
     .text(
       (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.new-video"),
       (ctx) => startVideoConversation(ctx, backendDb),
@@ -48,17 +39,12 @@ export function buildMainMenu(
     (ctx) => showAnalyticsDashboard(ctx, backendDb, config, "overview", 1),
   );
   menu.submenu(
-    (ctx) => {
-      const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
-      const unread = createStudioServices(backendDb, config).notifications.inbox(Number(ctx.from?.id), 100).length;
-      return unread ? t(locale, "menu.settings-unread", { count: unread }) : t(locale, "settings.title");
-    },
+    (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "settings.title"),
     SETTINGS_MENU_ID,
     async (ctx) => {
       await ctx.editMessageText(t(settingsService(backendDb).locale(Number(ctx.from?.id)), "settings.title"));
     },
   );
   menu.register(settingsMenu);
-  menu.register(notificationsMenu);
   return menu;
 }

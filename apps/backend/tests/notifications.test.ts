@@ -1,10 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
-import { createDraftFromMessage } from "../src/content/drafts.js";
 import { postEvents, studioNotificationJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { cancelScheduledNotifications, runNotificationCycle, scheduleReminder } from "../src/notifications/jobs.js";
-import { notificationService } from "../src/studio/services/notifications.js";
 import { postService } from "../src/studio/services/posts.js";
 import { settingsService } from "../src/studio/services/settings.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
@@ -19,100 +17,6 @@ function openNotificationDb() {
 }
 
 describe("Studio notifications", () => {
-  it("shares the durable inbox across configured administrators", () => {
-    const backendDb = openNotificationDb();
-    try {
-      const notifications = notificationService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42,7" }));
-      const videoId = createTestVideoDraft(backendDb, 42, "shared-video", 24);
-      notifications.record({
-        ref: `publication:video:${videoId}`,
-        type: "delivery.video.completed",
-        severity: "info",
-        message: "Shared completion",
-      });
-      const event = notifications.inbox(7)[0];
-      expect(event?.message).toBe("Shared completion");
-      expect(event && notifications.acknowledge(7, event.id)).toBe(true);
-      expect(notifications.inbox(42)).toHaveLength(0);
-    } finally {
-      backendDb.close();
-    }
-  });
-
-  it("keeps a durable inbox, suppresses cooled-down duplicates and acknowledges events", () => {
-    const backendDb = openNotificationDb();
-    try {
-      const notifications = notificationService(backendDb);
-      const ownedVideo = createTestVideoDraft(backendDb, 42, "owner-video", 24);
-      const otherVideo = createTestVideoDraft(backendDb, 7, "other-video", 24);
-      notifications.record({
-        ref: `publication:video:${ownedVideo}`,
-        type: "studio.notification.reminder.due",
-        severity: "info",
-        target: "youtube",
-        message: "Upload is due",
-        cooldownSeconds: 3600,
-      });
-      notifications.record({
-        ref: `publication:video:${ownedVideo}`,
-        type: "studio.notification.reminder.due",
-        severity: "info",
-        target: "youtube",
-        message: "Upload is due",
-        cooldownSeconds: 3600,
-      });
-      notifications.record({
-        ref: `publication:video:${otherVideo}`,
-        type: "studio.notification.reminder.due",
-        severity: "info",
-        target: "youtube",
-        message: "Other upload is due",
-      });
-      notifications.record({ type: "worker.failed", severity: "error", message: "No target", cooldownSeconds: 3600 });
-      notifications.record({ type: "worker.failed", severity: "error", message: "No target", cooldownSeconds: 3600 });
-      const inbox = notifications.inbox(42);
-      expect(inbox).toHaveLength(1);
-      expect(inbox[0]?.eventType).toBe("studio.notification.reminder.due");
-      const id = inbox[0]?.id;
-      if (!id) throw new Error("notification is missing id");
-      expect(notifications.acknowledge(7, id)).toBe(false);
-      expect(notifications.acknowledge(42, id)).toBe(true);
-      expect(notifications.inbox(42)).toHaveLength(0);
-      expect(notifications.inbox(7)).toHaveLength(1);
-
-      const auditEvent = backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, "worker.failed")).get();
-      if (!auditEvent) throw new Error("audit event is missing");
-      expect(notifications.acknowledge(42, auditEvent.id)).toBe(false);
-      expect(backendDb.db.select().from(postEvents).where(eq(postEvents.id, auditEvent.id)).get()?.ackedAt).toBeNull();
-    } finally {
-      backendDb.close();
-    }
-  });
-
-  it("keeps Content and Publishing audit events out of the creator inbox", () => {
-    const backendDb = openNotificationDb();
-    try {
-      const draftId = createDraftFromMessage(backendDb, 42, { text: "Private", entities: [], media: [] });
-      const notifications = notificationService(backendDb);
-      expect(notifications.inbox(42).some((event) => event.eventType === "content.draft.created")).toBe(false);
-      expect(notifications.inbox(7).some((event) => event.postKey === `draft:${draftId}`)).toBe(false);
-    } finally {
-      backendDb.close();
-    }
-  });
-
-  it("does not fall open on a post ref whose id is not a number", () => {
-    const backendDb = openNotificationDb();
-    try {
-      const notifications = notificationService(backendDb);
-      notifications.record({ ref: "publication:post:abc", type: "delivery.post.completed", severity: "info", message: "Broken ref" });
-      expect(notifications.inbox(42)).toHaveLength(0);
-      expect(notifications.inbox(7)).toHaveLength(0);
-    } finally {
-      backendDb.close();
-    }
-  });
-
   it("creates durable interface-neutral reminders and honours cancellation", () => {
     const backendDb = openNotificationDb();
     try {
@@ -128,10 +32,8 @@ describe("Studio notifications", () => {
       });
       expect(runNotificationCycle(backendDb)).toBe(1);
       expect(
-        notificationService(backendDb)
-          .inbox(42)
-          .some((event) => event.eventType === "studio.notification.reminder.due"),
-      ).toBe(true);
+        backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, "studio.notification.reminder.due")).get(),
+      ).toBeDefined();
 
       scheduleReminder(backendDb, {
         actorId: 42,

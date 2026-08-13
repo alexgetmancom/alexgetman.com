@@ -248,7 +248,7 @@ describe("Telegram event consumer", () => {
 
       expect(sendMessage).toHaveBeenCalledTimes(1);
       expect(sendMessage.mock.calls[0]?.[1]).toContain("Provider response was ambiguous");
-      expect(JSON.stringify(sendMessage.mock.calls[0]?.[2])).not.toContain("p:video:retry:11");
+      expect(JSON.stringify(sendMessage.mock.calls[0]?.[2] ?? {})).not.toContain("p:video:retry:11");
     }));
 
   it("notifies about a completed locale and shows the later locale schedule", async () =>

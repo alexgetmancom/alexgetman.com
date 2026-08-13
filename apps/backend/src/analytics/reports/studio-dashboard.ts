@@ -56,9 +56,13 @@ export function studioAnalyticsDashboard(
     blocks.push(textBlock(`👥 *${t(locale, "sdash.header-audience", { period })}*`));
     const profiles = audienceProfiles(backendDb, since, days, period, locale);
     blocks.push(...(profiles.length ? profiles : [textBlock(t(locale, "sdash.no-audience"))]));
-  } else {
-    blocks.push(...unifiedAnalyticsTable(backendDb, section, since, days, locale));
-  }
+  } else if (section === "posts") {
+    const posts = publishedPostTable(backendDb, since, locale);
+    blocks.push(...(posts.length ? posts : [textBlock(t(locale, "sdash.no-posts"))]));
+  } else if (section === "video") {
+    const videos = publishedVideoTable(backendDb, since, locale);
+    blocks.push(...(videos.length ? videos : [textBlock(t(locale, "sdash.no-videos"))]));
+  } else blocks.push(...platformAnalyticsTable(backendDb, since, days, locale));
   return { text: blocksToText(blocks), richHtml: blocksToHtml(blocks), hasComments: hasAudienceComments(backendDb) };
 }
 
@@ -107,7 +111,9 @@ function audienceProfiles(backendDb: BackendDb, since: string, days: AnalyticsPe
     .sort((left, right) => {
       const rightFollowers = metricNumber(right.dataJson.subscriberCount ?? right.dataJson.followersCount);
       const leftFollowers = metricNumber(left.dataJson.subscriberCount ?? left.dataJson.followersCount);
-      return rightFollowers - leftFollowers || platformLabel(left.platform).localeCompare(platformLabel(right.platform));
+      return (
+        rightFollowers - leftFollowers || platformLabel(backendDb, left.platform).localeCompare(platformLabel(backendDb, right.platform))
+      );
     })
     .map((row) => {
       const data = row.dataJson as Record<string, unknown>;
@@ -119,25 +125,20 @@ function audienceProfiles(backendDb: BackendDb, since: string, days: AnalyticsPe
       if (data.stars != null) values.push(`Stars: *${metricNumber(data.stars)}*`);
       if (data.averageViewsPerPost != null) values.push(`${t(locale, "sdash.avg-views")}: ${metricNumber(data.averageViewsPerPost)}`);
       if (!values.length) values.push(t(locale, "sdash.no-follower-count"));
-      return textBlock(`• *${platformLabel(row.platform)}* — ${values.join(" · ")}`);
+      return textBlock(`• *${platformLabel(backendDb, row.platform)}* — ${values.join(" · ")}`);
     });
 }
 
-function unifiedAnalyticsTable(
-  backendDb: BackendDb,
-  section: Exclude<AnalyticsSection, "audience">,
-  since: string,
-  days: AnalyticsPeriod,
-  locale: StudioLocale,
-): Block[] {
+function platformAnalyticsTable(backendDb: BackendDb, since: string, days: AnalyticsPeriod, locale: StudioLocale): Block[] {
+  const connectedPlatforms = dashboardAudiencePlatforms(backendDb);
   const profiles = unsafeDb(backendDb)
     .db.select()
     .from(creatorProfiles)
     .all()
-    .filter((row) => audiencePlatformsForSection(backendDb, section).has(row.platform));
+    .filter((row) => connectedPlatforms.has(row.platform));
   const accountMetrics = new Map(profiles.map((row) => [row.platform, contentMetricsFromProfile(row.dataJson, days)]));
-  const content = accountContentMetricsForSection(backendDb, section, since, accountMetrics);
-  if (days === 1 && section !== "posts" && [...dashboardVideoPlatforms(backendDb)].some((platform) => platform.startsWith("youtube_"))) {
+  const content = overviewContentMetrics(backendDb, since, accountMetrics, connectedPlatforms);
+  if (days === 1 && [...dashboardVideoPlatforms(backendDb)].some((platform) => platform.startsWith("youtube_"))) {
     for (const platform of [...content.keys()].filter((key) => key === "youtube" || key.startsWith("youtube_"))) {
       const liveViews = youtubeChannelViewDeltaSince(backendDb, since, platform);
       const youtube = content.get(platform);
@@ -167,7 +168,8 @@ function unifiedAnalyticsTable(
   const rows = [...platforms]
     .sort(
       (left, right) =>
-        (content.get(right)?.views ?? 0) - (content.get(left)?.views ?? 0) || platformLabel(left).localeCompare(platformLabel(right)),
+        (content.get(right)?.views ?? 0) - (content.get(left)?.views ?? 0) ||
+        platformLabel(backendDb, left).localeCompare(platformLabel(backendDb, right)),
     )
     .map((platform) => ({
       platform,
@@ -185,8 +187,8 @@ function unifiedAnalyticsTable(
   const all = t(locale, "sdash.all");
   const headers = [t(locale, "sdash.platform-col"), "👥", "📈", "👁", "♥", "💬", "↗", "🔖"];
   const tableRows = [
-    { platform: "all", label: `📊 ${all}`, growth: totalGrowth, value: totalContent },
-    ...rows.map((row) => ({ label: `${platformIcon(row.platform)} ${platformLabel(row.platform)}`, ...row })),
+    { platform: "all", label: all, growth: totalGrowth, value: totalContent },
+    ...rows.map((row) => ({ label: platformLabel(backendDb, row.platform), ...row })),
   ].map((row) => [
     row.label,
     String(row.platform === "all" ? totalFollowers : followerCount(profileMap.get(row.platform)?.dataJson)),
@@ -197,10 +199,7 @@ function unifiedAnalyticsTable(
     dash(row.value.shares),
     row.platform === "youtube" || row.platform.startsWith("youtube_") ? "—" : dash(row.value.saves),
   ]);
-  return [
-    tableBlock(headers, tableRows),
-    ...(section === "posts" ? publishedPostTable(backendDb, since, locale) : publishedVideoTable(backendDb, section, since, locale)),
-  ];
+  return [tableBlock(headers, tableRows)];
 }
 
 function publishedPostTable(backendDb: BackendDb, since: string, locale: StudioLocale): Block[] {
@@ -220,36 +219,22 @@ function publishedPostTable(backendDb: BackendDb, since: string, locale: StudioL
 /** Account insights describe all content viewed during the selected period.
  * Never use per-video snapshots here: they describe only newly published
  * videos and are rendered in their own table below. */
-function accountContentMetricsForSection(
+function overviewContentMetrics(
   backendDb: BackendDb,
-  section: Exclude<AnalyticsSection, "audience">,
   since: string,
   accountMetrics: Map<string, ContentMetrics | undefined>,
+  connectedPlatforms: Set<string>,
 ): Map<string, ContentMetrics> {
   const values = new Map<string, ContentMetrics>();
-  if (section !== "posts")
-    for (const [platform, metrics] of accountMetrics)
-      if (
-        platform === "instagram" ||
-        platform === "youtube" ||
-        platform.startsWith("instagram_") ||
-        platform.startsWith("youtube_") ||
-        platform.startsWith("tiktok_")
-      )
-        values.set(platform, metrics ?? emptyMetrics());
-  if (section !== "video") for (const [platform, metrics] of textContentMetricsByPlatform(backendDb, since)) values.set(platform, metrics);
+  for (const [platform, metrics] of accountMetrics) values.set(platform, metrics ?? emptyMetrics());
+  for (const [platform, metrics] of textContentMetricsByPlatform(backendDb, since))
+    if (connectedPlatforms.has(platform)) values.set(platform, metrics);
   return values;
 }
 
 /** Individual rows answer a different question from account insights: how are
  * videos published in the selected period performing since they went live? */
-function publishedVideoTable(
-  backendDb: BackendDb,
-  section: Exclude<AnalyticsSection, "audience">,
-  since: string,
-  locale: StudioLocale,
-): Block[] {
-  if (section === "posts") return [];
+function publishedVideoTable(backendDb: BackendDb, since: string, locale: StudioLocale): Block[] {
   const connectedPlatforms = new Set(listChannels(backendDb).map((channel) => channel.platform));
   const rows = latestVideoMetrics(backendDb, since)
     .filter((row) => row.publishedAt != null && row.publishedAt >= since)
@@ -329,12 +314,6 @@ function shortLabel(value: string): string {
   return compact.length > 10 ? `${compact.slice(0, 9)}…` : compact || "—";
 }
 
-function audiencePlatformsForSection(backendDb: BackendDb, section: Exclude<AnalyticsSection, "audience">): Set<string> {
-  if (section === "video") return dashboardVideoPlatforms(backendDb);
-  if (section === "posts") return dashboardTextPlatforms(backendDb);
-  return dashboardAudiencePlatforms(backendDb);
-}
-
 function dashboardVideoPlatforms(backendDb: BackendDb): Set<string> {
   return new Set(
     listChannels(backendDb)
@@ -377,10 +356,18 @@ const PLATFORM_DISPLAY: Record<string, { label: string; icon: string }> = {
   youtube_en: { label: "YouTube EN", icon: "▶️" },
   tiktok_ru: { label: "TikTok RU", icon: "🎵" },
   tiktok_en: { label: "TikTok EN", icon: "🎵" },
+  telegram_stories: { label: "Telegram Stories", icon: "✈️" },
+  instagram_stories: { label: "Instagram Stories EN", icon: "📸" },
+  instagram_stories_ru: { label: "Instagram Stories RU", icon: "📸" },
 };
 
-function platformLabel(platform: string): string {
-  return PLATFORM_DISPLAY[platform]?.label ?? platform;
+function platformLabel(backendDb: BackendDb, platform: string): string {
+  const channel = listChannels(backendDb).find((candidate) => candidate.id === platform);
+  if (channel?.platform === "telegram") return "Telegram";
+  if (channel?.platform === "telegram_stories") return "Telegram Stories";
+  if (channel?.platform === "instagram_stories") return `Instagram Stories ${channel.locale.toUpperCase()}`;
+  if (channel?.platform === "x") return "X";
+  return channel?.label.trim() || PLATFORM_DISPLAY[platform]?.label || platform.replaceAll("_", " ");
 }
 
 function platformIcon(platform: string): string {

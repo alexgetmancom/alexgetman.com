@@ -6,7 +6,6 @@ import { studioCapabilityService } from "./capabilities.js";
 import { channelService } from "./channels.js";
 import { studioDashboard } from "./dashboard.js";
 import { mediaService } from "./media.js";
-import { notificationService } from "./notifications.js";
 import { postService } from "./posts.js";
 import { queueService } from "./queue.js";
 import { settingsService } from "./settings.js";
@@ -18,7 +17,6 @@ export type StudioServices = {
   channels: ReturnType<typeof channelService>;
   videos: ReturnType<typeof videoService>;
   queue: ReturnType<typeof queueService>;
-  notifications: ReturnType<typeof notificationService>;
   analytics: ReturnType<typeof analyticsService>;
   capabilities: ReturnType<typeof studioCapabilityService>;
   settings: ReturnType<typeof settingsService>;
@@ -43,7 +41,6 @@ export function createStudioServices(backendDb: BackendDb, config: BackendConfig
     channels: channelService(backendDb, config),
     videos,
     queue: queueService(backendDb, config),
-    notifications: notificationService(backendDb, config),
     analytics: analyticsService(backendDb, config),
     capabilities: studioCapabilityService(config, backendDb),
     settings: settingsService(backendDb),

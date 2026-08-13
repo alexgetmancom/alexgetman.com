@@ -110,10 +110,10 @@ describe("creator analytics dashboards", () => {
       const postsView = studioAnalyticsDashboard(backendDb, "posts", 1, "ru").text;
 
       expect(overview).not.toContain("Общая статистика");
-      expect(overview).toContain("| ✈️ Telegram | 0 | — | 24 | 5 | 0 | — | — |");
+      expect(overview).toContain("| Telegram | 0 | — | 24 | 5 | 0 | — | — |");
       // No platform has a growth baseline here, so the total is unknown too —
       // the same "—" the Telegram row shows, not a confident "+0".
-      expect(postsView).toContain("| 📊 Все | 0 | — | 24 | 5 | 0 | — | — |");
+      expect(postsView).toBe("За этот период нет статистики текстовых постов.");
       expect(studioAnalyticsDashboard(backendDb, "overview", 1, "ru").richHtml).toContain("<table bordered striped>");
       expect(postsView).not.toContain("Видеопостинг");
     });
@@ -142,17 +142,20 @@ describe("creator analytics dashboards", () => {
         .run();
       const dashboard = studioAnalyticsDashboard(backendDb, "video", 1, "ru");
       expect(dashboard.text).not.toContain("Аккаунт ·");
-      expect(dashboard.text).toContain("| 📸 Instagram RU | 306 | — | 63394 | 1227");
+      expect(dashboard.text).not.toContain("Instagram RU | 306");
       expect(dashboard.text).toContain("| Видео | 👁 | ♥ | 💬 | ↗ | 🔖 |");
       expect(dashboard.text).toContain("| Все | 200 | 20 | 0 | 7 | 5 |");
       expect(dashboard.text).toContain("| Симулятор… · 📸 RU | 200 | 20 | 0 | 7 | 5 |");
       expect(dashboard.text).not.toContain("| Симулятор… · ▶️ |");
-      expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(2);
+      expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(1);
       expect(dashboard.richHtml).not.toContain("|:--");
+      const overview = studioAnalyticsDashboard(backendDb, "overview", 1, "ru");
+      expect(overview.text).not.toContain("Симулятор…");
+      expect(overview.richHtml.match(/<table bordered striped>/g)?.length).toBe(1);
     });
   });
 
-  it("renders newly published text posts below Alex's account table", async () => {
+  it("renders only newly published text posts in the posting section", async () => {
     await withDb(async (backendDb) => {
       const now = new Date().toISOString();
       backendDb.db
@@ -180,7 +183,7 @@ describe("creator analytics dashboards", () => {
       expect(dashboard.text).toContain("| Пост | 👁 | ♥ | 💬 | ↗ | 🔖 |");
       expect(dashboard.text).toContain("| Все | 200 | 20 | 0 | 7 | — |");
       expect(dashboard.text).toContain("| Релиз нов… · ✈️ | 200 | 20 | 0 | 7 | — |");
-      expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(2);
+      expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(1);
     });
   });
 
@@ -217,7 +220,7 @@ describe("creator analytics dashboards", () => {
       pruneMetricSamples(backendDb);
       // 50 views of growth, not 950 lifetime and not a dropped row: with the
       // baseline pruned there is no third answer the report could give.
-      expect(studioAnalyticsDashboard(backendDb, "posts", 30, "ru").text).toContain("| ✈️ Telegram | 0 | — | 50 |");
+      expect(studioAnalyticsDashboard(backendDb, "overview", 30, "ru").text).toContain("| Telegram | 0 | — | 50 |");
     });
   });
 
@@ -234,7 +237,7 @@ describe("creator analytics dashboards", () => {
         .run();
       const overview = studioAnalyticsDashboard(backendDb, "overview", 7, "ru").text;
       const audience = studioAnalyticsDashboard(backendDb, "audience", 7, "ru").text;
-      expect(overview).toContain("| 📊 Все | 556 | —");
+      expect(overview).toContain("| Все | 556 | —");
       expect(audience).toContain("Instagram");
       expect(audience).toContain("YouTube");
       expect(audience).toContain("Telegram");
@@ -244,6 +247,30 @@ describe("creator analytics dashboards", () => {
       const withoutInstagram = studioAnalyticsDashboard(backendDb, "audience", 7, "ru").text;
       expect(withoutInstagram).not.toContain("Instagram");
       expect(withoutInstagram).toContain("YouTube");
+    });
+  });
+
+  it("uses human channel names and excludes disconnected profile history", async () => {
+    await withDb(async (backendDb) => {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(creatorProfiles)
+        .values([
+          { platform: "telegram_stories", dataJson: { views1d: 175, likes1d: 3 }, updatedAt: now },
+          { platform: "instagram_stories_ru", dataJson: { views1d: 35 }, updatedAt: now },
+          { platform: "instagram_legacy", dataJson: { followersCount: 999, views1d: 999 }, updatedAt: now },
+        ])
+        .run();
+
+      const overview = studioAnalyticsDashboard(backendDb, "overview", 1, "en").text;
+      expect(overview).toContain("| Telegram Stories | 0 | — | 175 | 3 |");
+      expect(overview).toContain("| Instagram Stories RU | 0 | — | 35 |");
+      expect(overview).not.toContain("telegram_stories");
+      expect(overview).not.toContain("instagram_stories_ru");
+      expect(overview).not.toContain("instagram_legacy");
+
+      backendDb.channels.disable("instagram_stories_ru", now);
+      expect(studioAnalyticsDashboard(backendDb, "overview", 1, "en").text).not.toContain("Instagram Stories RU");
     });
   });
 

@@ -10,8 +10,7 @@ import { localeQuery, renderLocaleSwitcher } from "./dashboard/locale-links.js";
 /**
  * Studio section of the Command Center: a second adapter over the same
  * createStudioServices Telegram and MCP use. Read-only beyond acknowledging a
- * notification - no business logic lives here, only rendering of what the
- * services already return.
+ * no business logic lives here, only rendering of what the services return.
  */
 export function renderStudioSection(config: BackendConfig, backendDb: BackendDb, actorId: number, locale: StudioLocale): string {
   const data = createStudioServices(backendDb, config).dashboard(actorId, locale);
@@ -24,16 +23,11 @@ export function renderStudioSection(config: BackendConfig, backendDb: BackendDb,
       ${renderQueueTable(t(locale, "cc.studio.upcoming"), data.queue.upcoming, zone, locale)}
       ${renderQueueTable(t(locale, "cc.studio.drafts"), data.queue.drafts, zone, locale)}
       ${renderAttention(data.queue.attention, locale)}
-    </section>
-    <section>
-      <h2>${t(locale, "cc.studio.notifications")}</h2>
-      ${renderNotifications(data.notifications, zone, locale)}
     </section>`;
 }
 
 type QueueItem = { id: number; label: string; time: Date; kind: "post" | "video"; targets: number };
 type AttentionItem = { id: number; label: string; kind: "post" | "video" };
-type NotificationRow = { id: number; message: string; severity: string; createdAt: string };
 
 function renderQueueTable(title: string, items: QueueItem[], zone: { timeZone: string; label: string }, locale: StudioLocale): string {
   if (!items.length) return `<h3>${title}</h3><p class="note">${t(locale, "cc.studio.empty")}</p>`;
@@ -50,17 +44,6 @@ function renderAttention(items: AttentionItem[], locale: StudioLocale): string {
   if (!items.length) return "";
   const rows = items.map((item) => `<li>${item.kind === "video" ? "🎬" : "📝"} ${escapeHtml(item.label)}</li>`).join("");
   return `<h3>${t(locale, "cc.studio.attention")}</h3><ul class="attention-list">${rows}</ul>`;
-}
-
-function renderNotifications(events: NotificationRow[], zone: { timeZone: string; label: string }, locale: StudioLocale): string {
-  if (!events.length) return `<p class="note">${t(locale, "cc.studio.no-notifications")}</p>`;
-  const rows = events
-    .map(
-      (event) =>
-        `<li class="notification notification--${escapeHtml(event.severity)}"><span>${escapeHtml(event.message)}</span><time>${escapeHtml(formatZonedDateTime(event.createdAt, zone.timeZone, zone.label))}</time><form method="post" action="/command-center/studio/acknowledge?locale=${locale}"><input type="hidden" name="id" value="${event.id}"><button type="submit">${t(locale, "cc.studio.read")}</button></form></li>`,
-    )
-    .join("");
-  return `<ul class="notification-list">${rows}</ul>`;
 }
 
 /** The analytics text is Telegram Markdown (bold + newlines only); render just enough of it. */

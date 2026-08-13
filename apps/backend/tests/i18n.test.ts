@@ -4,10 +4,7 @@ import { catalog, describeError, plural, t } from "../src/foundation/i18n/index.
 
 describe("telegram i18n", () => {
   it("translates keys and interpolates params per locale", () => {
-    expect(t("en", "menu.control-panel")).toBe("Control panel");
-    expect(t("ru", "menu.control-panel")).toBe("Панель управления");
     expect(t("en", "menu.work-queue-count", { count: 3 })).toBe("📋 Work queue · 3");
-    expect(t("ru", "menu.settings-unread", { count: 2 })).toBe("⚙️ Настройки · 🔴2");
   });
 
   it("keeps the two catalogs at parity", () => {

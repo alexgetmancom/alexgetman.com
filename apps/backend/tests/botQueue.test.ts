@@ -200,7 +200,7 @@ describe("Telegram work queue", () => {
     }
   });
 
-  it("renders upcoming work and drafts on the same queue screen", () => {
+  it("keeps queue item details in buttons instead of duplicating them in the message", () => {
     const snapshot: StudioQueueSnapshot = {
       upcoming: [
         {
@@ -216,9 +216,9 @@ describe("Telegram work queue", () => {
     };
 
     const { text } = queueScreen(snapshot, "ru", "Europe/Moscow");
-    expect(text).toContain("Ближайшие публикации");
-    expect(text).toContain("Scheduled clip");
-    expect(text).toContain("Черновики (1)");
+    expect(text).toBe("📋 *Очередь*");
+    expect(text).not.toContain("Scheduled clip");
+    expect(text).not.toContain("Unfinished clip");
   });
 
   it("renders failed work as an actionable attention section", () => {
@@ -229,18 +229,8 @@ describe("Telegram work queue", () => {
     };
 
     const { text } = queueScreen(snapshot, "ru", "Europe/Moscow");
-    expect(text).toContain("Требует внимания (1)");
+    expect(text).toBe("📋 *Очередь*");
     expect(text).not.toContain("Failed clip");
-  });
-
-  it("escapes Markdown in queue labels", () => {
-    const snapshot: StudioQueueSnapshot = {
-      upcoming: [],
-      drafts: [{ id: 12, label: "*Draft* [with] _markup_", kind: "post", time: new Date(), targets: 0 }],
-      attention: [],
-    };
-
-    expect(queueScreen(snapshot, "en", "Europe/Moscow").text).toContain("\\*Draft\\* \\[with\\] \\_markup\\_");
   });
 
   it("keeps a queue label well-formed when truncation reaches an emoji", () => {
@@ -334,7 +324,10 @@ describe("Telegram work queue", () => {
     };
 
     expect(queueScreen(snapshot, "en", "Europe/Moscow").pages).toBe(2);
-    expect(queueScreen(snapshot, "en", "Europe/Moscow", 1).text).toContain("Upcoming 11");
-    expect(queueScreen(snapshot, "en", "Europe/Moscow", 1).text).toContain("Page 2 of 2");
+    expect(queueScreen(snapshot, "en", "Europe/Moscow", 1)).toMatchObject({
+      text: "📋 *Work queue*",
+      currentPage: 1,
+      items: { upcoming: [{ label: "Upcoming 11" }] },
+    });
   });
 });

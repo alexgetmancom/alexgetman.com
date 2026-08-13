@@ -5,7 +5,6 @@ import { runCallbackBoundary } from "./bot/callback-boundary.js";
 import { handlePublicationCallback, handlePublicationMessage } from "./bot/callback-router.js";
 import { persistentKeyboard, showMainMenu } from "./bot/menu-render.js";
 import { buildMainMenu } from "./bot/navigation.js";
-import { buildNotificationsMenu, notificationsInboxText } from "./bot/notifications-screen.js";
 import { handleOperationsCallback } from "./bot/operations-screen.js";
 import { handlePostScreenCallback, startPostScreen } from "./bot/post-screen.js";
 import { handleProgressCallback } from "./bot/progress-screen.js";
@@ -46,9 +45,8 @@ export function createBot(config: BackendConfig, backendDb: BackendDb): Bot | nu
 }
 
 function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb): void {
-  const notificationsMenu = buildNotificationsMenu(config, backendDb);
   const settingsMenu = buildSettingsMenu(config, backendDb, bot);
-  const mainMenu = buildMainMenu(config, backendDb, settingsMenu, notificationsMenu);
+  const mainMenu = buildMainMenu(config, backendDb, settingsMenu);
   bot.use(async (ctx, next) => {
     const startedAt = Date.now();
     const updateType = Object.keys(ctx.update).find((key) => key !== "update_id") ?? "unknown";
@@ -94,12 +92,12 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     await ctx.reply(t(locale, "start.menu-hint"), {
       reply_markup: persistentKeyboard(locale),
     });
-    await showMainMenu(ctx, backendDb, mainMenu);
+    await showMainMenu(ctx, mainMenu);
   };
   bot.command("start", showBotMenu);
   bot.hears(localizedTextVariants(["menu.button"]), async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return;
-    await showMainMenu(ctx, backendDb, mainMenu);
+    await showMainMenu(ctx, mainMenu);
   });
   bot.hears("⚙️", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return;
@@ -166,24 +164,12 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       },
     },
     {
-      name: "notifications",
-      matches: (data) => data === "notifications_home",
-      handle: async (ctx) => {
-        await ctx.answerCallbackQuery();
-        const actorId = Number(ctx.from?.id);
-        await ctx.reply(notificationsInboxText(backendDb, config, actorId, settingsService(backendDb).locale(actorId)), {
-          reply_markup: notificationsMenu,
-        });
-        return true;
-      },
-    },
-    {
       name: "menu-home",
       matches: (data) => data === "menu_home",
       handle: async (ctx) => {
         clearTelegramAnalyticsDashboard(backendDb, Number(ctx.from?.id));
         await ctx.answerCallbackQuery();
-        await showMainMenu(ctx, backendDb, mainMenu, true);
+        await showMainMenu(ctx, mainMenu, true);
         return true;
       },
     },

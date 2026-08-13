@@ -187,18 +187,6 @@ export type StudioQueueVideoTarget = {
   scheduledAt: string | null;
 };
 
-/** Durable notification persistence used by the transport-neutral Studio inbox. */
-export type StudioNotificationStore = {
-  unread(limit: number): PostEventRecord[];
-  get(id: number): PostEventRecord | null;
-  acknowledge(id: number, now: string): boolean;
-  cancelQueuedReminders(actorId: number, now: string): number;
-  draftOwner(draftId: number): number | null;
-  videoOwner(publicationId: number): number | null;
-  postIdForKey(postKey: string): number | null;
-  postOwner(postId: number): number | null;
-};
-
 export type StudioSettingsStore = {
   notifications(actorId: number): StudioNotificationSettingsRecord | null;
   locale(actorId: number): string | null;
@@ -214,6 +202,7 @@ export type StudioSettingsStore = {
     completionEnabled: number;
     updatedAt: string;
   }): void;
+  cancelQueuedReminders(actorId: number, now: string): number;
   botSettings(actorId: number): StudioBotSettingsRecord | null;
   saveBotSettings(input: { actorId: number; youtubeSignature: string; updatedAt: string }): void;
   saveLocale(input: { actorId: number; locale: string; updatedAt: string }): void;
@@ -395,7 +384,6 @@ export type ApplicationPorts = {
   studioPosts: StudioPostStore;
   conversationSessions: ConversationSessionStore;
   studioQueue: StudioQueueStore;
-  studioNotifications: StudioNotificationStore;
   studioSettings: StudioSettingsStore;
   studioMediaAssets: StudioMediaAssetStore;
   studioVideos: StudioVideoStore;

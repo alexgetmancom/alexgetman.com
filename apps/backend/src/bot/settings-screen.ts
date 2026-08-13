@@ -15,8 +15,7 @@ import type { StudioZernioAccount } from "../studio/services/channels.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
 import { clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
-import { persistentKeyboard } from "./menu-render.js";
-import { NOTIFICATIONS_MENU_ID, notificationsInboxText } from "./notifications-screen.js";
+import { MAIN_MENU_TEXT, persistentKeyboard } from "./menu-render.js";
 
 export const SETTINGS_MENU_ID = "settings-menu";
 const PUBLISHING_MENU_ID = "settings-publishing";
@@ -377,11 +376,6 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
     const actorId = Number(ctx.from?.id);
     const locale = settingsService(backendDb).locale(actorId);
     range
-      .submenu(t(locale, "settings.notifications-inbox"), NOTIFICATIONS_MENU_ID, async (ctx) => {
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(notificationsInboxText(backendDb, config, actorId, locale));
-      })
-      .row()
       .submenu(t(locale, "settings.publication-notifications"), NOTIFICATION_SETTINGS_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();
         await ctx.editMessageText(notificationSettingsText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
@@ -464,7 +458,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
       .row()
       .back(t(locale, "common.menu"), async (ctx) => {
         await ctx.answerCallbackQuery();
-        await ctx.editMessageText(t(locale, "menu.control-panel"));
+        await ctx.editMessageText(MAIN_MENU_TEXT);
       });
   });
   publishing.register(channels);

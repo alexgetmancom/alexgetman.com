@@ -95,14 +95,8 @@ export function renderDashboardShell(body: string, locale: StudioLocale): string
     .dashboard-locale a { border:1px solid var(--border); border-radius:14px; padding:3px 8px; font-size:12px; text-decoration:none; }
     .dashboard-locale a.active { background:var(--accent-strong); border-color:var(--accent-strong); color:var(--accent-contrast); }
     .studio-analytics { white-space:normal; line-height:1.6; }
-    .attention-list, .notification-list { list-style:none; margin:0; padding:0; }
+    .attention-list { list-style:none; margin:0; padding:0; }
     .attention-list li { padding:6px 0; border-bottom:1px solid var(--surface-raised); }
-    .notification-list li { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--surface-raised); }
-    .notification-list li:last-child { border-bottom:0; }
-    .notification-list span { flex:1; }
-    .notification-list time { color:var(--text-muted); font-size:12px; white-space:nowrap; }
-    .notification--warn span, .notification--error span { color:var(--danger); }
-
     /* Overview-specific surface. Rules shared with the other tabs (body, main,
        and .dashboard-tabs) are declared once above; only
        selectors unique to this screen belong here. */

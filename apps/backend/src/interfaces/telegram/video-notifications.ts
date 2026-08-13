@@ -109,7 +109,6 @@ export async function sendStudioReminder(
     await bot.api.sendMessage(
       actorId,
       `${t(locale, "notif.reminder-head", { minutes })}\n\n🎬 ${title}${videoLocale ? `\n${localeName(videoLocale, locale)}` : ""}\n\n${lines.join("\n")}${publishAt ? `\n\n${formatVideoTime(publishAt, locale, timeConfig)}` : ""}`.trim(),
-      { reply_markup: new InlineKeyboard().text(t(locale, "settings.notifications"), "notifications_home") },
     );
   });
 }
@@ -165,9 +164,8 @@ export async function sendStudioCompletion(
     );
     const remaining = partialLocale ? remainingScheduleText(details, locale, timeConfig) : "";
     const text = `${headline}${videoLocale ? `\n${localeName(videoLocale, locale)}` : ""}${remaining ? `\n\n${remaining}` : ""}${lines.length ? `\n\n${lines.join("\n")}` : ""}`;
-    await bot.api.sendMessage(actorId, text, {
-      reply_markup: completionKeyboard(locale, event.postKey, draftId, retryableTargets, partialLocale != null),
-    });
+    const replyMarkup = completionKeyboard(locale, event.postKey, draftId, retryableTargets, partialLocale != null);
+    await bot.api.sendMessage(actorId, text, replyMarkup ? { reply_markup: replyMarkup } : undefined);
   });
 }
 
@@ -177,14 +175,16 @@ function completionKeyboard(
   draftId: number | null,
   retryableTargets: Array<{ target: string; status: string; error: string | null }>,
   partial: boolean,
-): InlineKeyboard {
+): InlineKeyboard | undefined {
   const keyboard = new InlineKeyboard();
+  let hasButtons = false;
   const publication = parsePublicationRef(postKey);
   const kind = publication?.kind === "post" || publication?.kind === "video" ? publication.kind : null;
   // Only a post can requeue every failed target in one call; a video is retried
   // per target because each upload carries its own metadata.
   const bulkRetry = kind === "post" && retryableTargets.length > 0;
   if (kind && draftId != null && (retryableTargets.length || (kind === "post" && partial))) {
+    hasButtons = true;
     if (bulkRetry) keyboard.text(t(locale, "notif.retry-failed"), publicationCallback(kind, "retry", [draftId, "all", "notice"])).row();
     keyboard.text(t(locale, "notif.open"), publicationCallback(kind, "view", [draftId, "overview"])).row();
     for (const target of retryableTargets)
@@ -195,8 +195,7 @@ function completionKeyboard(
         )
         .row();
   }
-  keyboard.text(t(locale, "settings.notifications"), "notifications_home");
-  return keyboard;
+  return hasButtons ? keyboard : undefined;
 }
 
 async function forEachAdmin(actorIds: number[], deliver: (actorId: number) => Promise<void>): Promise<void> {

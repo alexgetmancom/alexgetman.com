@@ -75,7 +75,7 @@ export async function executePublicationEffects(ctx: Context, backendDb: Backend
       continue;
     }
     if (effect.type === "main-menu") {
-      await showMainMenu(ctx, backendDb, effect.menu, effect.edit);
+      await showMainMenu(ctx, effect.menu, effect.edit);
       continue;
     }
     if (effect.operation === "clear") {

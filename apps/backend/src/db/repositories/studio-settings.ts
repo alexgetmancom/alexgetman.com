@@ -1,6 +1,13 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { StudioSettingsStore } from "../../application/ports.js";
-import { botSettings, botUiSettings, studioNewsDigestSettings, studioNotificationSettings, studioWeeklyDigestSettings } from "../schema.js";
+import {
+  botSettings,
+  botUiSettings,
+  studioNewsDigestSettings,
+  studioNotificationJobs,
+  studioNotificationSettings,
+  studioWeeklyDigestSettings,
+} from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite adapter for owner and Studio-wide settings. */
@@ -61,6 +68,15 @@ export function createStudioSettingsStore(db: BackendDatabase): StudioSettingsSt
           },
         })
         .run();
+    },
+
+    cancelQueuedReminders(actorId, now) {
+      return db
+        .update(studioNotificationJobs)
+        .set({ status: "cancelled", updatedAt: now })
+        .where(and(eq(studioNotificationJobs.actorId, actorId), eq(studioNotificationJobs.status, "queued")))
+        .returning({ id: studioNotificationJobs.id })
+        .all().length;
     },
 
     botSettings(actorId) {

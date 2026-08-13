@@ -76,27 +76,7 @@ export function queueScreen(snapshot: StudioQueueSnapshot, locale: StudioLocale,
   const currentPage = Math.max(0, Math.min(Math.trunc(page), allPages.length - 1));
   const pages = allPages.length;
   const pageItems = allPages[currentPage] ?? { upcoming: [], drafts: [] };
-  const lines = [`📋 *${t(locale, "queue.title")}*`, ""];
-  if (snapshot.attention.length) lines.push(`⚠️ ${t(locale, "queue.attention-btn", { count: snapshot.attention.length })}`);
-  lines.push("", `*${t(locale, "queue.upcoming-heading")}*`);
-  if (!pageItems.upcoming.length) lines.push(t(locale, "queue.nothing-scheduled"));
-  else {
-    let lastDay = "";
-    const dayKey = dayKeyFormatter(timeZone);
-    for (const item of pageItems.upcoming) {
-      const day = dayKey.format(item.time);
-      if (day !== lastDay) {
-        lines.push("", `*${queueDayLabel(item.time, locale, timeZone)}*`);
-        lastDay = day;
-      }
-      lines.push(`• ${formatQueueTime(item.time, locale, timeZone)} — ${kindIcon(item.kind)} ${escapeMarkdown(item.label)}`);
-    }
-  }
-  lines.push("", `*${t(locale, "queue.drafts-btn", { count: pageItems.drafts.length })}*`);
-  if (!pageItems.drafts.length) lines.push(t(locale, "queue.no-drafts"));
-  else for (const item of pageItems.drafts) lines.push(`• ${kindIcon(item.kind)} ${escapeMarkdown(item.label)}`);
-  if (pages > 1) lines.push("", t(locale, "queue.page", { page: currentPage + 1, pages }));
-  return { text: lines.join("\n"), items: pageItems, currentPage, pages };
+  return { text: `📋 *${t(locale, "queue.title")}*`, items: pageItems, currentPage, pages };
 }
 
 function attentionPageCount(snapshot: StudioQueueSnapshot): number {
@@ -196,14 +176,4 @@ function formatQueueTime(date: Date, locale: StudioLocale, timeZone: string): st
   if (dayKey.format(date) === dayKey.format(now)) return `${t(locale, "common.today")}, ${time}`;
   if (dayKey.format(date) === dayKey.format(new Date(now.getTime() + 24 * 60 * 60_000))) return `${t(locale, "common.tomorrow")}, ${time}`;
   return `${formatter("day", locale, timeZone).format(date)}, ${time}`;
-}
-
-function queueDayLabel(date: Date, locale: StudioLocale, timeZone: string): string {
-  const dayKey = dayKeyFormatter(timeZone);
-  const today = dayKey.format(new Date());
-  const tomorrow = dayKey.format(new Date(Date.now() + 24 * 60 * 60_000));
-  const current = dayKey.format(date);
-  if (current === today) return t(locale, "common.today");
-  if (current === tomorrow) return t(locale, "common.tomorrow");
-  return formatter("day", locale, timeZone).format(date);
 }

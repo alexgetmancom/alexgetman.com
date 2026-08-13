@@ -9,18 +9,8 @@ describe("application persistence ports", () => {
     let notifications: Parameters<ApplicationPorts["studioSettings"]["saveNotifications"]>[0] | undefined;
     let timezone: Parameters<ApplicationPorts["studioSettings"]["saveTimezone"]>[0] | undefined;
     let currentTimezone: string | null = null;
-    const ports: Pick<ApplicationPorts, "clock" | "studioNotifications" | "studioSettings"> = {
+    const ports: Pick<ApplicationPorts, "clock" | "studioSettings"> = {
       clock: { now: () => new Date("2026-01-02T03:04:05.000Z") },
-      studioNotifications: {
-        unread: () => [],
-        get: () => null,
-        acknowledge: () => false,
-        cancelQueuedReminders: () => 0,
-        draftOwner: () => null,
-        videoOwner: () => null,
-        postIdForKey: () => null,
-        postOwner: () => null,
-      },
       studioSettings: {
         notifications: () => null,
         locale: () => null,
@@ -36,6 +26,7 @@ describe("application persistence ports", () => {
         saveNotifications: (input) => {
           notifications = input;
         },
+        cancelQueuedReminders: () => 0,
         botSettings: () => null,
         saveBotSettings: () => {},
         saveLocale: () => {},

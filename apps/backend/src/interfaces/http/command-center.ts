@@ -17,7 +17,7 @@ import type { RouteModule } from "./context.js";
 const LOGIN_ATTEMPT_LIMIT = 10;
 const LOGIN_ATTEMPT_WINDOW_SECONDS = 300;
 
-export const commandCenterRoutes: RouteModule = (app, { config, backendDb, engagement, operations, studio }) => {
+export const commandCenterRoutes: RouteModule = (app, { config, backendDb, engagement, operations }) => {
   app.get("/command-center", (c) => {
     const request = c.req.raw;
     const url = new URL(request.url);
@@ -72,18 +72,6 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, engag
     return loginRedirect("/command-center", "command_token", token);
   });
 
-  app.post("/command-center/studio/acknowledge", async (c) => {
-    const request = c.req.raw;
-    if (!commandAllowed(request, config) || !sameOriginCommandLogin(request, config)) return text("forbidden\n", 403);
-    const actorId = config.MCP_STUDIO_ACTOR_ID;
-    const form = await request.formData().catch(() => new FormData());
-    const id = Number(form.get("id"));
-    if (actorId && Number.isSafeInteger(id)) studio.notifications.acknowledge(actorId, id);
-    invalidateDashboardRenderCache(backendDb);
-    const locale = new URL(request.url).searchParams.get("locale") === "en" ? "&locale=en" : "";
-    return new Response(null, { status: 303, headers: { location: `/command-center?tab=studio${locale}` } });
-  });
-
   app.get("/api/command-center/fingerprint", (c) =>
     commandAllowed(c.req.raw, config)
       ? json(trackUsageSync(backendDb, "command_center.fingerprint.poll", () => operations.fingerprint()))
@@ -124,10 +112,8 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, engag
     const body = await commandAction(c.req.raw);
     if (!body) return json({ detail: "unreadable command" }, 400);
     if (!commandAllowed(c.req.raw, config, body.token)) return json({ detail: "forbidden" }, 403);
-    // This endpoint deletes external publications, so it gets the same same-origin
-    // check as /command-center/studio/acknowledge — cookie authority is ambient and
-    // a cross-site form can ride it. A caller that presents the token explicitly is
-    // a script, not a drive-by browser form, and keeps working.
+    // Cookie authority is ambient, so a cross-site form can ride it. A caller
+    // that presents the token explicitly is a script, not a drive-by browser form.
     const explicitToken = Boolean(body.token?.trim() || c.req.header("X-Command-Token") || c.req.header("X-Admin-Token"));
     if (!explicitToken && !sameOriginCommandLogin(c.req.raw, config)) return json({ detail: "forbidden" }, 403);
     try {

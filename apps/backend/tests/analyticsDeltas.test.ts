@@ -171,8 +171,8 @@ describe("creator analytics deltas", () => {
         .run();
       registerChannel(backendDb, { platform: "youtube", locale: "ru", provider: "native", label: "YouTube RU" });
 
-      const dashboard = studioAnalyticsDashboard(backendDb, "video", 1, "ru");
-      expect(dashboard.text).toContain("| ▶️ YouTube RU | 124 | +2 | 50 | 2 | 1 | — | — |");
+      const dashboard = studioAnalyticsDashboard(backendDb, "overview", 1, "ru");
+      expect(dashboard.text).toContain("| YouTube RU | 124 | +2 | 50 | 2 | 1 | — | — |");
     });
   });
 

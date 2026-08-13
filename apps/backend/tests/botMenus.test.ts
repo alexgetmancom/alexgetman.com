@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from "bun:test";
 import type { Menu } from "@grammyjs/menu";
 import type { Context } from "grammy";
 import { buildMainMenu } from "../src/bot/navigation.js";
-import { buildNotificationsMenu } from "../src/bot/notifications-screen.js";
 import { buildSettingsMenu } from "../src/bot/settings-screen.js";
 import { isAdmin } from "../src/bot.js";
 import { registerChannel } from "../src/channels/registry.js";
@@ -30,9 +29,8 @@ async function renderLabels(menu: Menu<Context>): Promise<string[]> {
 }
 
 async function mainMenuLabels(config: ReturnType<typeof loadConfig>, db: BackendDb): Promise<string[]> {
-  const notificationsMenu = buildNotificationsMenu(config, db);
   const settingsMenu = buildSettingsMenu(config, db);
-  const mainMenu = buildMainMenu(config, db, settingsMenu, notificationsMenu);
+  const mainMenu = buildMainMenu(config, db, settingsMenu);
   return renderLabels(mainMenu);
 }
 
@@ -68,6 +66,17 @@ describe("buildMainMenu", () => {
     expect(labels.some((text) => /new video/i.test(text))).toBe(true);
     expect(labels.some((text) => /analytics/i.test(text))).toBe(true);
   });
+
+  it("puts post and video creation on the same row", async () => {
+    backendDb = openBackendDb(":memory:");
+    const config = loadConfig({});
+    const settingsMenu = buildSettingsMenu(config, backendDb);
+    const mainMenu = buildMainMenu(config, backendDb, settingsMenu);
+    const rows: Array<Array<{ text: string }>> = await (
+      mainMenu as unknown as { render: (ctx: Context) => Promise<Array<Array<{ text: string }>>> }
+    ).render(fakeCtx);
+    expect(rows[0]?.map((button) => button.text)).toEqual(["📝 New post", "🎬 New video"]);
+  });
 });
 
 describe("buildSettingsMenu", () => {
@@ -83,6 +92,7 @@ describe("buildSettingsMenu", () => {
     const config = loadConfig({});
 
     const labels = await settingsMenuLabels(config, backendDb, "settings-notifications-category");
+    expect(labels).not.toContain("📥 Inbox");
     expect(labels).toContain("📰 News digest");
   });
 
