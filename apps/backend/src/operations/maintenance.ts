@@ -62,6 +62,7 @@ export function pruneOperationalHistory(backendDb: BackendDb, now = new Date()):
   const postEventsDeleted = deleteBatched(
     `DELETE FROM post_events
      WHERE created_at < ?
+       AND event_type != 'analytics.milestone.reached'
        AND NOT (severity IN ('warn', 'error') AND acked_at IS NULL)`,
     cutoff(POST_EVENTS_RETENTION_DAYS),
   );

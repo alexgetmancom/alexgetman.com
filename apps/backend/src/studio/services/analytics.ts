@@ -1,4 +1,5 @@
 import { audienceAnalysis } from "../../analytics/reports/audience.js";
+import { creatorMilestoneHistory } from "../../analytics/reports/milestone-history.js";
 import { creatorArchiveSummary, creatorPostArchive, creatorPostMedia, creatorPostMetrics } from "../../analytics/reports/post-archive.js";
 import { studioAnalyticsDashboard } from "../../analytics/reports/studio-dashboard.js";
 import { creatorVideoArchive, creatorVideoMetrics } from "../../analytics/reports/video-archive.js";
@@ -30,6 +31,11 @@ export function analyticsService(backendDb: BackendDb, config: BackendConfig) {
     },
     archiveSummary(locale: StudioLocale) {
       return trackUsageSync(backendDb, "studio.analytics.post.read", () => creatorArchiveSummary(backendDb, locale));
+    },
+    milestoneHistory(offset: number, locale: StudioLocale) {
+      return trackUsageSync(backendDb, "studio.analytics.milestones.read", () =>
+        creatorMilestoneHistory(backendDb, offset, locale, config.TIMEZONE),
+      );
     },
     videoArchive(offset: number, locale: StudioLocale) {
       return trackUsageSync(backendDb, "studio.analytics.video.read", () => creatorVideoArchive(backendDb, offset, locale));

@@ -49,6 +49,17 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     await showAnalyticsDashboard(ctx, backendDb, config, "overview", analyticsPeriod(days));
     return true;
   }
+  if (data.startsWith("analytics_milestones:")) {
+    const offset = Math.max(0, Number(data.slice("analytics_milestones:".length)) || 0);
+    const history = analytics.milestoneHistory(offset, locale);
+    const keyboard = new InlineKeyboard();
+    archivePagination(keyboard, locale, "analytics_milestones", offset, history);
+    keyboard.text(t(locale, "analytics.back-analytics"), "analytics_home").row().text(t(locale, "common.menu"), "menu_home");
+    clearTelegramAnalyticsDashboard(backendDb, actorId);
+    await ctx.answerCallbackQuery();
+    await editScreen(ctx, history.text, { reply_markup: keyboard });
+    return true;
+  }
   if (data.startsWith("analytics_section:")) {
     const [, sectionValue, daysValue] = data.split(":");
     const requested: AnalyticsSection = sectionValue === "posts" || sectionValue === "video" ? sectionValue : "overview";
@@ -205,6 +216,7 @@ function analyticsKeyboard(locale: StudioLocale, section: AnalyticsSection, days
     t(locale, section === "video" ? "analytics.video-section-active" : "analytics.video-section"),
     `analytics_section:video:${days}`,
   );
+  keyboard.row().text(t(locale, "analytics.milestones-btn"), "analytics_milestones:0");
   keyboard.row().text(t(locale, "common.menu"), "menu_home");
   return keyboard;
 }
@@ -218,7 +230,7 @@ function periodButtonLabel(locale: StudioLocale, period: 1 | 7 | 30, selected: 1
 function archivePagination(
   keyboard: InlineKeyboard,
   locale: StudioLocale,
-  prefix: "analytics_archive" | "analytics_post_archive",
+  prefix: "analytics_archive" | "analytics_post_archive" | "analytics_milestones",
   offset: number,
   archive: { items: Array<unknown>; total: number; pageSize: number },
 ): void {

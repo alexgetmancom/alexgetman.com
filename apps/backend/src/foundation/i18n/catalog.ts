@@ -326,6 +326,10 @@ const en = {
   // Analytics screen
   "analytics.posts-btn": "📝 Posts · {count}",
   "analytics.videos-btn": "🎬 Videos · {count}",
+  "analytics.milestones-btn": "🏆 Milestones",
+  "analytics.milestones-title": "🏆 Milestone history",
+  "analytics.milestones-empty": "No milestones reached yet.",
+  "analytics.back-analytics": "← Analytics",
   "analytics.back-archive": "← Archive",
   "analytics.show-media": "🖼 Show media",
   "analytics.overview": "📊 Overview",
@@ -1001,6 +1005,10 @@ const ru = {
   // Analytics screen
   "analytics.posts-btn": "📝 Посты · {count}",
   "analytics.videos-btn": "🎬 Видео · {count}",
+  "analytics.milestones-btn": "🏆 Достижения",
+  "analytics.milestones-title": "🏆 История достижений",
+  "analytics.milestones-empty": "Достижений пока нет.",
+  "analytics.back-analytics": "← К статистике",
   "analytics.back-archive": "← Архив",
   "analytics.show-media": "🖼 Показать медиа",
   "analytics.overview": "📊 Общая",
