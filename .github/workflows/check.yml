@@ -564,11 +564,15 @@ jobs:
           phase readiness
           # Reconcile deploy-image.env with what is now actually running, so a
           # manual `docker compose up` on the host starts the release that was
-          # just verified. This has to follow the activation: run before it, it
-          # asserts the *previous* deploy named the expected repository, which
-          # renaming the image makes permanently false and wedges every future
-          # deploy behind a check about the past.
-          ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$runtime; image=\$(bun -e 'const state=JSON.parse(await Bun.file(\"/var/lib/alexgetman-deploy/state.json\").text()); process.stdout.write(state.current?.image ?? \"\")'); printf '%s\\n' \"\$image\" | grep -Eq '^ghcr.io/alexgetmancom/solo-publisher@sha256:[0-9a-fA-F]{64}\$' || exit 1; if ! grep -Eq \"^BACKEND_IMAGE=\$image\\\$\" \"\$runtime/deploy-image.env\"; then tmp=\"\$runtime/deploy-image.env.next\"; { grep -v '^BACKEND_IMAGE=' \"\$runtime/deploy-image.env\" || true; printf 'BACKEND_IMAGE=%s\\n' \"\$image\"; } > \"\$tmp\"; mv \"\$tmp\" \"\$runtime/deploy-image.env\"; fi"
+          # just verified. Two things this got wrong before:
+          #   - it ran before the activation, so it asserted that the *previous*
+          #     deploy named the expected repository. Renaming the image made
+          #     that permanently false and wedged every future deploy behind a
+          #     check about the past;
+          #   - it read state.json, which the agent stopped writing when state
+          #     became per-target. That file last changed in July, so the check
+          #     passed on a months-old release and verified nothing at all.
+          ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$runtime; image=\$(bun -e 'const state=JSON.parse(await Bun.file(\"/var/lib/alexgetman-deploy/alex.json\").text()); process.stdout.write(state.current?.image ?? \"\")'); printf '%s\\n' \"\$image\" | grep -Eq '^ghcr.io/alexgetmancom/solo-publisher@sha256:[0-9a-fA-F]{64}\$' || exit 1; test \"\$image\" = '$IMAGE'; if ! grep -Eq \"^BACKEND_IMAGE=\$image\\\$\" \"\$runtime/deploy-image.env\"; then tmp=\"\$runtime/deploy-image.env.next\"; { grep -v '^BACKEND_IMAGE=' \"\$runtime/deploy-image.env\" || true; printf 'BACKEND_IMAGE=%s\\n' \"\$image\"; } > \"\$tmp\"; mv \"\$tmp\" \"\$runtime/deploy-image.env\"; fi"
           # Only the primary revision. The second Studio is promoted by hand from
           # the agent's notification, so reconciling its image here would assert
           # something this workflow never performed — and would fail on every run
