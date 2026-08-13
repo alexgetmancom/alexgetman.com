@@ -168,6 +168,7 @@ function platformAnalyticsTable(backendDb: BackendDb, since: string, days: Analy
   const rows = [...platforms]
     .sort(
       (left, right) =>
+        followerCount(profileMap.get(right)?.dataJson) - followerCount(profileMap.get(left)?.dataJson) ||
         (content.get(right)?.views ?? 0) - (content.get(left)?.views ?? 0) ||
         platformLabel(backendDb, left).localeCompare(platformLabel(backendDb, right)),
     )
@@ -187,8 +188,8 @@ function platformAnalyticsTable(backendDb: BackendDb, since: string, days: Analy
   const all = t(locale, "sdash.all");
   const headers = [t(locale, "sdash.platform-col"), "👥", "📈", "👁", "♥", "💬", "↗", "🔖"];
   const tableRows = [
-    { platform: "all", label: all, growth: totalGrowth, value: totalContent },
     ...rows.map((row) => ({ label: platformLabel(backendDb, row.platform), ...row })),
+    { platform: "all", label: all, growth: totalGrowth, value: totalContent },
   ].map((row) => [
     row.label,
     String(row.platform === "all" ? totalFollowers : followerCount(profileMap.get(row.platform)?.dataJson)),
@@ -208,10 +209,10 @@ function publishedPostTable(backendDb: BackendDb, since: string, locale: StudioL
   const values = rows.map(contentMetrics);
   const total = sumContentMetrics(values);
   const all = t(locale, "sdash.all");
-  const headers = [t(locale, "sdash.post-col"), "👁", "♥", "💬", "↗", "🔖"];
+  const headers = [t(locale, "sdash.post-col"), t(locale, "sdash.platform-col"), "👁", "♥", "💬", "↗", "🔖"];
   const tableRows = [
-    [all, String(total.views), String(total.likes), String(total.comments), dash(total.shares), dash(total.saves)],
-    ...topDetails(rows).map((row) => contentRowCells(`${shortLabel(row.label)} · ${platformIcon(row.platform)}`, contentMetrics(row))),
+    [all, "—", String(total.views), String(total.likes), String(total.comments), dash(total.shares), dash(total.saves)],
+    ...topDetails(rows).map((row) => contentRowCells(shortLabel(row.label), publicationPlatform(row.platform), contentMetrics(row))),
   ];
   return [tableBlock(headers, tableRows)];
 }
@@ -247,16 +248,12 @@ function publishedVideoTable(backendDb: BackendDb, since: string, locale: Studio
   const values = rows.map((row) => contentMetrics(row));
   const total = sumContentMetrics(values);
   const all = t(locale, "sdash.all");
-  const headers = [t(locale, "sdash.video-col"), "👁", "♥", "💬", "↗", "🔖"];
+  const headers = [t(locale, "sdash.video-col"), t(locale, "sdash.platform-col"), "👁", "♥", "💬", "↗", "🔖"];
   const tableRows = [
-    [all, String(total.views), String(total.likes), String(total.comments), dash(total.shares), dash(total.saves)],
+    [all, "—", String(total.views), String(total.likes), String(total.comments), dash(total.shares), dash(total.saves)],
     ...topDetails(rows).map((row) => {
       const platform = row.platform === "instagram_reels" ? "instagram" : "youtube";
-      return contentRowCells(
-        `${shortLabel(row.label)} · ${platformIcon(platform)} ${row.locale.toUpperCase()}`,
-        contentMetrics(row),
-        platform === "youtube",
-      );
+      return contentRowCells(shortLabel(row.label), publicationPlatform(platform, row.locale), contentMetrics(row), platform === "youtube");
     }),
   ];
   return [tableBlock(headers, tableRows)];
@@ -294,9 +291,10 @@ function sumContentMetrics(values: ContentMetrics[]): ContentMetrics {
   );
 }
 
-function contentRowCells(label: string, metrics: ContentMetrics, hidesSaves = false): string[] {
+function contentRowCells(label: string, platform: string, metrics: ContentMetrics, hidesSaves = false): string[] {
   return [
     label,
+    platform,
     String(metrics.views),
     String(metrics.likes),
     String(metrics.comments),
@@ -345,9 +343,9 @@ function followerCount(data: Record<string, unknown> | undefined): number {
 const PLATFORM_DISPLAY: Record<string, { label: string; icon: string }> = {
   instagram: { label: "Instagram", icon: "📸" },
   telegram: { label: "Telegram", icon: "✈️" },
-  threads: { label: "Threads", icon: "@" },
-  threads_en: { label: "Threads EN", icon: "@" },
-  threads_ru: { label: "Threads RU", icon: "@" },
+  threads: { label: "Threads", icon: "🧵" },
+  threads_en: { label: "Threads EN", icon: "🧵" },
+  threads_ru: { label: "Threads RU", icon: "🧵" },
   x: { label: "X", icon: "𝕏" },
   youtube: { label: "YouTube", icon: "▶️" },
   instagram_ru: { label: "Instagram RU", icon: "📸" },
@@ -359,6 +357,9 @@ const PLATFORM_DISPLAY: Record<string, { label: string; icon: string }> = {
   telegram_stories: { label: "Telegram Stories", icon: "✈️" },
   instagram_stories: { label: "Instagram Stories EN", icon: "📸" },
   instagram_stories_ru: { label: "Instagram Stories RU", icon: "📸" },
+  discord: { label: "Discord", icon: "🎮" },
+  site_en: { label: "Site EN", icon: "🌐" },
+  site_ru: { label: "Site RU", icon: "🌐" },
 };
 
 function platformLabel(backendDb: BackendDb, platform: string): string {
@@ -372,6 +373,24 @@ function platformLabel(backendDb: BackendDb, platform: string): string {
 
 function platformIcon(platform: string): string {
   return PLATFORM_DISPLAY[platform]?.icon ?? "•";
+}
+
+function publicationPlatform(platform: string, locale?: string): string {
+  if (locale) return `${platformIcon(platform)} ${locale.toUpperCase()}`;
+  const labels: Record<string, string> = {
+    telegram: "✈️ RU",
+    telegram_stories: "✈️ Stories RU",
+    instagram_stories: "📸 Stories EN",
+    instagram_stories_ru: "📸 Stories RU",
+    threads: "🧵 RU",
+    threads_ru: "🧵 RU",
+    threads_en: "🧵 EN",
+    x: "𝕏 EN",
+    discord: "🎮 EN",
+    site_ru: "🌐 RU",
+    site_en: "🌐 EN",
+  };
+  return labels[platform] ?? platformIcon(platform);
 }
 
 function contentMetricsFromProfile(

@@ -143,10 +143,10 @@ describe("creator analytics dashboards", () => {
       const dashboard = studioAnalyticsDashboard(backendDb, "video", 1, "ru");
       expect(dashboard.text).not.toContain("Аккаунт ·");
       expect(dashboard.text).not.toContain("Instagram RU | 306");
-      expect(dashboard.text).toContain("| Видео | 👁 | ♥ | 💬 | ↗ | 🔖 |");
-      expect(dashboard.text).toContain("| Все | 200 | 20 | 0 | 7 | 5 |");
-      expect(dashboard.text).toContain("| Симулятор… · 📸 RU | 200 | 20 | 0 | 7 | 5 |");
-      expect(dashboard.text).not.toContain("| Симулятор… · ▶️ |");
+      expect(dashboard.text).toContain("| Видео | Площадка | 👁 | ♥ | 💬 | ↗ | 🔖 |");
+      expect(dashboard.text).toContain("| Все | — | 200 | 20 | 0 | 7 | 5 |");
+      expect(dashboard.text).toContain("| Симулятор… | 📸 RU | 200 | 20 | 0 | 7 | 5 |");
+      expect(dashboard.text).not.toContain("| Симулятор… | ▶️ RU |");
       expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(1);
       expect(dashboard.richHtml).not.toContain("|:--");
       const overview = studioAnalyticsDashboard(backendDb, "overview", 1, "ru");
@@ -180,10 +180,40 @@ describe("creator analytics dashboards", () => {
         ])
         .run();
       const dashboard = studioAnalyticsDashboard(backendDb, "posts", 1, "ru");
-      expect(dashboard.text).toContain("| Пост | 👁 | ♥ | 💬 | ↗ | 🔖 |");
-      expect(dashboard.text).toContain("| Все | 200 | 20 | 0 | 7 | — |");
-      expect(dashboard.text).toContain("| Релиз нов… · ✈️ | 200 | 20 | 0 | 7 | — |");
+      expect(dashboard.text).toContain("| Пост | Площадка | 👁 | ♥ | 💬 | ↗ | 🔖 |");
+      expect(dashboard.text).toContain("| Все | — | 200 | 20 | 0 | 7 | — |");
+      expect(dashboard.text).toContain("| Релиз нов… | ✈️ RU | 200 | 20 | 0 | 7 | — |");
       expect(dashboard.richHtml.match(/<table bordered striped>/g)?.length).toBe(1);
+    });
+  });
+
+  it("renders text publication platforms in their own labeled column", async () => {
+    await withDb(async (backendDb) => {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(posts)
+        .values({
+          postKey: "post:icons",
+          channel: "telegram",
+          messageId: 2,
+          text: "Platform labels",
+          dateUtc: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      const targets = ["threads_en", "x", "telegram", "discord"];
+      backendDb.db
+        .insert(postTargets)
+        .values(targets.map((target) => ({ postKey: "post:icons", target, status: "published", publishedAt: now, updatedAt: now })))
+        .run();
+      backendDb.db
+        .insert(metricSamples)
+        .values(targets.map((target, index) => ({ postKey: "post:icons", target, metricName: "views", value: index + 1, sampledAt: now })))
+        .run();
+
+      const dashboard = studioAnalyticsDashboard(backendDb, "posts", 1, "en").text;
+      for (const platform of ["🧵 EN", "𝕏 EN", "✈️ RU", "🎮 EN"]) expect(dashboard).toContain(`| ${platform} |`);
     });
   });
 
@@ -238,6 +268,12 @@ describe("creator analytics dashboards", () => {
       const overview = studioAnalyticsDashboard(backendDb, "overview", 7, "ru").text;
       const audience = studioAnalyticsDashboard(backendDb, "audience", 7, "ru").text;
       expect(overview).toContain("| Все | 556 | —");
+      expect(
+        overview
+          .split("\n")
+          .slice(2)
+          .map((row) => row.split("|")[1]?.trim()),
+      ).toEqual(["Instagram RU", "Telegram", "YouTube RU", "Все"]);
       expect(audience).toContain("Instagram");
       expect(audience).toContain("YouTube");
       expect(audience).toContain("Telegram");
