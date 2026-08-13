@@ -533,10 +533,8 @@ jobs:
           if [ "$DEPLOY_AGENT_CHANGED" = "true" ]; then
             ssh "${ssh_opts[@]}" "$remote" "set -e; install -m 0644 '$release_files/deploy/deploy-agent.ts' /home/deploy/repos/alexgetman.com/deploy/deploy-agent.ts; install -m 0644 '$release_files/deploy/retry.ts' /home/deploy/repos/alexgetman.com/deploy/retry.ts; sudo systemctl restart alexgetman-deploy-agent; for attempt in 1 2 3 4 5; do curl --fail --silent http://127.0.0.1:9899/healthz && exit 0; sleep 1; done; exit 1"
           fi
-          ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$runtime; image=\$(bun -e 'const state=JSON.parse(await Bun.file(\"/var/lib/alexgetman-deploy/state.json\").text()); process.stdout.write(state.current?.image ?? \"\")'); printf '%s\\n' \"\$image\" | grep -Eq '^ghcr.io/alexgetmancom/solo-publisher@sha256:[0-9a-fA-F]{64}\$' || exit 1; if ! grep -Eq '^BACKEND_IMAGE=ghcr.io/alexgetmancom/solo-publisher@sha256:[0-9a-fA-F]{64}\$' \"\$runtime/deploy-image.env\"; then tmp=\"\$runtime/deploy-image.env.next\"; { grep -v '^BACKEND_IMAGE=' \"\$runtime/deploy-image.env\" || true; printf 'BACKEND_IMAGE=%s\\n' \"\$image\"; } > \"\$tmp\"; mv \"\$tmp\" \"\$runtime/deploy-image.env\"; fi"
           if [ "$MARU_DEPLOY_ENABLED" = "true" ]; then
             maru_runtime=/home/deploy/maru
-            ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$maru_runtime; image_id=\$(docker inspect --format '{{.Image}}' maru-backend); image=\$(docker image inspect --format '{{index .RepoDigests 0}}' \"\$image_id\"); printf '%s\\n' \"\$image\" | grep -Eq '^ghcr.io/alexgetmancom/solo-publisher@sha256:[0-9a-fA-F]{64}\$' || exit 1; if ! grep -Eq '^BACKEND_IMAGE=ghcr.io/alexgetmancom/solo-publisher@sha256:[0-9a-fA-F]{64}\$' \"\$runtime/deploy-image.env\" 2>/dev/null; then tmp=\"\$runtime/deploy-image.env.next\"; { grep -v '^BACKEND_IMAGE=' \"\$runtime/deploy-image.env\" 2>/dev/null || true; printf 'BACKEND_IMAGE=%s\\n' \"\$image\"; } > \"\$tmp\"; mv \"\$tmp\" \"\$runtime/deploy-image.env\"; fi"
             if [ "$RUNTIME_CONFIG_CHANGED" = "true" ]; then
               ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$maru_runtime; cp '$release_files/deploy/maru.compose.yaml' \$runtime/maru.compose.yaml.next; cp '$release_files/studio.maru.yaml' \$runtime/studio.yaml.next; docker compose --env-file \$runtime/deploy-image.env -f \$runtime/maru.compose.yaml.next config --quiet; mv \$runtime/maru.compose.yaml.next \$runtime/maru.compose.yaml; mv \$runtime/studio.yaml.next \$runtime/studio.yaml"
             fi
@@ -564,6 +562,18 @@ jobs:
           test "$public_ready_status" -eq 0
           test "$private_ready_status" -eq 0
           phase readiness
+          # Reconcile deploy-image.env with what is now actually running, so a
+          # manual `docker compose up` on the host starts the release that was
+          # just verified. This has to follow the activation: run before it, it
+          # asserts the *previous* deploy named the expected repository, which
+          # renaming the image makes permanently false and wedges every future
+          # deploy behind a check about the past.
+          ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$runtime; image=\$(bun -e 'const state=JSON.parse(await Bun.file(\"/var/lib/alexgetman-deploy/state.json\").text()); process.stdout.write(state.current?.image ?? \"\")'); printf '%s\\n' \"\$image\" | grep -Eq '^ghcr.io/alexgetmancom/solo-publisher@sha256:[0-9a-fA-F]{64}\$' || exit 1; if ! grep -Eq \"^BACKEND_IMAGE=\$image\\\$\" \"\$runtime/deploy-image.env\"; then tmp=\"\$runtime/deploy-image.env.next\"; { grep -v '^BACKEND_IMAGE=' \"\$runtime/deploy-image.env\" || true; printf 'BACKEND_IMAGE=%s\\n' \"\$image\"; } > \"\$tmp\"; mv \"\$tmp\" \"\$runtime/deploy-image.env\"; fi"
+          # Only the primary revision. The second Studio is promoted by hand from
+          # the agent's notification, so reconciling its image here would assert
+          # something this workflow never performed — and would fail on every run
+          # until someone happened to promote it.
+          phase image-reconciliation
           # Release files are safe to remove after readiness. Docker cache cleanup
           # is intentionally handled outside the deployment critical path.
           ssh "${ssh_opts[@]}" "$remote" "rm -rf '$release_files'"
