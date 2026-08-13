@@ -7,7 +7,6 @@ import { sendTelegramDeliveryPreviews } from "../interfaces/telegram/delivery-pr
 import type { DeliveryProjection } from "../studio/projections.js";
 import type { ConversationStateInput } from "./conversation-state.js";
 import { clearConversationState, saveConversationState } from "./conversation-state.js";
-import { showMainMenu } from "./menu-render.js";
 import { callbackMessageId } from "./telegram-context.js";
 
 type PublicationCard =
@@ -25,7 +24,7 @@ export type PublicationEffect =
   | { type: "edit-reply-markup"; keyboard: InlineKeyboard }
   | { type: "photo"; path: string; options?: Record<string, unknown>; card?: PublicationCard }
   | { type: "delivery-previews"; projections: DeliveryProjection[]; locale: StudioLocale }
-  | { type: "main-menu"; menu: Menu<Context>; edit?: boolean }
+  | { type: "main-menu"; menu: Menu<Context>; text: string; edit?: boolean }
   | { type: "session"; operation: "clear"; kind: "post" | "video"; actorId: number }
   | { type: "session"; operation: "save"; actorId: number; state: ConversationStateInput };
 
@@ -75,7 +74,9 @@ export async function executePublicationEffects(ctx: Context, backendDb: Backend
       continue;
     }
     if (effect.type === "main-menu") {
-      await showMainMenu(ctx, effect.menu, effect.edit);
+      const options = { reply_markup: effect.menu };
+      if (effect.edit) await ctx.editMessageText(effect.text, options);
+      else await ctx.reply(effect.text, options);
       continue;
     }
     if (effect.operation === "clear") {

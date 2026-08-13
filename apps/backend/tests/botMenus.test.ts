@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { join } from "node:path";
 import type { Menu } from "@grammyjs/menu";
 import type { Context } from "grammy";
+import { showMainMenu } from "../src/bot/menu-render.js";
 import { buildMainMenu } from "../src/bot/navigation.js";
 import { buildSettingsMenu } from "../src/bot/settings-screen.js";
 import { isAdmin } from "../src/bot.js";
@@ -58,6 +60,22 @@ describe("isAdmin", () => {
 });
 
 describe("buildMainMenu", () => {
+  it("renders the configured Studio name above the menu", async () => {
+    backendDb = openBackendDb(":memory:");
+    const config = loadConfig({ STUDIO_CONFIG: join(import.meta.dir, "../../../studio.alex.yaml") });
+    const mainMenu = buildMainMenu(config, backendDb, buildSettingsMenu(config, backendDb));
+    let text = "";
+    const ctx = {
+      reply: async (value: string) => {
+        text = value;
+      },
+    } as unknown as Context;
+
+    await showMainMenu(ctx, config, mainMenu);
+
+    expect(text).toBe("Alex Studio");
+  });
+
   it("offers post creation, video creation and analytics", async () => {
     backendDb = openBackendDb(":memory:");
     const config = loadConfig({});

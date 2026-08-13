@@ -1,9 +1,8 @@
 import type { Menu } from "@grammyjs/menu";
 import { type Context, Keyboard } from "grammy";
+import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
 import type { StudioLocale } from "../foundation/locale.js";
-
-export const MAIN_MENU_TEXT = "\u2063";
 
 /** Rendering the main menu, separated from building it.
  *
@@ -18,9 +17,8 @@ export function persistentKeyboard(locale: StudioLocale = "en"): Keyboard {
   return new Keyboard().text(t(locale, "menu.button")).resized().persistent();
 }
 
-export async function showMainMenu(ctx: Context, mainMenu: Menu<Context>, edit = false): Promise<void> {
-  // Telegram does not allow a message consisting only of an inline keyboard.
+export async function showMainMenu(ctx: Context, config: BackendConfig, mainMenu: Menu<Context>, edit = false): Promise<void> {
   const options = { reply_markup: mainMenu };
-  if (edit) await ctx.editMessageText(MAIN_MENU_TEXT, options);
-  else await ctx.reply(MAIN_MENU_TEXT, options);
+  if (edit) await ctx.editMessageText(config.studio.displayName, options);
+  else await ctx.reply(config.studio.displayName, options);
 }

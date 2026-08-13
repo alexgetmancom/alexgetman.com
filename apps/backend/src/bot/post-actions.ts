@@ -105,7 +105,7 @@ async function handleCancelConfirm(args: PostActionArgs): Promise<PublicationAct
 async function handleCancelDialog(args: PostActionArgs): Promise<PublicationActionResult> {
   return [
     { type: "session", operation: "clear", kind: args.callback.kind, actorId: args.actorId },
-    ...(args.mainMenu ? [{ type: "main-menu", menu: args.mainMenu, edit: true } as const] : []),
+    ...(args.mainMenu ? [{ type: "main-menu", menu: args.mainMenu, text: args.config.studio.displayName, edit: true } as const] : []),
   ];
 }
 

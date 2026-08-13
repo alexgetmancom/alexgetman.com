@@ -4,6 +4,7 @@ import * as z from "zod";
 
 const studioSchema = z
   .object({
+    display_name: z.string().trim().min(1).default("Studio"),
     timezone: z.string().default("Europe/Moscow"),
     timezone_label: z.string().default("MSK"),
     site_enabled: z.boolean().default(true),
@@ -19,6 +20,7 @@ const studioSchema = z
   .strict();
 
 export type StudioConfig = {
+  displayName: string;
   timezone: string;
   timezoneLabel: string;
   siteEnabled: boolean;
@@ -31,6 +33,7 @@ export function loadStudioConfig(path = process.env.STUDIO_CONFIG ?? "studio.yam
   // renames snake_case config keys to the camelCase the app reads.
   const parsed = studioSchema.parse(value ?? {});
   return {
+    displayName: parsed.display_name,
     timezone: parsed.timezone,
     timezoneLabel: parsed.timezone_label,
     siteEnabled: parsed.site_enabled,

@@ -2,6 +2,8 @@
 # .env; where this Studio publishes comes from the channel registry, which you
 # fill in from the Command Center or over MCP.
 
+display_name: Studio
+
 # IANA zone used for every displayed schedule time; timezone_label is the short
 # suffix shown next to it (e.g. "18:30 CET").
 timezone: UTC

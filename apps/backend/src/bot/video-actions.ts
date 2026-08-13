@@ -11,7 +11,6 @@ import type { StudioServices } from "../studio/services/index.js";
 import { VIDEO_FLOW } from "../studio/video-fsm.js";
 import { appendCancelButton, cancelPromptKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
-import { MAIN_MENU_TEXT } from "./menu-render.js";
 import type {
   action,
   PublicationActionDefinition,
@@ -185,7 +184,7 @@ async function handleCancelDialog({ backendDb, config, actorId, locale, mainMenu
   if (!mainMenu) throw new StudioError("err.video-restart");
   // Cancelling is pure navigation, not a content change: turn this same
   // message into the control panel instead of deleting and sending a new one.
-  return [{ type: "screen", mode: "edit", text: MAIN_MENU_TEXT, options: { reply_markup: mainMenu } }];
+  return [{ type: "screen", mode: "edit", text: config.studio.displayName, options: { reply_markup: mainMenu } }];
 }
 
 async function handleToggle({ backendDb, actorId, locale, args, services }: VideoActionArgs): Promise<VideoActionResult> {
