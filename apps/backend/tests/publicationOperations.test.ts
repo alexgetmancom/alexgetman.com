@@ -169,3 +169,28 @@ it("purges an absent publication and every stored publication path", async () =>
     backendDb.close();
   }
 });
+
+it("shows the operator every target the command would touch, not only the delivered ones", async () => {
+  const backendDb = openBackendDb(":memory:");
+  try {
+    connectThreads(backendDb);
+    const published = (await runOperation("publish", context(backendDb), {
+      locale: "ru",
+      targets: "threads_ru",
+      text: "Сегодня разобрал, как мы используем React и Bun в проде",
+    })) as { ref: string };
+
+    // Nothing has been claimed yet, so there is no post_targets row — and the
+    // plan used to read only that table. It reported "nothing is in scope" for
+    // a publication whose target `--apply` then requeued.
+    const plan = (await runOperation("retry", context(backendDb), { ref: published.ref })) as {
+      targets: Array<{ target: string; status: string; url: string | null; published: boolean }>;
+      hint: string;
+    };
+
+    expect(plan.targets).toEqual([{ target: "threads_ru", status: "queued", url: null, published: false }]);
+    expect(plan.hint).toBe("re-run with apply to perform it");
+  } finally {
+    backendDb.close();
+  }
+});

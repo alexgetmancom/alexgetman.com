@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { targetLocale } from "../../botTargets.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
-import { postTargets } from "../../db/schema.js";
+import { postTargets, publishJobs } from "../../db/schema.js";
 import type { ResolvedPublicationRef } from "../publication-ref.js";
 
 type ScopedTarget = { target: string; status: string; url: string | null; published: boolean };
@@ -14,18 +14,23 @@ type ScopedTarget = { target: string; status: string; url: string | null; publis
  * English surface at once, and by the time the result comes back the audience
  * has already seen it. */
 export function publicationScope(backendDb: BackendDb, ref: ResolvedPublicationRef, target?: string, locale?: "ru" | "en"): ScopedTarget[] {
-  return unsafeDb(backendDb)
-    .db.select()
-    .from(postTargets)
-    .where(eq(postTargets.postKey, ref.postKey))
-    .all()
-    .filter((row) => (!target || row.target === target) && (!locale || targetLocale(row.target) === locale))
-    .map((row) => ({
-      target: row.target,
-      status: row.status,
-      url: row.url ?? null,
-      published: row.status === "published",
-    }));
+  const db = unsafeDb(backendDb).db;
+  const scoped = (value: string): boolean => (!target || value === target) && (!locale || targetLocale(value) === locale);
+  const rows = new Map<string, ScopedTarget>();
+  // A target with a job but no delivery row yet is still in scope: `retry` works
+  // off the jobs, and reading only `post_targets` here reported "nothing is in
+  // scope" for a publication whose targets `--apply` then went and requeued.
+  for (const row of db.select({ target: publishJobs.target, status: publishJobs.status }).from(publishJobs).where(jobsOf(ref)).all())
+    if (scoped(row.target)) rows.set(row.target, { target: row.target, status: row.status, url: null, published: false });
+  for (const row of db.select().from(postTargets).where(eq(postTargets.postKey, ref.postKey)).all())
+    if (scoped(row.target))
+      rows.set(row.target, { target: row.target, status: row.status, url: row.url ?? null, published: row.status === "published" });
+  return [...rows.values()].sort((left, right) => left.target.localeCompare(right.target));
+}
+
+/** The publication's own jobs, by whichever identity it has. */
+function jobsOf(ref: ResolvedPublicationRef) {
+  return ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.postKey, ref.postKey);
 }
 
 export function scopePlan(
