@@ -31,6 +31,11 @@ if (!image) {
   process.exit(1);
 }
 
+/** This walk is the public SSR routes, so it needs a Studio that serves them.
+ * The shipped studio.yaml has the site off, which is right for an install and
+ * would make every route here a 404. */
+const studioConfig = path.resolve("apps/backend/tests/helpers/studio-site.yaml");
+
 const container = `image-smoke-${process.pid}`;
 const volume = `image-smoke-${process.pid}`;
 const port = 18000 + (process.pid % 20000);
@@ -82,7 +87,7 @@ try {
     "--entrypoint",
     "bun",
     "-v",
-    `${path.resolve("studio.yaml")}:/app/studio.yaml:ro`,
+    `${studioConfig}:/app/studio.yaml:ro`,
     "-e",
     "STUDIO_CONFIG=/app/studio.yaml",
     image,
@@ -119,7 +124,7 @@ try {
     "-v",
     `${volume}:/data`,
     "-v",
-    `${path.resolve("studio.yaml")}:/app/studio.yaml:ro`,
+    `${studioConfig}:/app/studio.yaml:ro`,
     "-e",
     "DATA_DIR=/data",
     "-e",
