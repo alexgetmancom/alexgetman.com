@@ -79,40 +79,23 @@ which starts a local Bot API server alongside the app and lifts the limit to 2 G
 
 ## Connect a destination
 
-Two halves: the Studio has to know a destination exists, and it has to hold the
-credentials for it. They are deliberately separate — nothing asks you for keys to
-a platform you do not publish to.
+Two halves, deliberately separate: the Studio has to know a destination exists,
+and it has to hold the credentials for it.
 
 ```bash
-docker compose exec app bun /app/ops/cli.js channel-connect --platform youtube --locale ru --provider native
+docker compose exec app bun /app/ops/cli.js channel-connect --target threads_en
 docker compose exec app bun /app/ops/cli.js doctor
 ```
 
 `doctor` names the exact settings that destination is still missing, and never
-prints the ones it has. Put them in `.env`, restart, run it again. The same two
-steps work from the Telegram bot and from an MCP client.
+prints the ones it has. The same two steps work from the Telegram bot and from
+an MCP client.
 
-**Instagram and Threads.** Publishing to Meta directly means registering your own
-app, a Professional account and a linked Facebook Page. A Threads token also expires 60 days after it is
-issued and nothing here refreshes it, so publishing stops until you re-issue it.
-Connecting them through [Zernio](https://zernio.com) instead replaces all of it
-with one `ZERNIO_API_KEY` — for feed posts, for Threads and for Stories alike,
-since a channel carries the provider it is delivered through,
-and the bot lists your accounts to pick from under Settings → Channels. The
-native path stays available if you would rather hold your own tokens.
-
-**YouTube.** Create a Google Cloud project and an OAuth client of type *TV and
-Limited Input devices*, put its id and secret in `.env`, then:
-
-```bash
-docker compose exec app bun /app/ops/cli.js youtube-authorize --locale ru
-```
-
-It prints a short code and a URL. Enter the code on any device with a browser,
-approve, and it prints the refresh token to put in `.env`. Each Studio uses its
-own Google project because YouTube quota is counted per project, not per user.
-
-**Telegram** needs only the bot token you already set to author from.
+**[Connecting a destination](docs/destinations.md)** covers every platform: what
+each one needs, when to go through a provider instead of registering your own
+Meta app, the guided flow for YouTube, and the things that bite later — a Threads
+token that lapses after 60 days, X charging for writes, and the 50 MB download
+limit that stops video until a local Bot API is running.
 
 ## Try it without installing
 

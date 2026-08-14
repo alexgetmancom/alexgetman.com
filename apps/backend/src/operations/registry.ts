@@ -3,6 +3,7 @@ import { importManualAnalytics } from "../analytics/import-manual-analytics.js";
 import { importXAnalyticsCsv } from "../analytics/import-x-csv.js";
 import { attachXActivityToPosts } from "../analytics/x-activity-linking.js";
 import { xAnalyticsReport } from "../analytics/x-activity-report.js";
+import { targetDefinition } from "../botTargets.js";
 import { type BackendDb, migrationStatus, unsafeDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { checkDataDirectoriesWritable, requiredDataDirectories } from "../foundation/runtime/data-dirs.js";
@@ -469,9 +470,10 @@ const operationDefs = {
   }),
   "channel-connect": operation({
     summary: "Connect a publishing route.",
+    note: "A text or story route needs only --target: it already names the platform and the language, and asking for them again is a way to store a channel that disagrees with itself. A video account needs --platform and --locale.",
     schema: z.object({
-      platform: example(z.string().min(1), "youtube|instagram").describe("platform to connect"),
-      locale: z.enum(["ru", "en"]),
+      platform: example(z.string().min(1), "youtube|instagram").describe("platform to connect").optional(),
+      locale: z.enum(["ru", "en"]).optional(),
       provider: example(z.string().default("native"), "native|zernio").describe("delivery provider"),
       target: z
         .enum([
@@ -492,15 +494,23 @@ const operationDefs = {
     }),
     mutates: true,
     agent: true,
-    handler: (context, input) =>
-      connectChannel(context.db(), {
-        platform: input.platform,
-        locale: input.locale,
+    handler: (context, input) => {
+      // The target is the whole identity of a text or story route. Deriving
+      // both from it removes the combination that stores one platform under
+      // another one's id.
+      const definition = input.target ? targetDefinition(input.target) : null;
+      const platform = input.target ?? input.platform;
+      const locale = definition?.locale ?? input.locale;
+      if (!platform || !locale) throw new Error("channel-connect needs --target, or --platform with --locale");
+      return connectChannel(context.db(), {
+        platform,
+        locale,
         provider: input.provider,
         ...(input.target ? { targetId: input.target } : {}),
         ...(input.account_id ? { providerAccountId: input.account_id } : {}),
         ...(input.label ? { label: input.label } : {}),
-      }),
+      });
+    },
   }),
   "channel-disable": operation({
     summary: "Disable a channel, keeping its publication history attributable.",

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { listChannels } from "../src/channels/registry.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { mcpResponse } from "../src/interfaces/mcp.js";
@@ -38,6 +39,27 @@ function context(db: UnsafeBackendDb): OperationContext {
 }
 
 describe("operations registry", () => {
+  it("takes a text route by its target alone", async () => {
+    // The target names the platform and the language. Asking for them again let
+    // a caller store one platform under another one's id, and production has
+    // rows where they disagree.
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const connect = operationDef("channel-connect");
+      const parse = (input: unknown) => connect?.schema.parse(input);
+      const run = async (input: unknown) => connect?.handler(context(backendDb), parse(input));
+
+      expect(await run({ target: "threads_en", provider: "native" })).toEqual({ id: "threads_en" });
+      const connected = listChannels(backendDb).find((channel) => channel.id === "threads_en");
+      expect(connected?.locale).toBe("en");
+
+      expect(await run({ platform: "youtube", locale: "ru", provider: "native" })).toEqual({ id: "youtube_ru" });
+      await expect(run({ provider: "native" })).rejects.toThrow("needs --target");
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("keeps host-only operations off the agent surface", () => {
     const catalog = new Map(operationCatalog().map((entry) => [entry.name, entry]));
 
