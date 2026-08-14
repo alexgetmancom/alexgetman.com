@@ -72,7 +72,11 @@ async function runProductionCommand(): Promise<number> {
       else argv[index + 1] = remotePath;
     }
 
-    return await run(["ssh", sshTarget, remoteCommand(["docker", "exec", "-u", "bun", container, "bun", "/app/ops/cli.js", ...argv])]);
+    return await run([
+      "ssh",
+      sshTarget,
+      remoteCommand(["docker", "exec", "-i", "-u", "bun", container, "bun", "/app/ops/cli.js", ...argv]),
+    ]);
   } finally {
     for (const remotePath of shipped) {
       await run(["ssh", sshTarget, remoteCommand(["docker", "exec", "-u", "bun", container, "rm", "-f", remotePath])]);

@@ -53,7 +53,7 @@ marux.ru {
 	}
 	header X-Robots-Tag "noindex, nofollow"
 
-	@allowed path /healthz /readyz /command-center /api/command-center /api/command-center/action /api/mcp /api/studio/media /media/video/asset/*
+	@allowed path /healthz /readyz /command-center /oauth/* /api/command-center /api/command-center/action /api/mcp /api/studio/media /media/video/asset/*
 	handle @allowed {
 		reverse_proxy 127.0.0.1:8789 {
 			import client_address

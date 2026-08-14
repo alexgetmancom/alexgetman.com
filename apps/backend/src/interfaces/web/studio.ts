@@ -14,9 +14,11 @@ import { localeQuery, renderLocaleSwitcher } from "./dashboard/locale-links.js";
  */
 export function renderStudioSection(config: BackendConfig, backendDb: BackendDb, actorId: number, locale: StudioLocale): string {
   const data = createStudioServices(backendDb, config).dashboard(actorId, locale);
+  const channels = createStudioServices(backendDb, config).channels;
   const zone = { timeZone: config.TIMEZONE, label: config.TIMEZONE_LABEL };
   return `
     <nav class="studio-toolbar">${renderLocaleSwitcher(locale, (target) => `/command-center?tab=studio${localeQuery(target)}`)}</nav>
+    ${renderChannels(channels, locale)}
     <section class="studio-analytics">${mdToHtml(data.analytics.text)}</section>
     <section>
       <h2>${t(locale, "cc.studio.queue")}</h2>
@@ -24,6 +26,26 @@ export function renderStudioSection(config: BackendConfig, backendDb: BackendDb,
       ${renderQueueTable(t(locale, "cc.studio.drafts"), data.queue.drafts, zone, locale)}
       ${renderAttention(data.queue.attention, locale)}
     </section>`;
+}
+
+function renderChannels(channels: ReturnType<typeof createStudioServices>["channels"], locale: StudioLocale): string {
+  const connected = channels
+    .list()
+    .map((channel) => `<li>${escapeHtml(channel.label)} — ${escapeHtml(channel.provider)}</li>`)
+    .join("");
+  const buttons = (["threads", "instagram"] as const)
+    .flatMap((platform) =>
+      (["ru", "en"] as const).flatMap((targetLocale) => {
+        const url = channels.nativeConnectPath(platform, targetLocale);
+        return url
+          ? [
+              `<a class="period-quick-link" href="${escapeHtml(url)}">${t(locale, "cc.studio.connect-native", { platform: platform === "threads" ? "Threads" : "Instagram", locale: targetLocale.toUpperCase() })}</a>`,
+            ]
+          : [];
+      }),
+    )
+    .join(" ");
+  return `<section><h2>${t(locale, "cc.studio.channels")}</h2>${connected ? `<ul>${connected}</ul>` : `<p class="note">${t(locale, "settings.channels-none")}</p>`}${buttons ? `<nav class="studio-toolbar">${buttons}</nav>` : `<p class="note">${t(locale, "cc.studio.native-unconfigured")}</p>`}</section>`;
 }
 
 type QueueItem = { id: number; label: string; time: Date; kind: "post" | "video"; targets: number };

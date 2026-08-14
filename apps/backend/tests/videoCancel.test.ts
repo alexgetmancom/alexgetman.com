@@ -84,7 +84,7 @@ function cancellationEvents(backendDb: UnsafeBackendDb, draftId: number) {
   return backendDb.db
     .select()
     .from(postEvents)
-    .where(and(eq(postEvents.postKey, `publication:video:${draftId}`), eq(postEvents.eventType, "studio.notification.video_cancelled")))
+    .where(and(eq(postEvents.postKey, `video:${draftId}`), eq(postEvents.eventType, "studio.notification.video_cancelled")))
     .all();
 }
 

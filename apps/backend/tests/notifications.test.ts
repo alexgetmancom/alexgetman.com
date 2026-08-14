@@ -23,7 +23,7 @@ describe("Studio notifications", () => {
       const videoId = createTestVideoDraft(backendDb, 42, "owner-video", 24);
       scheduleReminder(backendDb, {
         actorId: 42,
-        ref: `publication:video:${videoId}`,
+        ref: `video:${videoId}`,
         kind: "video.youtube_shorts",
         publishAt: new Date(Date.now() + 30_000),
         title: "Launch",
@@ -37,7 +37,7 @@ describe("Studio notifications", () => {
 
       scheduleReminder(backendDb, {
         actorId: 42,
-        ref: `publication:video:${videoId}`,
+        ref: `video:${videoId}`,
         kind: "video.instagram_reels",
         publishAt: new Date(Date.now() + 60 * 60_000),
         title: "Launch",
@@ -56,7 +56,7 @@ describe("Studio notifications", () => {
     try {
       scheduleReminder(backendDb, {
         actorId: 42,
-        ref: "publication:post:1",
+        ref: "post:1",
         kind: "post.en",
         publishAt: new Date(Date.now() - 1_000),
         title: "Immediate publication",
@@ -81,7 +81,7 @@ describe("Studio notifications", () => {
       const job = backendDb.db
         .select()
         .from(studioNotificationJobs)
-        .where(eq(studioNotificationJobs.ref, `publication:post:${postId}`))
+        .where(eq(studioNotificationJobs.ref, `post:${postId}`))
         .get();
       expect(job?.payloadJson).toMatchObject({ minutes: 17 });
     } finally {
@@ -95,7 +95,7 @@ describe("Studio notifications", () => {
       const videoId = createTestVideoDraft(backendDb, 42, "owner-video", 24);
       scheduleReminder(backendDb, {
         actorId: 42,
-        ref: `publication:video:${videoId}`,
+        ref: `video:${videoId}`,
         kind: "video.youtube_shorts",
         publishAt: new Date(Date.now() + 60 * 60_000),
         title: "Launch",

@@ -93,6 +93,7 @@ describe("production operations launcher", () => {
       expect(calls[0]?.args[1]).toContain("cat >");
       expect(calls[0]?.args[1]).toContain(`/tmp/${basename(localFile)}`);
       expect(calls[1]?.args[1]).toContain("'/tmp/analytics.csv'");
+      expect(calls[1]?.args[1]).toContain("'docker' 'exec' '-i'");
       expect(calls[2]?.args[1]).toContain("'rm'");
       expect(calls[2]?.args[1]).toContain("'/tmp/analytics.csv'");
     } finally {

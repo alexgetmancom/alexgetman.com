@@ -34,6 +34,7 @@ describe("host proxy topology", () => {
     expect(caddy).toContain("/api/mcp");
     expect(caddy).toContain("/api/studio/media");
     expect(caddy).toContain("/media/video/asset/*");
+    expect(caddy).toContain("/oauth/*");
     expect(caddy).toContain("respond 404");
     expect(maru).toContain('"127.0.0.1:8789:8788"');
     // The URL this Studio hands a publishing platform must name its own domain.

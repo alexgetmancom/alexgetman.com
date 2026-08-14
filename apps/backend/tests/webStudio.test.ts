@@ -11,6 +11,12 @@ function testConfig() {
     MCP_STUDIO_TOKEN: "a".repeat(16),
     MCP_STUDIO_ACTOR_ID: "42",
     COMMAND_CENTER_TOKEN: COMMAND_TOKEN,
+    PUBLIC_BASE_URL: "https://publisher.example.com",
+    TOKEN_ENCRYPTION_KEY: "cd".repeat(32),
+    THREADS_APP_ID: "threads-id",
+    THREADS_APP_SECRET: "threads-secret",
+    INSTAGRAM_APP_ID: "instagram-id",
+    INSTAGRAM_APP_SECRET: "instagram-secret",
   });
 }
 
@@ -33,6 +39,9 @@ describe("Command Center Studio tab", () => {
       expect(dashboardText).toContain("Очередь");
       expect(dashboardText).not.toContain("Уведомления");
       expect(dashboardText).toContain('href="/command-center?tab=studio"');
+      expect(dashboardText).toContain("Подключить Threads RU");
+      expect(dashboardText).toContain("/oauth/threads/start?locale=ru");
+      expect(dashboardText).toContain("Подключить Instagram EN");
     } finally {
       backendDb.close();
     }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { threadsAuthorizeUrl } from "../src/channels/meta-oauth.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { authorizationCode, authorizeThreads, threadsAuthorizeUrl } from "../src/operations/threads-authorize.js";
+import { authorizationCode, authorizeThreads } from "../src/operations/threads-authorize.js";
 
 const configured = { THREADS_APP_ID: "990602627938098", THREADS_APP_SECRET: "app-secret", PUBLIC_BASE_URL: "https://studio.example.com" };
 

@@ -131,8 +131,14 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
   const service = {
     kind: "post" as const,
     capabilities: { hasMetadataWizard: false, hasStoryCards: true, scheduleAxis: "locale" as const },
-    create(actorId: number, message: DraftMessage): number {
-      return trackUsageSync(backendDb, "studio.post.create", () => createDraftFromMessage(backendDb, actorId, message));
+    create(actorId: number, message: DraftMessage, configured?: { targets: string[]; storyMode?: StoryPublishMode }): number {
+      return trackUsageSync(backendDb, "studio.post.create", () => {
+        if (!configured) return createDraftFromMessage(backendDb, actorId, message);
+        return createDraftFromMessage(backendDb, actorId, message, {
+          targetsJson: JSON.stringify(exactTargets(backendDb, configured.targets)),
+          ...(configured.storyMode ? { storyPublishMode: configured.storyMode } : {}),
+        });
+      });
     },
     get(actorId: number, draftId: number) {
       return requireOwnedDraft(backendDb, config, actorId, draftId);
@@ -536,6 +542,12 @@ function assertKnownTarget(backendDb: BackendDb, target: string): void {
   if (!TARGETS.some(({ id }) => id === target)) throw new StudioError("err.unknown-target");
   const registered = registeredPostTargetIds(backendDb);
   if (registered.size && !registered.has(target)) throw new StudioError("err.unknown-target");
+}
+
+function exactTargets(backendDb: BackendDb, selected: string[]): Record<string, boolean> {
+  const unique = new Set(selected);
+  for (const target of unique) assertKnownTarget(backendDb, target);
+  return Object.fromEntries(TARGETS.map(({ id }) => [id, unique.has(id)]));
 }
 
 function localeTargets(backendDb: BackendDb, json: string, locale: "ru" | "en"): string[] {

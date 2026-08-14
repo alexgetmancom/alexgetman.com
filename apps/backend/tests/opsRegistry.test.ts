@@ -95,6 +95,10 @@ describe("operations registry", () => {
   it("derives the usage line from the schema, showing the real invocation", () => {
     expect(operationUsage("retry", operationDef("retry") as never)).toBe("retry --ref post:160 [--target x] [--locale ru|en] [--apply]");
     expect(operationUsage("recent", operationDef("recent") as never)).toBe("recent [--limit VALUE]");
+    expect(operationUsage("publish", operationDef("publish") as never)).toBe(
+      'publish --locale ru|en --targets threads_ru --text "post text"',
+    );
+    expect(operationUsage("purge", operationDef("purge") as never)).toBe("purge --ref post:160 [--apply]");
     expect(operationUsage("story-card-backfill", operationDef("story-card-backfill") as never)).toBe(
       "story-card-backfill --ref post:160 [--apply] [--force]",
     );

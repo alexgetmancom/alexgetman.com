@@ -254,7 +254,7 @@ describe("creator analytics collection", () => {
         lockedBy: null,
       });
       expect(backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, "analytics.video_metrics.frozen")).get()).toMatchObject({
-        postKey: `publication:video:${draftId}`,
+        postKey: `video:${draftId}`,
         target: "instagram_reels",
         severity: "warn",
       });

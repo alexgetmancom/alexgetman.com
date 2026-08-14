@@ -8,7 +8,7 @@ const LINKED_PAGES = new Set(["/", "/ru/"]);
 
 /** Operator surfaces. They authenticate, but a crawler that indexes the login
  * screen turns a private page into a search result. */
-const UNINDEXED = /^\/(command-center|stats|api\/command-center)(\/|$)/;
+const UNINDEXED = /^\/(command-center|oauth|stats|api\/command-center)(\/|$)/;
 
 /** What a Studio without a public site still answers: the operator surfaces, the
  * agent transport, the health probes, and the media URL a publishing platform
@@ -18,7 +18,8 @@ const UNINDEXED = /^\/(command-center|stats|api\/command-center)(\/|$)/;
  * mean the same thing for every install. It used to be enforced by one
  * deployment's allowlist, so the setting switched off the site workers while the
  * pages, feeds and sitemap carried on being served to anyone who asked. */
-const WITHOUT_SITE = /^\/(command-center|healthz|readyz|api\/(command-center|mcp|studio\/media)|stats|tg-feed|media\/video\/asset)(\/|$)/;
+const WITHOUT_SITE =
+  /^\/(command-center|oauth|healthz|readyz|api\/(command-center|mcp|studio\/media)|stats|tg-feed|media\/video\/asset)(\/|$)/;
 
 /** Every post and index page has a Markdown twin at the same address plus
  * ".md". A client that asks for Markdown gets it at the canonical URL rather

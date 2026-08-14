@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { applyStoredMetaTokens, renewMetaTokens } from "../src/channels/meta-tokens.js";
+import { applyStoredMetaTokens, installMetaToken, renewMetaTokens } from "../src/channels/meta-tokens.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { withDb } from "./helpers/db.js";
 
@@ -91,6 +91,22 @@ describe("meta token renewal", () => {
       const rows = backendDb.sqlite.prepare("SELECT sealed_token FROM platform_tokens").all() as { sealed_token: string }[];
       expect(rows).toHaveLength(1);
       expect(rows[0]?.sealed_token).not.toContain("renewed-token");
+    }));
+
+  it("loads a browser-issued token and Instagram account id without an env seed", () =>
+    withDb((backendDb) => {
+      const running = loadConfig({ TOKEN_ENCRYPTION_KEY: KEY });
+      installMetaToken(running, backendDb, "instagram_ru", "oauth-token", "ig-42", longAgo);
+      expect(running.INSTAGRAM_RU_ACCESS_TOKEN).toBe("oauth-token");
+      expect(running.INSTAGRAM_RU_USER_ID).toBe("ig-42");
+
+      const restarted = loadConfig({ TOKEN_ENCRYPTION_KEY: KEY });
+      applyStoredMetaTokens(restarted, backendDb);
+      expect(restarted.INSTAGRAM_RU_ACCESS_TOKEN).toBe("oauth-token");
+      expect(restarted.INSTAGRAM_RU_USER_ID).toBe("ig-42");
+      expect(
+        backendDb.sqlite.prepare("SELECT seed_fingerprint AS seedFingerprint FROM platform_tokens WHERE target='instagram_ru'").get(),
+      ).toEqual({ seedFingerprint: null });
     }));
 
   it("reports a refusal instead of silently leaving a dying token in place", () =>

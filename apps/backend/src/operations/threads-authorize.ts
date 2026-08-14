@@ -1,5 +1,5 @@
+import { exchangeThreadsCode, metaOauthRedirectUri, threadsAuthorizeUrl } from "../channels/meta-oauth.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { formBody, requestJson } from "../foundation/http.js";
 import type { VideoLocale } from "../publishing/video-types.js";
 
 /**
@@ -9,24 +9,14 @@ import type { VideoLocale } from "../publishing/video-types.js";
  * three curl calls the operator ran by hand, and the day one lapsed that was
  * the whole recovery procedure.
  *
- * Threads has no device flow, so unlike YouTube this cannot be finished on
- * another device alone: Meta answers the consent screen with a redirect, and
- * the authorization code arrives in that URL. The redirect target deliberately
- * serves nothing — a Studio may not serve a site at all — so the browser lands
- * on an error page and the address bar is the payload. That is the one
- * awkwardness here, and it is Meta's shape, not a missing piece.
+ * Kept as the terminal fallback for a Studio whose Command Center is not
+ * reachable. The normal path is the browser callback, which performs the same
+ * exchange and stores the credential without copying a URL or restarting.
  *
  * The code is single-use and lives an hour, which is why this exchanges it for
  * a long-lived token immediately rather than handing back something the
  * operator has to spend again.
  */
-const AUTHORIZE_URL = "https://threads.net/oauth/authorize";
-const TOKEN_URL = "https://graph.threads.net/oauth/access_token";
-const EXCHANGE_URL = "https://graph.threads.net/access_token";
-/** Publishing needs both: `threads_basic` is required for every endpoint and
- * `threads_content_publish` for the ones that post. */
-const SCOPE = "threads_basic,threads_content_publish";
-
 export type ThreadsAuthorization = {
   locale: VideoLocale;
   variable: string;
@@ -37,20 +27,6 @@ export type ThreadsAuthorization = {
 
 /** The redirect Meta sends the operator to. It must match the app dashboard
  * exactly, so it is derived from one setting rather than configured twice. */
-function threadsRedirectUri(config: BackendConfig): string {
-  return `${config.PUBLIC_BASE_URL.replace(/\/$/, "")}/oauth/threads`;
-}
-
-export function threadsAuthorizeUrl(config: BackendConfig, appId: string): string {
-  const query = new URLSearchParams({
-    client_id: appId,
-    redirect_uri: threadsRedirectUri(config),
-    scope: SCOPE,
-    response_type: "code",
-  });
-  return `${AUTHORIZE_URL}?${query}`;
-}
-
 /**
  * Takes whatever the operator copied out of the browser and returns the code.
  *
@@ -88,27 +64,18 @@ export async function authorizeThreads(
       "Set THREADS_APP_ID and THREADS_APP_SECRET first. Both are in App Dashboard > App settings > Basic, under Threads App ID and Threads App secret — not the Meta app's own id and secret.",
     );
 
-  const redirectUri = threadsRedirectUri(config);
+  const redirectUri = metaOauthRedirectUri(config, "threads");
   options.onPrompt?.(threadsAuthorizeUrl(config, appId), redirectUri);
 
   const code = authorizationCode(await askForRedirect());
-  const shortLived = await requestJson<{ access_token?: string; user_id?: number | string }>(fetchImpl, TOKEN_URL, {
-    method: "POST",
-    body: formBody({ client_id: appId, client_secret: appSecret, grant_type: "authorization_code", redirect_uri: redirectUri, code }),
-  });
-  if (!shortLived.access_token)
-    throw new Error("Threads returned no access token for that code. Codes are single-use and last an hour; start again.");
-
-  const query = new URLSearchParams({ grant_type: "th_exchange_token", client_secret: appSecret, access_token: shortLived.access_token });
-  const longLived = await requestJson<{ access_token?: string }>(fetchImpl, `${EXCHANGE_URL}?${query}`);
-  if (!longLived.access_token) throw new Error("Threads issued a short-lived token but refused to exchange it for a long-lived one.");
+  const authorization = await exchangeThreadsCode(config, code, fetchImpl);
 
   const suffix = locale === "en" ? "EN" : "RU";
   return {
     locale,
     variable: `THREADS_${suffix}_ACCESS_TOKEN`,
-    accessToken: longLived.access_token,
-    userId: String(shortLived.user_id ?? ""),
-    note: "Put this in .env and restart. With TOKEN_ENCRYPTION_KEY set, this Studio renews it from here on.",
+    accessToken: authorization.accessToken,
+    userId: authorization.userId,
+    note: "Terminal fallback: put this in .env and restart. The normal browser callback stores and activates it automatically.",
   };
 }

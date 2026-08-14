@@ -126,6 +126,13 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
           .row();
       }
     }
+    for (const platform of ["threads", "instagram"] as const) {
+      const ru = studioChannels.nativeConnectUrl(platform, "ru");
+      const en = studioChannels.nativeConnectUrl(platform, "en");
+      if (ru) range.url(t(locale, "settings.connect-native", { platform: channelPlatformLabel(platform), locale: "RU" }), ru);
+      if (en) range.url(t(locale, "settings.connect-native", { platform: channelPlatformLabel(platform), locale: "EN" }), en);
+      if (ru || en) range.row();
+    }
     if (config.ZERNIO_API_KEY)
       range
         .text("➕ Zernio · RU", (ctx) => discoverZernio(ctx, actorId, "ru", locale))
@@ -773,7 +780,10 @@ function zernioPlatform(account: ZernioAccount): string {
 }
 
 function channelPlatformLabel(platform: string): string {
-  return platform === "tiktok" ? "TikTok" : platform === "youtube" ? "YouTube" : "Instagram";
+  if (platform === "tiktok") return "TikTok";
+  if (platform === "youtube") return "YouTube";
+  if (platform === "threads") return "Threads";
+  return "Instagram";
 }
 
 function channelsText(

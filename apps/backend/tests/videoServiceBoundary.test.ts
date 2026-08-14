@@ -103,7 +103,7 @@ describe("video Studio service boundary", () => {
       expect(backendDb.db.select().from(videoJobs).where(eq(videoJobs.videoDraftId, current.draftId)).all()).toHaveLength(2);
       expect(backendDb.db.select().from(studioNotificationJobs).all()).toMatchObject([
         {
-          ref: `publication:video:${current.draftId}`,
+          ref: `video:${current.draftId}`,
           status: "queued",
           payloadJson: { targets: ["instagram_reels"] },
         },

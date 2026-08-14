@@ -5,15 +5,21 @@ import { recordDomainEvent } from "../domain/events.js";
 import type { DraftMessage } from "./message.js";
 
 /** Content aggregate for a draft before it enters a publication plan. */
-export function createDraftFromMessage(ports: ApplicationPorts, actorId: number, message: DraftMessage): number {
+export function createDraftFromMessage(
+  ports: ApplicationPorts,
+  actorId: number,
+  message: DraftMessage,
+  configured?: { targetsJson: string; storyPublishMode?: "all" | "site_only" },
+): number {
   const createdId = ports.drafts.create({
     actorId,
     textRu: message.text,
     textEnMachine: message.textEn ?? message.text,
     textEnApproved: message.textEnApproved ?? null,
-    targetsJson: JSON.stringify(DEFAULT_TARGETS),
+    targetsJson: configured?.targetsJson ?? JSON.stringify(DEFAULT_TARGETS),
     mediaRuJson: message.media.length ? JSON.stringify(message.media) : null,
     textRuEntitiesJson: JSON.stringify(message.entities),
+    ...(configured?.storyPublishMode ? { storyPublishMode: configured.storyPublishMode } : {}),
   });
   recordDomainEvent(ports.events, {
     ref: publicationRef("draft", createdId),

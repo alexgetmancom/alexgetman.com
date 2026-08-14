@@ -28,19 +28,35 @@ docker compose exec app bun /app/ops/cli.js doctor
 | Сайт | `--target site_ru` / `site_en` | ничего, плюс `site_enabled: true` в `studio.yaml` |
 | Telegram-канал | `--target telegram` | `CONTROLLER_BOT_TOKEN` |
 | Discord | `--target discord` | `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID` |
-| Threads | `--target threads_ru` / `threads_en` | `THREADS_RU_ACCESS_TOKEN` / `THREADS_EN_ACCESS_TOKEN` через `threads-authorize` либо `ZERNIO_API_KEY` |
+| Threads | Studio → Каналы, RU или EN | `THREADS_APP_ID`, `THREADS_APP_SECRET`, `TOKEN_ENCRYPTION_KEY` либо `ZERNIO_API_KEY` |
 | X | `--target x` | `X_CONSUMER_KEY`, `X_CONSUMER_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET` |
-| Instagram Stories | `--target instagram_stories_ru` / `instagram_stories` | `INSTAGRAM_*_USER_ID` и `INSTAGRAM_*_ACCESS_TOKEN` либо `ZERNIO_API_KEY` |
+| Instagram Stories | Studio → Каналы, RU или EN | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `TOKEN_ENCRYPTION_KEY` либо `ZERNIO_API_KEY` |
 | Telegram Stories | `--target telegram_stories` | `TELEGRAM_CHANNEL_STORIES_API_ID`, `_API_HASH`, `_SESSION` |
 | YouTube | `--platform youtube --locale ru` | `YOUTUBE_*_CLIENT_ID`, `_CLIENT_SECRET`, `_REFRESH_TOKEN` |
-| Instagram лента и Reels | `--platform instagram --locale ru` | `INSTAGRAM_*_ACCESS_TOKEN` и `_USER_ID` либо `ZERNIO_API_KEY` |
+| Instagram лента и Reels | Studio → Каналы, RU или EN | тот же native-вход Instagram либо `ZERNIO_API_KEY` |
 | TikTok | `--platform tiktok --provider zernio` | `ZERNIO_API_KEY` — только аналитика, публикации нет |
 
 ## Нативно или через провайдера
 
 Площадки Meta достижимы двумя путями, и канал помнит, каким именно он
-пользуется. Публиковать напрямую — это своё приложение Meta, Professional-аккаунт
-и привязанная страница Facebook.
+пользуется. Для native-доставки создайте своё приложение Meta и положите его id
+и secret в `.env`; Instagram требует Professional-аккаунт. Один раз создайте
+`TOKEN_ENCRYPTION_KEY` командой `openssl rand -hex 32`.
+
+Зарегистрируйте в Dashboard приложения точные callback URL:
+
+```text
+https://ваш-домен.example/oauth/threads
+https://ваш-домен.example/oauth/instagram
+```
+
+После этого откройте Command Center → Studio → Каналы или Telegram → Настройки →
+Каналы и нажмите native-кнопку RU либо EN. Браузер вернётся в Studio, она сама
+обменяет code, запечатает долгоживущий токен в БД, сохранит account id и
+подключит все native-маршруты аккаунта. Копировать URL, запускать CLI, менять
+token в `.env` и перезапускать сервис больше не нужно. Development mode работает
+для аккаунтов, которым назначена роль в приложении; Meta review нужен, когда
+приложение начинает подключать чужие аккаунты.
 
 ```bash
 # Та же площадка, но доставка через провайдера

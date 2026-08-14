@@ -34,7 +34,17 @@ describe("site middleware", () => {
       for (const path of ["/", "/ru/", "/42/some-slug/", "/feed.xml", "/sitemap.xml", "/llms.txt"]) {
         expect((await handle(path)).response.status).toBe(404);
       }
-      for (const path of ["/command-center", "/healthz", "/readyz", "/api/mcp", "/api/studio/media", "/media/video/asset/7", "/stats"]) {
+      for (const path of [
+        "/command-center",
+        "/oauth/threads",
+        "/oauth/instagram/start",
+        "/healthz",
+        "/readyz",
+        "/api/mcp",
+        "/api/studio/media",
+        "/media/video/asset/7",
+        "/stats",
+      ]) {
         expect((await handle(path)).response.status).toBe(200);
       }
     } finally {
@@ -71,7 +81,14 @@ describe("site middleware", () => {
   });
 
   it("keeps operator surfaces out of search results", async () => {
-    for (const path of ["/command-center", "/stats", "/stats/pageview", "/api/command-center/action"]) {
+    for (const path of [
+      "/command-center",
+      "/oauth/threads",
+      "/oauth/instagram/start",
+      "/stats",
+      "/stats/pageview",
+      "/api/command-center/action",
+    ]) {
       expect((await handle(path)).response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
     }
     expect((await handle("/")).response.headers.get("x-robots-tag")).toBeNull();

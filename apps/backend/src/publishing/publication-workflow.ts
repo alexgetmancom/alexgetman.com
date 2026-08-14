@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { publicationRef } from "../application/publication-ref.js";
+import { isStoryTarget } from "../botTargets.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
 import { requireDraft } from "../content/drafts.js";
 import { enrichPublishedPostEntities } from "../content/entity-enrichment.js";
@@ -41,7 +42,10 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
     copyAcceptedEntities(tx, draftId, publicationId, now);
     const registeredTargets = registeredPostTargetIds(backendDb);
     const storyCards = readyStoryCardMedia(unsafeDb(backendDb).db, draftId);
-    if (storyCards && draft.story_publish_mode !== "all" && draft.story_publish_mode !== "site_only")
+    const hasStoryTarget = Object.entries(parseTargets(effectiveDraft.targets_json)).some(
+      ([target, enabled]) => enabled && isStoryTarget(target),
+    );
+    if (storyCards && hasStoryTarget && draft.story_publish_mode !== "all" && draft.story_publish_mode !== "site_only")
       throw new Error("Story delivery decision is required for a text-only post");
     const publicationPlan = createPublicationPlan(
       effectiveDraft,

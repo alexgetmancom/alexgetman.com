@@ -54,7 +54,7 @@ const TOKENS: MetaToken[] = [
   },
 ];
 
-type StoredToken = { sealedToken: string; envFingerprint: string; refreshedAt: string };
+type StoredToken = { sealedToken: string; seedFingerprint: string | null; accountId: string | null; refreshedAt: string };
 
 function stored(backendDb: BackendDb, target: string): StoredToken | null {
   return unsafeDb(backendDb).db.select().from(platformTokens).where(eq(platformTokens.target, target)).get() ?? null;
@@ -83,12 +83,14 @@ export function applyStoredMetaTokens(config: BackendConfig, backendDb: BackendD
   for (const { target, setting } of TOKENS) {
     const seed = config.metaTokenSeeds[setting];
     const row = stored(backendDb, target);
-    if (!row || !seed) continue;
+    if (!row) continue;
     // A different value in .env is the operator replacing a token by hand,
     // which is newer than anything renewed before it.
-    if (row.envFingerprint !== fingerprint(seed)) continue;
+    if (row.seedFingerprint && (!seed || row.seedFingerprint !== fingerprint(seed))) continue;
     try {
       mutable[setting] = open(row.sealedToken, key);
+      if (row.accountId && target === "instagram_ru") mutable.INSTAGRAM_RU_USER_ID = row.accountId;
+      if (row.accountId && target === "instagram_en") mutable.INSTAGRAM_EN_USER_ID = row.accountId;
     } catch (error) {
       log("warn", "stored platform token could not be opened", { target, error: String(error) });
     }
@@ -114,7 +116,7 @@ export async function renewMetaTokens(
     const row = stored(backendDb, target);
     // The stored renewal only counts as this token's history while .env still
     // holds the value it grew from.
-    const seed = envSeed && row?.envFingerprint === fingerprint(envSeed) ? row : null;
+    const seed = row && (row.seedFingerprint === null || (envSeed && row.seedFingerprint === fingerprint(envSeed))) ? row : null;
     const age = seed ? now.getTime() - new Date(seed.refreshedAt).getTime() : Number.POSITIVE_INFINITY;
     if (age < RENEW_AFTER_DAYS * DAY_MS) {
       outcomes.push({ target, status: "fresh" });
@@ -127,7 +129,8 @@ export async function renewMetaTokens(
         sealedToken: seal(renewed.access_token, key),
         // The seed stays the .env value: it is what tells a later run whether
         // the operator has since replaced it.
-        envFingerprint: fingerprint(envSeed ?? token),
+        seedFingerprint: seed?.seedFingerprint ?? (envSeed ? fingerprint(envSeed) : null),
+        accountId: seed?.accountId ?? instagramAccountId(config, target),
         refreshedAt: now.toISOString(),
       });
       (config as unknown as Record<string, unknown>)[setting] = renewed.access_token;
@@ -140,4 +143,36 @@ export async function renewMetaTokens(
     }
   }
   return outcomes;
+}
+
+/** Installs a token issued by this Studio's OAuth callback. It becomes the
+ * database-owned credential immediately and on every later restart. */
+export function installMetaToken(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  target: MetaToken["target"],
+  accessToken: string,
+  accountId: string,
+  now = new Date(),
+): void {
+  const key = encryptionKey(config.TOKEN_ENCRYPTION_KEY);
+  if (!key) throw new Error("TOKEN_ENCRYPTION_KEY is required for browser OAuth");
+  const definition = TOKENS.find((candidate) => candidate.target === target);
+  if (!definition) throw new Error(`Unknown Meta token target: ${target}`);
+  store(backendDb, target, {
+    sealedToken: seal(accessToken, key),
+    seedFingerprint: null,
+    accountId,
+    refreshedAt: now.toISOString(),
+  });
+  const mutable = config as unknown as Record<string, unknown>;
+  mutable[definition.setting] = accessToken;
+  if (target === "instagram_ru") mutable.INSTAGRAM_RU_USER_ID = accountId;
+  if (target === "instagram_en") mutable.INSTAGRAM_EN_USER_ID = accountId;
+}
+
+function instagramAccountId(config: BackendConfig, target: string): string | null {
+  if (target === "instagram_ru") return config.INSTAGRAM_RU_USER_ID ?? null;
+  if (target === "instagram_en") return config.INSTAGRAM_EN_USER_ID ?? null;
+  return null;
 }

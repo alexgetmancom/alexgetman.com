@@ -120,6 +120,20 @@
       "when": 1786800000000,
       "tag": "0016_platform_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1786801000000,
+      "tag": "0017_oauth_platform_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1786802000000,
+      "tag": "0018_short_publication_refs",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,141 @@
+import { existsSync, unlinkSync } from "node:fs";
+import { type BackendDb, unsafeDb } from "../db/client.js";
+import { resolvePublicationRef } from "./publication-ref.js";
+
+type PurgeInput = { ref: string; apply: boolean };
+type SqlArgs = Array<string | number>;
+type PurgeStatement = { name: string; countSql: string; deleteSql: string; args: SqlArgs };
+
+export async function purgePublication(backendDb: BackendDb, input: PurgeInput, fetchImpl: typeof fetch) {
+  const resolved = resolvePublicationRef(backendDb, input.ref);
+  if (!resolved?.postId) throw new Error(`publication not found: ${input.ref}`);
+  const sqlite = unsafeDb(backendDb).sqlite;
+  const publication = sqlite.query("SELECT draft_id AS draftId FROM publications WHERE post_id=?").get(resolved.postId) as {
+    draftId: number | null;
+  } | null;
+  if (!publication?.draftId) throw new Error(`purge requires a Studio publication: ${resolved.postKey}`);
+  const draftId = publication.draftId;
+  const postId = resolved.postId;
+  const refs = [`post:${postId}`, `draft:${draftId}`];
+  const statements = purgeStatements(postId, draftId, resolved.postKey, resolved.messageId, refs);
+  const rows = Object.fromEntries(
+    statements
+      .map((statement) => [statement.name, count(sqlite.query(statement.countSql).get(...statement.args))] as const)
+      .filter(([, value]) => value > 0),
+  );
+  const files = (
+    sqlite
+      .query(
+        "SELECT local_path AS path FROM draft_story_cards WHERE draft_id=? AND local_path IS NOT NULL UNION SELECT site_ru_path AS path FROM posts WHERE post_key=? AND site_ru_path IS NOT NULL UNION SELECT site_en_path AS path FROM posts WHERE post_key=? AND site_en_path IS NOT NULL",
+      )
+      .all(draftId, resolved.postKey, resolved.postKey) as Array<{ path: string }>
+  ).map(({ path }) => path);
+  if (!input.apply) return { ok: true, applied: false, action: "purge", ref: resolved.postKey, draft_id: draftId, rows, files };
+
+  await assertPublicationAbsent(sqlite, resolved.postKey, fetchImpl);
+  const deleted = sqlite
+    .transaction(() => {
+      const result: Record<string, number> = {};
+      for (const statement of statements) {
+        const changes = sqlite.query(statement.deleteSql).run(...statement.args).changes;
+        if (changes > 0) result[statement.name] = changes;
+      }
+      const remaining = sqlite.query("SELECT COUNT(*) AS count FROM publications WHERE post_id=? OR draft_id=?").get(postId, draftId);
+      if (count(remaining) !== 0) throw new Error(`purge did not remove ${resolved.postKey}`);
+      return result;
+    })
+    .immediate();
+  const removedFiles: string[] = [];
+  const failedFiles: string[] = [];
+  for (const path of files) {
+    if (!existsSync(path)) continue;
+    try {
+      unlinkSync(path);
+      removedFiles.push(path);
+    } catch {
+      failedFiles.push(path);
+    }
+  }
+  return {
+    ok: failedFiles.length === 0,
+    applied: true,
+    action: "purge",
+    ref: resolved.postKey,
+    draft_id: draftId,
+    deleted,
+    removed_files: removedFiles,
+    failed_files: failedFiles,
+  };
+}
+
+async function assertPublicationAbsent(
+  sqlite: ReturnType<typeof unsafeDb>["sqlite"],
+  postKey: string,
+  fetchImpl: typeof fetch,
+): Promise<void> {
+  const targets = sqlite.query("SELECT target,status,url FROM post_targets WHERE post_key=? ORDER BY target").all(postKey) as Array<{
+    target: string;
+    status: string;
+    url: string | null;
+  }>;
+  for (const target of targets) {
+    if (target.status !== "published") continue;
+    if (!target.url) throw new Error(`cannot prove ${target.target} is absent: no public URL is stored`);
+    let response: Response;
+    try {
+      response = await fetchImpl(target.url, {
+        headers: { "user-agent": "solo-publisher-purge/1.0" },
+        redirect: "follow",
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (error) {
+      throw new Error(`cannot prove ${target.target} is absent: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (response.status !== 404 && response.status !== 410)
+      throw new Error(`${target.target} is still reachable at ${target.url} (HTTP ${response.status})`);
+  }
+}
+
+function purgeStatements(postId: number, draftId: number, postKey: string, messageId: number, refs: string[]): PurgeStatement[] {
+  const refMarks = refs.map(() => "?").join(",");
+  const direct = (name: string, table: string, where: string, args: SqlArgs): PurgeStatement => ({
+    name,
+    countSql: `SELECT COUNT(*) AS count FROM ${table} WHERE ${where}`,
+    deleteSql: `DELETE FROM ${table} WHERE ${where}`,
+    args,
+  });
+  return [
+    direct("notification_jobs", "studio_notification_jobs", `ref IN (${refMarks})`, refs),
+    direct("post_events", "post_events", `post_key IN (${refMarks})`, refs),
+    direct("draft_story_cards", "draft_story_cards", "draft_id=?", [draftId]),
+    direct("draft_sources", "draft_sources", "draft_id=?", [draftId]),
+    direct("draft_entity_candidates", "draft_entity_candidates", "draft_id=?", [draftId]),
+    direct("conversation_sessions", "conversation_sessions", "draft_id=?", [draftId]),
+    direct("pending_albums", "pending_albums", "draft_id=?", [draftId]),
+    direct("post_metrics", "post_metrics", "post_key=?", [postKey]),
+    direct("metric_samples", "metric_samples", "post_key=?", [postKey]),
+    direct("metric_schedule", "metric_schedule", "post_key=?", [postKey]),
+    {
+      name: "x_activity_links",
+      countSql: "SELECT COUNT(*) AS count FROM x_activity_items WHERE linked_post_key=?",
+      deleteSql: "UPDATE x_activity_items SET linked_post_key=NULL WHERE linked_post_key=?",
+      args: [postKey],
+    },
+    direct("post_sources", "post_sources", "post_id=?", [postId]),
+    direct("post_entity_links", "post_entity_links", "post_id=?", [postId]),
+    direct("post_locales", "post_locales", "post_id=?", [postId]),
+    direct("post_targets", "post_targets", "post_key=?", [postKey]),
+    direct("site_jobs", "site_jobs", "post_id=?", [postId]),
+    direct("site_source_items", "site_source_items", "message_id=? AND json_extract(item_json,'$.post_id')=?", [messageId, postId]),
+    direct("publish_jobs", "publish_jobs", "post_id=? OR post_key=?", [postId, postKey]),
+    direct("publication_plans", "publication_plans", "post_id=?", [postId]),
+    direct("publication_sources", "publication_sources", "post_id=?", [postId]),
+    direct("posts", "posts", "post_id=? OR post_key=?", [postId, postKey]),
+    direct("publications", "publications", "post_id=? AND draft_id=?", [postId, draftId]),
+    direct("drafts", "drafts", "id=? AND post_id=?", [draftId, postId]),
+  ];
+}
+
+function count(row: unknown): number {
+  return Number((row as { count?: number } | null)?.count ?? 0);
+}

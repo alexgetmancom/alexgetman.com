@@ -24,6 +24,8 @@ import {
   withMaintenanceLock,
 } from "./maintenance.js";
 import { diagnoseMediaProcessor, mediaJobReport, mediaProcessorStatus, reprocessPostMedia } from "./media-processor.js";
+import { purgePublication } from "./publication-purge.js";
+import { publishText } from "./publish.js";
 import { findPublication, formatPublicationMatches, formatRecentPublications, recentPublications } from "./recent.js";
 import { createOperationsService } from "./service.js";
 import { backfillSiteImageMedia } from "./site-media-backfill.js";
@@ -93,6 +95,9 @@ const localeOption = z.enum(["ru", "en"]).optional().describe("restrict to one l
  * after it is a mistake, and the only safe reading of it is an error. */
 const targetOption = example(z.string().trim().min(1).optional(), "x").describe("restrict to one delivery target");
 const commaList = (what: string) => z.string().trim().min(1).optional().describe(`comma-separated ${what}`);
+const targetList = example(z.string().trim().min(1), "threads_ru")
+  .describe("comma-separated exact publication targets")
+  .transform((value) => splitList(value) ?? []);
 
 function splitList(value: string | undefined): string[] | undefined {
   if (value === undefined) return undefined;
@@ -181,6 +186,17 @@ const operationDefs = {
     mutates: false,
     agent: true,
     handler: (context, input) => verifyPostTargets(context.db(), input.ref),
+  }),
+  publish: operation({
+    summary: "Create and queue one text publication for an exact target list.",
+    schema: z.object({
+      locale: z.enum(["ru", "en"]),
+      targets: targetList,
+      text: example(z.string().trim().min(1).max(20_000), '"post text"'),
+    }),
+    mutates: true,
+    agent: true,
+    handler: (context, input) => publishText(context.db(), context.config(), input),
   }),
   timeline: operation({
     summary: "Jobs, targets and the full event log of one publication, in order.",
@@ -295,6 +311,14 @@ const operationDefs = {
     agent: true,
     note: "reports the targets in scope; add --apply to delete them",
     handler: (context, input) => runRepair(context, "delete", input),
+  }),
+  purge: operation({
+    summary: "Permanently remove an already-absent Studio publication and all of its stored state.",
+    schema: z.object({ ref: refOption, apply: applyOption }),
+    mutates: true,
+    agent: true,
+    note: "reports every row in scope; add --apply only after the remote publication is gone",
+    handler: (context, input) => purgePublication(context.db(), input, context.fetchImpl),
   }),
   "refresh-site": operation({
     summary: "Re-render one locale's public page without touching social targets.",
@@ -546,8 +570,8 @@ const operationDefs = {
       }),
   }),
   "threads-authorize": operation({
-    summary: "Obtain this Studio's long-lived Threads token by approving it in a browser.",
-    note: "Needs THREADS_APP_ID and THREADS_APP_SECRET from App Dashboard > App settings > Basic (the Threads pair, not the Meta app's), and the redirect URI it prints registered in that app's valid OAuth redirect URIs. Prints a link to open, then asks for the address the consent screen redirects to — that page serves nothing, the address bar is what matters. Run it with a terminal attached (docker compose exec -it).",
+    summary: "Terminal fallback for obtaining a long-lived Threads token when the browser callback is unavailable.",
+    note: "The normal path is Studio → Channels. This fallback needs THREADS_APP_ID and THREADS_APP_SECRET, prints a link, then asks for the redirect address. Run it with a terminal attached (docker compose exec -it).",
     schema: z.object({ locale: z.enum(["ru", "en"]) }),
     mutates: false,
     // Prints a credential that can post as the account.

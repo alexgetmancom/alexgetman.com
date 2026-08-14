@@ -280,6 +280,7 @@ const en = {
   "settings.channels-pick": "Choose an account for this language ({count} found).",
   "settings.channels-error": "Could not load Zernio accounts.",
   "settings.channel-connected": "Channel connected",
+  "settings.connect-native": "➕ {platform} {locale} · native",
   "settings.channels-unsupported": "{count} account(s) hidden: their platform cannot be published to yet.",
   "settings.category-publishing-body": "📡 Publishing\n\nWhere posts go and what is appended to them.",
   "settings.category-notifications-body": "🔔 Notifications\n\nWhat the bot tells you, and when.",
@@ -679,6 +680,10 @@ const en = {
   "cc.studio.platforms": "Platforms",
   "cc.studio.time": "Time",
   "cc.studio.attention": "Needs attention",
+  "cc.studio.channels": "Channels",
+  "cc.studio.connect-native": "Connect {platform} {locale}",
+  "cc.studio.native-unconfigured":
+    "Native Meta OAuth needs its app credentials and TOKEN_ENCRYPTION_KEY. Zernio remains available from Telegram settings.",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -948,6 +953,7 @@ const ru = {
   "settings.channels-pick": "Выберите аккаунт для этого языка (найдено: {count}).",
   "settings.channels-error": "Не удалось загрузить аккаунты Zernio.",
   "settings.channel-connected": "Канал подключён",
+  "settings.connect-native": "➕ {platform} {locale} · native",
   "settings.channels-unsupported": "Скрыто аккаунтов: {count} — в их платформу публикация пока не поддерживается.",
   "settings.category-publishing-body": "📡 Публикация\n\nКуда уходят посты и что к ним добавляется.",
   "settings.category-notifications-body": "🔔 Уведомления\n\nЧто бот сообщает и когда.",
@@ -1346,6 +1352,10 @@ const ru = {
   "cc.studio.platforms": "Площадки",
   "cc.studio.time": "Время",
   "cc.studio.attention": "Требует внимания",
+  "cc.studio.channels": "Каналы",
+  "cc.studio.connect-native": "Подключить {platform} {locale}",
+  "cc.studio.native-unconfigured":
+    "Для native OAuth Meta нужны credentials приложения и TOKEN_ENCRYPTION_KEY. Zernio по-прежнему доступен в настройках Telegram.",
 } satisfies Record<MessageKey, string>;
 
 export const catalog: Record<StudioLocale, Record<MessageKey, string>> = { en, ru };

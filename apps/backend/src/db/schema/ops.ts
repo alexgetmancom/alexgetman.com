@@ -129,7 +129,10 @@ export const mediaTestCases = sqliteTable("media_test_cases", {
 export const platformTokens = sqliteTable("platform_tokens", {
   target: text().primaryKey(),
   sealedToken: text().notNull(),
-  envFingerprint: text().notNull(),
+  /** Present only when the credential was seeded from env. A token issued by
+   * the browser OAuth flow belongs to the database and has no env ancestor. */
+  seedFingerprint: text(),
+  accountId: text(),
   refreshedAt: text().notNull(),
   updatedAt: text().notNull(),
 });

@@ -39,6 +39,7 @@ export function createDraftStore(db: BackendDatabase, clock: Clock): DraftStore 
           targetsJson: input.targetsJson,
           mediaRuJson: input.mediaRuJson,
           textRuEntitiesJson: input.textRuEntitiesJson,
+          storyPublishMode: input.storyPublishMode,
           createdAt: now,
           updatedAt: now,
         })

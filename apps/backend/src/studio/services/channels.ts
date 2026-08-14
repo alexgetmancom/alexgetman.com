@@ -1,4 +1,5 @@
 import { isPublishableVideoPlatform } from "../../channels/destinations.js";
+import { type MetaOauthPlatform, metaOauthConnectPath, metaOauthConnectUrl } from "../../channels/meta-oauth.js";
 import { type ChannelInput, listChannels, registerChannel } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
@@ -24,6 +25,20 @@ export function channelService(backendDb: BackendDb, config: BackendConfig, fetc
     },
     connect(input: Omit<ChannelInput, "source">) {
       return trackUsageSync(backendDb, "studio.channel.connect", () => registerChannel(backendDb, { ...input, source: "interface" }));
+    },
+    nativeConnectUrl(platform: MetaOauthPlatform, locale: "ru" | "en"): string | null {
+      try {
+        return metaOauthConnectUrl(config, platform, locale);
+      } catch {
+        return null;
+      }
+    },
+    nativeConnectPath(platform: MetaOauthPlatform, locale: "ru" | "en"): string | null {
+      try {
+        return metaOauthConnectPath(config, platform, locale);
+      } catch {
+        return null;
+      }
     },
     async discoverZernioAccounts(): Promise<StudioZernioAccount[]> {
       return trackUsageAsync(backendDb, "studio.channel.discover", () => listZernioAccounts(config, fetchImpl));

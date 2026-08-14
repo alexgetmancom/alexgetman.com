@@ -28,19 +28,35 @@ are connected by naming their platform and language.
 | Website | `--target site_ru` / `site_en` | nothing, plus `site_enabled: true` in `studio.yaml` |
 | Telegram channel | `--target telegram` | `CONTROLLER_BOT_TOKEN` |
 | Discord | `--target discord` | `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID` |
-| Threads | `--target threads_ru` / `threads_en` | `THREADS_RU_ACCESS_TOKEN` / `THREADS_EN_ACCESS_TOKEN` via `threads-authorize`, or `ZERNIO_API_KEY` |
+| Threads | Studio → Channels, RU or EN | `THREADS_APP_ID`, `THREADS_APP_SECRET`, `TOKEN_ENCRYPTION_KEY`, or `ZERNIO_API_KEY` |
 | X | `--target x` | `X_CONSUMER_KEY`, `X_CONSUMER_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET` |
-| Instagram Stories | `--target instagram_stories_ru` / `instagram_stories` | `INSTAGRAM_*_USER_ID` and `INSTAGRAM_*_ACCESS_TOKEN`, or `ZERNIO_API_KEY` |
+| Instagram Stories | Studio → Channels, RU or EN | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `TOKEN_ENCRYPTION_KEY`, or `ZERNIO_API_KEY` |
 | Telegram Stories | `--target telegram_stories` | `TELEGRAM_CHANNEL_STORIES_API_ID`, `_API_HASH`, `_SESSION` |
 | YouTube | `--platform youtube --locale ru` | `YOUTUBE_*_CLIENT_ID`, `_CLIENT_SECRET`, `_REFRESH_TOKEN` |
-| Instagram feed and Reels | `--platform instagram --locale ru` | `INSTAGRAM_*_ACCESS_TOKEN` and `_USER_ID`, or `ZERNIO_API_KEY` |
+| Instagram feed and Reels | Studio → Channels, RU or EN | same native Instagram login, or `ZERNIO_API_KEY` |
 | TikTok | `--platform tiktok --provider zernio` | `ZERNIO_API_KEY` — analytics only, never published to |
 
 ## Native or through a provider
 
 Meta's platforms can be reached two ways, and the channel remembers which one it
-uses. Publishing to Instagram or Threads directly means registering your own
-Meta app, holding a Professional account and linking a Facebook Page.
+uses. For native delivery, create your own Meta app and put its app id and secret
+in `.env`; Instagram needs a Professional account. Generate
+`TOKEN_ENCRYPTION_KEY` once with `openssl rand -hex 32`.
+
+Register these exact callback URLs in the app dashboard:
+
+```text
+https://your-domain.example/oauth/threads
+https://your-domain.example/oauth/instagram
+```
+
+Then open Command Center → Studio → Channels, or Telegram → Settings → Channels,
+and click the RU or EN native button. The browser returns to Studio, which
+exchanges the code, seals the long-lived token in the database, records the
+account id and connects every native route that account serves. No URL copying,
+CLI token exchange, `.env` token edit or restart is involved. An app in
+Development mode works for accounts assigned a role on that app; serving other
+people's accounts is the point at which Meta review matters.
 
 ```bash
 # The same destination, delivered through a provider instead

@@ -40,6 +40,7 @@ export type NewDraft = {
   targetsJson: string;
   mediaRuJson: string | null;
   textRuEntitiesJson: string;
+  storyPublishMode?: "all" | "site_only";
 };
 
 export type DraftPatch = Partial<{

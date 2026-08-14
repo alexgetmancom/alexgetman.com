@@ -3,7 +3,7 @@ import { expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-it("canonicalizes publication refs without deleting legacy video history", () => {
+it("cuts publication refs over to their short public form without deleting video history", () => {
   const db = new Database(":memory:", { strict: true });
   try {
     db.exec(`
@@ -45,21 +45,23 @@ it("canonicalizes publication refs without deleting legacy video history", () =>
       INSERT INTO social_comments VALUES (80000, 80);
     `);
 
-    const migration = readFileSync(path.join(import.meta.dir, "../drizzle/0006_remove_legacy_publication_paths.sql"), "utf8");
-    for (const statement of migration
-      .split("--> statement-breakpoint")
-      .map((value) => value.trim())
-      .filter(Boolean))
-      db.exec(statement);
+    for (const migrationName of ["0006_remove_legacy_publication_paths.sql", "0018_short_publication_refs.sql"]) {
+      const migration = readFileSync(path.join(import.meta.dir, `../drizzle/${migrationName}`), "utf8");
+      for (const statement of migration
+        .split("--> statement-breakpoint")
+        .map((value) => value.trim())
+        .filter(Boolean))
+        db.exec(statement);
+    }
 
     expect(db.query("SELECT post_key FROM post_events ORDER BY id").all()).toEqual([
-      { post_key: "publication:post:7" },
-      { post_key: "publication:video:8" },
+      { post_key: "post:7" },
+      { post_key: "video:8" },
       { post_key: "runtime" },
     ]);
     expect(db.query("SELECT ref, kind FROM studio_notification_jobs ORDER BY id").all()).toEqual([
-      { ref: "publication:video:8", kind: "reminder" },
-      { ref: "publication:post:7", kind: "completion" },
+      { ref: "video:8", kind: "reminder" },
+      { ref: "post:7", kind: "completion" },
     ]);
     expect(db.query("SELECT COUNT(*) AS count FROM video_drafts").get()).toEqual({ count: 1 });
     expect(db.query("SELECT COUNT(*) AS count FROM video_targets").get()).toEqual({ count: 1 });

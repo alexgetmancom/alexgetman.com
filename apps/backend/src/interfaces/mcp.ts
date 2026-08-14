@@ -215,18 +215,31 @@ const studioToolDefs = {
     handler: (studio, actorId, input) => studio.posts.mediaAssets(actorId, input.limit ?? 50),
   }),
   studio_post_create: tool({
-    description: "Create a text-post draft for the authenticated owner.",
-    schema: z.object({ text: trimmed(1, 20_000), text_en: trimmed(0, 20_000).optional() }),
+    description: "Create a text-post draft with its exact publication targets.",
+    schema: z.object({
+      text: trimmed(1, 20_000),
+      text_en: trimmed(0, 20_000).optional(),
+      targets: z
+        .array(trimmed(1, 120))
+        .min(1)
+        .max(10)
+        .transform((values) => [...new Set(values)]),
+      story_publish_mode: z.enum(["all", "site_only"]).optional(),
+    }),
     mutates: true,
     ref: (_input, result) => publicationRef("draft", (result as { draft_id: number }).draft_id),
     handler: (studio, actorId, input) => {
-      const draftId = studio.posts.create(actorId, {
-        text: input.text,
-        ...(input.text_en === undefined ? {} : { textEn: input.text_en, textEnApproved: input.text_en }),
-        entities: [],
-        media: [],
-      });
-      return { draft_id: draftId };
+      const draftId = studio.posts.create(
+        actorId,
+        {
+          text: input.text,
+          ...(input.text_en === undefined ? {} : { textEn: input.text_en, textEnApproved: input.text_en }),
+          entities: [],
+          media: [],
+        },
+        { targets: input.targets, ...(input.story_publish_mode ? { storyMode: input.story_publish_mode } : {}) },
+      );
+      return { draft_id: draftId, targets: input.targets };
     },
   }),
   studio_post_get: tool({
@@ -294,16 +307,6 @@ const studioToolDefs = {
     ref: (input) => publicationRef("draft", input.draft_id),
     handler: (studio, actorId, input) => {
       studio.posts.edit(actorId, input.draft_id, { locale: input.locale, text: input.text, entities: [], media: [] });
-      return { draft_id: input.draft_id, updated: true };
-    },
-  }),
-  studio_post_toggle_target: tool({
-    description: "Toggle one configured target on an owned post draft.",
-    schema: z.object({ draft_id: positiveInt, target: trimmed(1, 120) }),
-    mutates: true,
-    ref: (input) => publicationRef("draft", input.draft_id),
-    handler: (studio, actorId, input) => {
-      studio.posts.toggleTarget(actorId, input.draft_id, input.target);
       return { draft_id: input.draft_id, updated: true };
     },
   }),

@@ -161,6 +161,8 @@ const envSchema = z
     INSTAGRAM_EN_USER_ID: z.string().optional(),
     INSTAGRAM_RU_ACCESS_TOKEN: z.string().optional(),
     INSTAGRAM_RU_USER_ID: z.string().optional(),
+    INSTAGRAM_APP_ID: z.string().optional(),
+    INSTAGRAM_APP_SECRET: z.string().optional(),
     INSTAGRAM_GRAPH_API_VERSION: z.string().default("v23.0"),
     ZERNIO_API_KEY: z.string().min(16).optional(),
     YOUTUBE_RU_CLIENT_ID: z.string().optional(),
@@ -188,6 +190,13 @@ const envSchema = z
     INDEXNOW_ENABLED: booleanFlag(true),
   })
   .superRefine((env, context) => {
+    for (const [id, secret] of [
+      ["THREADS_APP_ID", "THREADS_APP_SECRET"],
+      ["INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET"],
+    ] as const) {
+      if (Boolean(env[id]) !== Boolean(env[secret]))
+        context.addIssue({ code: "custom", path: [id], message: `${id} and ${secret} must be configured together` });
+    }
     const englishYouTube = [env.YOUTUBE_EN_CLIENT_ID, env.YOUTUBE_EN_CLIENT_SECRET, env.YOUTUBE_EN_REFRESH_TOKEN];
     if (englishYouTube.some(Boolean) && !englishYouTube.every(Boolean)) {
       context.addIssue({

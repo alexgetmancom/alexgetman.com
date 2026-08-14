@@ -35,6 +35,7 @@ describe("Studio MCP", () => {
       const authorizedTools = await request(app, { jsonrpc: "2.0", id: 2, method: "tools/list" }, `Bearer ${"a".repeat(16)}`);
       const authorizedToolList = JSON.stringify(await authorizedTools.json());
       expect(authorizedToolList).toContain("studio_post_create");
+      expect(authorizedToolList).not.toContain("studio_post_toggle_target");
       expect(authorizedToolList).toContain("studio_channels");
       expect(authorizedToolList).toContain("studio_locale_update");
 
@@ -47,11 +48,20 @@ describe("Studio MCP", () => {
 
       const created = await request(
         app,
-        { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "studio_post_create", arguments: { text: "MCP draft" } } },
+        {
+          jsonrpc: "2.0",
+          id: 4,
+          method: "tools/call",
+          params: { name: "studio_post_create", arguments: { text: "MCP draft", targets: ["threads_ru"] } },
+        },
         `Bearer ${"a".repeat(16)}`,
       );
       expect(await created.json()).toMatchObject({ result: { content: [{ type: "text" }] } });
-      expect(backendDb.sqlite.prepare("SELECT actor_id FROM drafts").get()).toEqual({ actor_id: 42 });
+      expect(backendDb.sqlite.prepare("SELECT actor_id,targets_json FROM drafts").get()).toEqual({
+        actor_id: 42,
+        targets_json:
+          '{"telegram":false,"site_ru":false,"site_en":false,"threads_ru":true,"threads_en":false,"x":false,"discord":false,"telegram_stories":false,"instagram_stories_ru":false,"instagram_stories":false}',
+      });
       const preview = await request(
         app,
         { jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "studio_post_preview", arguments: { draft_id: 1 } } },
@@ -195,7 +205,7 @@ describe("Studio MCP", () => {
       });
       expect(
         backendDb.sqlite
-          .prepare("SELECT COUNT(*) AS count FROM post_events WHERE event_type='studio.mcp.command' AND post_key='publication:video:1'")
+          .prepare("SELECT COUNT(*) AS count FROM post_events WHERE event_type='studio.mcp.command' AND post_key='video:1'")
           .get(),
       ).toEqual({ count: 3 });
     } finally {
@@ -218,7 +228,12 @@ describe("Studio MCP", () => {
       const authorization = `Bearer ${token}`;
       const created = await request(
         app,
-        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "studio_post_create", arguments: { text: "Asset draft" } } },
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "studio_post_create", arguments: { text: "Asset draft", targets: ["telegram"] } },
+        },
         authorization,
       );
       expect(created.status).toBe(200);
