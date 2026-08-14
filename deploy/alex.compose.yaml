@@ -44,7 +44,7 @@ services:
       TRUSTED_CLIENT_IP_HEADER: x-real-ip
       SITE_PUBLIC_DIR: /data/site
       TELEGRAM_CHANNEL_USERNAME: alexgetmancom
-      METRICS_REFRESH_INTERVAL_SECONDS: "10"
+      METRICS_REFRESH_INTERVAL_SECONDS: "60"
       IDLE_POLL_INTERVAL_SECONDS: "5"
       TELEGRAM_API_BASE_URL: http://bot-api:8081
       OBSERVABILITY_INTERVAL_SECONDS: "300"
@@ -79,8 +79,9 @@ services:
       start_period: 20s
     networks:
       - agent_default
-    mem_limit: 768m
+    mem_limit: 384m
     cpus: 1.0
+    cpu_shares: 256
     pids_limit: 96
 
 networks:

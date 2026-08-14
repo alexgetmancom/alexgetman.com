@@ -23,7 +23,7 @@ import { recoverStoryCardJobs, runStoryCardCycle } from "../story-cards/worker.j
 
 const WATCHDOG_INTERVAL_SECONDS = 60;
 const SITE_JOB_POLL_INTERVAL_SECONDS = 10;
-const PROFILE_POLL_INTERVAL_SECONDS = 60;
+const PROFILE_POLL_INTERVAL_SECONDS = 300;
 const PUBLISH_RESTART_LOCK_GRACE_SECONDS = 30;
 
 /** Delivery-only publish cycle. Interfaces learn about settled work through durable events. */

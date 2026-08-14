@@ -18,8 +18,10 @@ async function step(backendDb: BackendDb, name: string, featureKey: UsageFeature
   try {
     const result = await run();
     const completed = typeof result === "number" ? result : 1;
-    if (completed > 0) recordUsage(backendDb, featureKey, true, Date.now() - startedAt);
-    log("info", "operation timing", { operation: featureKey, step: name, success: true, totalMs: Date.now() - startedAt });
+    if (completed > 0) {
+      recordUsage(backendDb, featureKey, true, Date.now() - startedAt);
+      log("info", "operation timing", { operation: featureKey, step: name, success: true, totalMs: Date.now() - startedAt });
+    }
     return completed;
   } catch (error) {
     recordUsage(backendDb, featureKey, false, Date.now() - startedAt);

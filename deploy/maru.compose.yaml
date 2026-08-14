@@ -31,6 +31,7 @@ services:
       PUBLIC_BASE_URL: ${MARU_PUBLIC_BASE_URL:?set this Studio's public base URL}
       TRUSTED_CLIENT_IP_HEADER: x-real-ip
       TELEGRAM_API_BASE_URL: http://alexgetman-telegram-bot-api:8081
+      METRICS_REFRESH_INTERVAL_SECONDS: "60"
       BIND_HOST: 0.0.0.0
       PORT: "8788"
     volumes:
@@ -54,8 +55,9 @@ services:
       start_period: 20s
     networks:
       - agent_default
-    mem_limit: 512m
+    mem_limit: 192m
     cpus: 0.75
+    cpu_shares: 256
     pids_limit: 96
 
 networks:
