@@ -6,6 +6,23 @@ import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { withDb } from "./helpers/db.js";
 
 describe("channel registry", () => {
+  it("refuses a platform that could never publish or be collected", () =>
+    withDb((backendDb) => {
+      // The registry used to take any string. The row it created had no
+      // delivery target and no credential requirements, so the readiness report
+      // asked what it needed, was told nothing, and called it ready.
+      expect(() => registerChannel(backendDb, { platform: "nonsense", locale: "ru", provider: "native" })).toThrow("Unknown platform");
+      expect(listChannels(backendDb, false)).toHaveLength(0);
+
+      // TikTok is never published to natively, but it is a real account this
+      // Studio collects from through a provider.
+      expect(registerChannel(backendDb, { platform: "tiktok", locale: "ru", provider: "zernio" }).id).toBe("tiktok_ru");
+      // A text channel names its target instead of a video platform.
+      expect(registerChannel(backendDb, { platform: "telegram", locale: "ru", provider: "native", targetId: "telegram" }).id).toBe(
+        "telegram",
+      );
+    }));
+
   it("uses an interface-added account as the publication route", () =>
     withDb((backendDb) => {
       registerChannel(backendDb, {

@@ -1,7 +1,7 @@
 import type { ChannelConnectionRecord } from "../application/ports.js";
 import type { BackendDb } from "../db/client.js";
 import type { VideoLocale } from "../foundation/external/youtube.js";
-import { VIDEO_TARGET_PLATFORM, type VideoTarget } from "../publishing/video-types.js";
+import { ACCOUNT_PLATFORMS, VIDEO_TARGET_PLATFORM, type VideoTarget } from "../publishing/video-types.js";
 
 export type ChannelConnection = ChannelConnectionRecord;
 
@@ -26,6 +26,14 @@ export type ChannelInput = {
 };
 
 export function registerChannel(backendDb: BackendDb, input: ChannelInput): ChannelConnection {
+  // A channel is either a text target this Studio publishes to or a platform
+  // the video pipeline can reach. Anything else is a row that can never
+  // publish, and nothing downstream would say so: the credential report asks
+  // what such a channel requires, is told nothing, and reports it ready.
+  if (!input.targetId && !ACCOUNT_PLATFORMS.includes(input.platform as (typeof ACCOUNT_PLATFORMS)[number])) {
+    const known = ACCOUNT_PLATFORMS.join(", ");
+    throw new Error(`Unknown platform: ${input.platform}. Account platforms are ${known}; a text channel names its target instead.`);
+  }
   const now = new Date().toISOString();
   const id = input.targetId ?? channelId(input.platform, input.locale);
   backendDb.channels.upsert(

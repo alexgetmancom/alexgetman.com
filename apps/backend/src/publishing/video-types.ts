@@ -9,6 +9,11 @@ export const VIDEO_TARGET_PLATFORM = {
   instagram_reels: "instagram",
 } as const satisfies Record<VideoTarget, string>;
 
+/** Platforms a Studio can hold an account for. The video pipeline publishes to
+ * the two named in VIDEO_TARGET_PLATFORM; TikTok is only ever collected from,
+ * through a provider, so it is a real channel that is never a delivery target. */
+export const ACCOUNT_PLATFORMS = ["instagram", "tiktok", "youtube"] as const;
+
 type VideoSourceMetadata = { videoDurationMs?: number };
 export type YouTubeMetadata = { title: string; description: string; tags: string[]; gameUrl?: string } & VideoSourceMetadata;
 /** Instagram receives one ready-to-publish caption, including any hashtags. */
