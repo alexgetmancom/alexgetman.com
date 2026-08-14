@@ -42,7 +42,7 @@ Solo Publisher намеренно обслуживает одного владе
 
 ## Установка
 
-Понадобятся Docker и домен, DNS которого уже указывает на эту машину.
+Понадобятся Docker и домен, DNS которого уже указывает на эту машину. Образ публикуется для linux/amd64 и linux/arm64, поэтому на ARM-сервере ничего собирать не нужно.
 
 ```bash
 git clone https://github.com/alexgetmancom/solo-publisher.git

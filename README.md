@@ -42,7 +42,7 @@ Solo Publisher deliberately serves one owner instead of reproducing agency softw
 
 ## Install
 
-Requirements: Docker, and a domain whose DNS already points at the machine.
+Requirements: Docker, and a domain whose DNS already points at the machine. The image is published for linux/amd64 and linux/arm64, so an ARM server needs no build.
 
 ```bash
 git clone https://github.com/alexgetmancom/solo-publisher.git
