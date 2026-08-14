@@ -4,7 +4,6 @@ import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { instagramCredentialsForLocale, instagramGraphHost } from "../../foundation/external/instagram.js";
 import { createChannelStoryClient } from "../../foundation/external/telegram-session.js";
-import { oauthAuthorization } from "../../foundation/external/x-oauth.js";
 import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { zernioAccount, zernioRequest } from "../../foundation/external/zernio.js";
 import { requestJson } from "../../foundation/http.js";
@@ -275,7 +274,7 @@ export async function syncXProfile(config: BackendConfig, backendDb: BackendDb, 
     "x_profile",
     async () => {
       const url = "https://api.x.com/2/users/me?user.fields=public_metrics";
-      const profile = await requestJson<XProfile>(fetchImpl, url, { headers: { Authorization: oauthAuthorization("GET", url, config) } });
+      const profile = await requestJson<XProfile>(fetchImpl, url, { headers: { Authorization: `Bearer ${config.X_ACCESS_TOKEN}` } });
       const user = profile.data;
       if (!user?.id) throw new Error("X profile response has no user");
       recordProfileSnapshot(backendDb, {

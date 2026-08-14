@@ -4,7 +4,6 @@ import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { instagramCredentialsForLocale, instagramGraphHost } from "../foundation/external/instagram.js";
 import { type ThreadsTarget, threadsCredentials } from "../foundation/external/threads.js";
-import { oauthAuthorization } from "../foundation/external/x-oauth.js";
 import { type VideoLocale, youtubeAccessToken, youtubeCredentials } from "../foundation/external/youtube.js";
 import { ExternalHttpError, requestJson } from "../foundation/http.js";
 import { log } from "../foundation/logger.js";
@@ -135,10 +134,10 @@ const probes: Probe[] = [
   },
   {
     target: "x",
-    configured: (c) => Boolean(c.X_CONSUMER_KEY && c.X_CONSUMER_SECRET && c.X_ACCESS_TOKEN && c.X_ACCESS_TOKEN_SECRET),
+    configured: (c) => Boolean(c.X_CLIENT_ID && c.X_CLIENT_SECRET && c.X_ACCESS_TOKEN && c.X_REFRESH_TOKEN),
     run: async (config, fetchImpl) => {
-      const url = "https://api.twitter.com/2/users/me";
-      await requestJson(fetchImpl, url, { headers: { Authorization: oauthAuthorization("GET", url, config) } });
+      const url = "https://api.x.com/2/users/me";
+      await requestJson(fetchImpl, url, { headers: { Authorization: `Bearer ${config.X_ACCESS_TOKEN}` } });
       return null;
     },
   },

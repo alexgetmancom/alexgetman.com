@@ -8,6 +8,7 @@ import { engagementRoutes } from "./interfaces/http/engagement.js";
 import { healthRoutes } from "./interfaces/http/health.js";
 import { metaOauthRoutes } from "./interfaces/http/meta-oauth.js";
 import { studioRoutes } from "./interfaces/http/studio.js";
+import { xOauthRoutes } from "./interfaces/http/x-oauth.js";
 import { createOperationsService } from "./operations/service.js";
 import { createStudioServices, type StudioServices } from "./studio/services/index.js";
 
@@ -46,6 +47,7 @@ function buildApp({ config, backendDb, studio: providedStudio }: ApiContext): Ho
 
   healthRoutes(app, deps);
   metaOauthRoutes(app, deps);
+  xOauthRoutes(app, deps);
   commandCenterRoutes(app, deps);
   engagementRoutes(app, deps);
   studioRoutes(app, deps);

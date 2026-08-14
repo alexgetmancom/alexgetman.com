@@ -1,6 +1,7 @@
 import { isPublishableVideoPlatform } from "../../channels/destinations.js";
 import { type MetaOauthPlatform, metaOauthConnectPath, metaOauthConnectUrl } from "../../channels/meta-oauth.js";
 import { type ChannelInput, listChannels, registerChannel } from "../../channels/registry.js";
+import { xOauthConnectPath, xOauthConnectUrl } from "../../channels/x-oauth.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { listZernioAccounts, type ZernioAccount } from "../../foundation/external/zernio.js";
@@ -36,6 +37,20 @@ export function channelService(backendDb: BackendDb, config: BackendConfig, fetc
     nativeConnectPath(platform: MetaOauthPlatform, locale: "ru" | "en"): string | null {
       try {
         return metaOauthConnectPath(config, platform, locale);
+      } catch {
+        return null;
+      }
+    },
+    xConnectUrl(): string | null {
+      try {
+        return xOauthConnectUrl(config);
+      } catch {
+        return null;
+      }
+    },
+    xConnectPath(): string | null {
+      try {
+        return xOauthConnectPath(config);
       } catch {
         return null;
       }

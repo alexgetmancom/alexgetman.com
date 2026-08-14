@@ -63,10 +63,10 @@ export async function runAnalyticsCycle(config: BackendConfig, backendDb: Backen
   const xOwner = `profile:x:${crypto.randomUUID()}`;
   if (
     config.ENABLE_X_PROFILE_METRICS &&
-    config.X_CONSUMER_KEY &&
-    config.X_CONSUMER_SECRET &&
+    config.X_CLIENT_ID &&
+    config.X_CLIENT_SECRET &&
     config.X_ACCESS_TOKEN &&
-    config.X_ACCESS_TOKEN_SECRET &&
+    config.X_REFRESH_TOKEN &&
     claimSync(backendDb, "x_profile", { intervalSeconds: profileInterval, owner: xOwner })
   )
     profiles += await step(backendDb, "x_profile", "analytics.creator_profile.sync", () =>

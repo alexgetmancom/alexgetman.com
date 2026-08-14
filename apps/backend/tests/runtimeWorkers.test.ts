@@ -8,6 +8,7 @@ import { SITE_STUDIO_CONFIG } from "./helpers/studio-config.js";
 
 const EXPECTED_WORKERS = [
   "platform-tokens",
+  "x-token",
   "story-cards",
   "queue",
   "publish-watchdog",
@@ -72,6 +73,7 @@ describe("core worker runtime", () => {
       try {
         expect(loops.map((loop) => loop.name)).toEqual([
           "platform-tokens",
+          "x-token",
           "story-cards",
           "queue",
           "publish-watchdog",

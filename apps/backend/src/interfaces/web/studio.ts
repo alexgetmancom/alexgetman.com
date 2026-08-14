@@ -33,7 +33,7 @@ function renderChannels(channels: ReturnType<typeof createStudioServices>["chann
     .list()
     .map((channel) => `<li>${escapeHtml(channel.label)} — ${escapeHtml(channel.provider)}</li>`)
     .join("");
-  const buttons = (["threads", "instagram"] as const)
+  const metaButtons = (["threads", "instagram"] as const)
     .flatMap((platform) =>
       (["ru", "en"] as const).flatMap((targetLocale) => {
         const url = channels.nativeConnectPath(platform, targetLocale);
@@ -44,6 +44,15 @@ function renderChannels(channels: ReturnType<typeof createStudioServices>["chann
           : [];
       }),
     )
+    .join(" ");
+  const xUrl = channels.xConnectPath();
+  const buttons = [
+    metaButtons,
+    xUrl
+      ? `<a class="period-quick-link" href="${escapeHtml(xUrl)}">${t(locale, "cc.studio.connect-native", { platform: "X", locale: "EN" })}</a>`
+      : "",
+  ]
+    .filter(Boolean)
     .join(" ");
   return `<section><h2>${t(locale, "cc.studio.channels")}</h2>${connected ? `<ul>${connected}</ul>` : `<p class="note">${t(locale, "settings.channels-none")}</p>`}${buttons ? `<nav class="studio-toolbar">${buttons}</nav>` : `<p class="note">${t(locale, "cc.studio.native-unconfigured")}</p>`}</section>`;
 }

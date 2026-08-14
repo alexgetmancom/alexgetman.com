@@ -1,5 +1,6 @@
 import { createBot } from "../../../backend/src/bot.js";
 import { applyStoredMetaTokens } from "../../../backend/src/channels/meta-tokens.js";
+import { applyStoredXTokens } from "../../../backend/src/channels/x-oauth.js";
 import { type BackendDb, openBackendDb } from "../../../backend/src/db/client.js";
 import type { RawBackendDb } from "../../../backend/src/db/unsafe.js";
 import { unsafeDb } from "../../../backend/src/db/unsafe.js";
@@ -44,6 +45,7 @@ export function startRuntime(): AppRuntime {
   // for itself lives in the database, and .env holds the value it grew from.
   // Applying it here keeps one name for the effective token everywhere else.
   applyStoredMetaTokens(config, backendDb);
+  applyStoredXTokens(config, backendDb);
   const studio = createStudioServices(backendDb, config);
   const bot = createBot(config, backendDb);
   const loops = config.NODE_ENV === "test" ? [] : [...startCoreWorkers(config, backendDb), ...startTelegramWorkers(config, backendDb, bot)];

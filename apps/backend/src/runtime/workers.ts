@@ -3,6 +3,7 @@ import { runMetricsCycle } from "../analytics/collection/metrics-cycle.js";
 import { pruneMetricSamples } from "../analytics/snapshots/metric-repository.js";
 import { renewMetaTokens } from "../channels/meta-tokens.js";
 import { targetRouting } from "../channels/registry.js";
+import { refreshXToken } from "../channels/x-oauth.js";
 import type { BackendDb } from "../db/client.js";
 import { pruneMediaCache } from "../delivery/media-prepare.js";
 import { createPlatformPorts } from "../delivery/ports/social.js";
@@ -102,6 +103,10 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
       const outcomes = await renewMetaTokens(config, backendDb);
       const renewed = outcomes.filter((outcome) => outcome.status === "renewed");
       if (renewed.length) log("info", "platform tokens renewed", { targets: renewed.map((outcome) => outcome.target) });
+    }),
+    startWorkerLoop("x-token", 10 * 60 * 1000, async () => {
+      const outcome = await refreshXToken(config, backendDb);
+      if (outcome === "refreshed") log("info", "X access token refreshed");
     }),
     startWorkerLoop("story-cards", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
       await runTimedCycle("content.story_card.cycle", "claimed", () => runStoryCardCycle(config, backendDb));

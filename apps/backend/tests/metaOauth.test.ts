@@ -36,7 +36,7 @@ describe("Meta browser OAuth", () => {
 
   it("serves a signed start route instead of leaving the browser on a dead callback", () =>
     withDb(async (backendDb) => {
-      const state = new URL(metaOauthConnectUrl(config, "threads", "en", now)).searchParams.get("state") ?? "";
+      const state = new URL(metaOauthConnectUrl(config, "threads", "en")).searchParams.get("state") ?? "";
       const app = createApiHandler({ config, backendDb });
       const response = await app(new Request(`https://publisher.example.com/oauth/threads/start?state=${encodeURIComponent(state)}`));
       expect(response.status).toBe(302);

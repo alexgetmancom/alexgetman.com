@@ -1,5 +1,4 @@
 import type { BackendConfig } from "../../../foundation/config.js";
-import { oauthAuthorization } from "../../../foundation/external/x-oauth.js";
 import { externalFetch } from "../../../foundation/http.js";
 import { redactExternalSecrets } from "../../../foundation/redact.js";
 import type { MetricTask } from "../metric-schedule.js";
@@ -7,8 +6,8 @@ import type { MetricResult } from "./types.js";
 
 export async function collectX(task: MetricTask, config: BackendConfig, fetchImpl: typeof fetch): Promise<MetricResult> {
   if (!task.externalId) throw new Error("missing_x_tweet_id");
-  const url = `https://api.twitter.com/2/tweets/${encodeURIComponent(task.externalId)}?tweet.fields=public_metrics`;
-  const response = await externalFetch(fetchImpl, url, { headers: { Authorization: oauthAuthorization("GET", url, config) } });
+  const url = `https://api.x.com/2/tweets/${encodeURIComponent(task.externalId)}?tweet.fields=public_metrics`;
+  const response = await externalFetch(fetchImpl, url, { headers: { Authorization: `Bearer ${config.X_ACCESS_TOKEN}` } });
   const body = await response.text();
   if (!response.ok) throw new Error(`X metrics ${response.status}: ${redactExternalSecrets(body)}`);
   const result = JSON.parse(body) as {

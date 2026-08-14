@@ -133,6 +133,8 @@ export const platformTokens = sqliteTable("platform_tokens", {
    * the browser OAuth flow belongs to the database and has no env ancestor. */
   seedFingerprint: text(),
   accountId: text(),
+  sealedRefreshToken: text(),
+  expiresAt: text(),
   refreshedAt: text().notNull(),
   updatedAt: text().notNull(),
 });

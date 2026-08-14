@@ -87,10 +87,10 @@ describe("creator analytics collection", () => {
       });
       const config = loadConfig({
         ENABLE_X_PROFILE_METRICS: "1",
-        X_CONSUMER_KEY: "consumer",
-        X_CONSUMER_SECRET: "secret",
+        X_CLIENT_ID: "consumer",
+        X_CLIENT_SECRET: "secret",
         X_ACCESS_TOKEN: "access",
-        X_ACCESS_TOKEN_SECRET: "access-secret",
+        X_REFRESH_TOKEN: "access-secret",
         ZERNIO_API_KEY: "a".repeat(16),
       });
       const fetchMock = (async (input: URL | RequestInfo) => {

@@ -10,10 +10,10 @@ import { loadConfig } from "../src/foundation/config.js";
 const config = loadConfig({
   CONTROLLER_ADMIN_IDS: "42",
   CONTROLLER_BOT_TOKEN: "token",
-  X_CONSUMER_KEY: "ck",
-  X_CONSUMER_SECRET: "cs",
+  X_CLIENT_ID: "ck",
+  X_CLIENT_SECRET: "cs",
   X_ACCESS_TOKEN: "at",
-  X_ACCESS_TOKEN_SECRET: "ats",
+  X_REFRESH_TOKEN: "ats",
   THREADS_RU_ACCESS_TOKEN: "ru-token",
   THREADS_EN_ACCESS_TOKEN: "en-token",
   INSTAGRAM_RU_ACCESS_TOKEN: "shared-token",
@@ -107,9 +107,9 @@ describe("collectX", () => {
     const { fetch: impl, calls } = recordingFetch(() => json({ data: { public_metrics: {} } }));
     await collectX(task({ externalId: "id with space" }), config, impl);
 
-    expect(calls[0]?.url).toBe("https://api.twitter.com/2/tweets/id%20with%20space?tweet.fields=public_metrics");
+    expect(calls[0]?.url).toBe("https://api.x.com/2/tweets/id%20with%20space?tweet.fields=public_metrics");
     const headers = (calls[0]?.init?.headers ?? {}) as Record<string, string>;
-    expect(headers.Authorization).toStartWith("OAuth ");
+    expect(headers.Authorization).toBe("Bearer at");
   });
 
   it("reports zeroes when the payload carries no metrics at all", async () => {

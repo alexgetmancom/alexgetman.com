@@ -133,6 +133,8 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
       if (en) range.url(t(locale, "settings.connect-native", { platform: channelPlatformLabel(platform), locale: "EN" }), en);
       if (ru || en) range.row();
     }
+    const xUrl = studioChannels.xConnectUrl();
+    if (xUrl) range.url(t(locale, "settings.connect-native", { platform: "X", locale: "EN" }), xUrl).row();
     if (config.ZERNIO_API_KEY)
       range
         .text("➕ Zernio · RU", (ctx) => discoverZernio(ctx, actorId, "ru", locale))

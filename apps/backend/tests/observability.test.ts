@@ -279,10 +279,10 @@ const READY_ENV = {
   YOUTUBE_RU_REFRESH_TOKEN: "refresh",
   THREADS_RU_ACCESS_TOKEN: "token",
   THREADS_EN_ACCESS_TOKEN: "token",
-  X_CONSUMER_KEY: "key",
-  X_CONSUMER_SECRET: "secret",
+  X_CLIENT_ID: "key",
+  X_CLIENT_SECRET: "secret",
   X_ACCESS_TOKEN: "token",
-  X_ACCESS_TOKEN_SECRET: "secret",
+  X_REFRESH_TOKEN: "secret",
   TELEGRAM_CHANNEL_STORIES_API_ID: "1",
   TELEGRAM_CHANNEL_STORIES_API_HASH: "hash",
   TELEGRAM_CHANNEL_STORIES_SESSION: "session",
@@ -448,7 +448,7 @@ describe("healthReport", () => {
       expect(report.ok).toBe(false);
       expect(report.capabilities.find((capability) => capability.target === "x")).toMatchObject({
         status: "missing",
-        missing: ["X_CONSUMER_KEY", "X_CONSUMER_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRET"],
+        missing: ["X_CLIENT_ID", "X_CLIENT_SECRET", "X_ACCESS_TOKEN", "X_REFRESH_TOKEN"],
       });
     } finally {
       backendDb.close();
