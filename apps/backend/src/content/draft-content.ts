@@ -31,7 +31,10 @@ export function draftLocaleContent(draft: DraftContentSource, locale: DraftLocal
 
   const enMedia = parseArrayValue(draft.media_en_json);
   return {
-    text: String(draft.text_en_approved ?? draft.text_en_machine ?? draft.text_ru ?? ""),
+    // No `?? text_ru` here: borrowing the Russian text is how an English target
+    // published Russian. A locale with nothing in it reads as empty, and
+    // preflight refuses to publish that.
+    text: String(draft.text_en_approved ?? draft.text_en_machine ?? ""),
     entities: parseArrayValue(draft.text_en_entities_json),
     media: enMedia.length ? enMedia : ruMedia,
   };

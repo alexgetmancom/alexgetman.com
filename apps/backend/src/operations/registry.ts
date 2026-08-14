@@ -323,7 +323,7 @@ const operationDefs = {
     schema: repairSchema({}),
     mutates: true,
     agent: true,
-    note: "reports the targets in scope; add --apply to queue them",
+    note: "reports the targets in scope; `apply` queues them",
     handler: (context, input) => runRepair(context, "retry", input),
   }),
   edit: operation({
@@ -331,7 +331,7 @@ const operationDefs = {
     schema: repairSchema({ text: example(z.string().min(1), '"new text"').describe("the replacement text") }),
     mutates: true,
     agent: true,
-    note: "reports the targets in scope; add --apply to rewrite them",
+    note: "reports the targets in scope; `apply` rewrites them",
     handler: (context, input) => runRepair(context, "edit", input),
   }),
   "use-other-media": operation({
@@ -339,7 +339,7 @@ const operationDefs = {
     schema: repairSchema({}),
     mutates: true,
     agent: true,
-    note: "reports the targets in scope; add --apply to republish them",
+    note: "reports the targets in scope; `apply` republishes them",
     handler: (context, input) => runRepair(context, "use_other_media", input),
   }),
   delete: operation({
@@ -347,7 +347,7 @@ const operationDefs = {
     schema: repairSchema({ republish: z.boolean().default(false).describe("publish it again after taking it down") }),
     mutates: true,
     agent: true,
-    note: "reports the targets in scope; add --apply to delete them",
+    note: "reports the targets in scope; `apply` deletes them",
     handler: (context, input) => runRepair(context, "delete", input),
   }),
   purge: operation({
@@ -355,7 +355,7 @@ const operationDefs = {
     schema: z.object({ ref: refOption, apply: applyOption }),
     mutates: true,
     agent: true,
-    note: "reports every row in scope; add --apply only after the remote publication is gone",
+    note: "reports every row in scope; set `apply` only after the remote publication is gone",
     // Purge has just deleted every event carrying this ref. Journalling the run
     // against it would put the first row of a fresh history back.
     journalRef: () => null,
@@ -379,7 +379,7 @@ const operationDefs = {
     }),
     mutates: true,
     agent: false,
-    note: "reports the target in scope; add --apply to replace it",
+    note: "reports the target in scope; `apply` replaces it",
     handler: (context, input) => replacePublishedMedia(context.db(), context.config(), input, context.fetchImpl, context.actorType),
   }),
   reschedule: operation({
@@ -544,7 +544,7 @@ const operationDefs = {
   }),
   "channel-connect": operation({
     summary: "Connect a publishing route.",
-    note: "A text or story route needs only --target: it already names the platform and the language, and asking for them again is a way to store a channel that disagrees with itself. A video account needs --platform and --locale.",
+    note: "A text or story route needs only `target`: it already names the platform and the language, and asking for them again is a way to store a channel that disagrees with itself. A video account needs `platform` with `locale`.",
     schema: z.object({
       platform: example(z.string().min(1), "youtube|instagram").describe("platform to connect").optional(),
       locale: z.enum(["ru", "en"]).optional(),

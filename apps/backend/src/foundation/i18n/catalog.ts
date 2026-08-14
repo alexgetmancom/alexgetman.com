@@ -158,6 +158,9 @@ const en = {
   "action.invalid-callback-argument": 'Internal error: a button argument contains ":".',
   "action.in-flight": "Already running…",
   "action.preflight": "{label} with media: {actual}/{limit} characters. Shorten the text or disable {label} in Platforms.",
+  "action.preflight-language":
+    "{label} publishes in {expected}, and the {expected} text is written in {written}. Fix it or disable {label} in Platforms.",
+  "action.preflight-empty": "{label} has no {expected} content. Write the {expected} text or disable {label} in Platforms.",
   "action.preflight-chain":
     "⚠️ {label}: {actual}/{limit} characters.\n\nA Threads post holds {limit}. Shorten the text, or post it as a chain of {parts} — the reader gets several posts instead of one.",
   "action.preflight-chain-button": "🧵 Post as {parts} anyway",
@@ -830,6 +833,9 @@ const ru = {
   "action.invalid-callback-argument": 'Внутренняя ошибка: аргумент кнопки содержит ":".',
   "action.in-flight": "Уже выполняется…",
   "action.preflight": "{label} с медиа: {actual}/{limit} символов. Сократите текст или отключите {label} в Площадках.",
+  "action.preflight-language":
+    "{label} публикует на {expected}, а {expected}-текст написан на {written}. Исправьте его или отключите {label} в Площадках.",
+  "action.preflight-empty": "У {label} нет {expected}-содержимого. Напишите {expected}-текст или отключите {label} в Площадках.",
   "action.preflight-chain":
     "⚠️ {label}: {actual}/{limit} символов.\n\nВ один пост Threads влезает {limit}. Сократите текст — или отправьте цепочкой из {parts}, тогда читатель получит несколько постов вместо одного.",
   "action.preflight-chain-button": "🧵 Всё равно — {parts}",

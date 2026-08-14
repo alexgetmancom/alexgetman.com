@@ -2,6 +2,7 @@ import { InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { StudioError } from "../foundation/errors.js";
 import { plural, t } from "../foundation/i18n/index.js";
+import type { StudioLocale } from "../foundation/locale.js";
 import { manualScheduleExample } from "../foundation/time.js";
 import { settingsService } from "../studio/services/settings.js";
 import { clearConversationState, getConversationState } from "./conversation-state.js";
@@ -24,6 +25,9 @@ import { publicationCardEffect } from "./publication-renderers.js";
 import { callbackMessageId } from "./telegram-context.js";
 
 type PostActionArgs = PublicationDraftActionContext;
+/** What `validate` answers with, taken from the service rather than from
+ * Publishing: the bot reaches the pipeline through Studio, never around it. */
+type PreflightIssue = ReturnType<PublicationDraftActionContext["services"]["posts"]["validate"]>[number];
 
 export function definePostActionHandlers(define: typeof action): Record<string, PublicationActionDefinition> {
   return {
@@ -363,7 +367,7 @@ async function showPublicationPreflight(args: PostActionArgs): Promise<Publicati
     return [
       {
         type: "prompt",
-        text: t(locale, "action.preflight-chain", { label: issue.label, actual: issue.actual, limit: issue.limit, parts: label }),
+        text: t(locale, "action.preflight-chain", { label: issue.label, actual: issue.actual ?? 0, limit: issue.limit ?? 0, parts: label }),
         options: {
           reply_markup: new InlineKeyboard().text(
             t(locale, "action.preflight-chain-button", { parts: label }),
@@ -374,13 +378,21 @@ async function showPublicationPreflight(args: PostActionArgs): Promise<Publicati
       },
     ];
   }
-  return [
-    {
-      type: "toast",
-      text: t(locale, "action.preflight", { label: issue.label, actual: issue.actual, limit: issue.limit }),
-      showAlert: true,
-    },
-  ];
+  return [{ type: "toast", text: preflightToast(locale, issue), showAlert: true }];
+}
+
+/** A refusal an author can act on. The limit issues count characters; the
+ * language and content ones name what is missing instead, and reading them
+ * through the character template printed "undefined/undefined символов". */
+function preflightToast(locale: StudioLocale, issue: PreflightIssue): string {
+  if (issue.kind === "language")
+    return t(locale, "action.preflight-language", {
+      label: issue.label,
+      expected: issue.locale.toUpperCase(),
+      written: (issue.written ?? issue.locale).toUpperCase(),
+    });
+  if (issue.kind === "empty") return t(locale, "action.preflight-empty", { label: issue.label, expected: issue.locale.toUpperCase() });
+  return t(locale, "action.preflight", { label: issue.label, actual: issue.actual ?? 0, limit: issue.limit ?? 0 });
 }
 
 function previewEffects(args: PostActionArgs, view: DraftView = "overview", callbackText?: string): PublicationEffect[] {

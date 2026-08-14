@@ -1,5 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
-import { isSiteTarget } from "../botTargets.js";
+import { isSiteTarget, targetLocale } from "../botTargets.js";
+import { textLocale } from "../content/text-locale.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
 import { postTargets, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { jsonObject } from "../json.js";
@@ -15,7 +16,28 @@ import { localizeTargetPayload } from "./payload.js";
  * landed can be published again. It cannot, and saying so once is the point of
  * this module.
  */
-export type RequeueResult = { target: string; outcome: "requeued" | "already_queued" | "not_retryable"; status: string | null };
+export type RequeueResult = {
+  target: string;
+  outcome: "requeued" | "already_queued" | "not_retryable";
+  status: string | null;
+  /** Why a target was left alone when the state alone does not say it. */
+  reason?: "empty" | "language";
+};
+
+/** The queue is the last place a wrong-language publication can be stopped, and
+ * the only place on this path: a requeue builds no draft, so preflight never
+ * sees it. Publications stored before the fallbacks were removed still carry
+ * the Russian text in their English field, and re-publishing one would put it
+ * in front of the English audience — again, and this time on purpose. */
+function unpublishable(payload: Record<string, unknown>, target: string): RequeueResult["reason"] | null {
+  const text = String(payload.text ?? "").trim();
+  const media = payload.media;
+  if (!text && !(Array.isArray(media) && media.length > 0)) return "empty";
+  const locale = targetLocale(target);
+  if (!locale || !text) return null;
+  const written = textLocale(text);
+  return written && written !== locale ? "language" : null;
+}
 
 /** An operator restores a target whatever state it reached — including one
  * deleted from the platform on purpose. The two states missing here belong to
@@ -128,6 +150,8 @@ function requeueSocialTarget(
   if (row.status === "queued") return { target, outcome: "already_queued", status: row.status };
   if (!options.from.includes(row.status)) return { target, outcome: "not_retryable", status: row.status };
   const payload = localizeTargetPayload(pickPayload(source(), row.payloadJson), target);
+  const refused = unpublishable(payload, target);
+  if (refused) return { target, outcome: "not_retryable", status: row.status, reason: refused };
   // Fenced on the status this decision was made from: a worker claiming the job
   // between the read and the write keeps it, rather than having its lock
   // cleared mid-publish and its post delivered twice by the next claim.
@@ -144,8 +168,12 @@ function requeueSocialTarget(
 
 function createPublishJob(tx: RequeueDb, scope: RequeueScope, target: string, source: Record<string, unknown>, now: string): RequeueResult {
   const payload = localizeTargetPayload(source, target);
-  if (scope.postId == null || scope.messageId == null || Object.keys(payload).length === 0)
-    return { target, outcome: "not_retryable", status: null };
+  if (scope.postId == null || scope.messageId == null) return { target, outcome: "not_retryable", status: null };
+  // `localizeTargetPayload` always returns its keys, so the `Object.keys(...)
+  // === 0` this used to test was never the empty case, and a target whose
+  // language the publication has nothing in got a job all the same.
+  const refused = unpublishable(payload, target);
+  if (refused) return { target, outcome: "not_retryable", status: null, reason: refused };
   tx.insert(publishJobs)
     .values({
       postId: scope.postId,

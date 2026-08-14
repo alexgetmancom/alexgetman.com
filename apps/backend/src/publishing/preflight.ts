@@ -1,5 +1,6 @@
 import { targetLocale } from "../botTargets.js";
 import { draftLocaleContent } from "../content/draft-content.js";
+import { textLocale } from "../content/text-locale.js";
 import { splitText } from "../delivery/social/payload.js";
 import { formatPlatformText, platformProfile } from "./platform-profiles.js";
 import { assertKnownTargets, parseTargets } from "./targets.js";
@@ -17,13 +18,18 @@ type DraftForPreflight = {
   threads_chain_approved?: number | boolean | null;
 };
 
-type PublicationPreflightIssue = {
+export type PublicationPreflightIssue = {
   target: string;
   locale: "ru" | "en";
-  limit: number;
-  actual: number;
+  /** What is wrong, for surfaces that word it themselves. `message` is the
+   * wording every surface without its own catalog prints. */
+  kind: "text-limit" | "caption-limit" | "language" | "empty";
   label: string;
   message: string;
+  limit?: number;
+  actual?: number;
+  /** The language the text is actually written in, on a `language` issue. */
+  written?: "ru" | "en";
   /** How many Threads posts the text would take if the author waives the rule.
    * Absent on issues that cannot be waived, which is what the bot keys the
    * override button off — a Telegram caption has no chain to fall back to. */
@@ -41,7 +47,7 @@ export function publicationPreflight(draft: DraftForPreflight): PublicationPrefl
     ru: draftLocaleContent(draft, "ru"),
     en: draftLocaleContent(draft, "en"),
   } as const;
-  return Object.entries(targets).flatMap(([target, enabled]) => {
+  return Object.entries(targets).flatMap(([target, enabled]): PublicationPreflightIssue[] => {
     if (!enabled) return [];
     const profile = platformProfile(target);
     const locale = targetLocale(target) ?? "ru";
@@ -59,11 +65,46 @@ export function publicationPreflight(draft: DraftForPreflight): PublicationPrefl
     // A Threads text limit can be waived per draft, because Threads has somewhere
     // to put the overflow: a reply chain. A Telegram caption limit cannot — there
     // is no second message to continue into — so it is never waivable.
+    // A target publishes into one language, and the draft either has that
+    // language or it does not. Both of these used to pass: an English target
+    // carried the Russian text through a chain of fallbacks, and a target whose
+    // locale had nothing at all published an empty post.
+    if (!value.text.trim() && value.media.length === 0)
+      return [
+        {
+          target,
+          locale,
+          kind: "empty" as const,
+          label,
+          message: `${label}: нет ${locale.toUpperCase()}-содержимого. Напишите ${locale.toUpperCase()}-текст или отключите ${label}.`,
+        },
+      ];
+    const written = textLocale(value.text);
+    // Only a text that says what it is blocks. Anglicisms, brand lists and
+    // link-only posts read as neither language, and neither is refused.
+    if (written && written !== locale)
+      return [
+        {
+          target,
+          locale,
+          kind: "language" as const,
+          label,
+          written,
+          message: `${label} публикует на ${locale.toUpperCase()}, а ${locale.toUpperCase()}-текст написан на ${written.toUpperCase()}. Исправьте его или отключите ${label}.`,
+        },
+      ];
     const waivable = isThreadsTarget(target);
     const waived = waivable && Boolean(draft.threads_chain_approved);
     const rules = [
-      { limit: profile?.limits?.text, applies: !waived, waivable, message: (l: number) => `${label}: ${text.length}/${l} символов.` },
       {
+        kind: "text-limit" as const,
+        limit: profile?.limits?.text,
+        applies: !waived,
+        waivable,
+        message: (l: number) => `${label}: ${text.length}/${l} символов.`,
+      },
+      {
+        kind: "caption-limit" as const,
         limit: profile?.limits?.caption,
         applies: value.media.length > 0,
         waivable: false,
@@ -76,6 +117,7 @@ export function publicationPreflight(draft: DraftForPreflight): PublicationPrefl
             {
               target,
               locale,
+              kind: rule.kind,
               limit: rule.limit,
               actual: text.length,
               label,

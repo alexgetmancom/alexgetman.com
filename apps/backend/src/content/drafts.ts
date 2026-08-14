@@ -14,7 +14,7 @@ export function createDraftFromMessage(
   const createdId = ports.drafts.create({
     actorId,
     textRu: message.text,
-    textEnMachine: message.textEn ?? message.text,
+    textEnMachine: message.textEn ?? null,
     textEnApproved: message.textEnApproved ?? null,
     targetsJson: configured?.targetsJson ?? JSON.stringify(DEFAULT_TARGETS),
     mediaRuJson: message.media.length ? JSON.stringify(message.media) : null,

@@ -551,9 +551,27 @@ const opsTools = [...opsToolNames].map(([toolName, operation]) => {
   return {
     name: toolName,
     description: def.note ? `${def.summary} (${def.note})` : def.summary,
-    inputSchema: inputJsonSchema(def.schema),
+    inputSchema: agentSchema(inputJsonSchema(def.schema)),
   };
 });
+
+/** `placeholder` is the CLI usage line's device — it renders `--ref post:160`,
+ * and it carries the shell's quoting to do it. Published to an agent it reads
+ * as a value to send, which is how `--text` came to advertise `"post text"`
+ * with the quotes in it. The CLI keeps it; the wire does not get it. */
+function agentSchema(schema: JsonObject): JsonObject {
+  const properties = schema.properties as Record<string, JsonObject> | undefined;
+  if (!properties) return schema;
+  return {
+    ...schema,
+    properties: Object.fromEntries(
+      Object.entries(properties).map(([field, property]) => {
+        const { placeholder: _cli, ...rest } = property;
+        return [field, rest];
+      }),
+    ),
+  };
+}
 
 type JsonObject = Record<string, unknown>;
 
@@ -565,8 +583,20 @@ export async function mcpResponse(
   clientKey: string,
   actorId: number | null,
   studio?: StudioServices,
-): Promise<Record<string, unknown> | null> {
-  if (!body || typeof body !== "object" || Array.isArray(body)) return rpcError(null, -32600, "Invalid request");
+): Promise<Record<string, unknown> | Record<string, unknown>[] | null> {
+  // A batch is answered as a batch, minus the notifications in it, and an
+  // all-notification batch draws no response at all. Rejecting the array
+  // wholesale failed every request a batching client sent.
+  if (Array.isArray(body)) {
+    if (!body.length) return rpcError(null, -32600, "Invalid request");
+    const answers: Record<string, unknown>[] = [];
+    for (const entry of body) {
+      const answer = await mcpResponse(backendDb, config, entry, clientKey, actorId, studio);
+      if (answer) answers.push(...(Array.isArray(answer) ? answer : [answer]));
+    }
+    return answers.length ? answers : null;
+  }
+  if (!body || typeof body !== "object") return rpcError(null, -32600, "Invalid request");
   const request = body as JsonObject;
   // A notification carries no id and must draw no response at all — the
   // `notifications/initialized` every client sends right after the handshake

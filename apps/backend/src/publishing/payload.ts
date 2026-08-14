@@ -26,7 +26,10 @@ export function localizeTargetPayload(payload: Record<string, unknown>, target: 
     return { ...localized, media: payloadMedia(localized) };
   }
 
-  const text = String(payload.text_en ?? payload.text ?? "");
+  // `payload.text` is the Russian one, so there is no fallback to make here:
+  // an English job with no English text has nothing to publish, and saying so
+  // is the point.
+  const text = String(payload.text_en ?? "");
   const entities = recordArray(payload.entities_en ?? payload.entities);
   const rawMedia = storyMedia ?? payload.media_en ?? payload.media;
   const selectedMedia = Array.isArray(rawMedia) ? selectMediaForTarget(target, rawMedia).map(deliveryMedia) : rawMedia;

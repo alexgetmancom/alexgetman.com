@@ -286,4 +286,61 @@ describe("Studio MCP", () => {
       backendDb.close();
     }
   });
+
+  it("refuses to publish one language into the other's audience", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const token = "a".repeat(16);
+      const config = loadConfig({
+        CONTROLLER_ADMIN_IDS: "42",
+        MCP_STUDIO_TOKEN: token,
+        MCP_STUDIO_ACTOR_ID: "42",
+        THREADS_RU_ACCESS_TOKEN: "t".repeat(20),
+        THREADS_RU_USER_ID: "1",
+        THREADS_EN_ACCESS_TOKEN: "e".repeat(20),
+        THREADS_EN_USER_ID: "2",
+      });
+      const app = createApiHandler({ config, backendDb });
+      const authorization = `Bearer ${token}`;
+      const call = async (name: string, args: unknown) => {
+        const response = await request(
+          app,
+          { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } },
+          authorization,
+        );
+        const body = (await response.json()) as { error?: { message: string }; result?: { content: [{ text: string }] } };
+        return body.error ? { error: body.error.message } : JSON.parse(body.result?.content[0]?.text ?? "null");
+      };
+      for (const target of ["threads_ru", "threads_en"]) await call("ops_channel_connect", { target, provider: "native" });
+      const russian = "Сегодня разобрал, как мы используем React и Bun в проде — вышло короче, чем ожидал";
+      const english = "Today I shipped the new analytics dashboard and it finally reads the way I wanted";
+
+      // An English target with no English text used to borrow the Russian one
+      // through three separate fallbacks and publish it.
+      const borrowed = await call("studio_post_create", { text: russian, targets: ["threads_en"] });
+      expect((await call("studio_post_validate", { draft_id: borrowed.draft_id }))[0]).toMatchObject({ kind: "empty", locale: "en" });
+      expect(await call("studio_post_publish", { draft_id: borrowed.draft_id })).toMatchObject({ error: expect.stringContaining("EN") });
+
+      // Russian typed into the English field is caught by what it is written in.
+      const untranslated = await call("studio_post_create", { text: russian, text_en: russian, targets: ["threads_en"] });
+      expect((await call("studio_post_validate", { draft_id: untranslated.draft_id }))[0]).toMatchObject({
+        kind: "language",
+        locale: "en",
+        written: "ru",
+      });
+
+      // And a post written in both languages goes out in both, unbothered.
+      const proper = await call("studio_post_create", { text: russian, text_en: english, targets: ["threads_ru", "threads_en"] });
+      expect(await call("studio_post_validate", { draft_id: proper.draft_id })).toEqual([]);
+      expect(await call("studio_post_publish", { draft_id: proper.draft_id })).toMatchObject({ queued: true });
+      expect(
+        backendDb.sqlite.prepare("SELECT target, json_extract(payload_json,'$.text') AS text FROM publish_jobs ORDER BY target").all(),
+      ).toEqual([
+        { target: "threads_en", text: english },
+        { target: "threads_ru", text: russian },
+      ]);
+    } finally {
+      backendDb.close();
+    }
+  });
 });

@@ -15,8 +15,7 @@ describe("post publication retry", () => {
           actorId: 42,
           status: "failed",
           textRu: "Retryable post",
-          textEnMachine: "Retryable post",
-          targetsJson: JSON.stringify({ telegram_ru: true, site_en: true }),
+          targetsJson: JSON.stringify({ telegram: true, site_en: true }),
           postId: 700,
           createdAt: now,
           updatedAt: now,
@@ -28,7 +27,7 @@ describe("post publication retry", () => {
           postId: 700,
           postKey: "post:700",
           messageId: 700,
-          target: "telegram_ru",
+          target: "telegram",
           status: "failed",
           payloadJson: { text: "Retryable post" },
           attemptCount: 4,
@@ -67,7 +66,7 @@ describe("post publication retry", () => {
         .run();
 
       const posts = createStudioServices(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" })).posts;
-      expect(backendDb.studioPosts.retryablePublicationTargets(700).map((item) => item.target)).toEqual(["telegram_ru", "site_en"]);
+      expect(backendDb.studioPosts.retryablePublicationTargets(700).map((item) => item.target)).toEqual(["telegram", "site_en"]);
 
       expect(posts.retryTarget(42, 7)).toMatchObject({ requeued: 2, alreadyQueued: 0 });
       expect(
@@ -76,14 +75,14 @@ describe("post publication retry", () => {
           .from(publishJobs)
           .all(),
       ).toEqual([
-        { target: "telegram_ru", status: "queued", attemptCount: 0 },
+        { target: "telegram", status: "queued", attemptCount: 0 },
         { target: "threads_en", status: "verification_required", attemptCount: 1 },
       ]);
       expect(backendDb.db.select({ status: siteJobs.status, attemptCount: siteJobs.attemptCount }).from(siteJobs).all()).toEqual([
         { status: "queued", attemptCount: 0 },
       ]);
       expect(backendDb.db.select({ target: postTargets.target, status: postTargets.status }).from(postTargets).all()).toEqual([
-        { target: "telegram_ru", status: "queued" },
+        { target: "telegram", status: "queued" },
         { target: "site_en", status: "queued" },
       ]);
       expect(() => posts.retryTarget(42, 7)).toThrow("err.retry-only-failed");

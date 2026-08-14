@@ -183,4 +183,39 @@ describe("operations registry", () => {
     expect(response.error.code).toBe(-32602);
     expect(response.error.message).toContain("limit");
   });
+
+  it("keeps the CLI's own spellings off the agent surface", async () => {
+    backendDb = openBackendDb(":memory:");
+    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" });
+    const listed = (await mcpResponse(backendDb, config, { jsonrpc: "2.0", id: 1, method: "tools/list" }, "key", 42)) as {
+      result: { tools: Array<{ name: string; description: string; inputSchema: { properties?: Record<string, object> } }> };
+    };
+    const ops = listed.result.tools.filter((tool) => tool.name.startsWith("ops_"));
+    expect(ops.length).toBeGreaterThan(0);
+
+    // `--apply` is not a thing an MCP caller can write, and `placeholder` is the
+    // CLI usage line's device — it carried shell quoting (`"post text"`) into
+    // the schema an agent reads as the value to send.
+    expect(ops.filter((tool) => tool.description.includes("--"))).toEqual([]);
+    expect(ops.filter((tool) => Object.values(tool.inputSchema.properties ?? {}).some((field) => "placeholder" in field))).toEqual([]);
+  });
+
+  it("answers a batch as a batch and a notification with nothing", async () => {
+    backendDb = openBackendDb(":memory:");
+    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" });
+    const batch = (await mcpResponse(
+      backendDb,
+      config,
+      [
+        { jsonrpc: "2.0", id: 1, method: "initialize" },
+        { jsonrpc: "2.0", method: "notifications/initialized" },
+        { jsonrpc: "2.0", id: 2, method: "tools/list" },
+      ],
+      "key",
+      42,
+    )) as Array<{ id: number }>;
+
+    expect(batch.map((answer) => answer.id)).toEqual([1, 2]);
+    expect(await mcpResponse(backendDb, config, [{ jsonrpc: "2.0", method: "notifications/initialized" }], "key", 42)).toBeNull();
+  });
 });
