@@ -100,11 +100,15 @@ backup, and a live token is not something to hand around in a chat. No key means
 no renewal: the tokens stay exactly what `.env` says and you re-issue them by
 hand.
 
-Two things it cannot do for you. A token that has already expired can no longer
+One thing it cannot do for you. A token that has already expired can no longer
 be renewed, so a Studio switched off for two months needs a new one by hand —
-put it in `.env` and it wins over anything stored. And on Threads, a private
-profile cannot have its permission grant extended at all; a public one can.
-Connecting through a provider sidesteps both.
+put it in `.env` and it wins over anything stored. Connecting through a provider
+sidesteps that.
+
+**Keep the Meta app out of development mode.** An app in development mode
+publishes only to accounts that hold a role on it, which is enough for your own
+Studio and nothing else. Switch it to live in the App Dashboard before you
+connect an account you do not administer.
 
 **X charges for writing.** The four keys are easy to obtain, but posting through
 X's API requires a paid tier of their developer platform.
