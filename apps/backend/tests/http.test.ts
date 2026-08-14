@@ -69,6 +69,25 @@ describe("Astro endpoint controller", () => {
     }
   });
 
+  it("does not gate a site-disabled Studio on its unused site directory", async () => {
+    const dataDir = tempDir("alexgetman-ready-no-site-");
+    const siteDir = tempDir("alexgetman-unused-site-");
+    const backendDb = openBackendDb(join(dataDir, "pipeline.db"), 5000);
+    try {
+      const config = loadConfig({
+        STUDIO_CONFIG: join(import.meta.dir, "../../../studio.maru.yaml"),
+        DATA_DIR: dataDir,
+        SITE_PUBLIC_DIR: siteDir,
+      });
+      const response = await createApiApp(config, backendDb).request("/readyz");
+      const body = (await response.json()) as { checks: Record<string, { ok: boolean }> };
+      expect(response.status).toBe(200);
+      expect(body.checks.site_public_dir).toBeUndefined();
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("does not let a URL token authorize command-center mutations", async () => {
     const backendDb = tempDb();
     try {

@@ -300,7 +300,7 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): BackendConf
   if (parsed.MEDIA_PROCESSOR_PROVIDER === "remote_http" && (!parsed.MEDIA_PROCESSOR_URL || !parsed.MEDIA_PROCESSOR_TOKEN)) {
     throw new Error("MEDIA_PROCESSOR_URL and MEDIA_PROCESSOR_TOKEN are required when MEDIA_PROCESSOR_PROVIDER=remote_http");
   }
-  const remoteMediaPath = parsed.REMOTE_MEDIA_PATH || path.join(parsed.SITE_PUBLIC_DIR, "media", "staging");
+  const remoteMediaPath = parsed.REMOTE_MEDIA_PATH || path.join(path.dirname(parsed.SITE_PUBLIC_DIR), "media");
   return {
     ...parsed,
     REMOTE_MEDIA_PATH: remoteMediaPath,

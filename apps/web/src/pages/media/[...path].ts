@@ -6,8 +6,10 @@ import { getRuntime } from "../../server/runtime.js";
 export const prerender = false;
 
 async function serveMedia(request: Request, params: { path?: string }, headOnly: boolean): Promise<Response> {
-  const root = path.resolve(getRuntime().config.SITE_PUBLIC_DIR, "media");
-  const relative = decodeURIComponent(params.path ?? "").replace(/^\/+/, "");
+  const requestedPath = decodeURIComponent(params.path ?? "").replace(/^\/+/, "");
+  const isStaged = requestedPath === "staging" || requestedPath.startsWith("staging/");
+  const root = isStaged ? path.resolve(getRuntime().config.REMOTE_MEDIA_PATH) : path.resolve(getRuntime().config.SITE_PUBLIC_DIR, "media");
+  const relative = isStaged ? requestedPath.slice("staging".length).replace(/^\/+/, "") : requestedPath;
   const filePath = path.resolve(root, relative);
   if (filePath !== root && !filePath.startsWith(`${root}${path.sep}`)) return new Response("forbidden\n", { status: 403 });
   const file = Bun.file(filePath);

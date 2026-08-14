@@ -56,7 +56,7 @@ services:
       MEDIA_CACHE_DIR: /data/media-cache
       VIDEO_MEDIA_DIR: /data/video-media
       STORY_CARD_DIR: /data/story-cards
-      REMOTE_MEDIA_PATH: /data/site/media/staging
+      REMOTE_MEDIA_PATH: /data/media
       PUBLIC_MEDIA_BASE_URL: https://${DOMAIN:?set DOMAIN to the hostname this Studio answers on}/media/staging
       STUDIO_CONFIG: /app/studio.yaml
       PUBLIC_BASE_URL: https://${DOMAIN:?set DOMAIN to the hostname this Studio answers on}

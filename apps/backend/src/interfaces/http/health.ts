@@ -40,11 +40,12 @@ function readiness(config: BackendConfig, backendDb: BackendDb): Record<string, 
   // Media mounts are created lazily, so absence is not a failure — but an
   // existing directory we cannot write to is exactly the mount misconfiguration
   // this check exists to catch.
-  for (const [name, dir] of [
+  const mediaDirectories = [
     ["media_cache_dir", config.MEDIA_CACHE_DIR],
     ["video_media_dir", config.VIDEO_MEDIA_DIR],
-    ["site_public_dir", config.SITE_PUBLIC_DIR],
-  ] as const) {
+    ...(config.studio.siteEnabled ? [["site_public_dir", config.SITE_PUBLIC_DIR] as const] : []),
+  ] as const;
+  for (const [name, dir] of mediaDirectories) {
     if (fs.existsSync(dir)) checks[`${name}_writable`] = attempt(() => fs.accessSync(dir, fs.constants.W_OK));
   }
 

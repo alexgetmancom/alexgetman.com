@@ -42,7 +42,7 @@ describe("host proxy topology", () => {
     // A default would let a lost host env file publish media under the first
     // Studio's domain, and the request that reveals it comes from Meta.
     expect(maru).toContain("PUBLIC_BASE_URL: ${MARU_PUBLIC_BASE_URL:?");
-    expect(maru).toContain("REMOTE_MEDIA_PATH: /data/site/media/staging");
+    expect(maru).toContain("REMOTE_MEDIA_PATH: /data/media");
     expect(maru).toContain("MARU_MEDIA_STAGING_DIR_HOST");
   });
 

@@ -45,6 +45,7 @@ socket and can only request a rollback using a private bearer-authenticated rout
    # /home/deploy/alexgetman-runtime/deploy-image.env
    ALEX_MEDIA_CACHE_DIR_HOST=/mnt/alex-media/alex/media-cache
    ALEX_VIDEO_MEDIA_DIR_HOST=/mnt/alex-media/alex/video-media
+   ALEX_MEDIA_STAGING_DIR_HOST=/mnt/alex-media/alex/media-staging
    ALEX_SITE_MEDIA_DIR_HOST=/home/deploy/ialexey-web/media
    DEPLOY_AGENT_HOST_GATEWAY=<agent_default gateway>
 

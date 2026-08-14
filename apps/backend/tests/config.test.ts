@@ -14,7 +14,7 @@ describe("loadConfig", () => {
     expect(config.STUDIO_MEDIA_MAX_BYTES).toBe(1_000_000_000);
     expect(config.VIDEO_MAX_BYTES).toBe(1_000_000_000);
     expect(config.STUDIO_MEDIA_DIR).toBe("/data/video-media");
-    expect(config.REMOTE_MEDIA_PATH).toBe("/data/site/media/staging");
+    expect(config.REMOTE_MEDIA_PATH).toBe("/data/media");
     expect(config.PUBLIC_MEDIA_BASE_URL).toBe("https://alexgetman.com/media/staging");
   });
 
@@ -56,9 +56,9 @@ describe("loadConfig", () => {
     ).toBe("https://cdn.example.com/m");
   });
 
-  it("derives temporary media storage from a custom site volume", () => {
+  it("derives temporary media storage beside a custom site volume", () => {
     const config = loadConfig({ SITE_PUBLIC_DIR: "/srv/studio/site", PUBLIC_BASE_URL: "https://studio.example.com" });
-    expect(config.REMOTE_MEDIA_PATH).toBe("/srv/studio/site/media/staging");
+    expect(config.REMOTE_MEDIA_PATH).toBe("/srv/studio/media");
     expect(config.PUBLIC_MEDIA_BASE_URL).toBe("https://studio.example.com/media/staging");
   });
 

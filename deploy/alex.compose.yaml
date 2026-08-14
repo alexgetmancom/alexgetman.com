@@ -48,7 +48,7 @@ services:
       IDLE_POLL_INTERVAL_SECONDS: "5"
       TELEGRAM_API_BASE_URL: http://bot-api:8081
       OBSERVABILITY_INTERVAL_SECONDS: "300"
-      REMOTE_MEDIA_PATH: /data/site/media/staging
+      REMOTE_MEDIA_PATH: /data/media
       PUBLIC_MEDIA_BASE_URL: https://alexgetman.com/media/staging
       GROK_HOME: /home/deploy/.grok
       GROK_CLI_PATH: /home/deploy/.grok/bin/grok
@@ -63,6 +63,7 @@ services:
       - ./data:/data
       - ${ALEX_MEDIA_CACHE_DIR_HOST:-./media-cache}:/data/media-cache
       - ${ALEX_VIDEO_MEDIA_DIR_HOST:-./video-media}:/data/video-media
+      - ${ALEX_MEDIA_STAGING_DIR_HOST:-./media-staging}:/data/media
       - ./bot-api-data:/var/lib/telegram-bot-api:ro
       - /home/deploy/.grok:/home/deploy/.grok
       - ${ALEX_SITE_MEDIA_DIR_HOST:-/home/deploy/ialexey-web/media}:/data/site/media

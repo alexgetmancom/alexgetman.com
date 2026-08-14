@@ -64,7 +64,7 @@ Caddy obtains and renews the TLS certificate itself, so there is no certbot and 
 
 The public website is off by default — most Studios publish to channels they already have and do not want another site to look after. Set `site_enabled: true` in `studio.yaml` to serve one at `https://your-domain/`, with its feeds, sitemap and Markdown endpoints.
 
-Temporary media that an external platform fetches during publishing is staged under `/data/site/media/staging`, automatically created and owned by the container before the app drops privileges. The `/media/staging/` route remains available when the public site is off, so a fresh self-host does not need a manual directory or permission step.
+Temporary media that an external platform fetches during publishing is staged under `/data/media`, automatically created and owned by the container before the app drops privileges. The `/media/staging/` route remains available when the public site is off, so a fresh self-host does not need a manual directory or permission step.
 
 Only Caddy publishes ports; the application is reachable through it alone. Nothing else in `.env` is required to start — a Studio with no credentials serves its site and its Command Center and publishes nowhere. Add a Telegram bot, then connect destinations from the Command Center or over MCP; `docker compose exec app bun /app/ops/cli.js doctor` lists what each one still needs.
 

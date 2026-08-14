@@ -19,7 +19,7 @@ services:
       DATA_DIR: /data
       PIPELINE_DB: /data/pipeline.db
       MEDIA_CACHE_DIR: /data/media-cache
-      REMOTE_MEDIA_PATH: /data/site/media/staging
+      REMOTE_MEDIA_PATH: /data/media
       PUBLIC_MEDIA_BASE_URL: ${MARU_PUBLIC_BASE_URL:?set this Studio's public base URL}/media/staging
       VIDEO_MEDIA_DIR: /data/video-media
       GROK_HOME: /home/deploy/.grok
@@ -41,7 +41,7 @@ services:
       - ./data:/data
       - ${MARU_MEDIA_CACHE_DIR_HOST:-./media-cache}:/data/media-cache
       - ${MARU_VIDEO_MEDIA_DIR_HOST:-./video-media}:/data/video-media
-      - ${MARU_MEDIA_STAGING_DIR_HOST:-./media-staging}:/data/site/media/staging
+      - ${MARU_MEDIA_STAGING_DIR_HOST:-./media-staging}:/data/media
       - ${MARU_BOT_API_DATA_DIR:-/home/deploy/alexgetman-runtime/bot-api-data}:/var/lib/telegram-bot-api:ro
       - /home/deploy/.grok:/home/deploy/.grok
     ports:
