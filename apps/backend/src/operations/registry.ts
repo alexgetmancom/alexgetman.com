@@ -723,7 +723,7 @@ export function inputJsonSchema(schema: z.ZodType): JsonObject {
 }
 
 /** `--kebab-case` is the CLI spelling of a snake_case schema field. */
-export function optionFlag(field: string): string {
+function optionFlag(field: string): string {
   return field.replace(/_/g, "-");
 }
 
