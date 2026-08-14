@@ -7,9 +7,11 @@
 timezone: UTC
 timezone_label: UTC
 
-# Whether this Studio serves a public website. Text posting, video posting and
-# analytics always run and are not configured here.
-site_enabled: true
+# Whether this Studio serves a public website. Off by default: most Studios
+# publish to channels they already have and want the pipeline, not another site
+# to look after. The Command Center is served either way. Turn this on and the
+# site, its feeds, sitemap and the site delivery workers all start with it.
+site_enabled: false
 
 video:
   # How long before a scheduled slot the video is prepared, and how long before

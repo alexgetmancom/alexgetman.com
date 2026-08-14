@@ -60,10 +60,9 @@ openssl rand -hex 32
 docker compose up -d
 ```
 
-Caddy obtains and renews the TLS certificate itself, so there is no certbot and no renewal timer to set up. Within a minute:
+Caddy obtains and renews the TLS certificate itself, so there is no certbot and no renewal timer to set up. Within a minute the Command Center is at `https://your-domain/command-center`.
 
-- Public site: `https://your-domain/`
-- Command Center: `https://your-domain/command-center`
+The public website is off by default — most Studios publish to channels they already have and do not want another site to look after. Set `site_enabled: true` in `studio.yaml` to serve one at `https://your-domain/`, with its feeds, sitemap and Markdown endpoints.
 
 Only Caddy publishes ports; the application is reachable through it alone. Nothing else in `.env` is required to start — a Studio with no credentials serves its site and its Command Center and publishes nowhere. Add a Telegram bot, then connect destinations from the Command Center or over MCP; `docker compose exec app bun /app/ops/cli.js doctor` lists what each one still needs.
 

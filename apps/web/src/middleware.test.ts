@@ -1,5 +1,10 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { onRequest } from "./middleware";
+
+// The middleware asks the runtime whether this Studio serves a site. These tests
+// are about the routing, so they answer for it.
+let siteEnabled = true;
+mock.module("./server/runtime", () => ({ getRuntime: () => ({ config: { studio: { siteEnabled } } }) }));
 
 type Rewritten = { rewrote: string | undefined; response: Response };
 
@@ -21,6 +26,22 @@ async function handle(pathname: string, accept?: string): Promise<Rewritten> {
 }
 
 describe("site middleware", () => {
+  it("serves nothing but the operator surfaces when the site is off", async () => {
+    // site_enabled: false used to switch off the workers while the pages, feeds
+    // and sitemap carried on being served — one deployment's proxy hid that.
+    siteEnabled = false;
+    try {
+      for (const path of ["/", "/ru/", "/42/some-slug/", "/feed.xml", "/sitemap.xml", "/llms.txt"]) {
+        expect((await handle(path)).response.status).toBe(404);
+      }
+      for (const path of ["/command-center", "/healthz", "/readyz", "/api/mcp", "/api/studio/media", "/media/video/asset/7", "/stats"]) {
+        expect((await handle(path)).response.status).toBe(200);
+      }
+    } finally {
+      siteEnabled = true;
+    }
+  });
+
   it("serves the Markdown twin at the canonical URL", async () => {
     // The host proxy did this with four rewrites. Moved here it ships in the image, so a
     // self-hosted Studio gets the behaviour the README promises.

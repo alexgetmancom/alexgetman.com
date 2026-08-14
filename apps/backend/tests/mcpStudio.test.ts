@@ -6,6 +6,7 @@ import { createApiHandler } from "../src/api.js";
 import { studioMediaAssets } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { SITE_STUDIO_CONFIG } from "./helpers/studio-config.js";
 
 function request(app: ReturnType<typeof createApiHandler>, body: unknown, authorization?: string) {
   return app(
@@ -21,7 +22,12 @@ describe("Studio MCP", () => {
   it("exposes owner-bound Studio commands only to the configured bearer token and audits mutations", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" });
+      const config = loadConfig({
+        STUDIO_CONFIG: SITE_STUDIO_CONFIG,
+        CONTROLLER_ADMIN_IDS: "42",
+        MCP_STUDIO_TOKEN: "a".repeat(16),
+        MCP_STUDIO_ACTOR_ID: "42",
+      });
       const app = createApiHandler({ config, backendDb });
       const anonymousTools = await request(app, { jsonrpc: "2.0", id: 1, method: "tools/list" });
       expect(JSON.stringify(await anonymousTools.json())).not.toContain("studio_post_create");

@@ -10,6 +10,7 @@ import {
   resolveUnixUser,
   retainedSupplementaryGroups,
 } from "../src/foundation/runtime/data-dirs.js";
+import { SITE_STUDIO_CONFIG } from "./helpers/studio-config.js";
 
 const tempRoots: string[] = [];
 
@@ -29,6 +30,7 @@ describe("requiredDataDirectories", () => {
   it("lists every always-required directory plus the site for a Studio that has one", () => {
     const root = tempRoot();
     const config = loadConfig({
+      STUDIO_CONFIG: SITE_STUDIO_CONFIG,
       DATA_DIR: join(root, "data"),
       MEDIA_CACHE_DIR: join(root, "media-cache"),
       STUDIO_MEDIA_DIR: join(root, "video-media"),

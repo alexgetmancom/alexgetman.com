@@ -41,7 +41,9 @@ describe("the published self-host install", () => {
     expect(config.NODE_ENV).toBe("production");
     expect(config.PUBLIC_BASE_URL).toBe("https://publisher.example.com");
     expect(config.COMMAND_CENTER_URL).toBe("https://publisher.example.com/command-center");
-    expect(config.studio.siteEnabled).toBe(true);
+    // Off by default: most Studios publish to channels they already have. The
+    // Command Center is served either way.
+    expect(config.studio.siteEnabled).toBe(false);
     // Nothing is connected, and nothing pretends to be.
     expect(config.controllerBotToken).toBeUndefined();
     expect(config.MCP_STUDIO_TOKEN).toBeUndefined();
