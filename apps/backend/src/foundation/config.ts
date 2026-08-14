@@ -174,6 +174,10 @@ const envSchema = z
     // domain, and it is resolved against PUBLIC_BASE_URL below.
     PUBLIC_MEDIA_BASE_URL: z.string().optional(),
     PUBLIC_BASE_URL: z.string().default("https://alexgetman.com"),
+    /** Seals the platform tokens this Studio renews for itself before they are
+     * stored. Absent means it does not renew them: the credentials stay exactly
+     * what .env says, which is how every install worked before this existed. */
+    TOKEN_ENCRYPTION_KEY: z.string().optional(),
     DEPLOY_AGENT_URL: z.url().optional(),
     DEPLOY_AGENT_TOKEN: z.string().min(16).optional(),
     INDEXNOW_ENABLED: booleanFlag(true),
@@ -252,6 +256,11 @@ export type BackendConfig = z.infer<typeof envSchema> & {
   /** Resolved against PUBLIC_BASE_URL when this Studio does not serve its media
    * from a separate location. */
   PUBLIC_MEDIA_BASE_URL: string;
+  /** What .env said each renewable platform token was, captured before any
+   * renewal replaced it. A renewed token takes the place of the setting it
+   * renews, so without this the next comparison would be against the renewal
+   * and every check would look like an operator had changed something. */
+  metaTokenSeeds: Record<string, string | undefined>;
   studio: StudioConfig;
 };
 
@@ -285,6 +294,12 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): BackendConf
     commandCenterToken: parsed.COMMAND_CENTER_TOKEN,
     COMMAND_CENTER_URL: `${parsed.PUBLIC_BASE_URL.replace(/\/$/, "")}/command-center`,
     PUBLIC_MEDIA_BASE_URL: parsed.PUBLIC_MEDIA_BASE_URL ?? `${parsed.PUBLIC_BASE_URL.replace(/\/$/, "")}/media`,
+    metaTokenSeeds: {
+      THREADS_RU_ACCESS_TOKEN: parsed.THREADS_RU_ACCESS_TOKEN,
+      THREADS_EN_ACCESS_TOKEN: parsed.THREADS_EN_ACCESS_TOKEN,
+      INSTAGRAM_RU_ACCESS_TOKEN: parsed.INSTAGRAM_RU_ACCESS_TOKEN,
+      INSTAGRAM_EN_ACCESS_TOKEN: parsed.INSTAGRAM_EN_ACCESS_TOKEN,
+    },
     studio,
   };
 }

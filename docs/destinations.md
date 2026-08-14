@@ -92,9 +92,19 @@ months.
 
 ## What to know before you start
 
-**Threads tokens lapse.** A long-lived Threads token expires 60 days after it is
-issued and nothing here refreshes it — publishing simply starts failing when it
-does. Connecting Threads through a provider avoids this.
+**Meta tokens lapse, and the Studio renews them for you.** Long-lived Instagram
+and Threads tokens expire 60 days after they are issued. Set `TOKEN_ENCRYPTION_KEY`
+in `.env` and the Studio renews them on its own, a month ahead of the deadline,
+storing each renewal sealed — the database leaves the machine every day as a
+backup, and a live token is not something to hand around in a chat. No key means
+no renewal: the tokens stay exactly what `.env` says and you re-issue them by
+hand.
+
+Two things it cannot do for you. A token that has already expired can no longer
+be renewed, so a Studio switched off for two months needs a new one by hand —
+put it in `.env` and it wins over anything stored. And on Threads, a private
+profile cannot have its permission grant extended at all; a public one can.
+Connecting through a provider sidesteps both.
 
 **X charges for writing.** The four keys are easy to obtain, but posting through
 X's API requires a paid tier of their developer platform.

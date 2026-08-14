@@ -1,0 +1,143 @@
+import { eq } from "drizzle-orm";
+import { type BackendDb, unsafeDb } from "../db/client.js";
+import { platformTokens } from "../db/schema.js";
+import type { BackendConfig } from "../foundation/config.js";
+import { requestJson } from "../foundation/http.js";
+import { log } from "../foundation/logger.js";
+import { encryptionKey, fingerprint, open, seal } from "../foundation/secret-box.js";
+
+/**
+ * Meta's long-lived tokens last 60 days and are renewed by asking for a new
+ * one, which means the renewal has to be kept somewhere: .env is the host's and
+ * read-only. They live sealed in the database, and .env stays the seed and the
+ * manual override.
+ *
+ * A token that has already lapsed cannot be renewed — Meta says so plainly —
+ * so renewal happens far from the edge rather than near it. A Studio that was
+ * switched off for two months still needs a human, and nothing here pretends
+ * otherwise.
+ */
+const RENEW_AFTER_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+type MetaToken = {
+  /** The publication target, which is also how the credential is named. */
+  target: "threads_ru" | "threads_en" | "instagram_ru" | "instagram_en";
+  setting: keyof BackendConfig & string;
+  refreshUrl: (token: string) => string;
+};
+
+const TOKENS: MetaToken[] = [
+  {
+    target: "threads_ru",
+    setting: "THREADS_RU_ACCESS_TOKEN",
+    refreshUrl: (token) =>
+      `https://graph.threads.net/refresh_access_token?grant_type=th_refresh_token&access_token=${encodeURIComponent(token)}`,
+  },
+  {
+    target: "threads_en",
+    setting: "THREADS_EN_ACCESS_TOKEN",
+    refreshUrl: (token) =>
+      `https://graph.threads.net/refresh_access_token?grant_type=th_refresh_token&access_token=${encodeURIComponent(token)}`,
+  },
+  {
+    target: "instagram_ru",
+    setting: "INSTAGRAM_RU_ACCESS_TOKEN",
+    refreshUrl: (token) =>
+      `https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(token)}`,
+  },
+  {
+    target: "instagram_en",
+    setting: "INSTAGRAM_EN_ACCESS_TOKEN",
+    refreshUrl: (token) =>
+      `https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(token)}`,
+  },
+];
+
+type StoredToken = { sealedToken: string; envFingerprint: string; refreshedAt: string };
+
+function stored(backendDb: BackendDb, target: string): StoredToken | null {
+  return unsafeDb(backendDb).db.select().from(platformTokens).where(eq(platformTokens.target, target)).get() ?? null;
+}
+
+function store(backendDb: BackendDb, target: string, row: StoredToken): void {
+  const now = new Date().toISOString();
+  unsafeDb(backendDb)
+    .db.insert(platformTokens)
+    .values({ target, ...row, updatedAt: now })
+    .onConflictDoUpdate({ target: platformTokens.target, set: { ...row, updatedAt: now } })
+    .run();
+}
+
+/**
+ * Replaces each configured Meta token with the renewal this Studio last made.
+ *
+ * Called once at startup so the rest of the process reads one name for the
+ * effective credential — `config.THREADS_RU_ACCESS_TOKEN` and its siblings —
+ * rather than every caller learning that a token has two homes.
+ */
+export function applyStoredMetaTokens(config: BackendConfig, backendDb: BackendDb): void {
+  const key = encryptionKey(config.TOKEN_ENCRYPTION_KEY);
+  if (!key) return;
+  const mutable = config as unknown as Record<string, unknown>;
+  for (const { target, setting } of TOKENS) {
+    const seed = config.metaTokenSeeds[setting];
+    const row = stored(backendDb, target);
+    if (!row || !seed) continue;
+    // A different value in .env is the operator replacing a token by hand,
+    // which is newer than anything renewed before it.
+    if (row.envFingerprint !== fingerprint(seed)) continue;
+    try {
+      mutable[setting] = open(row.sealedToken, key);
+    } catch (error) {
+      log("warn", "stored platform token could not be opened", { target, error: String(error) });
+    }
+  }
+}
+
+export type RenewalOutcome = { target: string; status: "renewed" | "fresh" | "failed" | "unsealed" };
+
+/** Renews what is close enough to expiry to be worth renewing, and stores it. */
+export async function renewMetaTokens(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  fetchImpl: typeof fetch = fetch,
+  now = new Date(),
+): Promise<RenewalOutcome[]> {
+  const key = encryptionKey(config.TOKEN_ENCRYPTION_KEY);
+  if (!key) return [];
+  const outcomes: RenewalOutcome[] = [];
+  for (const { target, setting, refreshUrl } of TOKENS) {
+    const token = config[setting];
+    if (typeof token !== "string" || !token) continue;
+    const envSeed = config.metaTokenSeeds[setting];
+    const row = stored(backendDb, target);
+    // The stored renewal only counts as this token's history while .env still
+    // holds the value it grew from.
+    const seed = envSeed && row?.envFingerprint === fingerprint(envSeed) ? row : null;
+    const age = seed ? now.getTime() - new Date(seed.refreshedAt).getTime() : Number.POSITIVE_INFINITY;
+    if (age < RENEW_AFTER_DAYS * DAY_MS) {
+      outcomes.push({ target, status: "fresh" });
+      continue;
+    }
+    try {
+      const renewed = await requestJson<{ access_token?: string }>(fetchImpl, refreshUrl(token));
+      if (!renewed.access_token) throw new Error("no access_token in the response");
+      store(backendDb, target, {
+        sealedToken: seal(renewed.access_token, key),
+        // The seed stays the .env value: it is what tells a later run whether
+        // the operator has since replaced it.
+        envFingerprint: fingerprint(envSeed ?? token),
+        refreshedAt: now.toISOString(),
+      });
+      (config as unknown as Record<string, unknown>)[setting] = renewed.access_token;
+      outcomes.push({ target, status: "renewed" });
+    } catch (error) {
+      // Worth an operator's attention: a token that cannot be renewed will stop
+      // publishing on its own, and only re-issuing it by hand brings it back.
+      log("warn", "platform token renewal failed", { target, error: String(error) });
+      outcomes.push({ target, status: "failed" });
+    }
+  }
+  return outcomes;
+}

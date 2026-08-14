@@ -119,3 +119,17 @@ export const mediaTestCases = sqliteTable("media_test_cases", {
   notes: text(),
   ...timestamps(),
 });
+
+/** Platform credentials this Studio renews for itself.
+ *
+ * The value is sealed: this table travels in the daily backup, and a live
+ * access token is not something to hand around in a chat. `envFingerprint`
+ * records which .env value the stored one grew from, so an operator replacing a
+ * lapsed token by hand is newer intent than anything kept here. */
+export const platformTokens = sqliteTable("platform_tokens", {
+  target: text().primaryKey(),
+  sealedToken: text().notNull(),
+  envFingerprint: text().notNull(),
+  refreshedAt: text().notNull(),
+  updatedAt: text().notNull(),
+});

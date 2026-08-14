@@ -1,6 +1,7 @@
 import { runAnalyticsCycle } from "../analytics/collection/creator-cycle.js";
 import { runMetricsCycle } from "../analytics/collection/metrics-cycle.js";
 import { pruneMetricSamples } from "../analytics/snapshots/metric-repository.js";
+import { renewMetaTokens } from "../channels/meta-tokens.js";
 import { targetRouting } from "../channels/registry.js";
 import type { BackendDb } from "../db/client.js";
 import { pruneMediaCache } from "../delivery/media-prepare.js";
@@ -94,6 +95,14 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
     });
   };
   return [
+    // Meta renews its long-lived tokens by issuing new ones, and a lapsed token
+    // cannot be renewed at all — so this runs far from the edge, daily, and
+    // renews anything a month old rather than waiting for the deadline.
+    startWorkerLoop("platform-tokens", 6 * 60 * 60 * 1000, async () => {
+      const outcomes = await renewMetaTokens(config, backendDb);
+      const renewed = outcomes.filter((outcome) => outcome.status === "renewed");
+      if (renewed.length) log("info", "platform tokens renewed", { targets: renewed.map((outcome) => outcome.target) });
+    }),
     startWorkerLoop("story-cards", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
       await runTimedCycle("content.story_card.cycle", "claimed", () => runStoryCardCycle(config, backendDb));
     }),

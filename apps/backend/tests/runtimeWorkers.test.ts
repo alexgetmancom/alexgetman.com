@@ -7,6 +7,7 @@ import { withDb } from "./helpers/db.js";
 import { SITE_STUDIO_CONFIG } from "./helpers/studio-config.js";
 
 const EXPECTED_WORKERS = [
+  "platform-tokens",
   "story-cards",
   "queue",
   "publish-watchdog",
@@ -70,6 +71,7 @@ describe("core worker runtime", () => {
 
       try {
         expect(loops.map((loop) => loop.name)).toEqual([
+          "platform-tokens",
           "story-cards",
           "queue",
           "publish-watchdog",
