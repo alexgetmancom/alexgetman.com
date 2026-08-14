@@ -20,7 +20,7 @@ function recorder(fail?: (script: string) => boolean) {
   const run = async (command: Command): Promise<CommandResult> => {
     commands.push(command);
     const script = command.argv.join(" ");
-    return { code: fail?.(script) ? 1 : 0, stdout: "" };
+    return { code: fail?.(script) ? 1 : 0, stdout: new Uint8Array() };
   };
   return { commands, run, scripts: () => commands.map((command) => command.argv.join(" ")) };
 }

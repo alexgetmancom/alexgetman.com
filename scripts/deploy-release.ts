@@ -11,8 +11,10 @@
  * recorder and asserted. The workflow passes the real one.
  */
 
-export type Command = { argv: string[]; stdin?: string };
-export type CommandResult = { code: number; stdout: string };
+/** Bytes, not text: the release archive travels through here, and decoding a
+ * tar stream as UTF-8 corrupts it silently. */
+export type Command = { argv: string[]; stdin?: Uint8Array };
+export type CommandResult = { code: number; stdout: Uint8Array };
 export type Runner = (command: Command) => Promise<CommandResult>;
 
 export type DeployInputs = {
@@ -69,15 +71,14 @@ export async function deployRelease(inputs: DeployInputs, run: Runner, log: (mes
     phaseStarted = Date.now();
   };
 
-  const ssh = async (script: string, stdin?: string): Promise<string> => {
+  const ssh = async (script: string, stdin?: Uint8Array): Promise<void> => {
     const result = await run({ argv: ["ssh", ...sshOptions, remote, script], ...(stdin === undefined ? {} : { stdin }) });
     if (result.code !== 0) throw new Error(`remote command failed (${result.code}): ${script.slice(0, 120)}`);
-    return result.stdout;
   };
 
   const mediaRelease = JSON.stringify({ release: inputs.release, image: inputs.mediaProcessorImage });
   await ssh(`install -d -m 0700 ${STATE_DIR}`);
-  await ssh(`umask 077; cat > ${STATE_DIR}/media-processor-release.json`, `${mediaRelease}\n`);
+  await ssh(`umask 077; cat > ${STATE_DIR}/media-processor-release.json`, new TextEncoder().encode(`${mediaRelease}\n`));
   await ssh(`install -d -m 0700 '${releaseFiles}'`);
 
   const paths = [...ALWAYS_SHIPPED];
@@ -166,12 +167,8 @@ export async function deployRelease(inputs: DeployInputs, run: Runner, log: (mes
 async function main(): Promise<void> {
   const env = Bun.env;
   const runner: Runner = async ({ argv, stdin }) => {
-    const proc = Bun.spawn(argv, {
-      stdin: stdin === undefined ? "ignore" : new TextEncoder().encode(stdin),
-      stdout: "pipe",
-      stderr: "inherit",
-    });
-    const stdout = await new Response(proc.stdout).text();
+    const proc = Bun.spawn(argv, { stdin: stdin ?? "ignore", stdout: "pipe", stderr: "inherit" });
+    const stdout = new Uint8Array(await new Response(proc.stdout).arrayBuffer());
     return { code: await proc.exited, stdout };
   };
   await deployRelease(
