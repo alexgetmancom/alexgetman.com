@@ -219,6 +219,9 @@ describe("metrics cycle", () => {
 });
 
 describe("Telegram public metrics", () => {
+  // The channel is the subject of these tests, so they name it rather than
+  // leaning on a default. It used to be a live channel of this deployment.
+  const telegramConfig = () => loadConfig({ TELEGRAM_CHANNEL_USERNAME: "alexgetmancom" });
   it("loads the target post directly, parses compact views, and sums reactions", async () => {
     const html = `<section><div data-post="alexgetmancom/523"><span class="tgme_widget_message_views">1.2K</span><span class="tgme_reaction"><i></i>3</span><span class="tgme_reaction"><i></i>2</span></div></section>`;
     let requestedUrl = "";
@@ -226,7 +229,7 @@ describe("Telegram public metrics", () => {
       requestedUrl = String(input);
       return new Response(html, { status: 200 });
     }) as unknown as typeof fetch;
-    const collector = createMetricCollectors(loadConfig({}), fetchImpl).telegram;
+    const collector = createMetricCollectors(telegramConfig(), fetchImpl).telegram;
     if (!collector) throw new Error("Telegram collector is missing");
     const result = await collector(task("telegram"));
     expect(requestedUrl).toBe("https://t.me/alexgetmancom/523?embed=1&mode=tme");
@@ -235,7 +238,7 @@ describe("Telegram public metrics", () => {
 
   it("treats a missing target post as terminal", async () => {
     const fetchImpl = mock(async () => new Response("<html></html>", { status: 200 })) as unknown as typeof fetch;
-    const collector = createMetricCollectors(loadConfig({}), fetchImpl).telegram;
+    const collector = createMetricCollectors(telegramConfig(), fetchImpl).telegram;
     if (!collector) throw new Error("Telegram collector is missing");
     await expect(collector(task("telegram"))).rejects.toBeInstanceOf(TerminalMetricError);
   });
@@ -247,7 +250,7 @@ describe("Telegram public metrics", () => {
       requestedUrl = String(input);
       return new Response(html, { status: 200 });
     }) as unknown as typeof fetch;
-    const collector = createMetricCollectors(loadConfig({}), fetchImpl).telegram;
+    const collector = createMetricCollectors(telegramConfig(), fetchImpl).telegram;
     if (!collector) throw new Error("Telegram collector is missing");
     const legacyTask = { ...task("telegram"), externalId: null, url: "https://t.me/alexgetmancom/436" };
     expect(await collector(legacyTask)).toMatchObject({ metrics: { views: 42 } });

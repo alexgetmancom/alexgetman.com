@@ -10,6 +10,14 @@ const booleanFlag = (fallback: boolean) =>
     .default(fallback ? "1" : "0")
     .transform((value) => !["0", "false", "no", "off"].includes(value.toLowerCase()));
 
+/** An .env file states a key it has no value for by leaving it empty, and Docker
+ * passes that through as "". Without this, every `KEY=` line in the shipped
+ * .env.example reaches an `.optional()` field as a present-but-invalid value and
+ * the container refuses to start — which is exactly what a fresh install is. */
+function blankAsUnset(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([, value]) => value?.trim() !== ""));
+}
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -58,7 +66,12 @@ const envSchema = z
           .map((part) => Number(part.trim()))
           .filter((value) => Number.isSafeInteger(value) && value > 0),
       ),
-    TELEGRAM_CHANNEL_USERNAME: z.string().default("alexgetmancom"),
+    // Empty means this Studio has no Telegram channel, which is a Studio that
+    // serves only its website. It used to default to a real, live channel, and
+    // the production guard below existed to stop a second Studio publishing
+    // into the first one's audience. Removing the default removes the hazard,
+    // and with it the requirement that every install name a channel.
+    TELEGRAM_CHANNEL_USERNAME: z.string().default(""),
     METRICS_REFRESH_INTERVAL_SECONDS: z.coerce.number().int().positive().default(10),
     /** Refreshes account-level followers and aggregate platform insights. */
     CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS: z.coerce
@@ -242,7 +255,8 @@ export type BackendConfig = z.infer<typeof envSchema> & {
   studio: StudioConfig;
 };
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig {
+export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): BackendConfig {
+  const env = blankAsUnset(rawEnv);
   const parsed = envSchema.parse(env);
   if (parsed.NODE_ENV === "production" && parsed.DEPLOYMENT_ENV !== "production")
     throw new Error("DEPLOYMENT_ENV=production is required when NODE_ENV=production");
@@ -253,12 +267,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig 
     if (!env.CLIENT_IP_HASH_SALT) throw new Error("CLIENT_IP_HASH_SALT is required in production");
   }
   const studio = loadStudioConfig(parsed.STUDIO_CONFIG);
-  // The channel default exists for the first deployment and is a hazard for
-  // every one after it: a second Studio that does not name its own channel
-  // would publish into the first Studio's, because the default is a real, live
-  // username. Development keeps the convenience.
-  if (parsed.NODE_ENV === "production" && !env.TELEGRAM_CHANNEL_USERNAME)
-    throw new Error("TELEGRAM_CHANNEL_USERNAME must be set explicitly in production");
   // Same hazard, different surface: the default is a live site, so a Studio
   // that does not name its own would put the first one's domain in its feeds,
   // its sitemap and its canonical URLs.

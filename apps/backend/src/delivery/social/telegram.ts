@@ -19,7 +19,12 @@ export async function publishToTelegram(
 ): Promise<PublishResult> {
   const token = config.controllerBotToken;
   if (!token) return { skipped: true, reason: "missing Telegram bot token" };
-  const chatId = `@${config.TELEGRAM_CHANNEL_USERNAME.replace(/^@/, "")}`;
+  // Named alongside the token it travels with: without this the chat id would
+  // be a bare "@", and the failure would come back from Telegram as a generic
+  // bad-request rather than as the missing setting it is.
+  const channel = config.TELEGRAM_CHANNEL_USERNAME.replace(/^@/, "");
+  if (!channel) return { skipped: true, reason: "missing TELEGRAM_CHANNEL_USERNAME" };
+  const chatId = `@${channel}`;
   const text = payloadText(payload);
   const media = payloadMedia(payload);
   const entities = Array.isArray(payload.entities) ? payload.entities : undefined;
