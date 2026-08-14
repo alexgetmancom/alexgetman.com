@@ -60,13 +60,12 @@ export async function exchangeXCode(
     }),
     fetchImpl,
   );
-  installXTokens(config, backendDb, tokens, now);
   const profile = await requestJson<{ data?: { id?: string; username?: string } }>(fetchImpl, "https://api.x.com/2/users/me", {
     headers: { Authorization: `Bearer ${tokens.access_token}` },
   });
   const id = profile.data?.id;
   if (!id) throw new Error("X returned no account id");
-  unsafeDb(backendDb).db.update(platformTokens).set({ accountId: id }).where(eq(platformTokens.target, "x")).run();
+  installXTokens(config, backendDb, tokens, now, id);
   return { id, username: profile.data?.username?.trim() ?? "" };
 }
 
@@ -110,7 +109,7 @@ function readState(config: BackendConfig, state: string, now: Date): XState {
   return parsed as XState;
 }
 
-function installXTokens(config: BackendConfig, backendDb: BackendDb, tokens: XTokenResponse, now: Date): void {
+function installXTokens(config: BackendConfig, backendDb: BackendDb, tokens: XTokenResponse, now: Date, accountId?: string): void {
   if (!tokens.access_token || !tokens.refresh_token) throw new Error("X returned no renewable token pair");
   const key = requiredKey(config);
   const expiresAt = new Date(now.getTime() + (tokens.expires_in ?? 7200) * 1000).toISOString();
@@ -121,7 +120,7 @@ function installXTokens(config: BackendConfig, backendDb: BackendDb, tokens: XTo
       sealedToken: seal(tokens.access_token, key),
       sealedRefreshToken: seal(tokens.refresh_token, key),
       seedFingerprint: null,
-      accountId: null,
+      accountId: accountId ?? null,
       expiresAt,
       refreshedAt: now.toISOString(),
       updatedAt: now.toISOString(),
@@ -131,6 +130,7 @@ function installXTokens(config: BackendConfig, backendDb: BackendDb, tokens: XTo
       set: {
         sealedToken: seal(tokens.access_token, key),
         sealedRefreshToken: seal(tokens.refresh_token, key),
+        ...(accountId ? { accountId } : {}),
         expiresAt,
         refreshedAt: now.toISOString(),
         updatedAt: now.toISOString(),
