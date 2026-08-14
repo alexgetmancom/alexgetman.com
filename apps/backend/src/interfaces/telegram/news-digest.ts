@@ -31,7 +31,11 @@ const NEWS_DIGEST_JSON_SCHEMA = JSON.stringify({
   additionalProperties: false,
 });
 const NEWS_DIGEST_OUTPUT_INSTRUCTIONS =
-  "Put the finished digest in the `markdown` field as a numbered Markdown list starting at `1.`, with no introduction or closing remarks around it.";
+  "Put the finished digest in the `markdown` field as a numbered Markdown list of 10 items, with one X source URL per item and no introduction or closing remarks around it.";
+const MIN_NEWS_DIGEST_CHARACTERS = 2_582;
+const MIN_NEWS_DIGEST_ITEMS = 10;
+const MIN_NEWS_DIGEST_SOURCE_LINKS = 10;
+const NEWS_DIGEST_EFFORTS = ["medium", "xhigh"] as const;
 
 /** Runs one shared daily Grok report and delivers it as a Markdown document. */
 export async function sendDailyNewsDigest(
@@ -55,7 +59,7 @@ export async function sendDailyNewsDigest(
     !options.force &&
     !claimSync(backendDb, key, {
       intervalSeconds: 24 * 60 * 60,
-      leaseSeconds: config.GROK_CLI_TIMEOUT_SECONDS + 60,
+      leaseSeconds: NEWS_DIGEST_EFFORTS.length * config.GROK_CLI_TIMEOUT_SECONDS + 60,
       owner,
     })
   )
@@ -88,19 +92,46 @@ export async function sendDailyNewsDigest(
 }
 
 async function runGrok(config: BackendConfig, prompt: string, spawn: GrokSpawn): Promise<string> {
+  let lastResult = { characters: 0, items: 0, sourceLinks: 0 };
+  for (const [attempt, effort] of NEWS_DIGEST_EFFORTS.entries()) {
+    const retryInstructions =
+      attempt === 0
+        ? ""
+        : `\n\nYour previous result was incomplete: ${lastResult.characters} characters, ${lastResult.items} numbered items and ${lastResult.sourceLinks} X source links. Start over and return the finished report.`;
+    const attemptPrompt = `${prompt.trim()}\n\n${NEWS_DIGEST_OUTPUT_INSTRUCTIONS}${retryInstructions}`;
+    const markdown = await runGrokAttempt(config, attemptPrompt, effort, spawn);
+    lastResult = digestShape(markdown);
+    if (
+      lastResult.characters >= MIN_NEWS_DIGEST_CHARACTERS &&
+      lastResult.items >= MIN_NEWS_DIGEST_ITEMS &&
+      lastResult.sourceLinks >= MIN_NEWS_DIGEST_SOURCE_LINKS
+    )
+      return `${markdown}\n`;
+  }
+  throw new Error(
+    `Grok news digest is incomplete: ${lastResult.characters} characters, ${lastResult.items} numbered items and ${lastResult.sourceLinks} X source links; minimum ${MIN_NEWS_DIGEST_CHARACTERS}, ${MIN_NEWS_DIGEST_ITEMS} and ${MIN_NEWS_DIGEST_SOURCE_LINKS}`,
+  );
+}
+
+async function runGrokAttempt(
+  config: BackendConfig,
+  prompt: string,
+  effort: (typeof NEWS_DIGEST_EFFORTS)[number],
+  spawn: GrokSpawn,
+): Promise<string> {
   const child = spawn(
     [
       config.GROK_CLI_PATH,
       "--no-leader",
       "--reasoning-effort",
-      "low",
+      effort,
       "--output-format",
       "json",
       "--json-schema",
       NEWS_DIGEST_JSON_SCHEMA,
       "--always-approve",
       "--single",
-      `${prompt.trim()}\n\n${NEWS_DIGEST_OUTPUT_INSTRUCTIONS}`,
+      prompt,
     ],
     {
       stdout: "pipe",
@@ -130,10 +161,21 @@ async function runGrok(config: BackendConfig, prompt: string, spawn: GrokSpawn):
     const markdown = readMarkdown(response);
     if (markdown === null) throw new Error("Grok CLI did not return news markdown");
     if (markdown.length === 0) throw new Error("Grok returned an empty news digest");
-    return `${markdown}\n`;
+    return markdown;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function digestShape(markdown: string): { characters: number; items: number; sourceLinks: number } {
+  const itemNumbers = [...markdown.matchAll(/^(\d+)\.\s+/gm)].map((match) => Number(match[1]));
+  let items = 0;
+  while (itemNumbers[items] === items + 1) items += 1;
+  return {
+    characters: [...markdown].length,
+    items,
+    sourceLinks: [...markdown.matchAll(/https:\/\/x\.com\/[^\s)]+/g)].length,
+  };
 }
 
 /**
