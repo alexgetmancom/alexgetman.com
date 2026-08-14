@@ -192,4 +192,59 @@ describe("site jobs", () => {
       { locale: "en", media: [] },
     ]);
   });
+
+  it("fails only the publication that could not render, not the batch it was claimed with", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-"));
+    const config = loadConfig({ SITE_PUBLIC_DIR: tempDir });
+    backendDb = openBackendDb(":memory:");
+    const now = new Date().toISOString();
+    for (const postId of [1, 2]) {
+      backendDb.db.insert(publications).values({ postId, status: "published", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(postLocales)
+        .values({ postId, locale: "ru", slug: `ru-${postId}`, siteEnabled: 1, updatedAt: now })
+        .run();
+      backendDb.db
+        .insert(publicationSources)
+        .values({
+          postId,
+          itemJson: {
+            id: `post:${postId}`,
+            post_id: postId,
+            message_id: postId,
+            date: now,
+            text: "RU",
+            text_ru: "RU",
+            has_ru: true,
+            slug_ru: `ru-${postId}`,
+            // Post 2 points at an image no one can fetch. It used to reject the
+            // one Promise.all that carried both, and the cycle then spent an
+            // attempt on post 1 too — five cycles and both were `failed`.
+            ...(postId === 2 ? { media: [{ type: "photo", url: "https://media.invalid/gone.jpg" }] } : {}),
+          },
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db
+        .insert(siteJobs)
+        .values({ postId, messageId: postId, reason: "site_ru", status: "queued", createdAt: now, updatedAt: now })
+        .run();
+    }
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() => Promise.reject(new Error("media host is unreachable"))) as unknown as typeof fetch;
+    try {
+      await runSiteJobCycle(config, backendDb);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(
+      backendDb.db.select({ postId: siteJobs.postId, status: siteJobs.status, attemptCount: siteJobs.attemptCount }).from(siteJobs).all(),
+    ).toEqual([
+      { postId: 1, status: "published", attemptCount: 0 },
+      { postId: 2, status: "queued", attemptCount: 1 },
+    ]);
+  });
 });

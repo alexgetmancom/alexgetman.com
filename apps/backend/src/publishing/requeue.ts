@@ -6,6 +6,7 @@ import { postTargets, publications, publishJobs, siteJobs } from "../db/schema.j
 import { jsonObject } from "../json.js";
 import { requeuedPostTarget, requeuedPublishJobColumns } from "./job-policy.js";
 import { localizeTargetPayload } from "./payload.js";
+import { insertEvent } from "./queue-state.js";
 
 /**
  * The one way a publication target goes back into the queue.
@@ -203,9 +204,30 @@ function pickPayload(source: Record<string, unknown>, payloadJson: unknown): Rec
 }
 
 function mirrorRequeuedTarget(tx: RequeueDb, postKey: string, target: string, now: string): void {
+  const previous = tx
+    .select({ status: postTargets.status, externalId: postTargets.externalId, url: postTargets.url })
+    .from(postTargets)
+    .where(and(eq(postTargets.postKey, postKey), eq(postTargets.target, target)))
+    .get();
   const mirrored = requeuedPostTarget(postKey, target, now);
   tx.insert(postTargets)
     .values(mirrored.values)
     .onConflictDoUpdate({ target: [postTargets.postKey, postTargets.target], set: mirrored.patch })
     .run();
+  // The row is about to describe a different remote object, so it drops the id
+  // of the one it named. When that object was live, dropping the id is the only
+  // record of it there was: `verify`, `delete` and `purge` all aim by that id,
+  // and none of them could ever reach it again. The journal keeps it, in the
+  // same transaction as the requeue that forgot it.
+  if (previous?.status !== "published" || !previous.externalId) return;
+  insertEvent(
+    tx,
+    postKey,
+    target,
+    "publish.target.identity_dropped",
+    "warn",
+    `${target} was requeued while still published; its previous post is no longer referenced`,
+    { external_id: previous.externalId, url: previous.url },
+    now,
+  );
 }

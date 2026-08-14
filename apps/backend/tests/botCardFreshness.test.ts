@@ -7,7 +7,7 @@ import { draftPreview } from "../src/bot/preview.js";
 import { type PublicationCallback, parseSessionCallback, publicationCallback, versionedCallback } from "../src/bot/publication-callback.js";
 import { getVideoState, videoControlEffects } from "../src/bot/video-ui.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
-import type { BackendDb } from "../src/db/client.js";
+import type { BackendDb, UnsafeBackendDb } from "../src/db/client.js";
 import { draftStoryCards, videoDrafts } from "../src/db/schema.js";
 import { unsafeDb } from "../src/db/unsafe.js";
 import { loadConfig } from "../src/foundation/config.js";
@@ -18,6 +18,7 @@ import {
   telegramVideoCard,
 } from "../src/interfaces/telegram/control-cards.js";
 import { replaceVideoTargets } from "../src/publishing/video-service.js";
+import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 import { createTestVideoAsset, createTestVideoDraft } from "./helpers/video.js";
 
@@ -161,6 +162,7 @@ describe("Telegram card freshness", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
       const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+      registerTestChannels(backendDb as UnsafeBackendDb, ["telegram_stories", "instagram_stories"]);
       const draftId = createDraftFromMessage(backendDb, 42, { text: "Card", textEn: "Card", entities: [], media: [] });
       for (const locale of ["ru", "en"] as const) {
         unsafeDb(backendDb)

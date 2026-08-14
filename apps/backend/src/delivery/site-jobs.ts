@@ -39,7 +39,7 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
     return 0;
   }
   try {
-    await withJobHeartbeat(
+    const failures = await withJobHeartbeat(
       SITE_JOB_HEARTBEAT_INTERVAL_SECONDS,
       () => {
         unsafeDb(backendDb)
@@ -58,7 +58,18 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
           ),
         ),
     );
-    const completed = completeSiteJobs(backendDb, jobs);
+    // Only the jobs whose own publication failed carry its error; the rest
+    // published, and their attempt budget is not spent on someone else's post.
+    for (const [postId, message] of failures)
+      failSiteJobs(
+        backendDb,
+        jobs.filter((job) => job.post_id === postId),
+        message,
+      );
+    const completed = completeSiteJobs(
+      backendDb,
+      jobs.filter((job) => job.post_id == null || !failures.has(job.post_id)),
+    );
     // A materialization is the one moment this process knows the published site
     // changed, so serve the new shape immediately instead of waiting out the TTL.
     invalidatePublicSiteFeed(backendDb);
@@ -131,18 +142,36 @@ export function recoverStaleSiteJobs(backendDb: BackendDb, maxLockAgeSeconds = S
   return recovered;
 }
 
+/** Renders every requested publication and reports the ones that could not be.
+ *
+ * One `Promise.all` used to carry the whole batch: a single unreachable image
+ * rejected it, and the cycle then failed all twenty claimed jobs with that one
+ * post's error. Five cycles of that and every publication in the queue was
+ * `failed` because of one of them. A publication that cannot render is its own
+ * problem now. */
 export async function materializeSitePosts(
   config: BackendConfig,
   backendDb: BackendDb,
   fetchImpl: typeof fetch = fetch,
   postIds?: ReadonlySet<number>,
-): Promise<void> {
+): Promise<Map<number, string>> {
   const sources = sourceItems(backendDb).filter((source) => !postIds || postIds.has(Number(source.post_id)));
-  const items = await Promise.all(sources.map((source) => prepareSiteMedia(config, source, fetchImpl)));
+  const failures = new Map<number, string>();
+  const prepared = await Promise.all(
+    sources.map(async (source) => {
+      try {
+        return await prepareSiteMedia(config, source, fetchImpl);
+      } catch (error) {
+        failures.set(Number(source.post_id), error instanceof Error ? error.message : String(error));
+        return null;
+      }
+    }),
+  );
   persistMaterializedSiteMedia(
     backendDb,
-    items.filter((item): item is Record<string, unknown> => item != null),
+    prepared.filter((item): item is Record<string, unknown> => item != null),
   );
+  return failures;
 }
 function persistMaterializedSiteMedia(backendDb: BackendDb, items: Record<string, unknown>[]): void {
   const now = new Date().toISOString();

@@ -7,6 +7,7 @@ import type { OperationContext } from "../src/operations/registry.js";
 import { runOperation } from "../src/operations/registry.js";
 import { publicationTimeline } from "../src/operations/timeline.js";
 import { createStudioServices } from "../src/studio/services/index.js";
+import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 function context(db: ReturnType<typeof openBackendDb>, fetchImpl: typeof fetch = fetch): OperationContext {
@@ -67,6 +68,7 @@ it("publishes operator text to exactly the requested target in one operation", a
 
 it("does not require a Story decision when every Story target is disabled", () => {
   const backendDb = openBackendDb(":memory:");
+  registerTestChannels(backendDb, ["threads_ru"]);
   const ruCard = join(tmpdir(), `story-card-ru-${crypto.randomUUID()}.png`);
   const enCard = join(tmpdir(), `story-card-en-${crypto.randomUUID()}.png`);
   writeFileSync(ruCard, "ru");
@@ -190,6 +192,41 @@ it("shows the operator every target the command would touch, not only the delive
 
     expect(plan.targets).toEqual([{ target: "threads_ru", status: "queued", url: null, published: false }]);
     expect(plan.hint).toBe("re-run with apply to perform it");
+  } finally {
+    backendDb.close();
+  }
+});
+
+it("keeps the identity of a live post it was told to publish again", async () => {
+  const backendDb = openBackendDb(":memory:");
+  try {
+    connectThreads(backendDb);
+    const published = (await runOperation("publish", context(backendDb), {
+      locale: "ru",
+      targets: "threads_ru",
+      text: "Сегодня разобрал, как мы используем React и Bun в проде",
+    })) as { ref: string };
+    const now = new Date().toISOString();
+    backendDb.sqlite
+      .prepare(
+        "INSERT INTO post_targets(post_key,target,status,external_id,url,published_at,updated_at) VALUES (?,'threads_ru','published','LIVE-1','https://threads.net/p/LIVE-1',?,?)",
+      )
+      .run(published.ref, now, now);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE target='threads_ru'").run();
+
+    await runOperation("retry", context(backendDb), { ref: published.ref, target: "threads_ru", apply: true });
+
+    // The row now names a different post, which is right — but the one it used
+    // to name is still live, and nothing else remembers how to reach it.
+    expect(backendDb.sqlite.prepare("SELECT external_id, status FROM post_targets WHERE target='threads_ru'").get()).toEqual({
+      external_id: null,
+      status: "queued",
+    });
+    expect(
+      backendDb.sqlite.prepare("SELECT details_json FROM post_events WHERE event_type='publish.target.identity_dropped'").get() as {
+        details_json: string;
+      },
+    ).toEqual({ details_json: JSON.stringify({ external_id: "LIVE-1", url: "https://threads.net/p/LIVE-1" }) });
   } finally {
     backendDb.close();
   }

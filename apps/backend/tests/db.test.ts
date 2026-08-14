@@ -8,6 +8,7 @@ import { createDraftFromMessage } from "../src/content/drafts.js";
 import { baselineDrizzleMigrations, drizzleMigrationMetadata, migrationStatus } from "../src/db/client.js";
 import { knowledgeEntities, postEntityLinks } from "../src/db/schema.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
+import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
 function insertVideoAsset(backendDb: ReturnType<typeof openBackendDb>): void {
@@ -178,6 +179,7 @@ describe("openBackendDb", () => {
   it("links a published model to its company without an editor confirmation", () => {
     const backendDb = openBackendDb(":memory:");
     try {
+      registerTestChannels(backendDb, ["threads_en"]);
       const draftId = createDraftFromMessage(backendDb, 42, {
         text: "Claude received a new update",
         textEn: "Claude received a new update",
@@ -204,6 +206,7 @@ describe("openBackendDb", () => {
   it("keeps a comparison as a mention instead of making it a hub update", () => {
     const backendDb = openBackendDb(":memory:");
     try {
+      registerTestChannels(backendDb, ["threads_en"]);
       const draftId = createDraftFromMessage(backendDb, 42, {
         text: "Qwen announced a new flagship\n\nIt competes with Claude Fable.",
         textEn: "Qwen announced a new flagship\n\nIt competes with Claude Fable.",
@@ -227,6 +230,7 @@ describe("openBackendDb", () => {
   it("does not treat a competitor headline as a Claude hub update", () => {
     const backendDb = openBackendDb(":memory:");
     try {
+      registerTestChannels(backendDb, ["threads_en"]);
       const draftId = createDraftFromMessage(backendDb, 42, {
         text: "Grok 4.5 is a new competitor to GPT and Claude\n\nThe release is now available.",
         textEn: "Grok 4.5 is a new competitor to GPT and Claude\n\nThe release is now available.",
@@ -249,6 +253,7 @@ describe("openBackendDb", () => {
   it("recognizes Codex as the focus only when it is the subject or the tool used", () => {
     const backendDb = openBackendDb(":memory:");
     try {
+      registerTestChannels(backendDb, ["threads_en"]);
       const directDraft = createDraftFromMessage(backendDb, 42, {
         text: "GPT ported RollerCoaster Tycoon to iPad\n\nThe developer built it with Codex.",
         textEn: "GPT ported RollerCoaster Tycoon to iPad\n\nThe developer built it with Codex.",

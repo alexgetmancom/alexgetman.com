@@ -66,11 +66,15 @@ describe("channel registry", () => {
       ).toEqual(["telegram", "threads_ru"]);
     }));
 
-  it("creates no jobs when the registry has no publication targets", () =>
+  it("refuses to publish when the registry has no publication targets", () =>
     withDb((backendDb) => {
       backendDb.db.delete(channelConnections).run();
       const draftId = createDraftFromMessage(backendDb, 1, { text: "No route", entities: [], media: [] });
-      publishDraftToQueue(backendDb, draftId);
+
+      // It used to create the publication anyway: no jobs behind it, and a
+      // `scheduled` row that no worker would pick up and no status would ever
+      // move — an upcoming post that was never going anywhere.
+      expect(() => publishDraftToQueue(backendDb, draftId)).toThrow("Публиковать некуда");
       expect(backendDb.db.select({ target: publishJobs.target }).from(publishJobs).all()).toEqual([]);
     }));
 });

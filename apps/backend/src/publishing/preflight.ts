@@ -134,7 +134,14 @@ export function publicationPreflight(draft: DraftForPreflight): PublicationPrefl
 }
 
 export function assertPublicationPreflight(draft: DraftForPreflight): void {
-  assertKnownTargets(parseTargets(draft.targets_json));
+  const targets = parseTargets(draft.targets_json);
+  assertKnownTargets(targets);
+  // The caller has already narrowed these to the targets with a connected
+  // channel, so an empty set is a publication with nowhere to go. It used to be
+  // created anyway: no jobs, and a `scheduled` publication that no worker would
+  // ever pick up and no status would ever move off "upcoming".
+  if (!Object.values(targets).some(Boolean))
+    throw new Error("Публиковать некуда: ни одна площадка не выбрана или не подключена. Подключите канал или включите площадку.");
   const issues = publicationPreflight(draft);
   if (issues.length > 0) throw new Error(issues.map((issue) => issue.message).join(" "));
 }
