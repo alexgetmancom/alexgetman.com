@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setSystemTime } from "bun:test";
 import type { Context } from "grammy";
 import { queueScreen, showQueue } from "../src/bot/queue.js";
 import { draftStoryCards, drafts, posts, postTargets, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
@@ -388,6 +388,10 @@ describe("Telegram work queue", () => {
   });
 
   it("paginates every queue section without dropping items", () => {
+    // Upcoming items are paged by the day they fall on, so eleven of them a
+    // minute apart split differently when "now" is a minute before midnight in
+    // Moscow — this failed for a few minutes each night and passed by morning.
+    setSystemTime(new Date("2026-08-14T09:00:00.000Z"));
     const snapshot: StudioQueueSnapshot = {
       upcoming: Array.from({ length: 11 }, (_, index) => ({
         id: index + 1,
@@ -406,5 +410,6 @@ describe("Telegram work queue", () => {
       currentPage: 1,
       items: { upcoming: [{ label: "Upcoming 11" }] },
     });
+    setSystemTime();
   });
 });

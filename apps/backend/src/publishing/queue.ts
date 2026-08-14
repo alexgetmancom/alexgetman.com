@@ -10,7 +10,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
 import { classifyPublishError, normalizePublishResult, type PublishResult } from "./errors.js";
-import { failedJobTransition, reconciliationTransition } from "./job-policy.js";
+import { failedJobTransition, mayHaveReachedAudience, reconciliationTransition } from "./job-policy.js";
 import { reconcilePublication } from "./publication-reconciliation.js";
 import {
   deleteSupersededJobs,
@@ -159,7 +159,7 @@ export function recoverStalePublishJobs(
       const lockedAt = job.lockedAt;
       if (!lockedAt) continue;
       const error = job.lastError || "worker_lost: publishing lock expired before completion";
-      const publicMutationMayHaveRun = job.currentPhase === "provider.publish";
+      const publicMutationMayHaveRun = mayHaveReachedAudience(job.currentPhase);
       const recoveredStatus = publicMutationMayHaveRun ? "verification_required" : "queued";
       const updated = tx
         .update(publishJobs)

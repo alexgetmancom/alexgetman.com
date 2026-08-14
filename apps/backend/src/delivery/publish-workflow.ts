@@ -11,6 +11,7 @@ import { withJobHeartbeat } from "../foundation/runtime/job-heartbeat.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
 import { isTargetAuthBlocked } from "../observability/auth-circuit.js";
 import { trackUsageAsync } from "../observability/usage.js";
+import { mayHaveReachedAudience } from "../publishing/job-policy.js";
 import {
   type ClaimedPublishJob,
   claimPublishJob,
@@ -304,7 +305,7 @@ async function withinPublishTimeout<T>(
           const timeout = new Error(
             `delivery_execution_timeout: ${job.target} exceeded ${config.PUBLISH_JOB_TIMEOUT_SECONDS}s during ${phase ?? "unknown"}`,
           );
-          reject(phase === "provider.publish" ? new AmbiguousPublicationError(job.target, timeout) : timeout);
+          reject(mayHaveReachedAudience(phase) ? new AmbiguousPublicationError(job.target, timeout) : timeout);
         }, config.PUBLISH_JOB_TIMEOUT_SECONDS * 1000);
       }),
     ]);

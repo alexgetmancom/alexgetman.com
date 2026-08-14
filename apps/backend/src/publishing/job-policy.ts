@@ -39,6 +39,25 @@ export function reconciliationTransition(
   };
 }
 
+/** The phases that run before the provider has been called at all. Everything
+ * else — `provider.publish`, `provider.verify`, and any phase this list has not
+ * heard of — means the platform may already have accepted the post.
+ *
+ * The list is closed on the safe side on purpose. It used to be open on the
+ * dangerous one: only `provider.publish` counted as "may have reached the
+ * audience", so a worker that died *after* the platform accepted the post and
+ * during verification had its job put straight back in the queue and published
+ * again. A second post is worse than an unclear status, so an unrecognised
+ * phase is ambiguous rather than retryable. */
+const PHASES_BEFORE_PROVIDER = ["validate", "prepare"];
+
+/** `null` is a job that was claimed and had not started a phase yet, which is
+ * the one state that is certainly safe. `undefined` is a phase that could not
+ * be read, which is not the same thing and is not treated as one. */
+export function mayHaveReachedAudience(phase: string | null | undefined): boolean {
+  return phase === null ? false : !PHASES_BEFORE_PROVIDER.includes(phase as string);
+}
+
 /** The columns a publish job takes on when it re-enters the queue. Two paths
  * requeue jobs and they mean different things -- Studio retries a target that
  * failed, `ops retry` restores one whatever state it reached -- so *which*
@@ -46,10 +65,10 @@ export function reconciliationTransition(
  * the row they leave behind: a job waiting to be claimed has shed its lock, its
  * backoff and the phase of its previous attempt.
  *
- * `currentPhase` is the one that bites. recoverStalePublishJobs reads it to
- * decide whether a lost worker may already have hit the provider, and the ops
- * path used to leave it set, so a later stale lock on a clean retry was
- * misreported as needing manual verification. */
+ * `currentPhase` is the one that bites. recoverStalePublishJobs reads it through
+ * `mayHaveReachedAudience` to decide whether a lost worker may already have hit
+ * the provider, and the ops path used to leave it set, so a later stale lock on
+ * a clean retry was misreported as needing manual verification. */
 export function requeuedPublishJobColumns(payload: JsonObject, now: string) {
   return {
     status: "queued" as const,

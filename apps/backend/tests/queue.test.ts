@@ -579,6 +579,34 @@ describe("publish queue", () => {
     }).finally(() => setSystemTime());
   });
 
+  it("holds a lock lost during verification, because the post is already live", () =>
+    withDb((backendDb) => {
+      // Verification runs after the platform accepted the post, and nothing is
+      // persisted until the job settles — so this phase is the only trace that
+      // the audience has already seen it. Requeuing it published a second post.
+      const id = enqueuePublishJob(backendDb, {
+        messageId: 1034,
+        target: "test_platform",
+        payload: { title: "Queued", bodyMarkdown: "Body" },
+      });
+      backendDb.db
+        .update(publishJobs)
+        .set({
+          status: "publishing",
+          currentPhase: "provider.verify",
+          lockedBy: "old-worker",
+          lockedAt: "2000-01-01T00:00:00.000Z",
+          updatedAt: "2000-01-01T00:00:00.000Z",
+        })
+        .where(eq(publishJobs.jobId, id))
+        .run();
+
+      expect(recoverStalePublishJobs(backendDb, loadConfig({}))).toBe(1);
+      expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
+        status: "verification_required",
+      });
+    }));
+
   it("requeues a stale preparation lock because no public mutation started", () =>
     withDb((backendDb) => {
       const id = enqueuePublishJob(backendDb, {
