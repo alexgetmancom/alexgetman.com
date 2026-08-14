@@ -20,6 +20,9 @@ Thumbs.db
 /apps/web/feed/*.log
 /apps/backend/secrets.env
 /apps/backend/secrets.*
+# The template is not a secret and both READMEs tell people to copy it, which
+# they cannot do while the pattern above swallows it too.
+!/apps/backend/secrets.env.example
 /apps/backend/site-feed.env
 /apps/backend/data/
 /apps/backend/logs/
