@@ -42,6 +42,7 @@ describe("site middleware", () => {
         "/readyz",
         "/api/mcp",
         "/api/studio/media",
+        "/media/staging/cache-image.jpg",
         "/media/video/asset/7",
         "/stats",
       ]) {

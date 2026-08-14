@@ -11,15 +11,15 @@ const LINKED_PAGES = new Set(["/", "/ru/"]);
 const UNINDEXED = /^\/(command-center|oauth|stats|api\/command-center)(\/|$)/;
 
 /** What a Studio without a public site still answers: the operator surfaces, the
- * agent transport, the health probes, and the media URL a publishing platform
- * fetches a video from. Everything else does not exist there.
+ * agent transport, the health probes, and the media URLs a publishing platform
+ * fetches from. Everything else does not exist there.
  *
  * This lives here rather than in the proxy because `site_enabled: false` has to
- * mean the same thing for every install. It used to be enforced by one
- * deployment's allowlist, so the setting switched off the site workers while the
- * pages, feeds and sitemap carried on being served to anyone who asked. */
+ * mean the same thing for every install. The temporary public-media staging path
+ * is the one public media exception: external platforms must be able to fetch
+ * it even when the Studio has no public website. */
 const WITHOUT_SITE =
-  /^\/(command-center|oauth|healthz|readyz|api\/(command-center|mcp|studio\/media)|stats|tg-feed|media\/video\/asset)(\/|$)/;
+  /^\/(command-center|oauth|healthz|readyz|api\/(command-center|mcp|studio\/media)|stats|tg-feed|media\/(staging|video\/asset))(\/|$)/;
 
 /** Every post and index page has a Markdown twin at the same address plus
  * ".md". A client that asks for Markdown gets it at the canonical URL rather

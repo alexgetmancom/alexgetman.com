@@ -34,6 +34,7 @@ describe("host proxy topology", () => {
     expect(caddy).toContain("/api/mcp");
     expect(caddy).toContain("/api/studio/media");
     expect(caddy).toContain("/media/video/asset/*");
+    expect(caddy).toContain("/media/staging/*");
     expect(caddy).toContain("/oauth/*");
     expect(caddy).toContain("respond 404");
     expect(maru).toContain('"127.0.0.1:8789:8788"');
@@ -41,6 +42,8 @@ describe("host proxy topology", () => {
     // A default would let a lost host env file publish media under the first
     // Studio's domain, and the request that reveals it comes from Meta.
     expect(maru).toContain("PUBLIC_BASE_URL: ${MARU_PUBLIC_BASE_URL:?");
+    expect(maru).toContain("REMOTE_MEDIA_PATH: /data/site/media/staging");
+    expect(maru).toContain("MARU_MEDIA_STAGING_DIR_HOST");
   });
 
   it("keeps the proxy free of anything the application decides", () => {

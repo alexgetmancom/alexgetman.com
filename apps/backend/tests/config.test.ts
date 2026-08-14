@@ -14,6 +14,8 @@ describe("loadConfig", () => {
     expect(config.STUDIO_MEDIA_MAX_BYTES).toBe(1_000_000_000);
     expect(config.VIDEO_MAX_BYTES).toBe(1_000_000_000);
     expect(config.STUDIO_MEDIA_DIR).toBe("/data/video-media");
+    expect(config.REMOTE_MEDIA_PATH).toBe("/data/site/media/staging");
+    expect(config.PUBLIC_MEDIA_BASE_URL).toBe("https://alexgetman.com/media/staging");
   });
 
   it("requires an explicit matching production environment", () => {
@@ -47,11 +49,17 @@ describe("loadConfig", () => {
     // site rather than being configured a second time.
     const config = loadConfig({ ...production, PUBLIC_BASE_URL: "https://studio.example.com/" });
     expect(config.COMMAND_CENTER_URL).toBe("https://studio.example.com/command-center");
-    expect(config.PUBLIC_MEDIA_BASE_URL).toBe("https://studio.example.com/media");
+    expect(config.PUBLIC_MEDIA_BASE_URL).toBe("https://studio.example.com/media/staging");
     expect(
       loadConfig({ ...production, PUBLIC_BASE_URL: "https://s.example.com", PUBLIC_MEDIA_BASE_URL: "https://cdn.example.com/m" })
         .PUBLIC_MEDIA_BASE_URL,
     ).toBe("https://cdn.example.com/m");
+  });
+
+  it("derives temporary media storage from a custom site volume", () => {
+    const config = loadConfig({ SITE_PUBLIC_DIR: "/srv/studio/site", PUBLIC_BASE_URL: "https://studio.example.com" });
+    expect(config.REMOTE_MEDIA_PATH).toBe("/srv/studio/site/media/staging");
+    expect(config.PUBLIC_MEDIA_BASE_URL).toBe("https://studio.example.com/media/staging");
   });
 
   it("uses controller token as primary bot token", () => {

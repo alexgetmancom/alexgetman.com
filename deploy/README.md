@@ -37,20 +37,21 @@ socket and can only request a rollback using a private bearer-authenticated rout
    rollback histories. Maru's host health endpoint must be bound to `127.0.0.1:8789`.
 
    Add the following non-secret host paths to the corresponding `deploy-image.env`
-   files before the first deployment. The directories must exist on the mounted
-   `/mnt/alex-media` disk and be owned by `deploy`:
+   files before the first deployment. Put the media paths on the mounted
+   `/mnt/alex-media` disk; the backend creates missing directories and fixes
+   their ownership before dropping privileges:
 
    ```dotenv
    # /home/deploy/alexgetman-runtime/deploy-image.env
    ALEX_MEDIA_CACHE_DIR_HOST=/mnt/alex-media/alex/media-cache
    ALEX_VIDEO_MEDIA_DIR_HOST=/mnt/alex-media/alex/video-media
-   ALEX_THREADS_MEDIA_DIR_HOST=/home/deploy/ialexey-web/media/threads
    ALEX_SITE_MEDIA_DIR_HOST=/home/deploy/ialexey-web/media
    DEPLOY_AGENT_HOST_GATEWAY=<agent_default gateway>
 
    # /home/deploy/maru/deploy-image.env
    MARU_MEDIA_CACHE_DIR_HOST=/mnt/alex-media/maru/media-cache
    MARU_VIDEO_MEDIA_DIR_HOST=/mnt/alex-media/maru/video-media
+   MARU_MEDIA_STAGING_DIR_HOST=/mnt/alex-media/maru/media-staging
    DEPLOY_AGENT_HOST_GATEWAY=<agent_default gateway>
    ```
 

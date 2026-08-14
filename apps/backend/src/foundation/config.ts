@@ -1,3 +1,4 @@
+import path from "node:path";
 import * as z from "zod";
 import { loadStudioConfig, type StudioConfig } from "../studio.js";
 
@@ -175,10 +176,12 @@ const envSchema = z
     TELEGRAM_CHANNEL_STORIES_API_ID: z.coerce.number().int().positive().optional(),
     TELEGRAM_CHANNEL_STORIES_API_HASH: z.string().optional(),
     TELEGRAM_CHANNEL_STORIES_SESSION: z.string().optional(),
-    REMOTE_MEDIA_PATH: z.string().default("/feed-data/media"),
-    // Only Studios that hand a platform a fetchable media URL set this. It is
-    // optional rather than defaulted because a default here is someone else's
-    // domain, and it is resolved against PUBLIC_BASE_URL below.
+    /** Temporary public staging for platforms that fetch media by URL. The
+     * resolved default stays under this Studio's own site volume, so a fresh
+     * self-host never tries to create a directory at the container root. */
+    REMOTE_MEDIA_PATH: z.string().default(""),
+    // Override only when a platform-facing media URL lives elsewhere. Otherwise
+    // it follows this Studio's own public base URL below.
     PUBLIC_MEDIA_BASE_URL: z.string().optional(),
     PUBLIC_BASE_URL: z.string().default("https://alexgetman.com"),
     /** Seals the platform tokens this Studio renews for itself before they are
@@ -297,8 +300,10 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): BackendConf
   if (parsed.MEDIA_PROCESSOR_PROVIDER === "remote_http" && (!parsed.MEDIA_PROCESSOR_URL || !parsed.MEDIA_PROCESSOR_TOKEN)) {
     throw new Error("MEDIA_PROCESSOR_URL and MEDIA_PROCESSOR_TOKEN are required when MEDIA_PROCESSOR_PROVIDER=remote_http");
   }
+  const remoteMediaPath = parsed.REMOTE_MEDIA_PATH || path.join(parsed.SITE_PUBLIC_DIR, "media", "staging");
   return {
     ...parsed,
+    REMOTE_MEDIA_PATH: remoteMediaPath,
     VIDEO_PREPARE_LEAD_MINUTES: studio.video.prepare_lead_minutes,
     VIDEO_REMINDER_MINUTES: studio.video.reminder_minutes,
     VIDEO_MEDIA_RETENTION_HOURS: studio.video.retention_hours,
@@ -307,7 +312,7 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): BackendConf
     controllerBotToken: parsed.CONTROLLER_BOT_TOKEN,
     commandCenterToken: parsed.COMMAND_CENTER_TOKEN,
     COMMAND_CENTER_URL: `${parsed.PUBLIC_BASE_URL.replace(/\/$/, "")}/command-center`,
-    PUBLIC_MEDIA_BASE_URL: parsed.PUBLIC_MEDIA_BASE_URL ?? `${parsed.PUBLIC_BASE_URL.replace(/\/$/, "")}/media`,
+    PUBLIC_MEDIA_BASE_URL: parsed.PUBLIC_MEDIA_BASE_URL ?? `${parsed.PUBLIC_BASE_URL.replace(/\/$/, "")}/media/staging`,
     metaTokenSeeds: {
       THREADS_RU_ACCESS_TOKEN: parsed.THREADS_RU_ACCESS_TOKEN,
       THREADS_EN_ACCESS_TOKEN: parsed.THREADS_EN_ACCESS_TOKEN,

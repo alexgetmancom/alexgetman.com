@@ -15,6 +15,7 @@ export function requiredDataDirectories(config: BackendConfig): { name: string; 
     { name: "VIDEO_MEDIA_DIR", path: config.VIDEO_MEDIA_DIR },
     { name: "MEDIA_CACHE_DIR", path: config.MEDIA_CACHE_DIR },
     { name: "STORY_CARD_DIR", path: config.STORY_CARD_DIR },
+    { name: "REMOTE_MEDIA_PATH", path: config.REMOTE_MEDIA_PATH },
     ...(config.studio.siteEnabled ? [{ name: "SITE_PUBLIC_DIR", path: config.SITE_PUBLIC_DIR }] : []),
   ];
   const seen = new Set<string>();

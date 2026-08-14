@@ -41,9 +41,11 @@ describe("requiredDataDirectories", () => {
     const names = requiredDataDirectories(config).map((entry) => entry.name);
     expect(names).toContain("DATA_DIR");
     expect(names).toContain("MEDIA_CACHE_DIR");
+    expect(names).toContain("REMOTE_MEDIA_PATH");
     expect(names).toContain("SITE_PUBLIC_DIR");
     // STUDIO_MEDIA_DIR and VIDEO_MEDIA_DIR resolve to one path here: listed once.
     expect(names).toContain("STUDIO_MEDIA_DIR");
+    expect(names).toContain("REMOTE_MEDIA_PATH");
   });
 
   it("omits the site directory for a Studio without a public site", () => {
