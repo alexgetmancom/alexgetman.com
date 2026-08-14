@@ -128,4 +128,12 @@ describe("home page SSR smoke test", () => {
     expect(response.headers.get("content-type")).toStartWith("image/");
     expect((await response.arrayBuffer()).byteLength).toBe(FIXTURE_JPEG.byteLength);
   });
+
+  it("hands OAuth callbacks to the backend router", async () => {
+    const response = await fetch(`${baseUrl}/oauth/threads`);
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain("Threads connection failed");
+    expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
 });
