@@ -3,7 +3,7 @@ import { listChannels } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { log } from "../../foundation/logger.js";
-import { recordUsage } from "../../observability/usage.js";
+import { recordUsage, type UsageFeatureKey } from "../../observability/usage.js";
 import { evaluateAudienceMilestones } from "../audience-milestones.js";
 import { claimSync } from "../snapshots/creator-store.js";
 import { syncCommunityProfiles, syncInstagramProfile, syncXProfile, syncYouTubeProfile, syncZernioChannelProfile } from "./profile-sync.js";
@@ -13,7 +13,7 @@ import { runVideoMetricSchedule } from "./video-metrics.js";
  * YouTube token, say) must not take the rest of the cycle down with it: the loop
  * runner catches per tick, so an unguarded throw here meant video metrics were
  * never collected again until someone noticed. */
-async function step(backendDb: BackendDb, name: string, featureKey: string, run: () => Promise<unknown>): Promise<number> {
+async function step(backendDb: BackendDb, name: string, featureKey: UsageFeatureKey, run: () => Promise<unknown>): Promise<number> {
   const startedAt = Date.now();
   try {
     const result = await run();

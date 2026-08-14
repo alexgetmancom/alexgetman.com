@@ -40,12 +40,15 @@ const TRACKED_FEATURES = [
   "studio.channel.connect",
   "studio.channel.discover",
   "studio.analytics.dashboard.read",
+  "studio.analytics.milestones.read",
   "studio.analytics.post.read",
   "studio.analytics.video.read",
   "studio.analytics.audience.read",
   "studio.mcp.request",
   "telegram.update.handle",
 ] as const;
+
+export type UsageFeatureKey = (typeof TRACKED_FEATURES)[number];
 
 const featureKeyPattern = /^[a-z][a-z0-9_.-]{0,127}$/;
 const millisecondsPerDay = 24 * 60 * 60 * 1000;
@@ -170,7 +173,7 @@ export function flushUsage(backendDb: BackendDb): void {
 }
 
 /** Synchronous wrapper for a domain operation. */
-export function trackUsageSync<T>(backendDb: BackendDb, featureKey: string, operation: () => T): T {
+export function trackUsageSync<T>(backendDb: BackendDb, featureKey: UsageFeatureKey, operation: () => T): T {
   const startedAt = Date.now();
   try {
     const result = operation();
@@ -183,7 +186,7 @@ export function trackUsageSync<T>(backendDb: BackendDb, featureKey: string, oper
 }
 
 /** Async counterpart used around provider calls and other long-running work. */
-export async function trackUsageAsync<T>(backendDb: BackendDb, featureKey: string, operation: () => Promise<T>): Promise<T> {
+export async function trackUsageAsync<T>(backendDb: BackendDb, featureKey: UsageFeatureKey, operation: () => Promise<T>): Promise<T> {
   const startedAt = Date.now();
   try {
     const result = await operation();
