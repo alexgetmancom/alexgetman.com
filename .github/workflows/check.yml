@@ -513,7 +513,11 @@ jobs:
           done
           docker buildx imagetools create -t "$IMAGE:$TAG" "${sources[@]}"
 
-          digest=$(docker buildx imagetools inspect "$IMAGE:$TAG" | awk '$1 == "Digest:" { print $2; exit }')
+          # Read the digest with a format string rather than through a pipe.
+          # `awk ... exit` closes the pipe on the first match, docker dies of
+          # EPIPE with status 255, and pipefail turns a finished push into a
+          # failed job — which is exactly what happened the first time this ran.
+          digest=$(docker buildx imagetools inspect "$IMAGE:$TAG" --format "{{.Manifest.Digest}}")
           printf '%s\n' "$digest" | grep -Eq '^sha256:[0-9a-fA-F]{64}$'
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
