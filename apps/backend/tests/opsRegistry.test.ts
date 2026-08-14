@@ -25,6 +25,7 @@ const HOST_ONLY = [
   "replace-media",
   "site-media-images",
   "site-media-deduplicate",
+  "telegram-stories-login",
   "youtube-authorize",
 ];
 

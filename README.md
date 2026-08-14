@@ -97,6 +97,10 @@ Meta app, the guided flow for YouTube, and the things that bite later — a Thre
 token that lapses after 60 days, X charging for writes, and the 50 MB download
 limit that stops video until a local Bot API is running.
 
+**[Backups](docs/backups.md)** — what arrives on its own and what you point your
+own tool at. **[Operating from an agent](docs/mcp.md)** — turning on the MCP
+transport and connecting a client to it.
+
 ## Try it without installing
 
 Requirements: [Bun 1.3.14](https://bun.sh/) and the native build prerequisites required by `sharp`.

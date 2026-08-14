@@ -99,8 +99,18 @@ does. Connecting Threads through a provider avoids this.
 **X charges for writing.** The four keys are easy to obtain, but posting through
 X's API requires a paid tier of their developer platform.
 
-**Telegram Stories need a user session**, not a bot: `TELEGRAM_CHANNEL_STORIES_SESSION`
-is an MTProto session, and there is no helper for producing one yet.
+**Telegram Stories are posted by a user, not a bot.** Create an API id and hash
+at [my.telegram.org](https://my.telegram.org) under *API development tools*, put
+them in `.env` with a writable path for the session, and sign in once:
+
+```bash
+docker compose exec -it app bun /app/ops/cli.js telegram-stories-login
+```
+
+It asks for the phone number, the code Telegram sends and the two-factor
+password if the account has one, then reports which account the session now
+belongs to. The session is a directory the app writes to, so this runs inside
+the container — `-it` matters, it is a conversation.
 
 **Video over 50 MB needs the local Bot API.** Telegram's public API refuses
 larger downloads. Set `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` and

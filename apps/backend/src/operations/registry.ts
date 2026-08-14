@@ -30,6 +30,7 @@ import { backfillSiteImageMedia } from "./site-media-backfill.js";
 import { deduplicateSiteMedia } from "./site-media-deduplicate.js";
 import { compactOperationsStatus } from "./status.js";
 import { backfillTextStoryCards } from "./story-card-backfill.js";
+import { loginTelegramStories } from "./telegram-stories-login.js";
 import { publicationTimeline } from "./timeline.js";
 import { verifyPostTargets } from "./verify.js";
 import { authorizeYouTube } from "./youtube-authorize.js";
@@ -71,6 +72,13 @@ function operation<S extends z.ZodType>(def: OperationDef<S>): OperationDef<S> {
  * and the error it earns arrives one round-trip later. The placeholder is the
  * real invocation, and it reaches both the CLI usage line and the MCP schema. */
 const example = <S extends z.ZodType>(schema: S, placeholder: string): S => schema.meta({ placeholder }) as S;
+
+/** One line from whoever is running the command. Only operations that are off
+ * the agent surface reach this, which is what makes blocking on a terminal an
+ * acceptable thing for an operation to do. */
+function ask(question: string): string {
+  return (prompt(question) ?? "").trim();
+}
 
 /** Callers reach for the bare post number — it is what every other surface
  * shows them — so it is a spelling of the ref, not a mistake to reject. */
@@ -520,6 +528,21 @@ const operationDefs = {
     mutates: true,
     agent: true,
     handler: (context, input) => disableChannel(context.db(), input.channel),
+  }),
+  "telegram-stories-login": operation({
+    summary: "Sign this Studio's Stories account in and store its session.",
+    note: "Telegram Stories are posted by a user, not a bot, so the credential is an MTProto session. Needs TELEGRAM_CHANNEL_STORIES_API_ID, _API_HASH and _SESSION set first; run it with a terminal attached (docker compose exec -it) because it asks for the phone number, the code Telegram sends, and the 2FA password if the account has one.",
+    schema: z.object({}),
+    mutates: false,
+    // Reads a phone number and a 2FA password from whoever runs it, and writes
+    // a session that can post as that person.
+    agent: false,
+    handler: async (context) =>
+      loginTelegramStories(context.config(), {
+        phone: async () => ask("Phone number (with country code): "),
+        code: async () => ask("Code Telegram just sent: "),
+        password: async () => ask("Two-factor password (leave empty if unused): "),
+      }),
   }),
   "youtube-authorize": operation({
     summary: "Obtain this Studio's YouTube refresh token by approving it on another device.",
