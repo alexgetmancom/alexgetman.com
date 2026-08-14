@@ -50,6 +50,8 @@ dist/
 /runtime/
 /ops/
 /entrypoint/
+/story-renderer/
+/smoke/
 .astro/
 *.tsbuildinfo
 npm-debug.log*

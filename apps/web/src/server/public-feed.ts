@@ -10,11 +10,10 @@ import { findFeedItem, loadFeedItems } from "./public-site";
 import { getRuntime } from "./runtime";
 import { fill, siteCopy } from "./site-copy";
 
-const CANONICAL_ORIGIN = "https://alexgetman.com";
 const LLMS_POST_LIMIT = 30;
 
 /** Absolute canonical URL of one post in one language. */
-function postUrl(item: { post_id?: number | string | null }, slug: string, locale: SiteLocale, origin = CANONICAL_ORIGIN): string {
+function postUrl(item: { post_id?: number | string | null }, slug: string, locale: SiteLocale, origin = siteUrlFromContext()): string {
   return `${origin}${localePath(locale, `/${item.post_id}/${slug}/`)}`;
 }
 
@@ -30,7 +29,7 @@ export async function publicRssResponse(context: APIContext, locale: SiteLocale)
   return rss({
     title: copy.feedTitle,
     description: copy.feedDescription,
-    site: context.site || CANONICAL_ORIGIN,
+    site: siteUrlFromContext(context),
     items: items.map((item) => {
       const slug = localizedSlug(item, locale) ?? "";
       return {

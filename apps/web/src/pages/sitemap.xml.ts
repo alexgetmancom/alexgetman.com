@@ -1,6 +1,7 @@
 import type { APIContext } from "astro";
 import { loadFeedItems } from "../server/public-site";
 import { postSocialImagePath, postVisualMedia } from "../utils/media";
+import { siteUrlFromContext } from "../utils/site";
 import { excerptAfterTitle, getFirstSentence } from "../utils/text";
 
 export const prerender = false;
@@ -26,7 +27,7 @@ function videoBlockFor(item: ReturnType<typeof loadFeedItems>[number], locale: "
 }
 
 export async function GET(context: APIContext) {
-  const siteUrl = context.site ? context.site.toString().replace(/\/$/, "") : "https://alexgetman.com";
+  const siteUrl = siteUrlFromContext(context);
   const items = loadFeedItems();
   const entries = items.flatMap((item) => {
     const urls: Array<{ loc: string; lastmod: string; video: string }> = [];

@@ -1,7 +1,7 @@
-{
-	email {$ACME_EMAIL}
-}
-
+# No global options block. `email` with an unset value is not an empty setting,
+# it is a Caddyfile syntax error, and the proxy then crash-loops and takes the
+# whole site down over something optional. Let's Encrypt does not require a
+# contact address, and Caddy renews without one.
 {$DOMAIN} {
 	encode zstd gzip
 

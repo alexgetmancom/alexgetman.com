@@ -1,8 +1,7 @@
 import type { FeedItem } from "../server/public-site";
 import { entityUrl } from "./entity-url";
 import { postSocialImagePath, postVisualMedia } from "./media";
-
-const SITE_ORIGIN = "https://alexgetman.com";
+import { siteUrlFromContext } from "./site";
 
 type SchemaLocale = "en" | "ru";
 
@@ -19,7 +18,7 @@ type PostSchemaInput = {
  * keeping it in one place is what stops the two pages from drifting apart. */
 export function buildPostSchema({ item, locale, pageTitle, description, canonicalUrl }: PostSchemaInput): string {
   const author = locale === "ru" ? "Алекс Гетман" : "Alex Getman";
-  const authorUrl = locale === "ru" ? `${SITE_ORIGIN}/ru/` : `${SITE_ORIGIN}/`;
+  const authorUrl = locale === "ru" ? `${siteUrlFromContext()}/ru/` : `${siteUrlFromContext()}/`;
   const inLanguage = locale === "ru" ? "ru-RU" : "en-US";
   const ogImage = postSocialImagePath(item, locale);
   const visualMedia = postVisualMedia(item, locale);
@@ -28,7 +27,7 @@ export function buildPostSchema({ item, locale, pageTitle, description, canonica
   const about = item.entities.map((entity) => ({
     "@type": "Thing",
     name: locale === "ru" ? entity.title_ru : entity.title_en || entity.title_ru,
-    url: `${SITE_ORIGIN}${entityUrl(entity.kind, entity.slug, locale)}`,
+    url: `${siteUrlFromContext()}${entityUrl(entity.kind, entity.slug, locale)}`,
   }));
   const person = { "@type": "Person", name: author, url: authorUrl };
 
@@ -46,7 +45,7 @@ export function buildPostSchema({ item, locale, pageTitle, description, canonica
         author: person,
         publisher: person,
         mainEntityOfPage: canonicalUrl,
-        image: [`${SITE_ORIGIN}${ogImage}`],
+        image: [`${siteUrlFromContext()}${ogImage}`],
         ...(sourceUrls.length > 0 ? { isBasedOn: sourceUrls, citation: sourceUrls } : {}),
         ...(about.length > 0 ? { about } : {}),
       },
@@ -56,9 +55,9 @@ export function buildPostSchema({ item, locale, pageTitle, description, canonica
               "@type": "VideoObject",
               name: pageTitle,
               description,
-              thumbnailUrl: [`${SITE_ORIGIN}/${primaryVideo.poster || ogImage.replace(/^\//, "")}`],
+              thumbnailUrl: [`${siteUrlFromContext()}/${primaryVideo.poster || ogImage.replace(/^\//, "")}`],
               uploadDate: item.date,
-              contentUrl: `${SITE_ORIGIN}/${primaryVideo.path}`,
+              contentUrl: `${siteUrlFromContext()}/${primaryVideo.path}`,
               embedUrl: canonicalUrl,
               mainEntityOfPage: canonicalUrl,
               inLanguage,

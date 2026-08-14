@@ -8,6 +8,10 @@ import { excerptAfterTitle, getFirstSentence } from "../utils/text";
 import HomeNewsPage from "./HomeNewsPage.astro";
 
 type Props = { locale: "en" | "ru"; item: FeedItem; postId: string; slug: string };
+
+import { siteUrlFromContext } from "../utils/site";
+
+const siteOrigin = siteUrlFromContext(Astro);
 const { locale, item, postId, slug } = Astro.props;
 const russian = locale === "ru";
 const posts = sortedHomePosts([item], locale);
@@ -20,9 +24,9 @@ const postDescription =
   (russian
     ? "Новости ИИ, заметки об автоматизации и разработке от Алекса Гетмана на alexgetman.com."
     : "AI news, automation notes and developer updates by Alex Getman on alexgetman.com.");
-const localUrl = `https://alexgetman.com/${russian ? "ru/" : ""}${postId}/${slug}/`;
-const englishUrl = item.has_en ? `https://alexgetman.com/${postId}/${item.slug_en}/` : null;
-const russianUrl = item.has_ru ? `https://alexgetman.com/ru/${postId}/${item.slug_ru}/` : null;
+const localUrl = `${siteOrigin}/${russian ? "ru/" : ""}${postId}/${slug}/`;
+const englishUrl = item.has_en ? `${siteOrigin}/${postId}/${item.slug_en}/` : null;
+const russianUrl = item.has_ru ? `${siteOrigin}/ru/${postId}/${item.slug_ru}/` : null;
 ---
 
 <Layout

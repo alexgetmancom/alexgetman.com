@@ -1,6 +1,7 @@
 ---
 import { stripLeadingEmojis } from "../../../backend/src/content/text.js";
 import { BRAND_ASSET_VERSION } from "../utils/brand";
+import { siteUrlFromContext } from "../utils/site";
 import "../styles/layout.css";
 
 interface Props {
@@ -38,7 +39,16 @@ const {
 } = Astro.props;
 
 const cleanDescription = stripLeadingEmojis(description);
-const publicBaseUrl = "https://alexgetman.com";
+// This install's own origin. A hardcoded one puts another site's address in
+// every canonical link, hreflang and social card a self-hosted Studio renders,
+// which tells search engines its pages belong to that other site.
+const publicBaseUrl = siteUrlFromContext(Astro);
+// Optional external analytics. Unset means no third-party script at all: a
+// self-hosted Studio must not report its visitors to whoever published the
+// image, and shipping a live endpoint here did exactly that.
+const analyticsSdkUrl = Bun.env.WEB_ANALYTICS_SDK_URL?.trim();
+const analyticsWebsiteId = Bun.env.WEB_ANALYTICS_WEBSITE_ID?.trim();
+const analyticsEnabled = Boolean(analyticsSdkUrl && analyticsWebsiteId);
 const socialImage = socialImageProp
   ? socialImageProp.startsWith("http")
     ? socialImageProp
@@ -70,6 +80,7 @@ const safeSchema = schema?.replace(/</g, "\\u003c").replace(/>/g, "\\u003e").rep
         }
       })();
     </script>
+    {analyticsEnabled && (<>
     <script is:inline>
       window.Fusionaly = window.Fusionaly || {};
       window.Fusionaly.config = {
@@ -79,7 +90,8 @@ const safeSchema = schema?.replace(/</g, "\\u003c").replace(/>/g, "\\u003e").rep
         debug: false,
       };
     </script>
-    <script defer src="https://data.alexgetman.com/y/api/v1/sdk.js" data-website-id="1"></script>
+    <script defer src={analyticsSdkUrl} data-website-id={analyticsWebsiteId}></script>
+    </>)}
     <link rel="icon" type="image/png" href="/brand-favicon-20260629.png" />
     <link rel="apple-touch-icon" href="/brand-favicon-20260629.png" />
     <link rel="icon" type="image/svg+xml" href={`/favicon.svg?v=${BRAND_ASSET_VERSION}`} />

@@ -6,6 +6,10 @@ import { socialProfileUrls } from "../utils/profiles";
 import HomeNewsPage from "./HomeNewsPage.astro";
 
 type Props = { locale: "en" | "ru" };
+
+import { siteUrlFromContext } from "../utils/site";
+
+const siteOrigin = siteUrlFromContext(Astro);
 const { locale } = Astro.props;
 const russian = locale === "ru";
 const posts = sortedHomePosts(loadFeedItems(), locale);
@@ -14,27 +18,27 @@ const description = russian
   ? "Свежие новости ИИ: новые модели, продукты и обновления OpenAI, ChatGPT Codex, Claude, Gemini и других. Релизы, тесты, цены, лимиты и комментарии."
   : "Fresh AI news on new models, product updates and releases from OpenAI, ChatGPT Codex, Claude, Gemini and more — with benchmarks, pricing, limits and commentary.";
 const siteName = russian ? "Алекс Гетман" : "Alex Getman";
-const canonicalUrl = russian ? "https://alexgetman.com/ru/" : "https://alexgetman.com/";
+const canonicalUrl = russian ? `${siteOrigin}/ru/` : `${siteOrigin}/`;
 const schema = JSON.stringify({
   "@context": "https://schema.org",
   "@graph": [
     {
       "@type": "Person",
-      "@id": "https://alexgetman.com/#person",
+      "@id": `${siteOrigin}/#person`,
       name: siteName,
       ...(russian ? { alternateName: "Alex Getman" } : {}),
       url: canonicalUrl,
-      image: "https://alexgetman.com/avatar.png",
+      image: `${siteOrigin}/avatar.png`,
       sameAs: socialProfileUrls(locale),
     },
     {
       "@type": "WebSite",
-      "@id": "https://alexgetman.com/#website",
+      "@id": `${siteOrigin}/#website`,
       url: canonicalUrl,
       name: siteName,
       description,
       inLanguage: russian ? "ru-RU" : "en-US",
-      publisher: { "@id": "https://alexgetman.com/#person" },
+      publisher: { "@id": `${siteOrigin}/#person` },
     },
     {
       "@type": "CollectionPage",
@@ -43,7 +47,7 @@ const schema = JSON.stringify({
       name: title,
       description,
       inLanguage: russian ? "ru-RU" : "en-US",
-      isPartOf: { "@id": "https://alexgetman.com/#website" },
+      isPartOf: { "@id": `${siteOrigin}/#website` },
     },
   ],
 });
@@ -61,9 +65,9 @@ const schema = JSON.stringify({
   socialImageWidth={1200}
   socialImageHeight={630}
   alternateLinks={[
-    { hreflang: "en", href: "https://alexgetman.com/" },
-    { hreflang: "ru", href: "https://alexgetman.com/ru/" },
-    { hreflang: "x-default", href: "https://alexgetman.com/" },
+    { hreflang: "en", href: `${siteOrigin}/` },
+    { hreflang: "ru", href: `${siteOrigin}/ru/` },
+    { hreflang: "x-default", href: `${siteOrigin}/` },
   ]}
   immersiveHome
 >

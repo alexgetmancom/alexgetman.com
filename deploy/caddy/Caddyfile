@@ -3,14 +3,14 @@
 # SNI stream multiplexer in front of per-domain TLS terminators, and no
 # bootstrap virtual host to obtain the first certificate with.
 #
+# There is no global options block either: `email` with an unset value is a
+# Caddyfile syntax error rather than an empty setting, so a missing optional
+# would crash-loop the proxy for every domain on this machine.
+#
 # What each site decides is only routing. Cache lifetimes, retired URLs, the
 # Markdown twin, the Link header and noindex on operator surfaces all live in
 # the application, so they reach every install of the image rather than this
 # machine alone.
-{
-	email {$ACME_EMAIL}
-}
-
 (client_address) {
 	# Both Studios attribute and rate-limit visitors by client address, reading
 	# the header named by TRUSTED_CLIENT_IP_HEADER. Without this every visitor

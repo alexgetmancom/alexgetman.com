@@ -14,7 +14,6 @@ services:
       - caddy-config:/config
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN to the hostname this Studio answers on}
-      ACME_EMAIL: ${ACME_EMAIL:-}
     depends_on:
       - app
 

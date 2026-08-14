@@ -5,11 +5,15 @@ import type { FeedItem } from "../server/public-site";
 import { getFirstSentence } from "../utils/text";
 
 type Props = { locale: "en" | "ru"; hub: string; definition: HubDefinition; posts: FeedItem[] };
+
+import { siteUrlFromContext } from "../utils/site";
+
+const siteOrigin = siteUrlFromContext(Astro);
 const { locale, hub, definition, posts } = Astro.props;
 const russian = locale === "ru";
-const url = `https://alexgetman.com/${russian ? "ru/" : ""}${hub}/`;
-const englishUrl = `https://alexgetman.com/${hub}/`;
-const russianUrl = `https://alexgetman.com/ru/${hub}/`;
+const url = `${siteOrigin}/${russian ? "ru/" : ""}${hub}/`;
+const englishUrl = `${siteOrigin}/${hub}/`;
+const russianUrl = `${siteOrigin}/ru/${hub}/`;
 ---
 
 <Layout
