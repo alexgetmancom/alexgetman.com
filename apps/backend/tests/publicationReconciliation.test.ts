@@ -12,7 +12,7 @@ import {
 } from "../src/db/schema.js";
 import { runPublicationReconciliation } from "../src/delivery/publication-reconciliation.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { reconcilePublication } from "../src/publishing/publication-reconciliation.js";
+import { refreshPublicationStatus } from "../src/publishing/publication-status.js";
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
 import { withDb } from "./helpers/db.js";
 
@@ -102,8 +102,8 @@ describe("publication reconciliation", () => {
         ])
         .run();
 
-      reconcilePublication(backendDb, 90);
-      reconcilePublication(backendDb, 90);
+      refreshPublicationStatus(backendDb, 90);
+      refreshPublicationStatus(backendDb, 90);
 
       const events = backendDb.db.select().from(postEvents).all();
       expect(events).toHaveLength(1);
@@ -149,11 +149,11 @@ describe("publication reconciliation", () => {
         .values({ postId: 91, messageId: 91, reason: "site_en", status: "published", createdAt: now, updatedAt: now })
         .run();
 
-      reconcilePublication(backendDb, 91);
+      refreshPublicationStatus(backendDb, 91);
       expect(backendDb.db.select({ eventType: postEvents.eventType }).from(postEvents).all()).toHaveLength(1);
       expect(backendDb.db.select({ status: drafts.status }).from(drafts).where(eq(drafts.id, 91)).get()).toEqual({ status: "failed" });
 
-      reconcilePublication(backendDb, 91);
+      refreshPublicationStatus(backendDb, 91);
       expect(backendDb.db.select({ eventType: postEvents.eventType }).from(postEvents).all()).toHaveLength(1);
     }));
 

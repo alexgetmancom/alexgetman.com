@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import { and, eq } from "drizzle-orm";
 import type { StoryPublishMode } from "../application/ports.js";
+import { draftLocaleContent } from "../content/draft-content.js";
 import { draftStoryCards, drafts } from "../db/schema.js";
 import type { BackendDatabase } from "../db/types.js";
 import { log } from "../foundation/logger.js";
@@ -17,13 +18,25 @@ export function queueDraftStoryCards(db: BackendDatabase, draftId: number): void
   }
   const now = new Date().toISOString();
   const stalePaths: string[] = [];
+  // The same resolution delivery uses, rather than a fourth copy of it here:
+  // this one still borrowed the Russian text, so the English card carried
+  // Russian words in an image an English audience would have seen.
+  const source = {
+    text_ru: draft.textRu,
+    text_en_approved: draft.textEnApproved,
+    text_en_machine: draft.textEnMachine,
+  };
   const content = {
-    ru: draft.textRu,
-    en: draft.textEnApproved ?? draft.textEnMachine ?? draft.textRu,
+    ru: draftLocaleContent(source, "ru").text,
+    en: draftLocaleContent(source, "en").text,
   } as const;
   db.transaction((tx) => {
     let requeued = false;
     for (const locale of ["ru", "en"] as const) {
+      // A locale with no text has no card to render. Preflight refuses to
+      // publish that locale anyway, and rendering an empty card only produced a
+      // file for a target that can never go out.
+      if (!content[locale].trim()) continue;
       const copy = buildStoryCardCopy(content[locale]);
       const sourceHash = crypto
         .createHash("sha256")

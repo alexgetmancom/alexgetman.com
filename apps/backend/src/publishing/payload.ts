@@ -5,7 +5,11 @@ import { selectMediaForTarget } from "./media-policy.js";
 
 /** Resolves the dual-locale publication source into the one durable job shape. */
 export function localizeTargetPayload(payload: Record<string, unknown>, target: string): Record<string, unknown> {
-  const locale = targetLocale(target) ?? "en";
+  // No default: a target whose locale this build does not know is not English,
+  // and guessing was how an unknown target got the English branch and the
+  // English text.
+  const locale = targetLocale(target);
+  if (!locale) return {};
   const storyMedia = isStoryTarget(target) ? payload[locale === "ru" ? "story_media_ru" : "story_media_en"] : undefined;
   if (locale === "ru") {
     const text = String(payload.text_ru ?? payload.text ?? "");

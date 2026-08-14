@@ -77,6 +77,7 @@ describe("operations registry", () => {
         .sort(),
     ).toEqual([...HOST_ONLY].sort());
     expect(catalog.get("recent")?.agent).toBe(true);
+    expect(catalog.get("settle")?.agent).toBe(true);
     expect(catalog.get("retry")?.agent).toBe(true);
   });
 

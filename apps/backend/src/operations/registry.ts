@@ -28,9 +28,11 @@ import {
 } from "./maintenance.js";
 import { diagnoseMediaProcessor, mediaJobReport, mediaProcessorStatus, reprocessPostMedia } from "./media-processor.js";
 import { purgePublication } from "./publication-purge.js";
+import { resolvePublicationRef } from "./publication-ref.js";
 import { publishText } from "./publish.js";
 import { findPublication, formatPublicationMatches, formatRecentPublications, recentPublications } from "./recent.js";
 import { createOperationsService } from "./service.js";
+import { settleAmbiguousTarget } from "./settle.js";
 import { backfillSiteImageMedia } from "./site-media-backfill.js";
 import { deduplicateSiteMedia } from "./site-media-deduplicate.js";
 import { compactOperationsStatus } from "./status.js";
@@ -360,6 +362,32 @@ const operationDefs = {
     // against it would put the first row of a fresh history back.
     journalRef: () => null,
     handler: (context, input) => purgePublication(context.db(), input, context.fetchImpl),
+  }),
+  settle: operation({
+    summary: "Answer a target stuck in verification_required with what the platform actually shows.",
+    note: "Reconciliation resolves an ambiguous target by asking the platform about its stored id, so a worker lost before recording one leaves nothing to ask about. Name `external-id` to record the post as live, or omit it to report the post absent and queue it again; `apply` performs it.",
+    schema: z.object({
+      ref: refOption,
+      target: example(z.string().trim().min(1), "threads_ru").describe("the ambiguous delivery target"),
+      external_id: example(z.string().trim().min(1).optional(), "18049...").describe("the id the post has on the platform, if it is there"),
+      url: example(z.string().trim().min(1).optional(), "https://...").describe("its public address, if it is there"),
+      apply: applyOption,
+    }),
+    mutates: true,
+    agent: true,
+    handler: (context, input) => {
+      const backendDb = context.db();
+      const resolved = resolvePublicationRef(backendDb, input.ref);
+      if (!resolved) throw new Error(`publication not found: ${input.ref}`);
+      return settleAmbiguousTarget(backendDb, {
+        ref: resolved,
+        target: input.target,
+        ...(input.external_id === undefined ? {} : { externalId: input.external_id }),
+        ...(input.url === undefined ? {} : { url: input.url }),
+        apply: input.apply,
+        actorType: context.actorType,
+      });
+    },
   }),
   "refresh-site": operation({
     summary: "Re-render one locale's public page without touching social targets.",

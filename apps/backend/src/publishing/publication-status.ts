@@ -8,8 +8,12 @@ import { effectivePublicationStatus, isPostJobFinal, planObject, planScheduleAt 
 
 type PublicationJob = { target: string; status: string; error: string | null };
 
-/** Reconciles target jobs into one publication state. Queue mechanics do not own this read model. */
-export function reconcilePublication(backendDb: BackendDb, postId: number): void {
+/** Folds the publication's target jobs into its one status. Not to be confused
+ * with delivery's reconciliation, which asks the platform whether an ambiguous
+ * publication actually landed — this one asks no one anything and writes no
+ * delivery state. Both were called `publication-reconciliation`, and the file
+ * that imports this one is the other. */
+export function refreshPublicationStatus(backendDb: BackendDb, postId: number): void {
   const existing = unsafeDb(backendDb)
     .db.select({ status: publications.status })
     .from(publications)

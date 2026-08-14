@@ -13,7 +13,7 @@ import { botUiSettings } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { threadsPreviewText } from "../src/interfaces/telegram/delivery-previews.js";
 import { cancelDraft, scheduledDrafts } from "../src/publishing/draft-lifecycle.js";
-import { reconcilePublication } from "../src/publishing/publication-reconciliation.js";
+import { refreshPublicationStatus } from "../src/publishing/publication-status.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { postDeliveryProjections } from "../src/studio/projections.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
@@ -91,8 +91,12 @@ describe("Telegram controller flow", () => {
 
   it("creates a draft and queues enabled publication targets without Telegram API", () => {
     backendDb = openBotDb();
+    // The English text is what the bot's translation step supplies. Without it
+    // the English targets have nothing to publish, and preflight says so — this
+    // fixture used to rely on the draft borrowing the Russian text for them.
     const draftId = createDraftFromMessage(backendDb, 42, {
       text: "Привет\n\nТестовая публикация",
+      textEn: "Hello\n\nTest publication",
       entities: [],
       media: [{ type: "photo", file_id: "telegram-photo-id", width: 1280, height: 720 }],
     });
@@ -262,7 +266,7 @@ describe("Telegram controller flow", () => {
 
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
     backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
-    reconcilePublication(backendDb, postId);
+    refreshPublicationStatus(backendDb, postId);
 
     expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "scheduled" });
     expect(backendDb.sqlite.prepare("SELECT status FROM drafts WHERE id=?").get(draftId)).toEqual({ status: "scheduled" });
@@ -282,7 +286,7 @@ describe("Telegram controller flow", () => {
 
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
     backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
-    reconcilePublication(backendDb, postId);
+    refreshPublicationStatus(backendDb, postId);
 
     expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "published" });
     expect(backendDb.sqlite.prepare("SELECT status FROM drafts WHERE id=?").get(draftId)).toEqual({ status: "published" });
@@ -295,12 +299,12 @@ describe("Telegram controller flow", () => {
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status='failed' WHERE post_id=? AND target='threads_ru'").run(postId);
     backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
-    reconcilePublication(backendDb, postId);
+    refreshPublicationStatus(backendDb, postId);
     expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "failed" });
 
     cancelDraft(backendDb, draftId);
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
-    reconcilePublication(backendDb, postId);
+    refreshPublicationStatus(backendDb, postId);
     expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "cancelled" });
   });
 

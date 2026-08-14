@@ -3,7 +3,8 @@ import { jsonRecordArray } from "../json.js";
 /** Transport-neutral content captured from any interface before it becomes a draft. */
 export type DraftMessage = {
   text: string;
-  textEn?: string;
+  /** Absent when the translator could not produce one; never the Russian text. */
+  textEn?: string | undefined;
   /** Explicit human approval is separate from the machine translation. */
   textEnApproved?: string | null;
   media: Record<string, unknown>[];

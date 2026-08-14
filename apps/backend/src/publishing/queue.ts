@@ -11,7 +11,7 @@ import { log } from "../foundation/logger.js";
 import { recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
 import { classifyPublishError, normalizePublishResult, type PublishResult } from "./errors.js";
 import { failedJobTransition, mayHaveReachedAudience, reconciliationTransition } from "./job-policy.js";
-import { reconcilePublication } from "./publication-reconciliation.js";
+import { refreshPublicationStatus } from "./publication-status.js";
 import {
   deleteSupersededJobs,
   durationSince,
@@ -211,7 +211,7 @@ export function recoverStalePublishJobs(
       );
     }
   });
-  for (const job of stale) reconcilePublication(backendDb, job.postId);
+  for (const job of stale) refreshPublicationStatus(backendDb, job.postId);
   return stale.length;
 }
 
@@ -245,7 +245,7 @@ export function completePublishJob(
       now,
       lockId,
     );
-    if (!retry) reconcilePublication(backendDb, job.postId);
+    if (!retry) refreshPublicationStatus(backendDb, job.postId);
     return;
   }
   const reconciliationIds = externalIds(result);
@@ -264,7 +264,7 @@ export function completePublishJob(
       now,
       lockId,
     );
-    if (!retry) reconcilePublication(backendDb, job.postId);
+    if (!retry) refreshPublicationStatus(backendDb, job.postId);
     return;
   }
   const normalized = normalizePublishResult(result);
@@ -327,7 +327,7 @@ export function completePublishJob(
       url: normalized.url,
       publishedAt: now,
     });
-  reconcilePublication(backendDb, job.postId);
+  refreshPublicationStatus(backendDb, job.postId);
 }
 
 function settleRetryableIds(
@@ -442,7 +442,7 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
   });
   if (!settled) return;
   if (errorClass === "auth") recordAuthFailure(backendDb, job.target);
-  if (!shouldRetry) reconcilePublication(backendDb, job.postId);
+  if (!shouldRetry) refreshPublicationStatus(backendDb, job.postId);
 }
 
 export function requirePublishVerification(backendDb: BackendDb, jobId: number, error: unknown, lockId?: string): boolean {
@@ -485,7 +485,7 @@ export function requirePublishVerification(backendDb: BackendDb, jobId: number, 
     );
     updated = true;
   });
-  if (updated) reconcilePublication(backendDb, job.postId);
+  if (updated) refreshPublicationStatus(backendDb, job.postId);
   return updated;
 }
 
@@ -548,7 +548,7 @@ export function forcePublishJobVerification(
     });
     return true;
   });
-  if (updated) reconcilePublication(backendDb, job.postId);
+  if (updated) refreshPublicationStatus(backendDb, job.postId);
   return updated;
 }
 

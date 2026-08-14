@@ -6,6 +6,10 @@ type DraftLocaleContent = {
   text: string;
   entities: Record<string, unknown>[];
   media: Record<string, unknown>[];
+  /** The media this locale has of its own, before it borrows the other's.
+   * Images carry no language so borrowing them is right at delivery time — but
+   * it is not evidence that this locale has anything to publish. */
+  ownMedia: Record<string, unknown>[];
 };
 
 type DraftContentSource = {
@@ -26,6 +30,7 @@ export function draftLocaleContent(draft: DraftContentSource, locale: DraftLocal
       text: String(draft.text_ru ?? ""),
       entities: parseArrayValue(draft.text_ru_entities_json),
       media: ruMedia,
+      ownMedia: ruMedia,
     };
   }
 
@@ -37,5 +42,6 @@ export function draftLocaleContent(draft: DraftContentSource, locale: DraftLocal
     text: String(draft.text_en_approved ?? draft.text_en_machine ?? ""),
     entities: parseArrayValue(draft.text_en_entities_json),
     media: enMedia.length ? enMedia : ruMedia,
+    ownMedia: enMedia,
   };
 }

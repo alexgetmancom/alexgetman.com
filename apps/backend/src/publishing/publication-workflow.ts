@@ -11,7 +11,7 @@ import { trackUsageSync } from "../observability/usage.js";
 import { readyStoryCardMedia } from "../story-cards/store.js";
 import { assertPublicationPreflight } from "./preflight.js";
 import { createPublicationPlan, type PublishMode } from "./publication-plan.js";
-import { reconcilePublication } from "./publication-reconciliation.js";
+import { refreshPublicationStatus } from "./publication-status.js";
 import { persistPublicationPlanTx } from "./publication-writer.js";
 import { parseTargets } from "./targets.js";
 
@@ -60,7 +60,7 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
     enrichPublishedPostEntities(backendDb, publicationId);
     return { postId: publicationId, plan: publicationPlan };
   });
-  reconcilePublication(backendDb, postId);
+  refreshPublicationStatus(backendDb, postId);
   recordDomainEvent(backendDb.events, {
     ref: publicationRef("post", postId),
     type: "publishing.plan.created",

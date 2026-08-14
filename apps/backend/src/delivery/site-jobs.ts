@@ -9,7 +9,7 @@ import { parseObject } from "../fsUtils.js";
 import { trackUsageAsync } from "../observability/usage.js";
 import { invalidatePublicSiteFeed } from "../public/site-read-model.js";
 import { nextRetryAt } from "../publishing/errors.js";
-import { reconcilePublication } from "../publishing/publication-reconciliation.js";
+import { refreshPublicationStatus } from "../publishing/publication-status.js";
 import { workerId } from "../publishing/queue.js";
 import { publishContentIndex } from "./site-content-index.js";
 import { pingIndexNow } from "./site-index-now.js";
@@ -127,7 +127,7 @@ export function recoverStaleSiteJobs(backendDb: BackendDb, maxLockAgeSeconds = S
       if (!retry && job.postId != null) terminalPostIds.add(job.postId);
     }
   });
-  for (const postId of terminalPostIds) reconcilePublication(backendDb, postId);
+  for (const postId of terminalPostIds) refreshPublicationStatus(backendDb, postId);
   return recovered;
 }
 
@@ -222,7 +222,7 @@ function completeSiteJobs(backendDb: BackendDb, jobs: SiteJob[]): SiteJob[] {
       });
   });
   for (const postId of new Set(completed.map((job) => job.post_id).filter((value): value is number => value != null)))
-    reconcilePublication(backendDb, postId);
+    refreshPublicationStatus(backendDb, postId);
   return completed;
 }
 
@@ -258,7 +258,7 @@ function failSiteJobs(backendDb: BackendDb, jobs: SiteJob[], error: unknown): Si
       .map((job) => job.post_id)
       .filter((value): value is number => value != null),
   ))
-    reconcilePublication(backendDb, postId);
+    refreshPublicationStatus(backendDb, postId);
   return failed;
 }
 

@@ -8,7 +8,7 @@ import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { isTargetAuthBlocked, recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
 import { classifyPublishError, nextRetryAt } from "../publishing/errors.js";
-import { reconcilePublication } from "../publishing/publication-reconciliation.js";
+import { refreshPublicationStatus } from "../publishing/publication-status.js";
 import { PUBLISH_CLAIM_LIMIT, workerId } from "../publishing/queue.js";
 import { refreshVideoDraftStatus } from "../publishing/video-data.js";
 import { verifyPlatformPublication } from "./platform-adapters.js";
@@ -119,7 +119,7 @@ export async function runPublicationReconciliation(
       return true;
     });
     if (!confirmed) continue;
-    reconcilePublication(backendDb, row.job.postId);
+    refreshPublicationStatus(backendDb, row.job.postId);
     recordDomainEvent(backendDb.events, {
       ref: row.target.postKey,
       target: row.target.target,

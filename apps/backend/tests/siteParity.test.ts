@@ -6,7 +6,7 @@ import { createDraftFromMessage } from "../src/content/drafts.js";
 import { publishContentIndex } from "../src/delivery/site-content-index.js";
 import { pingIndexNow } from "../src/delivery/site-index-now.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { reconcilePublication } from "../src/publishing/publication-reconciliation.js";
+import { refreshPublicationStatus } from "../src/publishing/publication-status.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
@@ -22,7 +22,7 @@ describe("site parity", () => {
       const postId = publishDraftToQueue(backendDb, draft);
       backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
       backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
-      reconcilePublication(backendDb, postId);
+      refreshPublicationStatus(backendDb, postId);
       const urls = publishContentIndex(config, backendDb);
       expect(existsSync(join(dir, "content-index.json"))).toBe(true);
       expect(readFileSync(join(dir, "content-memory.md"), "utf8")).toContain("English title");

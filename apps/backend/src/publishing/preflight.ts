@@ -69,7 +69,10 @@ export function publicationPreflight(draft: DraftForPreflight): PublicationPrefl
     // language or it does not. Both of these used to pass: an English target
     // carried the Russian text through a chain of fallbacks, and a target whose
     // locale had nothing at all published an empty post.
-    if (!value.text.trim() && value.media.length === 0)
+    // Its own media, not the Russian images it would borrow: a Russian post with
+    // photos and the English target left on looked like it had something to
+    // publish, and published a page with no words on it.
+    if (!value.text.trim() && value.ownMedia.length === 0)
       return [
         {
           target,
