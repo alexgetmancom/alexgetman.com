@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { createApiHandler } from "../src/api.js";
 import { applyStoredXTokens, exchangeXCode, refreshXToken, xOauthAuthorizeUrl } from "../src/channels/x-oauth.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { withDb } from "./helpers/db.js";
@@ -10,9 +11,23 @@ const base = {
   TOKEN_ENCRYPTION_KEY: KEY,
   X_CLIENT_ID: "x-client",
   X_CLIENT_SECRET: "x-secret",
+  COMMAND_CENTER_TOKEN: "command-secret",
 };
 
 describe("X browser OAuth", () => {
+  it("starts only from an authenticated Command Center and redirects to X", () =>
+    withDb(async (backendDb) => {
+      const app = createApiHandler({ config: loadConfig(base), backendDb });
+      expect((await app(new Request("https://publisher.example.com/oauth/x/start"))).status).toBe(400);
+      const response = await app(
+        new Request("https://publisher.example.com/oauth/x/start", { headers: { "X-Command-Token": "command-secret" } }),
+      );
+      expect(response.status).toBe(302);
+      const location = new URL(response.headers.get("location") ?? "");
+      expect(location.origin + location.pathname).toBe("https://x.com/i/oauth2/authorize");
+      expect(location.searchParams.get("redirect_uri")).toBe("https://publisher.example.com/oauth/x");
+    }));
+
   it("creates an encrypted PKCE state and asks for renewable publishing access", () => {
     const authorization = new URL(xOauthAuthorizeUrl(loadConfig(base), now));
     expect(authorization.origin + authorization.pathname).toBe("https://x.com/i/oauth2/authorize");
