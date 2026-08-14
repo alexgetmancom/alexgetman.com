@@ -96,7 +96,8 @@ steps work from the Telegram bot and from an MCP client.
 app, a Professional account and a linked Facebook Page. A Threads token also expires 60 days after it is
 issued and nothing here refreshes it, so publishing stops until you re-issue it.
 Connecting them through [Zernio](https://zernio.com) instead replaces all of it
-with one `ZERNIO_API_KEY`,
+with one `ZERNIO_API_KEY` — for feed posts, for Threads and for Stories alike,
+since a channel carries the provider it is delivered through,
 and the bot lists your accounts to pick from under Settings → Channels. The
 native path stays available if you would rather hold your own tokens.
 

@@ -55,6 +55,21 @@ export function registerChannel(backendDb: BackendDb, input: ChannelInput): Chan
   return connection;
 }
 
+/** How each connected text or story target is delivered, by target id.
+ *
+ * The registry has always carried a provider per channel, but only the video
+ * pipeline read it, so a Threads or Stories channel connected through a
+ * provider still demanded the platform's own tokens and still published
+ * natively. Delivery reads this instead of the database: it needs the routing,
+ * not the registry.
+ */
+export function targetRouting(backendDb: BackendDb): Record<string, { provider: string; accountId: string | null }> {
+  const routing: Record<string, { provider: string; accountId: string | null }> = {};
+  for (const channel of listChannels(backendDb))
+    if (channel.targetId) routing[channel.targetId] = { provider: channel.provider, accountId: channel.providerAccountId };
+  return routing;
+}
+
 export function registeredPostTargetIds(backendDb: BackendDb): Set<string> {
   return new Set(
     listChannels(backendDb)

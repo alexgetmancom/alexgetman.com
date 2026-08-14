@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import pLimit from "p-limit";
 import { publicationRef } from "../application/publication-ref.js";
+import { targetRouting } from "../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { publishJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
@@ -29,7 +30,7 @@ import type { DeliveryPorts, DeliveryPublisher } from "./ports.js";
 export async function runDeliveryPublishCycle(
   config: BackendConfig,
   backendDb: BackendDb,
-  publishers: DeliveryPorts = createPlatformPorts(config),
+  publishers: DeliveryPorts = createPlatformPorts(config, fetch, targetRouting(backendDb)),
 ): Promise<number> {
   recoverStalePublishJobs(backendDb, config);
   const candidates = duePublishJobs(backendDb, PUBLISH_CLAIM_LIMIT);

@@ -5,7 +5,7 @@ import { createSerialQueue } from "../../foundation/serial-queue.js";
 import { selectMediaForTarget } from "../../publishing/media-policy.js";
 import type { ClaimedPublishJob } from "../../publishing/queue.js";
 import { prepareMediaItems } from "../media-prepare.js";
-import { createPlatformAdapters } from "../platform-adapters.js";
+import { createPlatformAdapters, type TargetRouting } from "../platform-adapters.js";
 import type { DeliveryPorts } from "../ports.js";
 import { payloadMedia } from "../social/payload.js";
 import { generateStoryMedia } from "../story-media.js";
@@ -13,7 +13,7 @@ import { generateStoryMedia } from "../story-media.js";
 type PreparedMedia = Awaited<ReturnType<typeof prepareMediaItems>>;
 const MAX_PREPARATION_CACHE_ENTRIES = 32;
 
-export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fetch = fetch): DeliveryPorts {
+export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fetch = fetch, routing: TargetRouting = {}): DeliveryPorts {
   // Publisher instances own their preparation state. This prevents cache entries
   // from leaking between test runs or independently configured worker instances.
   const mediaCache = new Map<string, Promise<PreparedMedia>>();
@@ -38,7 +38,7 @@ export function createPlatformPorts(config: BackendConfig, fetchImpl: typeof fet
         throw error;
       });
     });
-  return createPlatformAdapters(config, fetchImpl, prepare);
+  return createPlatformAdapters(config, fetchImpl, prepare, routing);
 }
 
 async function withPreparedMedia(

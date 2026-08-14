@@ -1,6 +1,7 @@
 import { runAnalyticsCycle } from "../analytics/collection/creator-cycle.js";
 import { runMetricsCycle } from "../analytics/collection/metrics-cycle.js";
 import { pruneMetricSamples } from "../analytics/snapshots/metric-repository.js";
+import { targetRouting } from "../channels/registry.js";
 import type { BackendDb } from "../db/client.js";
 import { pruneMediaCache } from "../delivery/media-prepare.js";
 import { createPlatformPorts } from "../delivery/ports/social.js";
@@ -29,7 +30,7 @@ const PUBLISH_RESTART_LOCK_GRACE_SECONDS = 30;
 export async function runPublishCycle(
   config: BackendConfig,
   backendDb: BackendDb,
-  publishers: DeliveryPorts = createPlatformPorts(config),
+  publishers: DeliveryPorts = createPlatformPorts(config, fetch, targetRouting(backendDb)),
 ): Promise<number> {
   return runDeliveryPublishCycle(config, backendDb, publishers);
 }

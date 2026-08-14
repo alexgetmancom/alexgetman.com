@@ -35,7 +35,15 @@ function capabilityRequirements(config: BackendConfig): Map<string, readonly str
 function registeredRequirements(config: BackendConfig, backendDb: BackendDb): Map<string, readonly string[]> {
   const requirements = new Map<string, readonly string[]>([["controller_bot", controllerRequirements]]);
   for (const channel of listChannels(backendDb)) {
-    if (channel.targetId) requirements.set(channel.targetId, PLATFORM_PROFILES[channel.targetId]?.requirements ?? []);
+    // A target delivered through a provider needs the provider key, not the
+    // platform tokens it would have needed natively. Reporting the tokens as
+    // missing told the operator to obtain credentials the delivery path never
+    // reads, for a channel that was already publishing.
+    if (channel.targetId)
+      requirements.set(
+        channel.targetId,
+        channel.provider === "zernio" ? ["ZERNIO_API_KEY"] : (PLATFORM_PROFILES[channel.targetId]?.requirements ?? []),
+      );
     else if (channel.platform === "youtube" || channel.platform === "instagram")
       requirements.set(channel.id, videoChannelRequirements(channel.platform, channel.locale, channel.provider));
   }

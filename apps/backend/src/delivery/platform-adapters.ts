@@ -13,29 +13,43 @@ import { publishInstagramStory, verifyInstagramPublication } from "./social/inst
 import { publishToTelegram } from "./social/telegram.js";
 import { publishToThreads, verifyThreadsPost } from "./social/threads.js";
 import { publishToX, verifyXPost } from "./social/x.js";
+import { zernioPublisher } from "./zernio.js";
 
 type PreparePlatformJob = (job: ClaimedPublishJob, config: BackendConfig) => Promise<ClaimedPublishJob>;
+
+/** How each connected target is delivered. A target absent from here is
+ * delivered natively, which is what every one of them did before a provider
+ * could carry anything but video. */
+export type TargetRouting = Record<string, { provider: string; accountId: string | null }>;
 
 /** Builds provider adapters from target routing and shared preparation policy. */
 export function createPlatformAdapters(
   config: BackendConfig,
   fetchImpl: typeof fetch = fetch,
   prepare: PreparePlatformJob = async (job) => job,
+  routing: TargetRouting = {},
 ): DeliveryPorts {
+  const throughProvider = (target: string) => routing[target]?.provider === "zernio";
+  const accountFor = (target: string) => routing[target]?.accountId ?? null;
   const publishers: Record<string, DeliveryPublisher> = {
     telegram: (job) => publishToTelegram(job.payload, config, fetchImpl),
   };
-  for (const target of TARGET_GROUPS.threads) publishers[target] = (job) => publishToThreads(job.payload, config, fetchImpl, target);
+  for (const target of TARGET_GROUPS.threads)
+    publishers[target] = throughProvider(target)
+      ? zernioPublisher(config, fetchImpl, target, "threads", accountFor(target))
+      : (job) => publishToThreads(job.payload, config, fetchImpl, target);
   for (const target of TARGET_GROUPS.x) publishers[target] = (job) => publishToX(job.payload, config, fetchImpl);
   for (const target of TARGET_GROUPS.discord) publishers[target] = (job) => publishToDiscord(job.payload, config, fetchImpl);
   for (const target of TARGET_GROUPS.instagramStory)
-    publishers[target] = (job) =>
-      publishInstagramStory(
-        job.payload,
-        config,
-        instagramCredentialsForLocale(config, target === "instagram_stories" ? "en" : "ru"),
-        fetchImpl,
-      );
+    publishers[target] = throughProvider(target)
+      ? zernioPublisher(config, fetchImpl, target, "instagram", accountFor(target), "story")
+      : (job) =>
+          publishInstagramStory(
+            job.payload,
+            config,
+            instagramCredentialsForLocale(config, target === "instagram_stories" ? "en" : "ru"),
+            fetchImpl,
+          );
   for (const target of TARGET_GROUPS.telegramStory)
     publishers[target] = (job) =>
       import("./social/telegramStories.js").then(({ publishTelegramStory }) => publishTelegramStory(job.payload, config));
