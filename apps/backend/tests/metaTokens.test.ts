@@ -118,3 +118,19 @@ describe("meta token renewal", () => {
       expect(config.THREADS_RU_ACCESS_TOKEN).toBe("seed-token");
     }));
 });
+
+describe("a token connected through the browser", () => {
+  it("keeps its stored credential when .env still holds an older one", () =>
+    withDb(async (backendDb) => {
+      // The browser flow stores the credential with no .env seed behind it, so
+      // .env is not where that account's token lives and editing it changes
+      // nothing. Documented, and warned about at startup, because silence here
+      // costs an hour.
+      installMetaToken(loadConfig({ TOKEN_ENCRYPTION_KEY: KEY }), backendDb, "threads_ru", "browser-installed-token", "17841405793187218");
+
+      const restarted = loadConfig({ TOKEN_ENCRYPTION_KEY: KEY, THREADS_RU_ACCESS_TOKEN: "hand-issued-token" });
+      applyStoredMetaTokens(restarted, backendDb);
+
+      expect(restarted.THREADS_RU_ACCESS_TOKEN).toBe("browser-installed-token");
+    }));
+});

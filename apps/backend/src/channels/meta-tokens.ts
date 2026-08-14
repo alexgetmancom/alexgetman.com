@@ -88,7 +88,13 @@ export function applyStoredMetaTokens(config: BackendConfig, backendDb: BackendD
     // which is newer than anything renewed before it.
     if (row.seedFingerprint && (!seed || row.seedFingerprint !== fingerprint(seed))) continue;
     try {
-      mutable[setting] = open(row.sealedToken, key);
+      const effective = open(row.sealedToken, key);
+      // An account connected through the browser has no seed in .env, so a
+      // token sitting there is not the operator's newest intent and does not
+      // win. Editing it and seeing nothing change is the trap; say so instead.
+      if (row.seedFingerprint === null && seed && seed !== effective)
+        log("warn", "stored platform token overrides the one in .env", { target, setting, hint: "reconnect from Studio > Channels" });
+      mutable[setting] = effective;
       if (row.accountId && target === "instagram_ru") mutable.INSTAGRAM_RU_USER_ID = row.accountId;
       if (row.accountId && target === "instagram_en") mutable.INSTAGRAM_EN_USER_ID = row.accountId;
     } catch (error) {

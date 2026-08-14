@@ -138,9 +138,12 @@ no renewal: the tokens stay exactly what `.env` says and you re-issue them by
 hand.
 
 One thing it cannot do for you. A token that has already expired can no longer
-be renewed, so a Studio switched off for two months needs a new one by hand —
-put it in `.env` and it wins over anything stored. Connecting through a provider
-sidesteps that.
+be renewed, so a Studio switched off for two months has to be connected again —
+from Studio → Channels, the same two clicks as the first time. For an account
+connected that way the credential lives in the database, and editing
+`THREADS_*_ACCESS_TOKEN` in `.env` will not replace it; the startup log says so
+when the two disagree. `.env` still wins for an account that was never connected
+through the browser. Connecting through a provider sidesteps the whole question.
 
 **Keep the Meta app out of development mode.** An app in development mode
 publishes only to accounts that hold a role on it, which is enough for your own
