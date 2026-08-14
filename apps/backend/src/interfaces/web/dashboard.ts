@@ -162,7 +162,7 @@ export function renderDashboard(
   const overviewFilterQuery = platformMetric === "followers" ? "&metric=followers" : "";
   const overviewControls =
     panel === "overview" && showPosts
-      ? renderPeriodControls(locale, weekOffset, periodDays, config.TIMEZONE, activeView, overviewFilterQuery)
+      ? renderPeriodControls(locale, weekOffset, periodDays, config.TIMEZONE, activeView, videoView, overviewFilterQuery)
       : "";
   const contentStartedAt = Date.now();
   const content = renderPanel();

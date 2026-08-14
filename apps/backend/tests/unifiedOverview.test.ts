@@ -727,6 +727,7 @@ describe("unified overview rendering", () => {
       ...baseInput,
       followers,
       video: emptyVideoOverview(),
+      videoView: "instagram_reels:ru",
       platformMetric: "followers",
     });
 
@@ -736,7 +737,7 @@ describe("unified overview rendering", () => {
     // The metric is named by the active switch itself; the panel carries no
     // separate heading repeating it.
     expect(followerHtml).toContain('aria-pressed="true">Подписчики</a>');
-    expect(followerHtml).toContain('href="/command-center?period=1&week_offset=0"');
+    expect(followerHtml).toContain('href="/command-center?period=1&week_offset=0&video_view=instagram_reels%3Aru"');
   });
 
   it("scopes the new overview to the selected text platform", () => {

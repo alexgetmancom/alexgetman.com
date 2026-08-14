@@ -274,7 +274,7 @@ function renderOverviewPlatforms(
     ? `<details class="overview-platforms__all"><summary aria-label="${t(locale, "cc.overview.all-platforms")}" title="${t(locale, "cc.overview.all-platforms")}">+<span>${rest}</span></summary><div class="overview-platforms__all-list">${restRows}</div></details>`
     : "";
   const filter = showMetricFilter
-    ? renderPlatformMetricFilter(input.platformMetric, input.periodDays, input.weekOffset, locale, input.textView)
+    ? renderPlatformMetricFilter(input.platformMetric, input.periodDays, input.weekOffset, locale, input.textView, input.videoView)
     : "";
   // The figures ride above the bar and the RU/EN labels below it, where they
   // head the two columns of destinations as well: one label now names its half
@@ -503,9 +503,11 @@ function renderPlatformMetricFilter(
   weekOffset: number,
   locale: StudioLocale,
   view?: string,
+  videoView?: string,
 ): string {
   const viewParam = view ? `&view=${encodeURIComponent(view)}` : "";
-  const base = `/command-center?period=${periodDays}&week_offset=${weekOffset}${viewParam}${localeQuery(locale)}`;
+  const videoViewParam = videoView ? `&video_view=${encodeURIComponent(videoView)}` : "";
+  const base = `/command-center?period=${periodDays}&week_offset=${weekOffset}${viewParam}${videoViewParam}${localeQuery(locale)}`;
   const options: Array<[PlatformMetric, string]> = [
     ["reach", t(locale, "cc.overview.reach")],
     ["followers", t(locale, "cc.overview.followers")],

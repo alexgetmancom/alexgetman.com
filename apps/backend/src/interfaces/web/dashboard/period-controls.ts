@@ -19,11 +19,13 @@ export function renderPeriodControls(
   periodDays: number,
   timeZone: string,
   view?: string,
+  videoView?: string,
   extraQuery = "",
 ): string {
   const [start, end] = rollingPeriodDates(weekOffset, periodDays, timeZone);
   const viewParam = view ? `&view=${encodeURIComponent(view)}` : "";
-  const filterParam = `${viewParam}${extraQuery}${localeQuery(locale)}`;
+  const videoViewParam = videoView ? `&video_view=${encodeURIComponent(videoView)}` : "";
+  const filterParam = `${viewParam}${videoViewParam}${extraQuery}${localeQuery(locale)}`;
   const periodLabel = (days: number) => (days === 365 ? t(locale, "cc.period.year") : t(locale, "cc.period.days", { days }));
   const quickOptions = PERIODS.filter((days) => days <= 30)
     .map(
