@@ -74,7 +74,7 @@ jobs:
                 backend_image=true
                 deployment=true
                 ;;
-              apps/web/*|apps/backend/src/*|apps/backend/assets/*|apps/backend/drizzle/*|apps/backend/tsconfig.json|apps/backend/Dockerfile.release|apps/backend/Dockerfile.runtime-base|astro.config.ts|bunfig.toml|scripts/generate-responsive-images.ts|svelte.config.ts|tsconfig.base.json|tsconfig.json)
+              apps/web/*|apps/backend/src/*|apps/backend/assets/*|apps/backend/drizzle/*|apps/backend/tsconfig.json|apps/backend/Dockerfile.release|apps/backend/Dockerfile.runtime-base|astro.config.ts|bunfig.toml|scripts/generate-responsive-images.ts|scripts/image-smoke.ts|apps/backend/tests/helpers/studio-site.yaml|svelte.config.ts|tsconfig.base.json|tsconfig.json)
                 backend_image=true
                 deployment=true
                 ;;
