@@ -139,6 +139,11 @@ const envSchema = z
     SITE_PUBLIC_DIR: z.string().default("/data/site"),
     THREADS_RU_ACCESS_TOKEN: z.string().optional(),
     THREADS_EN_ACCESS_TOKEN: z.string().optional(),
+    /** The Threads app's own id and secret, which are not the Meta app's — the
+     * dashboard shows both pairs. Only `threads-authorize` needs them: they
+     * mint the tokens above and are never used to publish. */
+    THREADS_APP_ID: z.string().optional(),
+    THREADS_APP_SECRET: z.string().optional(),
     THREADS_CONTAINER_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(180),
     THREADS_RETRY_DELAY_MS: z.coerce.number().int().min(1).max(30_000).default(2_000),
     X_CONSUMER_KEY: z.string().optional(),

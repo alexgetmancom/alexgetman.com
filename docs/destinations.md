@@ -28,7 +28,7 @@ are connected by naming their platform and language.
 | Website | `--target site_ru` / `site_en` | nothing, plus `site_enabled: true` in `studio.yaml` |
 | Telegram channel | `--target telegram` | `CONTROLLER_BOT_TOKEN` |
 | Discord | `--target discord` | `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID` |
-| Threads | `--target threads_ru` / `threads_en` | `THREADS_RU_ACCESS_TOKEN` / `THREADS_EN_ACCESS_TOKEN`, or `ZERNIO_API_KEY` |
+| Threads | `--target threads_ru` / `threads_en` | `THREADS_RU_ACCESS_TOKEN` / `THREADS_EN_ACCESS_TOKEN` via `threads-authorize`, or `ZERNIO_API_KEY` |
 | X | `--target x` | `X_CONSUMER_KEY`, `X_CONSUMER_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET` |
 | Instagram Stories | `--target instagram_stories_ru` / `instagram_stories` | `INSTAGRAM_*_USER_ID` and `INSTAGRAM_*_ACCESS_TOKEN`, or `ZERNIO_API_KEY` |
 | Telegram Stories | `--target telegram_stories` | `TELEGRAM_CHANNEL_STORIES_API_ID`, `_API_HASH`, `_SESSION` |
@@ -89,6 +89,31 @@ the one manual step and it happens once: afterwards the Studio exchanges the
 refresh token for a short-lived access token on every upload by itself, and the
 refresh token does not expire unless you revoke it or leave it unused for six
 months.
+
+## Threads
+
+Publishing natively needs your own Meta app with the Threads use case. Note
+that such an app has two id and secret pairs: the Threads ones are the pair
+this uses, under App settings → Basic as **Threads App ID** and **Threads App
+secret**.
+
+1. Put them in `.env` as `THREADS_APP_ID` and `THREADS_APP_SECRET`.
+2. Register `<your base URL>/oauth/threads` in that app's valid OAuth redirect
+   URIs. The command prints the exact address to register.
+
+```bash
+docker compose exec -it app bun /app/ops/cli.js threads-authorize --locale ru
+```
+
+It prints a link, you approve it as the account you publish from, and Meta
+redirects to that URI. **That page serves nothing and your browser will show an
+error — this is expected.** The address bar is the point: copy the whole address
+and paste it back. The command exchanges it for a long-lived token and prints it
+for `.env`.
+
+Unlike YouTube, this cannot be finished on another device alone, because Threads
+has no device flow — Meta answers the consent screen with a redirect, and the
+code arrives inside it.
 
 ## What to know before you start
 

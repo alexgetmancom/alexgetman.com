@@ -31,6 +31,7 @@ import { deduplicateSiteMedia } from "./site-media-deduplicate.js";
 import { compactOperationsStatus } from "./status.js";
 import { backfillTextStoryCards } from "./story-card-backfill.js";
 import { loginTelegramStories } from "./telegram-stories-login.js";
+import { authorizeThreads } from "./threads-authorize.js";
 import { publicationTimeline } from "./timeline.js";
 import { verifyPostTargets } from "./verify.js";
 import { authorizeYouTube } from "./youtube-authorize.js";
@@ -542,6 +543,22 @@ const operationDefs = {
         phone: async () => ask("Phone number (with country code): "),
         code: async () => ask("Code Telegram just sent: "),
         password: async () => ask("Two-factor password (leave empty if unused): "),
+      }),
+  }),
+  "threads-authorize": operation({
+    summary: "Obtain this Studio's long-lived Threads token by approving it in a browser.",
+    note: "Needs THREADS_APP_ID and THREADS_APP_SECRET from App Dashboard > App settings > Basic (the Threads pair, not the Meta app's), and the redirect URI it prints registered in that app's valid OAuth redirect URIs. Prints a link to open, then asks for the address the consent screen redirects to — that page serves nothing, the address bar is what matters. Run it with a terminal attached (docker compose exec -it).",
+    schema: z.object({ locale: z.enum(["ru", "en"]) }),
+    mutates: false,
+    // Prints a credential that can post as the account.
+    agent: false,
+    handler: async (context, input) =>
+      authorizeThreads(context.config(), input.locale, async () => ask("Address the consent screen redirected to: "), {
+        fetchImpl: context.fetchImpl,
+        onPrompt: (authorizeUrl, redirectUri) =>
+          console.log(
+            `Open this and approve it as the account you publish from:\n${authorizeUrl}\n\nIt redirects to ${redirectUri}, which serves nothing — the browser will show an error and that is expected. Copy the whole address from the address bar.\n`,
+          ),
       }),
   }),
   "youtube-authorize": operation({

@@ -28,7 +28,7 @@ docker compose exec app bun /app/ops/cli.js doctor
 | Сайт | `--target site_ru` / `site_en` | ничего, плюс `site_enabled: true` в `studio.yaml` |
 | Telegram-канал | `--target telegram` | `CONTROLLER_BOT_TOKEN` |
 | Discord | `--target discord` | `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID` |
-| Threads | `--target threads_ru` / `threads_en` | `THREADS_RU_ACCESS_TOKEN` / `THREADS_EN_ACCESS_TOKEN` либо `ZERNIO_API_KEY` |
+| Threads | `--target threads_ru` / `threads_en` | `THREADS_RU_ACCESS_TOKEN` / `THREADS_EN_ACCESS_TOKEN` через `threads-authorize` либо `ZERNIO_API_KEY` |
 | X | `--target x` | `X_CONSUMER_KEY`, `X_CONSUMER_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET` |
 | Instagram Stories | `--target instagram_stories_ru` / `instagram_stories` | `INSTAGRAM_*_USER_ID` и `INSTAGRAM_*_ACCESS_TOKEN` либо `ZERNIO_API_KEY` |
 | Telegram Stories | `--target telegram_stories` | `TELEGRAM_CHANNEL_STORIES_API_ID`, `_API_HASH`, `_SESSION` |
@@ -89,6 +89,29 @@ docker compose exec app bun /app/ops/cli.js youtube-authorize --locale ru
 refresh-токен на короткоживущий access-токен перед каждой загрузкой, а сам
 refresh-токен не истекает, если вы не отзовёте доступ и не оставите приложение
 неиспользуемым полгода.
+
+## Threads
+
+Нативная публикация требует своего приложения Meta с use case Threads. У такого
+приложения **две** пары id и секрета: нужна пара Threads — App settings → Basic,
+поля **Threads App ID** и **Threads App secret**.
+
+1. Впишите их в `.env` как `THREADS_APP_ID` и `THREADS_APP_SECRET`.
+2. Зарегистрируйте `<ваш базовый адрес>/oauth/threads` в списке valid OAuth
+   redirect URIs этого приложения. Команда печатает точный адрес.
+
+```bash
+docker compose exec -it app bun /app/ops/cli.js threads-authorize --locale ru
+```
+
+Она печатает ссылку, вы подтверждаете её тем аккаунтом, от имени которого публикуете,
+и Meta делает редирект на этот адрес. **Страница ничего не отдаёт, браузер
+покажет ошибку — так и задумано.** Смысл в адресной строке: скопируйте адрес
+целиком и вставьте обратно. Команда обменяет его на долгоживущий токен и напечатает
+его для `.env`.
+
+В отличие от YouTube, закончить на другом устройстве не выйдет: у Threads нет
+device flow — Meta отвечает на согласие редиректом, и код приезжает внутри него.
 
 ## Что стоит знать заранее
 
