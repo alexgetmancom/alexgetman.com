@@ -17,6 +17,8 @@ afterEach(() => {
  * host are the operations an MCP caller must never reach. This is the list, and
  * it is the one thing about the registry worth failing a build over. */
 const HOST_ONLY = [
+  "guide",
+  "migrations-baseline",
   "backup",
   "restore",
   "import-x-analytics",
@@ -111,6 +113,19 @@ describe("operations registry", () => {
 
     expect(normalized.ref).toBe("post:160");
     await expect(runOperation("timeline", context(backendDb), { ref: "nonsense" })).rejects.toThrow("--ref must look like post:106");
+  });
+
+  it("journals every mutation once, against the ref the operation normalized", async () => {
+    backendDb = openBackendDb(":memory:");
+
+    // The bare number is a spelling of the ref, and the journal has to carry
+    // the resolved one: `160` in post_key joins to nothing.
+    await runOperation("publication-repair", context(backendDb), { ref: "160" });
+    await runOperation("recent", context(backendDb), {});
+
+    expect(backendDb.sqlite.prepare("SELECT post_key, event_type, target FROM post_events").all()).toEqual([
+      { post_key: "post:160", event_type: "operations.command", target: "test" },
+    ]);
   });
 
   it("validates input before the handler runs", async () => {

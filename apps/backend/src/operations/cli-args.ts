@@ -1,4 +1,4 @@
-import { operationDef, operationJsonSchema, optionFlag } from "./registry.js";
+import { inputJsonSchema, operationDef } from "./registry.js";
 
 export type Arguments = {
   command: string;
@@ -21,7 +21,11 @@ export function parseArguments(argv: string[]): Arguments {
   };
   for (let index = 1; index < argv.length; index += 1) {
     const token = argv[index];
-    if (!token?.startsWith("--")) continue;
+    // Every argument belongs to an option. A bare word is a value written
+    // without the option it belongs to, and dropping it silently runs a
+    // different command: `recent 10` reported five posts and said nothing.
+    if (!token?.startsWith("--"))
+      throw new Error(`${command}: unexpected argument ${JSON.stringify(token ?? "")}; options are --name value`);
     const equals = token.indexOf("=");
     if (equals > 2) {
       const name = token.slice(2, equals);
@@ -50,30 +54,27 @@ export function parseArguments(argv: string[]): Arguments {
 }
 
 /** Argv against the operation's own schema: a boolean field is a bare flag and
- * everything else is the last value given. Coercion belongs to the schema. */
+ * everything else is the last value given. Coercion belongs to the schema, and
+ * so does rejecting an option no field answers to — every option spelled on the
+ * line reaches the input, and `runOperation` names the ones it does not know. */
 export function operationInput(name: string, args: Arguments): Record<string, unknown> {
-  const properties = (operationJsonSchema(operationDef(name) as never).properties ?? {}) as Record<string, { type?: string }>;
-  assertKnownOptions(name, args, properties);
+  const def = operationDef(name);
+  if (!def) throw new Error(`unknown command: ${name}`);
+  const properties = (inputJsonSchema(def.schema).properties ?? {}) as Record<string, { type?: string }>;
   const input: Record<string, unknown> = {};
-  for (const [field, property] of Object.entries(properties)) {
-    const flag = optionFlag(field);
-    if (property.type === "boolean") {
-      if (args.flags.has(flag)) input[field] = true;
+  for (const option of args.seen) {
+    if (GLOBAL_OPTIONS.includes(option)) continue;
+    const field = option.replace(/-/g, "_");
+    const value = args.values.get(option);
+    if (properties[field]?.type === "boolean") {
+      // `--apply true` used to park "true" in `values`, where a boolean field
+      // never looks: the mutation stayed unarmed and the run still reported ok.
+      if (value !== undefined) throw new Error(`${name}: --${option} is a flag; write it alone, not --${option} ${value}`);
+      input[field] = args.flags.has(option);
       continue;
     }
-    const value = args.values.get(flag);
-    if (value !== undefined) input[field] = value;
+    if (value === undefined && properties[field]) throw new Error(`${name}: --${option} needs a value`);
+    input[field] = value === undefined ? true : value;
   }
   return input;
-}
-
-/** An option the schema does not define is a typo, and accepting it silently
- * changes what ran: `--ref` for `--refs` widens a scoped backfill to every
- * target the default covers. */
-function assertKnownOptions(name: string, args: Arguments, properties: Record<string, unknown>): void {
-  const known = [...Object.keys(properties).map(optionFlag), ...GLOBAL_OPTIONS];
-  const unknown = [...args.seen].filter((option) => !known.includes(option));
-  if (!unknown.length) return;
-  const offenders = unknown.map((option) => `--${option}`).join(", ");
-  throw new Error(`${name}: unknown option${unknown.length > 1 ? "s" : ""} ${offenders}; accepts ${known.map((o) => `--${o}`).join(", ")}`);
 }

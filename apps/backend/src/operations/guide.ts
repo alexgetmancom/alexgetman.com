@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { type OperationCatalogEntry, operationCatalog } from "./registry.js";
+
+/** One command as every operator-facing surface describes it. Declared here
+ * because the guide is what publishes the catalog; the registry fills it in. */
+export type OperationCatalogEntry = { name: string; usage: string; mutates: boolean; agent: boolean; summary: string; note?: string };
 
 type LocalState = "available" | "missing" | "unusable";
 
@@ -47,7 +50,9 @@ function probeLocalOperations(databasePath: string): LocalOperationsProbe {
   }
 }
 
-export function buildOperationsGuide(databasePath = process.env.PIPELINE_DB ?? "/data/pipeline.db"): OperationsGuide {
+/** The catalog is handed in rather than read: the guide describes the registry,
+ * and a registry that has to import its own description back is a loop. */
+export function buildOperationsGuide(databasePath: string, commands: readonly OperationCatalogEntry[]): OperationsGuide {
   const local = probeLocalOperations(databasePath);
   const route = local.state === "available" ? "local" : "production";
   const command = route === "local" ? "bun run --filter @alexgetman/backend ops <command>" : "bun run ops:prod <command>";
@@ -81,7 +86,7 @@ export function buildOperationsGuide(databasePath = process.env.PIPELINE_DB ?? "
       configured: productionLauncherConfigured(),
     },
     catalog,
-    commands: operationCatalog(),
+    commands,
   };
 }
 
@@ -115,7 +120,7 @@ export function formatOperationsGuide(guide: OperationsGuide): string {
   const routeLabel = guide.route === "local" ? "LOCAL" : "PRODUCTION";
   const commandLines = guide.commands.flatMap((command) => {
     const safety = command.mutates ? "MUTATION" : "read-only";
-    const note = command.notes ? ` (${command.notes})` : "";
+    const note = command.note ? ` (${command.note})` : "";
     return [`  [${safety}] ${command.usage}`, `             ${command.summary}${note}`];
   });
   return [
@@ -138,8 +143,4 @@ export function formatOperationsGuide(guide: OperationsGuide): string {
     "Commands:",
     ...commandLines,
   ].join("\n");
-}
-
-export function operationsGuideUsage(): string {
-  return "  guide [--json]";
 }

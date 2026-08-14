@@ -4,8 +4,10 @@ import { importXAnalyticsCsv } from "../analytics/import-x-csv.js";
 import { attachXActivityToPosts } from "../analytics/x-activity-linking.js";
 import { xAnalyticsReport } from "../analytics/x-activity-report.js";
 import { targetDefinition } from "../botTargets.js";
-import { type BackendDb, migrationStatus, unsafeDb } from "../db/client.js";
+import { type BackendDb, baselineDrizzleMigrations, migrationStatus, unsafeDb } from "../db/client.js";
+import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { log } from "../foundation/logger.js";
 import { checkDataDirectoriesWritable, requiredDataDirectories } from "../foundation/runtime/data-dirs.js";
 import { capabilityReport } from "../observability/capabilities.js";
 import { usageReport } from "../observability/usage.js";
@@ -13,6 +15,7 @@ import { capabilitySummary, recordCapabilityPost } from "./capabilities.js";
 import { channelReport, connectChannel, disableChannel } from "./channels.js";
 import { replacePublishedMedia } from "./commands/media-replacement.js";
 import { doctorChecks } from "./doctor.js";
+import { buildOperationsGuide, formatOperationsGuide, type OperationCatalogEntry } from "./guide.js";
 import {
   applyMetricsBackfill,
   auditOperations,
@@ -63,6 +66,10 @@ export type OperationDef<S extends z.ZodType = z.ZodType> = {
   handler: (context: OperationContext, input: z.infer<S>) => unknown | Promise<unknown>;
   /** Terminal rendering. Without one the result prints as JSON. */
   format?: (result: never) => string;
+  /** What the mutation journal attaches this run to. Defaults to the operation's
+   * own normalized `--ref`; an operation whose subject no longer exists when it
+   * returns says so by naming no ref. */
+  journalRef?: (input: z.infer<S>) => string | null;
 };
 
 function operation<S extends z.ZodType>(def: OperationDef<S>): OperationDef<S> {
@@ -128,6 +135,37 @@ function runRepair(context: OperationContext, action: string, input: Record<stri
 // --- The catalog ----------------------------------------------------------------
 
 const operationDefs = {
+  guide: operation({
+    summary: "Which route to run operations through, and the command catalog this build accepts.",
+    schema: z.object({}),
+    mutates: false,
+    // Probes a host path and the launcher's local .env.local; neither is
+    // meaningful to a remote caller.
+    agent: false,
+    note: "start here for any worker, queue, configuration or publication question",
+    handler: (context) => buildOperationsGuide(context.dbPath, operationCatalog()),
+    format: formatOperationsGuide,
+  }),
+  "migrations-baseline": operation({
+    summary: "Mark this database's existing schema as migrated, without applying anything.",
+    schema: z.object({}),
+    mutates: true,
+    // Writes migration bookkeeping through a raw handle on a host path.
+    agent: false,
+    handler: async (context) => {
+      // Baselining precedes the application schema this process would otherwise
+      // expect to already exist, so it opens the file itself rather than taking
+      // the handle `context.db()` would migrate on the way out.
+      const sqlite = new (await import("bun:sqlite")).Database(context.dbPath, { strict: true }) as Parameters<
+        typeof baselineDrizzleMigrations
+      >[0];
+      try {
+        return { migrations: baselineDrizzleMigrations(sqlite) };
+      } finally {
+        sqlite.close();
+      }
+    },
+  }),
   status: operation({
     summary: "Worker heartbeats, publication counts and metric schedule health.",
     schema: z.object({}),
@@ -318,6 +356,9 @@ const operationDefs = {
     mutates: true,
     agent: true,
     note: "reports every row in scope; add --apply only after the remote publication is gone",
+    // Purge has just deleted every event carrying this ref. Journalling the run
+    // against it would put the first row of a fresh history back.
+    journalRef: () => null,
     handler: (context, input) => purgePublication(context.db(), input, context.fetchImpl),
   }),
   "refresh-site": operation({
@@ -624,7 +665,7 @@ export async function runOperation(name: string, context: OperationContext, args
   if (!def) throw new OperationInputError(`unknown command: ${name}`);
   // Zod strips what it does not know, so a misspelled `target` used to arrive
   // as no target at all and widen a scoped command to the whole publication.
-  const fields = Object.keys((operationJsonSchema(def).properties ?? {}) as JsonObject);
+  const fields = Object.keys((inputJsonSchema(def.schema).properties ?? {}) as JsonObject);
   const given = typeof args === "object" && args !== null ? Object.keys(args as JsonObject) : [];
   const unknown = given.filter((field) => !fields.includes(field));
   if (unknown.length)
@@ -637,7 +678,34 @@ export async function runOperation(name: string, context: OperationContext, args
     const path = issue?.path.join(".");
     throw new OperationInputError(`${name}: ${path ? `${path}: ` : ""}${issue?.message ?? "invalid arguments"}`);
   }
-  return def.handler(context, parsed.data);
+  const result = await def.handler(context, parsed.data);
+  if (def.mutates) journalMutation(context, name, def, parsed.data);
+  return result;
+}
+
+/** Every mutation reaches the journal from here, so the record of what changed
+ * the database does not depend on which surface the operator reached for, and
+ * the ref it carries is the normalized one the handler actually ran against.
+ * Best-effort: the mutation already happened, and reporting a failed journal
+ * write as a failed operation invites a retry that publishes twice. */
+function journalMutation(context: OperationContext, name: string, def: OperationDef, input: unknown): void {
+  try {
+    recordDomainEvent(context.db().events, {
+      ref: def.journalRef ? def.journalRef(input as never) : refOf(input),
+      type: "operations.command",
+      severity: "info",
+      target: context.actorType,
+      message: `Operations ${name} executed`,
+      details: { operation: name, surface: context.actorType },
+    });
+  } catch (error) {
+    log("error", "operations audit event failed", { operation: name, surface: context.actorType, error });
+  }
+}
+
+function refOf(input: unknown): string | null {
+  const ref = (input as { ref?: unknown } | null)?.ref;
+  return typeof ref === "string" ? ref : null;
 }
 
 // --- Projections ----------------------------------------------------------------
@@ -645,17 +713,13 @@ export async function runOperation(name: string, context: OperationContext, args
 type JsonObject = Record<string, unknown>;
 
 /** A tool's client-facing schema, stripped of the document-level `$schema` key.
+ * The same JSON Schema an MCP client validates against is what the CLI usage
+ * line and its option list are derived from, so every surface describes one shape.
  * Described as input because that is what a caller sends: a coerced field has a
  * different output type, and publishing that would document the wrong shape. */
 export function inputJsonSchema(schema: z.ZodType): JsonObject {
   const { $schema: _dropped, ...rest } = z.toJSONSchema(schema, { io: "input" }) as JsonObject & { $schema?: unknown };
   return rest;
-}
-
-/** The same JSON Schema an MCP client validates against is what the CLI usage
- * line is derived from, so both surfaces describe one shape. */
-export function operationJsonSchema(def: OperationDef): JsonObject {
-  return inputJsonSchema(def.schema);
 }
 
 /** `--kebab-case` is the CLI spelling of a snake_case schema field. */
@@ -666,7 +730,7 @@ export function optionFlag(field: string): string {
 /** Derived, never hand-written: a usage line that drifts from the schema it
  * documents is how an operator learns the wrong invocation. */
 export function operationUsage(name: string, def: OperationDef): string {
-  const schema = operationJsonSchema(def);
+  const schema = inputJsonSchema(def.schema);
   const properties = (schema.properties ?? {}) as Record<string, JsonObject>;
   const required = new Set((schema.required as string[] | undefined) ?? []);
   const parts = Object.entries(properties).map(([field, property]) => {
@@ -680,8 +744,6 @@ export function operationUsage(name: string, def: OperationDef): string {
   return [name, ...parts].join(" ");
 }
 
-export type OperationCatalogEntry = { name: string; usage: string; mutates: boolean; agent: boolean; summary: string; notes?: string };
-
 export function operationCatalog(): OperationCatalogEntry[] {
   return Object.entries(operationDefs as Record<string, OperationDef>).map(([name, def]) => ({
     name,
@@ -689,6 +751,6 @@ export function operationCatalog(): OperationCatalogEntry[] {
     mutates: def.mutates,
     agent: def.agent,
     summary: def.summary,
-    ...(def.note ? { notes: def.note } : {}),
+    ...(def.note ? { note: def.note } : {}),
   }));
 }

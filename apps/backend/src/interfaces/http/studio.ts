@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { commandAllowed, mcpStudioActor } from "../../foundation/http-auth.js";
+import { mcpStudioActor } from "../../foundation/http-auth.js";
 import { json, sse, text } from "../../foundation/http-response.js";
 import { trackUsageAsync } from "../../observability/usage.js";
 import { mcpResponse } from "../mcp.js";
@@ -14,9 +14,11 @@ const MAX_ACTIVE_MEDIA_UPLOADS = 2;
 export const studioRoutes: RouteModule = (app, { config, backendDb, engagement, studio }) => {
   // The MCP transport is a privileged Studio surface, same as POST /api/mcp:
   // an unauthenticated stream let any client pin an open connection and a
-  // recurring timer for free.
+  // recurring timer for free. One authority, the same one POST answers to — a
+  // command-center token that opens the stream and then cannot call a single
+  // tool is an authorization that means nothing.
   app.get("/api/mcp", (c) => {
-    if (!mcpStudioActor(c.req.raw, config) && !commandAllowed(c.req.raw, config)) return text("unauthorized\n", 401);
+    if (!mcpStudioActor(c.req.raw, config)) return text("unauthorized\n", 401);
     return sse((send) => {
       send("endpoint", `/api/mcp?connection_id=${crypto.randomUUID()}`);
       return setInterval(() => send("ping", new Date().toISOString()), 30_000);
@@ -26,11 +28,11 @@ export const studioRoutes: RouteModule = (app, { config, backendDb, engagement, 
   app.post("/api/mcp", async (c) => {
     const body = await c.req.raw.json().catch(() => null);
     if (body == null) return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Invalid JSON" } });
-    return json(
-      await trackUsageAsync(backendDb, "studio.mcp.request", () =>
-        mcpResponse(backendDb, config, body, engagement.clientKey(c.req.raw), mcpStudioActor(c.req.raw, config), studio),
-      ),
+    const response = await trackUsageAsync(backendDb, "studio.mcp.request", () =>
+      mcpResponse(backendDb, config, body, engagement.clientKey(c.req.raw), mcpStudioActor(c.req.raw, config), studio),
     );
+    // A notification is answered by accepting it and nothing else.
+    return response === null ? new Response(null, { status: 202 }) : json(response);
   });
 
   app.post("/api/studio/media", async (c) => {

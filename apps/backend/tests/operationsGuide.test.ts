@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildOperationsGuide, formatOperationsGuide } from "../src/operations/guide.js";
+import { operationCatalog } from "../src/operations/registry.js";
 
 /** A bare prefix makes mkdtemp resolve against the working directory, so these
  * two tests used to leave a directory each in the repo root on every run. */
@@ -21,7 +22,7 @@ describe("operations guide", () => {
   it("routes an unavailable local database to production", () => {
     const previousTarget = process.env.OPS_SSH_TARGET;
     process.env.OPS_SSH_TARGET = "";
-    const guide = buildOperationsGuide(join(temporaryDirectory(), "missing.db"));
+    const guide = buildOperationsGuide(join(temporaryDirectory(), "missing.db"), operationCatalog());
     if (previousTarget === undefined) delete process.env.OPS_SSH_TARGET;
     else process.env.OPS_SSH_TARGET = previousTarget;
 
@@ -41,7 +42,7 @@ describe("operations guide", () => {
   it("reports a configured production launcher without exposing its route", () => {
     const previousTarget = process.env.OPS_SSH_TARGET;
     process.env.OPS_SSH_TARGET = "deploy@example.test";
-    const guide = buildOperationsGuide(join(temporaryDirectory(), "missing.db"));
+    const guide = buildOperationsGuide(join(temporaryDirectory(), "missing.db"), operationCatalog());
     if (previousTarget === undefined) delete process.env.OPS_SSH_TARGET;
     else process.env.OPS_SSH_TARGET = previousTarget;
 
@@ -54,7 +55,7 @@ describe("operations guide", () => {
     const directory = temporaryDirectory();
     writeFileSync(join(directory, "pipeline.db"), "placeholder");
 
-    const guide = buildOperationsGuide(join(directory, "pipeline.db"));
+    const guide = buildOperationsGuide(join(directory, "pipeline.db"), operationCatalog());
 
     expect(guide.local.state).toBe("available");
     expect(guide.route).toBe("local");

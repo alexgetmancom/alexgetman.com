@@ -266,4 +266,24 @@ describe("Studio MCP", () => {
       rmSync(directory, { recursive: true, force: true });
     }
   });
+
+  it("accepts a notification without answering it", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" });
+      const app = createApiHandler({ config, backendDb });
+
+      // Every client sends this right after the handshake. A response to a
+      // notification is a protocol violation, and this one used to be an
+      // "unknown method" error object.
+      const accepted = await request(app, { jsonrpc: "2.0", method: "notifications/initialized" }, `Bearer ${"a".repeat(16)}`);
+      expect(accepted.status).toBe(202);
+      expect(await accepted.text()).toBe("");
+
+      const handshake = await request(app, { jsonrpc: "2.0", id: 1, method: "initialize" });
+      expect(await handshake.json()).toMatchObject({ result: { protocolVersion: "2024-11-05" } });
+    } finally {
+      backendDb.close();
+    }
+  });
 });

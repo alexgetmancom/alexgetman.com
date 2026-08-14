@@ -11,12 +11,16 @@ import {
   OperationInputError,
   operationCatalog,
   operationDef,
-  operationJsonSchema,
   runOperation,
 } from "../operations/registry.js";
 import { createStudioServices, type StudioServices } from "../studio/services/index.js";
 
 const feedbackHits = new Map<string, number[]>();
+
+/** The one revision of the wire protocol this server implements. A client that
+ * asked for another reads it here and adapts; echoing back whatever it asked
+ * for would promise a shape this code does not speak. */
+const PROTOCOL_VERSION = "2024-11-05";
 
 // --- Shared zod building blocks -------------------------------------------------
 
@@ -28,33 +32,29 @@ const localeSchema = z.enum(["ru", "en"]);
 const uiLocaleSchema = z.enum(STUDIO_LOCALES);
 const videoTargetSchema = z.enum(["youtube_shorts", "instagram_reels"]);
 
-/** Plain shape for an optional ISO-date string field, for the client-facing schema.
- * The parsing schema below adds a `.transform()` z.toJSONSchema can't represent,
- * so tools with date fields keep this shape separately as their `list` schema. */
-function isoDateShape(maxLength: number) {
-  return z.string().max(maxLength).optional();
-}
-
 /** Empty string or absent both mean "no value"; otherwise must be a parseable ISO date. */
 function isoDateOrNull(maxLength: number) {
-  return isoDateShape(maxLength).transform((value, ctx) => {
-    if (value == null || value === "") return null;
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      ctx.addIssue({ code: "custom", message: "must be an ISO date" });
-      return z.NEVER;
-    }
-    return date;
-  });
-}
-
-/** Plain shape for the client-facing schema; see isoDateShape. */
-function intArrayShape(min: number, max: number) {
-  return z.array(positiveInt).min(min).max(max);
+  return z
+    .string()
+    .max(maxLength)
+    .optional()
+    .transform((value, ctx) => {
+      if (value == null || value === "") return null;
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        ctx.addIssue({ code: "custom", message: "must be an ISO date" });
+        return z.NEVER;
+      }
+      return date;
+    });
 }
 
 function uniqueIntArray(min: number, max: number) {
-  return intArrayShape(min, max).transform((values) => [...new Set(values)]);
+  return z
+    .array(positiveInt)
+    .min(min)
+    .max(max)
+    .transform((values) => [...new Set(values)]);
 }
 
 const youtubeMetadataSchema = z.object({
@@ -64,13 +64,6 @@ const youtubeMetadataSchema = z.object({
   game_url: trimmed(1, 500).optional(),
 });
 const instagramMetadataSchema = z.object({ caption: trimmed(1, 2_200) });
-
-/** JSON Schema for an MCP tool listing. Uses `def.list` when a tool's real
- * schema has a transform (dates, dedup, metadata shaping) that z.toJSONSchema
- * can't represent; the stripping itself is the registry's. */
-function jsonSchema(def: { schema: z.ZodType; list?: z.ZodType }): JsonObject {
-  return inputJsonSchema(def.list ?? def.schema);
-}
 
 function parseArgs<T>(schema: z.ZodType<T>, args: unknown): T {
   const result = schema.safeParse(args);
@@ -99,7 +92,6 @@ const feedbackToolDef = {
 type ToolDef<S extends z.ZodType = z.ZodType> = {
   description: string;
   schema: S;
-  list?: z.ZodType;
   /** Set for commands that change state; query tools omit it and skip the audit event. */
   mutates?: boolean;
   /** Domain-event ref for a mutating command; omit when the command has none. */
@@ -270,7 +262,6 @@ const studioToolDefs = {
       asset_ids: uniqueIntArray(1, 10),
       replace: z.boolean().optional(),
     }),
-    list: z.object({ draft_id: positiveInt, locale: localeSchema, asset_ids: intArrayShape(1, 10), replace: z.boolean().optional() }),
     mutates: true,
     ref: (input) => publicationRef("draft", input.draft_id),
     handler: (studio, actorId, input) => {
@@ -287,7 +278,6 @@ const studioToolDefs = {
   studio_post_remove_media: tool({
     description: "Remove selected Studio media assets from one owned post locale.",
     schema: z.object({ draft_id: positiveInt, locale: localeSchema, asset_ids: uniqueIntArray(1, 10) }),
-    list: z.object({ draft_id: positiveInt, locale: localeSchema, asset_ids: intArrayShape(1, 10) }),
     mutates: true,
     ref: (input) => publicationRef("draft", input.draft_id),
     handler: (studio, actorId, input) => {
@@ -325,7 +315,6 @@ const studioToolDefs = {
     schema: z
       .object({ draft_id: positiveInt, ru_at: isoDateOrNull(80), en_at: isoDateOrNull(80) })
       .refine((value) => value.ru_at || value.en_at, { message: "ru_at or en_at is required" }),
-    list: z.object({ draft_id: positiveInt, ru_at: isoDateShape(80), en_at: isoDateShape(80) }),
     mutates: true,
     ref: (_input, result) => publicationRef("post", (result as { post_id: number }).post_id),
     handler: (studio, actorId, input) => {
@@ -424,7 +413,6 @@ const studioToolDefs = {
             : parsed.data;
         return { publicationId: value.video_draft_id, target: value.target, metadata };
       }),
-    list: z.object({ video_draft_id: positiveInt, target: videoTargetSchema, metadata: z.record(z.string(), z.unknown()) }),
     mutates: true,
     ref: (input) => publicationRef("video", input.publicationId),
     handler: (studio, actorId, input) => {
@@ -439,7 +427,6 @@ const studioToolDefs = {
       .refine((value) => value.youtube_shorts_at || value.instagram_reels_at, {
         message: "youtube_shorts_at or instagram_reels_at is required",
       }),
-    list: z.object({ video_draft_id: positiveInt, youtube_shorts_at: isoDateShape(80), instagram_reels_at: isoDateShape(80) }),
     mutates: true,
     ref: (input) => publicationRef("video", input.video_draft_id),
     handler: async (studio, actorId, input) => {
@@ -538,11 +525,13 @@ const studioToolDefs = {
   }),
 };
 
-const publicTools = [{ name: "submit_feedback", description: feedbackToolDef.description, inputSchema: jsonSchema(feedbackToolDef) }];
+const publicTools = [
+  { name: "submit_feedback", description: feedbackToolDef.description, inputSchema: inputJsonSchema(feedbackToolDef.schema) },
+];
 const studioTools = Object.entries(studioToolDefs).map(([name, def]) => ({
   name,
   description: def.description,
-  inputSchema: jsonSchema(def),
+  inputSchema: inputJsonSchema(def.schema),
 }));
 
 /** Operations reach MCP as a projection of the same registry the CLI dispatches
@@ -562,7 +551,7 @@ const opsTools = [...opsToolNames].map(([toolName, operation]) => {
   return {
     name: toolName,
     description: def.note ? `${def.summary} (${def.note})` : def.summary,
-    inputSchema: operationJsonSchema(def),
+    inputSchema: inputJsonSchema(def.schema),
   };
 });
 
@@ -576,16 +565,20 @@ export async function mcpResponse(
   clientKey: string,
   actorId: number | null,
   studio?: StudioServices,
-): Promise<Record<string, unknown>> {
+): Promise<Record<string, unknown> | null> {
   if (!body || typeof body !== "object" || Array.isArray(body)) return rpcError(null, -32600, "Invalid request");
   const request = body as JsonObject;
-  const id = request.id ?? null;
+  // A notification carries no id and must draw no response at all — the
+  // `notifications/initialized` every client sends right after the handshake
+  // used to earn an "unknown method" error object back.
+  if (request.id === undefined) return null;
+  const id = request.id;
   if (request.method === "initialize")
     return {
       jsonrpc: "2.0",
       id,
       result: {
-        protocolVersion: "2024-11-05",
+        protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: {} },
         serverInfo: { name: "alexgetman-studio-mcp", version: "2.1.0" },
       },
@@ -600,7 +593,7 @@ export async function mcpResponse(
     if (name === "submit_feedback") return success(id, submitFeedback(backendDb, args, clientKey));
     if (!actorId) return rpcError(id, -32001, "Studio MCP authorization is required");
     const operation = opsToolNames.get(name);
-    if (operation) return success(id, await runOpsTool(backendDb, config, actorId, name, operation, args));
+    if (operation) return success(id, await runOpsTool(backendDb, config, operation, args));
     return success(id, await runStudioTool(backendDb, config, actorId, name, args, studio));
   } catch (error) {
     if (error instanceof McpToolError) return rpcError(id, error.code, error.message);
@@ -642,19 +635,13 @@ async function runStudioTool(
 
 /** Dispatched through `runOperation`, the same entry the CLI uses: validating
  * here as well is how a rejected field on one surface becomes an accepted one
- * on the other. Only the error shape is MCP's — -32602 with the field named. */
-async function runOpsTool(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  toolName: string,
-  operation: string,
-  args: JsonObject,
-): Promise<unknown> {
-  const def = operationDef(operation) as OperationDef;
+ * on the other, and the mutation journal is written there too, against the ref
+ * the operation normalized. Only the error shape is MCP's — -32602 with the
+ * field named. */
+function runOpsTool(backendDb: BackendDb, config: BackendConfig, operation: string, args: JsonObject): Promise<unknown> {
   // The server owns this handle and this config; the operation borrows both and
   // must not close what it did not open.
-  const result = await runOperation(
+  return runOperation(
     operation,
     { dbPath: config.PIPELINE_DB, config: () => config, db: () => backendDb, fetchImpl: fetch, actorType: "ops-mcp" },
     args,
@@ -662,20 +649,6 @@ async function runOpsTool(
     if (error instanceof OperationInputError) throw new McpToolError(-32602, error.message);
     throw error;
   });
-  if (def.mutates)
-    try {
-      recordDomainEvent(backendDb.events, {
-        ref: typeof args.ref === "string" ? args.ref : null,
-        type: "operations.mcp.command",
-        severity: "info",
-        target: "mcp",
-        message: `Operations MCP ${toolName} executed`,
-        details: { actorId, tool: toolName, operation },
-      });
-    } catch (error) {
-      log("error", "operations MCP audit event failed", { actorId, tool: toolName, error });
-    }
-  return result;
 }
 
 function submitFeedback(backendDb: BackendDb, args: JsonObject, clientKey: string): string {
