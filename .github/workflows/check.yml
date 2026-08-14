@@ -32,7 +32,6 @@ jobs:
       media_changed: ${{ steps.filter.outputs.media }}
       dependencies_changed: ${{ steps.filter.outputs.dependencies }}
       backend_image_changed: ${{ steps.filter.outputs.backend_image }}
-      runtime_config_changed: ${{ steps.filter.outputs.runtime_config }}
       deploy_agent_changed: ${{ steps.filter.outputs.deploy_agent }}
       caddy_config_changed: ${{ steps.filter.outputs.caddy_config }}
       deployment_required: ${{ steps.filter.outputs.deployment }}
@@ -58,7 +57,6 @@ jobs:
           media=false
           dependencies=false
           backend_image=false
-          runtime_config=false
           deploy_agent=false
           caddy_config=false
           deployment=false
@@ -79,7 +77,6 @@ jobs:
                 deployment=true
                 ;;
               deploy/alex.compose.yaml | deploy/maru.compose.yaml | studio.alex.yaml | studio.maru.yaml)
-                runtime_config=true
                 deployment=true
                 ;;
               deploy/deploy-agent.ts | deploy/retry.ts)
@@ -101,13 +98,12 @@ jobs:
             echo "media=$media"
             echo "dependencies=$dependencies"
             echo "backend_image=$backend_image"
-            echo "runtime_config=$runtime_config"
             echo "deploy_agent=$deploy_agent"
             echo "caddy_config=$caddy_config"
             echo "deployment=$deployment"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Changed areas: media=$media dependencies=$dependencies backend_image=$backend_image runtime_config=$runtime_config caddy_config=$caddy_config deployment=$deployment"
+          echo "Changed areas: media=$media dependencies=$dependencies backend_image=$backend_image caddy_config=$caddy_config deployment=$deployment"
 
   deployment-status-pending:
     name: Production deployment
@@ -592,7 +588,6 @@ jobs:
           MEDIA_PROCESSOR_IMAGE: ghcr.io/${{ github.repository_owner }}/alexgetman-media-processor@${{ needs.media-processor-image.outputs.image_digest }}
           RELEASE: ${{ github.sha }}
           MARU_DEPLOY_ENABLED: ${{ vars.MARU_DEPLOY_ENABLED }}
-          RUNTIME_CONFIG_CHANGED: ${{ needs.scope.outputs.runtime_config_changed }}
           DEPLOY_AGENT_CHANGED: ${{ needs.scope.outputs.deploy_agent_changed }}
           CADDY_CONFIG_CHANGED: ${{ needs.scope.outputs.caddy_config_changed }}
         run: |
@@ -613,10 +608,13 @@ jobs:
           caddy_runtime=/home/deploy/caddy
           release_files="$runtime/release-files/$RELEASE"
           ssh "${ssh_opts[@]}" "$remote" "install -d -m 0700 '$release_files'"
-          release_paths=()
-          if [ "$RUNTIME_CONFIG_CHANGED" = "true" ]; then
-            release_paths+=(deploy/alex.compose.yaml deploy/maru.compose.yaml studio.alex.yaml studio.maru.yaml)
-          fi
+          # Always shipped, never conditionally. Copying only when this run's
+          # diff touched them loses the change for good when a run fails after
+          # the commit that made it: the next run's diff no longer names those
+          # files, and the host keeps a configuration the repository has moved
+          # past. They are four small files, and sending them every time makes
+          # the host match the release rather than match a sequence of diffs.
+          release_paths=(deploy/alex.compose.yaml deploy/maru.compose.yaml studio.alex.yaml studio.maru.yaml)
           if [ "$DEPLOY_AGENT_CHANGED" = "true" ]; then
             release_paths+=(deploy/deploy-agent.ts deploy/retry.ts)
           fi
@@ -626,17 +624,13 @@ jobs:
           if [ "${#release_paths[@]}" -gt 0 ]; then
             tar -cf - "${release_paths[@]}" | ssh "${ssh_opts[@]}" "$remote" "tar -xf - -C '$release_files'"
           fi
-          if [ "$RUNTIME_CONFIG_CHANGED" = "true" ]; then
-            ssh "${ssh_opts[@]}" "$remote" "set -e; cp '$release_files/deploy/alex.compose.yaml' $runtime/compose.yaml.next; cp '$release_files/studio.alex.yaml' $runtime/studio.yaml.next; docker compose --env-file $runtime/deploy-image.env -f $runtime/compose.yaml.next config --quiet; mv $runtime/compose.yaml.next $runtime/compose.yaml; mv $runtime/studio.yaml.next $runtime/studio.yaml"
-          fi
+          ssh "${ssh_opts[@]}" "$remote" "set -e; cp '$release_files/deploy/alex.compose.yaml' $runtime/compose.yaml.next; cp '$release_files/studio.alex.yaml' $runtime/studio.yaml.next; docker compose --env-file $runtime/deploy-image.env -f $runtime/compose.yaml.next config --quiet; mv $runtime/compose.yaml.next $runtime/compose.yaml; mv $runtime/studio.yaml.next $runtime/studio.yaml"
           if [ "$DEPLOY_AGENT_CHANGED" = "true" ]; then
             ssh "${ssh_opts[@]}" "$remote" "set -e; install -m 0644 '$release_files/deploy/deploy-agent.ts' /home/deploy/repos/alexgetman.com/deploy/deploy-agent.ts; install -m 0644 '$release_files/deploy/retry.ts' /home/deploy/repos/alexgetman.com/deploy/retry.ts; sudo systemctl restart alexgetman-deploy-agent; for attempt in 1 2 3 4 5; do curl --fail --silent http://127.0.0.1:9899/healthz && exit 0; sleep 1; done; exit 1"
           fi
           if [ "$MARU_DEPLOY_ENABLED" = "true" ]; then
             maru_runtime=/home/deploy/maru
-            if [ "$RUNTIME_CONFIG_CHANGED" = "true" ]; then
-              ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$maru_runtime; cp '$release_files/deploy/maru.compose.yaml' \$runtime/maru.compose.yaml.next; cp '$release_files/studio.maru.yaml' \$runtime/studio.yaml.next; docker compose --env-file \$runtime/deploy-image.env -f \$runtime/maru.compose.yaml.next config --quiet; mv \$runtime/maru.compose.yaml.next \$runtime/maru.compose.yaml; mv \$runtime/studio.yaml.next \$runtime/studio.yaml"
-            fi
+            ssh "${ssh_opts[@]}" "$remote" "set -e; runtime=$maru_runtime; cp '$release_files/deploy/maru.compose.yaml' \$runtime/maru.compose.yaml.next; cp '$release_files/studio.maru.yaml' \$runtime/studio.yaml.next; docker compose --env-file \$runtime/deploy-image.env -f \$runtime/maru.compose.yaml.next config --quiet; mv \$runtime/maru.compose.yaml.next \$runtime/maru.compose.yaml; mv \$runtime/studio.yaml.next \$runtime/studio.yaml"
           fi
           phase runtime-config
           if [ "$CADDY_CONFIG_CHANGED" = "true" ]; then
