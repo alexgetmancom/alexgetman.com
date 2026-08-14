@@ -17,3 +17,23 @@ video:
   prepare_lead_minutes: 15
   reminder_minutes: 5
   retention_hours: 24
+
+# What this Studio publishes as. Reaches RSS titles, llms.txt and the home
+# page's structured data. Leave a language empty and it is simply not claimed;
+# leave the name empty and the site names itself by its own domain. Nothing here
+# defaults to anyone else's identity.
+site:
+  name:
+    en: ""
+    ru: ""
+  tagline:
+    en: ""
+    ru: ""
+  about:
+    en: ""
+    ru: ""
+  # Listed in llms.txt and as `sameAs` on the home page. Empty means no social
+  # block at all, which is the right answer until you have said otherwise.
+  profiles:
+    en: []
+    ru: []

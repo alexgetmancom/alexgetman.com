@@ -13,3 +13,33 @@ video:
   prepare_lead_minutes: 15
   reminder_minutes: 5
   retention_hours: 24
+
+# What this Studio publishes as. These reach RSS titles, llms.txt and the home
+# page's structured data, so they are configuration rather than product text.
+site:
+  name:
+    en: Alex Getman
+    ru: Алекс Гетман
+  tagline:
+    en: AI, automation and self-hosted systems
+    ru: ИИ, разработка, автоматизация, open-source и проекты
+  about:
+    en: Alex Getman publishes short practical updates about AI products, automation workflows, developer tools and self-hosted infrastructure.
+    ru: Алекс Гетман публикует короткие практические заметки об ИИ-продуктах, автоматизации, инструментах разработки и self-hosted инфраструктуре.
+  profiles:
+    en:
+      - { label: Telegram, url: "https://t.me/alexgetmancom" }
+      - { label: Threads, url: "https://www.threads.net/@alexgetmanco" }
+      - { label: GitHub, url: "https://github.com/alexgetmancom" }
+      - { label: YouTube, url: "https://www.youtube.com/@alexgetmancom" }
+      - { label: Twitch, url: "https://www.twitch.tv/alexgetmancom" }
+      - { label: Instagram, url: "https://www.instagram.com/alexgetmancom/" }
+      - { label: Discord, url: "https://discord.gg/Z7sSm56rcb" }
+    ru:
+      - { label: Telegram, url: "https://t.me/alexgetmancom" }
+      - { label: Threads, url: "https://www.threads.net/@alexgetmanru" }
+      - { label: GitHub, url: "https://github.com/alexgetmancom" }
+      - { label: YouTube, url: "https://www.youtube.com/@alexgetmancom" }
+      - { label: Twitch, url: "https://www.twitch.tv/alexgetmancom" }
+      - { label: Instagram, url: "https://www.instagram.com/alexgetmancom/" }
+      - { label: Discord, url: "https://discord.gg/Z7sSm56rcb" }

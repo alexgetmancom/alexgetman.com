@@ -1,5 +1,6 @@
 import type { SiteLocale } from "../utils/locale";
-import { socialProfiles } from "../utils/profiles";
+import { siteUrlFromContext } from "../utils/site";
+import { getRuntime } from "./runtime";
 
 /**
  * Every string the machine-facing endpoints emit — RSS, JSON feed, the AI feed,
@@ -10,17 +11,12 @@ import { socialProfiles } from "../utils/profiles";
  * English is the source of truth for the key set; each other locale is typed
  * `satisfies SiteCopy`, so the compiler rejects a missing key.
  */
-export type SiteCopy = {
-  feedTitle: string;
-  feedDescription: string;
+type SiteChrome = {
   /** Title for a post whose text starts with something unusable. */
   postFallback: string;
   publishedOn: string;
   backHome: string;
   viewArticle: string;
-  llmsTitle: string;
-  llmsTagline: string;
-  llmsAbout: string;
   headingAbout: string;
   headingLinks: string;
   headingSocial: string;
@@ -33,32 +29,28 @@ export type SiteCopy = {
   labelSitemap: string;
   labelMarkdownIndex: string;
   noPosts: string;
-  /** Social profiles are per-language: the RU and EN accounts differ. */
-  social: [label: string, url: string][];
 };
 
-/** The four profiles llms.txt lists, in its established order. */
-function labelledProfiles(locale: SiteLocale): Array<[string, string]> {
-  const profiles = socialProfiles(locale);
-  return [
-    ["Telegram", profiles.telegram],
-    ["Threads", profiles.threads],
-    ["GitHub", profiles.github],
-    ["YouTube", profiles.youtube],
-  ];
+/** Who this Studio publishes as, from studio.yaml. An install that has not
+ * said names itself by its own domain, which is true and belongs to nobody
+ * else — the alternative was serving the publisher's name and social accounts
+ * from every stranger's site. */
+function identity(locale: SiteLocale) {
+  const site = getRuntime().config.studio.site(locale);
+  const host = new URL(siteUrlFromContext()).host;
+  return {
+    name: site.name || host,
+    tagline: site.tagline,
+    about: site.about,
+    social: site.profiles.map((profile): [string, string] => [profile.label, profile.url]),
+  };
 }
 
-const en: SiteCopy = {
-  feedTitle: "Alex Getman | AI, automation and self-hosted systems",
-  feedDescription: "English updates from Alex Getman: AI news, automation, developer tools and self-hosted systems.",
+const en: SiteChrome = {
   postFallback: "Post {id}",
   publishedOn: "Published on",
   backHome: "Back to Home",
   viewArticle: "View Article",
-  llmsTitle: "Alex Getman",
-  llmsTagline: "English hub for AI news, automation, developer tools, self-hosted systems and public projects.",
-  llmsAbout:
-    "Alex Getman publishes short practical updates about AI products, automation workflows, developer tools and self-hosted infrastructure.",
   headingAbout: "About",
   headingLinks: "Core URLs",
   headingSocial: "Social profiles",
@@ -70,20 +62,13 @@ const en: SiteCopy = {
   labelSitemap: "Sitemap",
   labelMarkdownIndex: "Markdown overview",
   noPosts: "No posts yet.",
-  social: labelledProfiles("en"),
 };
 
-const ru: SiteCopy = {
-  feedTitle: "RU — Алекс Гетман | alexgetmancom",
-  feedDescription: "Новости ИИ, автоматизация, разработка и self-hosted системы от Алекса Гетмана.",
+const ru: SiteChrome = {
   postFallback: "Пост {id}",
   publishedOn: "Опубликовано",
   backHome: "На главную",
   viewArticle: "Читать статью",
-  llmsTitle: "Алекс Гетман",
-  llmsTagline: "Личный хаб alexgetmancom: ИИ, разработка, автоматизация, open-source и проекты.",
-  llmsAbout:
-    "Алекс Гетман публикует короткие практические заметки об ИИ-продуктах, автоматизации, инструментах разработки и self-hosted инфраструктуре.",
   headingAbout: "О сайте",
   headingLinks: "Основные адреса",
   headingSocial: "Профили",
@@ -95,13 +80,33 @@ const ru: SiteCopy = {
   labelSitemap: "Карта сайта",
   labelMarkdownIndex: "Обзор в Markdown",
   noPosts: "Пока постов нет.",
-  social: labelledProfiles("ru"),
-} satisfies SiteCopy;
+} satisfies SiteChrome;
 
-const catalog: Record<SiteLocale, SiteCopy> = { en, ru };
+const catalog: Record<SiteLocale, SiteChrome> = { en, ru };
+
+/** Interface wording plus what this Studio says it is. The first is the
+ * product and lives here; the second is configuration, because it is different
+ * for every install. */
+export type SiteCopy = SiteChrome & {
+  feedTitle: string;
+  feedDescription: string;
+  llmsTitle: string;
+  llmsTagline: string;
+  llmsAbout: string;
+  social: [label: string, url: string][];
+};
 
 export function siteCopy(locale: SiteLocale): SiteCopy {
-  return catalog[locale];
+  const { name, tagline, about, social } = identity(locale);
+  return {
+    ...catalog[locale],
+    feedTitle: tagline ? `${name} | ${tagline}` : name,
+    feedDescription: about,
+    llmsTitle: name,
+    llmsTagline: tagline,
+    llmsAbout: about,
+    social,
+  };
 }
 
 /** Fills `{name}` placeholders, the same convention the backend catalog uses. */

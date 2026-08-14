@@ -1,8 +1,8 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import { loadFeedItems } from "../server/public-site";
+import { siteCopy } from "../server/site-copy";
 import { sortedHomePosts } from "../utils/home-posts";
-import { socialProfileUrls } from "../utils/profiles";
 import HomeNewsPage from "./HomeNewsPage.astro";
 
 type Props = { locale: "en" | "ru" };
@@ -29,7 +29,7 @@ const schema = JSON.stringify({
       ...(russian ? { alternateName: "Alex Getman" } : {}),
       url: canonicalUrl,
       image: `${siteOrigin}/avatar.png`,
-      sameAs: socialProfileUrls(locale),
+      sameAs: siteCopy(locale).social.map(([, url]) => url),
     },
     {
       "@type": "WebSite",
