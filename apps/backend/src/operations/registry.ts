@@ -31,6 +31,7 @@ import { compactOperationsStatus } from "./status.js";
 import { backfillTextStoryCards } from "./story-card-backfill.js";
 import { publicationTimeline } from "./timeline.js";
 import { verifyPostTargets } from "./verify.js";
+import { authorizeYouTube } from "./youtube-authorize.js";
 
 /** Config and the database are resolved on demand: `restore` and
  * `migrations-baseline` operate on the file itself and must not have it opened
@@ -490,7 +491,7 @@ const operationDefs = {
       label: z.string().optional(),
     }),
     mutates: true,
-    agent: false,
+    agent: true,
     handler: (context, input) =>
       connectChannel(context.db(), {
         platform: input.platform,
@@ -507,8 +508,24 @@ const operationDefs = {
       channel: example(z.string().min(1), "youtube_ru").describe("channel id"),
     }),
     mutates: true,
-    agent: false,
+    agent: true,
     handler: (context, input) => disableChannel(context.db(), input.channel),
+  }),
+  "youtube-authorize": operation({
+    summary: "Obtain this Studio's YouTube refresh token by approving it on another device.",
+    note: 'Needs YOUTUBE_<LOCALE>_CLIENT_ID and _CLIENT_SECRET from a Google Cloud OAuth client of type "TV and Limited Input devices". Prints a short code to enter at the URL it shows, waits for approval, then prints the refresh token to put in .env.',
+    schema: z.object({ locale: z.enum(["ru", "en"]) }),
+    mutates: false,
+    // Prints a credential. An agent has no business holding one.
+    agent: false,
+    handler: async (context, input) =>
+      authorizeYouTube(context.config(), input.locale, {
+        fetchImpl: context.fetchImpl,
+        onPrompt: (prompt) =>
+          console.log(
+            `Open ${prompt.verificationUrl} and enter the code ${prompt.userCode}. Waiting up to ${Math.floor(prompt.expiresInSeconds / 60)} minutes.`,
+          ),
+      }),
   }),
 } satisfies Record<string, OperationDef>;
 

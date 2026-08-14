@@ -77,6 +77,40 @@ downloads over 50 MB, which is smaller than a short video: to publish video, set
 `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` and `COMPOSE_PROFILES=telegram` in `.env`,
 which starts a local Bot API server alongside the app and lifts the limit to 2 GB.
 
+## Connect a destination
+
+Two halves: the Studio has to know a destination exists, and it has to hold the
+credentials for it. They are deliberately separate — nothing asks you for keys to
+a platform you do not publish to.
+
+```bash
+docker compose exec app bun /app/ops/cli.js channel-connect --platform youtube --locale ru --provider native
+docker compose exec app bun /app/ops/cli.js doctor
+```
+
+`doctor` names the exact settings that destination is still missing, and never
+prints the ones it has. Put them in `.env`, restart, run it again. The same two
+steps work from the Telegram bot and from an MCP client.
+
+**Instagram and Threads.** Publishing to Meta directly means registering your own
+app, a Professional account and a linked Facebook Page. Connecting them through
+[Zernio](https://zernio.com) instead replaces all of it with one `ZERNIO_API_KEY`,
+and the bot lists your accounts to pick from under Settings → Channels. The
+native path stays available if you would rather hold your own tokens.
+
+**YouTube.** Create a Google Cloud project and an OAuth client of type *TV and
+Limited Input devices*, put its id and secret in `.env`, then:
+
+```bash
+docker compose exec app bun /app/ops/cli.js youtube-authorize --locale ru
+```
+
+It prints a short code and a URL. Enter the code on any device with a browser,
+approve, and it prints the refresh token to put in `.env`. Each Studio uses its
+own Google project because YouTube quota is counted per project, not per user.
+
+**Telegram** needs only the bot token you already set to author from.
+
 ## Try it without installing
 
 Requirements: [Bun 1.3.14](https://bun.sh/) and the native build prerequisites required by `sharp`.

@@ -24,8 +24,7 @@ const HOST_ONLY = [
   "replace-media",
   "site-media-images",
   "site-media-deduplicate",
-  "channel-connect",
-  "channel-disable",
+  "youtube-authorize",
 ];
 
 function context(db: UnsafeBackendDb): OperationContext {
