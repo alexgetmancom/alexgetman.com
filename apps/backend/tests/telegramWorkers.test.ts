@@ -16,6 +16,7 @@ describe("Telegram interface workers", () => {
           "telegram-events",
           "telegram-alerts",
           "telegram-weekly-summary",
+          "telegram-daily-backup",
           "telegram-editorial-inbox",
           "telegram-news-digest",
           "telegram-analytics-dashboard",

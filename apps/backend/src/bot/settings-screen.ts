@@ -24,6 +24,7 @@ const ANALYTICS_MENU_ID = "settings-analytics";
 const GENERAL_MENU_ID = "settings-general";
 const NOTIFICATION_SETTINGS_MENU_ID = "settings-notifications";
 const WEEKLY_DIGEST_MENU_ID = "settings-weekly-digest";
+const BACKUP_MENU_ID = "settings-backup";
 const NEWS_DIGEST_MENU_ID = "settings-news-digest";
 const NEWS_DIGEST_TIME_MENU_ID = "settings-news-digest-time";
 const YOUTUBE_SIGNATURE_MENU_ID = "settings-youtube";
@@ -189,6 +190,22 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
       await ctx.answerCallbackQuery();
       await ctx.editMessageText(t(locale, "settings.category-notifications-body"));
     });
+  });
+
+  const backup = new Menu<Context>(BACKUP_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
+    const settings = createStudioServices(backendDb, config).settings.backup();
+    range
+      .text(`${settings.enabled ? "✅" : "◻️"} ${t(locale, "settings.backup-enabled")}`, async (ctx) => {
+        createStudioServices(backendDb, config).settings.setBackup({ enabled: !settings.enabled });
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(backupText(backendDb, config, locale), { parse_mode: "Markdown" });
+      })
+      .row()
+      .back(t(locale, "settings.back-to-notifications"), async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(t(locale, "settings.category-notifications-body"));
+      });
   });
 
   const newsDigestTime = new Menu<Context>(NEWS_DIGEST_TIME_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
@@ -391,6 +408,11 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
         await ctx.editMessageText(newsDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
       })
       .row()
+      .submenu(t(locale, "settings.backup"), BACKUP_MENU_ID, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(backupText(backendDb, config, locale), { parse_mode: "Markdown" });
+      })
+      .row()
       .back(t(locale, "settings.back-to-settings"), backToSettings(backendDb));
   });
 
@@ -465,6 +487,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
   publishing.register(youtubeSignature);
   notificationsCategory.register(notificationSettings);
   notificationsCategory.register(weeklyDigest);
+  notificationsCategory.register(backup);
   notificationsCategory.register(newsDigest);
   newsDigest.register(newsDigestTime);
   analytics.register(threadsFollowers);
@@ -629,6 +652,12 @@ function weeklyDigestText(backendDb: BackendDb, config: BackendConfig, locale: S
   return t(locale, "settings.weekly-digest-body", {
     status: settings.enabled ? t(locale, "settings.on") : t(locale, "settings.off"),
     day: weekdayLabel(locale, settings.weekday),
+  });
+}
+
+function backupText(backendDb: BackendDb, config: BackendConfig, locale: StudioLocale): string {
+  return t(locale, "settings.backup-body", {
+    status: createStudioServices(backendDb, config).settings.backup().enabled ? t(locale, "settings.on") : t(locale, "settings.off"),
   });
 }
 

@@ -47,6 +47,8 @@ const en = {
   "settings.youtube-signature": "▶️ YouTube signature",
   "settings.publication-notifications": "🔔 Publication notifications",
   "settings.weekly-digest": "📊 Weekly digest",
+  "settings.backup": "🗄 Database backup",
+  "settings.backup-enabled": "Daily backup",
   "settings.timezone": "🕒 Time zone",
   "settings.language": "🌐 Language",
   "settings.channels": "🔌 Channels",
@@ -240,6 +242,8 @@ const en = {
   "settings.weekly-digest-day-set": "Digest day: {day}",
   "settings.weekly-digest-body":
     "📊 *Weekly digest*\n\nStatus: *{status}*\nDelivery: *{day}, after 21:00*\n\nThe report covers the previous 7 days across this Studio's connected channels.",
+  "settings.backup-body":
+    "🗄 *Database backup*\n\nStatus: *{status}*\nDelivery: *daily, silently, after 04:00*\n\nA copy of this Studio's database arrives here every day: posts, schedules, delivery state and analytics. Media files are not included — they are far larger than Telegram accepts and belong to a backup of the media volume.",
   "settings.news-digest": "📰 News digest",
   "settings.news-digest-enabled": "News digest",
   "settings.news-digest-time": "🕒 Delivery time",
@@ -710,6 +714,8 @@ const ru = {
   "settings.youtube-signature": "▶️ Подпись YouTube",
   "settings.publication-notifications": "🔔 Уведомления о публикациях",
   "settings.weekly-digest": "📊 Недельный дайджест",
+  "settings.backup": "🗄 Бэкап базы",
+  "settings.backup-enabled": "Ежедневный бэкап",
   "settings.timezone": "🕒 Часовой пояс",
   "settings.language": "🌐 Язык",
   "settings.channels": "🔌 Каналы",
@@ -903,6 +909,8 @@ const ru = {
   "settings.weekly-digest-day-set": "День дайджеста: {day}",
   "settings.weekly-digest-body":
     "📊 *Недельный дайджест*\n\nСтатус: *{status}*\nОтправка: *{day}, после 21:00*\n\nОтчёт охватывает последние 7 дней по подключённым каналам этой Studio.",
+  "settings.backup-body":
+    "🗄 *Бэкап базы*\n\nСтатус: *{status}*\nОтправка: *каждый день, беззвучно, после 04:00*\n\nКопия базы этой Studio приходит сюда ежедневно: посты, расписание, состояние доставки и аналитика. Медиафайлы не входят — они намного больше того, что принимает Telegram, и относятся к бэкапу медиатома.",
   "settings.news-digest": "📰 Новостной дайджест",
   "settings.news-digest-enabled": "Новостной дайджест",
   "settings.news-digest-time": "🕒 Время отправки",

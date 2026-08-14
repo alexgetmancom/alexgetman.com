@@ -69,6 +69,15 @@ Only Caddy publishes ports; the application is reachable through it alone. Nothi
 
 `studio.yaml` holds deployment behavior that is not a publishing connection: whether this Studio serves a public site, its time zone, and video timing. Update with `docker compose pull && docker compose up -d`; diagnose with `docker compose logs -f app`.
 
+Two things worth knowing on day one. The Studio sends you a copy of its database
+every day, silently, in the same Telegram chat you author from; it covers posts,
+schedules, delivery state and analytics, but **not** media files, which are far
+larger than Telegram accepts and need a backup of the `app-data` volume. Turn it
+off under Settings → Notifications → Database backup. And Telegram refuses file
+downloads over 50 MB, which is smaller than a short video: to publish video, set
+`TELEGRAM_API_ID`, `TELEGRAM_API_HASH` and `COMPOSE_PROFILES=telegram` in `.env`,
+which starts a local Bot API server alongside the app and lifts the limit to 2 GB.
+
 ## Try it without installing
 
 Requirements: [Bun 1.3.14](https://bun.sh/) and the native build prerequisites required by `sharp`.

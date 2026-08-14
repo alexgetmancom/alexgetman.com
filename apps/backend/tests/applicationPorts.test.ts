@@ -16,6 +16,8 @@ describe("application persistence ports", () => {
         locale: () => null,
         timezone: () => currentTimezone,
         weeklyDigest: () => null,
+        backup: () => null,
+        saveBackup: () => {},
         saveWeeklyDigest: (input) => {
           weeklyDigest = input;
         },

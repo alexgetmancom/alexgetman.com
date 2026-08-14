@@ -3,6 +3,7 @@ import type { StudioSettingsStore } from "../../application/ports.js";
 import {
   botSettings,
   botUiSettings,
+  studioBackupSettings,
   studioNewsDigestSettings,
   studioNotificationJobs,
   studioNotificationSettings,
@@ -31,6 +32,10 @@ export function createStudioSettingsStore(db: BackendDatabase): StudioSettingsSt
       return db.select().from(studioWeeklyDigestSettings).where(eq(studioWeeklyDigestSettings.id, 1)).get() ?? null;
     },
 
+    backup() {
+      return db.select().from(studioBackupSettings).where(eq(studioBackupSettings.id, 1)).get() ?? null;
+    },
+
     newsDigest() {
       return db.select().from(studioNewsDigestSettings).where(eq(studioNewsDigestSettings.id, 1)).get() ?? null;
     },
@@ -42,6 +47,13 @@ export function createStudioSettingsStore(db: BackendDatabase): StudioSettingsSt
           target: studioWeeklyDigestSettings.id,
           set: { enabled: input.enabled, weekday: input.weekday, updatedAt: input.updatedAt },
         })
+        .run();
+    },
+
+    saveBackup(input) {
+      db.insert(studioBackupSettings)
+        .values({ id: 1, enabled: input.enabled, updatedAt: input.updatedAt })
+        .onConflictDoUpdate({ target: studioBackupSettings.id, set: { enabled: input.enabled, updatedAt: input.updatedAt } })
         .run();
     },
 

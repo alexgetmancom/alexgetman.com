@@ -17,6 +17,31 @@ services:
     depends_on:
       - app
 
+  # Telegram's public API caps file downloads at 50 MB, which is below a short
+  # video. A local Bot API server raises that to 2 GB, so it is part of the
+  # install rather than an upgrade to discover after the first video fails.
+  # It needs its own API credentials from https://my.telegram.org.
+  # It cannot run without those credentials, and a site-only Studio has none, so
+  # it joins the stack only once COMPOSE_PROFILES names it — one line in .env,
+  # not a second command to remember.
+  bot-api:
+    image: aiogram/telegram-bot-api:10.2@sha256:6ab985144d46d024c723f4def72419d949b88ba97bf234dadf415051367a1b69
+    profiles: [telegram]
+    restart: unless-stopped
+    environment:
+      # Not marked required: compose interpolates inactive profiles too, so a
+      # {? } here would refuse to read the file for a site-only install that
+      # never starts this service.
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID:-}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:-}
+      TELEGRAM_LOCAL: "1"
+      TELEGRAM_WORK_DIR: /var/lib/telegram-bot-api
+      TELEGRAM_TEMP_DIR: /tmp/telegram-bot-api
+    volumes:
+      - bot-api-data:/var/lib/telegram-bot-api
+    expose:
+      - "8081"
+
   app:
     image: ${SOLO_PUBLISHER_IMAGE:-ghcr.io/alexgetmancom/solo-publisher:latest}
     restart: unless-stopped
@@ -38,6 +63,9 @@ services:
       # Caddy terminates TLS and is the only thing that can reach this port, so
       # the address it forwards is the real client's.
       TRUSTED_CLIENT_IP_HEADER: x-real-ip
+      # Empty means Telegram's public API and its 50 MB download cap; the
+      # bot-api profile above raises that to 2 GB.
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
       BIND_HOST: 0.0.0.0
       PORT: "8788"
     volumes:
@@ -55,5 +83,6 @@ services:
 
 volumes:
   app-data:
+  bot-api-data:
   caddy-data:
   caddy-config:

@@ -43,6 +43,12 @@ function readWeeklyDigest(backendDb: SettingsDependencies) {
   return { enabled: row?.enabled !== 0, weekday: row?.weekday ?? 0 };
 }
 
+/** Absent means enabled: a Studio that has never opened settings still gets a
+ * copy of its database, which is the case the backup exists for. */
+function readBackup(backendDb: SettingsDependencies) {
+  return { enabled: backendDb.studioSettings.backup()?.enabled !== 0 };
+}
+
 function readNewsDigest(backendDb: SettingsDependencies) {
   const row = backendDb.studioSettings.newsDigest();
   return { enabled: row?.enabled === 1, hour: row?.hour ?? 10, minute: row?.minute ?? 0, prompt: row?.prompt?.trim() ?? "" };
@@ -76,6 +82,13 @@ export function settingsService(backendDb: SettingsDependencies) {
     },
     newsDigest() {
       return readNewsDigest(backendDb);
+    },
+    backup() {
+      return readBackup(backendDb);
+    },
+    setBackup(input: { enabled: boolean }) {
+      backendDb.studioSettings.saveBackup({ enabled: Number(input.enabled), updatedAt: backendDb.clock.now().toISOString() });
+      return { enabled: input.enabled };
     },
     setWeeklyDigest(input: Partial<{ enabled: boolean; weekday: number }>) {
       if (input.weekday != null && (!Number.isInteger(input.weekday) || input.weekday < 0 || input.weekday > 6))

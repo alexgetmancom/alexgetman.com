@@ -7,6 +7,7 @@ import { log } from "../../foundation/logger.js";
 import { type ScheduledLoop, startLoop } from "../../foundation/scheduler.js";
 import { deliverPendingAlerts } from "../../observability/alerts.js";
 import { sendWeeklyAnalyticsSummary } from "./analytics-summary.js";
+import { sendDailyBackup } from "./backup.js";
 import { sendDailyEditorialInbox } from "./editorial-inbox.js";
 import { consumeTelegramEvents } from "./event-consumer.js";
 import { sendDailyNewsDigest } from "./news-digest.js";
@@ -37,6 +38,10 @@ export function startTelegramWorkers(config: BackendConfig, backendDb: BackendDb
     startLoop("telegram-weekly-summary", dailyPollMs, async () => {
       const weeklySummary = await sendWeeklyAnalyticsSummary(config, backendDb, bot);
       if (weeklySummary) log("debug", "telegram weekly summary delivered");
+    }),
+    startLoop("telegram-daily-backup", dailyPollMs, async () => {
+      const backup = await sendDailyBackup(config, backendDb, bot);
+      if (backup !== "not_due" && backup !== "disabled") log("debug", "telegram daily backup tick", { status: backup });
     }),
     startLoop("telegram-editorial-inbox", dailyPollMs, async () => {
       const editorialInbox = await sendDailyEditorialInbox(config, backendDb, bot);

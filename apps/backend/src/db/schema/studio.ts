@@ -18,6 +18,14 @@ export const studioWeeklyDigestSettings = sqliteTable("studio_weekly_digest_sett
   updatedAt: text().notNull(),
 });
 
+/** One daily database backup policy per Studio instance. Enabled by default:
+ * the operator who never opens settings is exactly the one who needs it. */
+export const studioBackupSettings = sqliteTable("studio_backup_settings", {
+  id: integer().primaryKey().default(1),
+  enabled: integer().notNull().default(1),
+  updatedAt: text().notNull(),
+});
+
 /** One daily Grok news digest policy per Studio instance, shared by every administrator. */
 export const studioNewsDigestSettings = sqliteTable("studio_news_digest_settings", {
   id: integer().primaryKey().default(1),
