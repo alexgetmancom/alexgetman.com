@@ -108,28 +108,24 @@ months.
 
 ## Threads
 
-Publishing natively needs your own Meta app with the Threads use case. Note
-that such an app has two id and secret pairs: the Threads ones are the pair
-this uses, under App settings → Basic as **Threads App ID** and **Threads App
-secret**.
+Note that a Meta app with the Threads use case has two id and secret pairs. The
+Threads ones are the pair this uses, under App settings → Basic as **Threads App
+ID** and **Threads App secret** — putting the Meta app's own id there produces
+error 4476002, which does not say which of the two it wanted.
 
-1. Put them in `.env` as `THREADS_APP_ID` and `THREADS_APP_SECRET`.
-2. Register `<your base URL>/oauth/threads` in that app's valid OAuth redirect
-   URIs. The command prints the exact address to register.
+Connect it from Studio → Channels, as described above. If the Command Center is
+unreachable — a broken deployment, a Studio that serves nothing publicly — the
+same exchange runs from a terminal:
 
 ```bash
 docker compose exec -it app bun /app/ops/cli.js threads-authorize --locale ru
 ```
 
-It prints a link, you approve it as the account you publish from, and Meta
-redirects to that URI. **That page serves nothing and your browser will show an
-error — this is expected.** The address bar is the point: copy the whole address
-and paste it back. The command exchanges it for a long-lived token and prints it
-for `.env`.
-
-Unlike YouTube, this cannot be finished on another device alone, because Threads
-has no device flow — Meta answers the consent screen with a redirect, and the
-code arrives inside it.
+It prints a link to approve as the account you publish from. Meta redirects to
+the callback, which **reports that the connection failed — expected on this
+path**: that link carries no signed state, so the callback refuses it and leaves
+the single-use code unspent. Copy the whole address from the address bar and
+paste it back; the command exchanges it and prints the token for `.env`.
 
 ## What to know before you start
 

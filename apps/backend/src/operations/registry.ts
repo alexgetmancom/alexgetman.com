@@ -581,7 +581,10 @@ const operationDefs = {
         fetchImpl: context.fetchImpl,
         onPrompt: (authorizeUrl, redirectUri) =>
           console.log(
-            `Open this and approve it as the account you publish from:\n${authorizeUrl}\n\nIt redirects to ${redirectUri}, which serves nothing — the browser will show an error and that is expected. Copy the whole address from the address bar.\n`,
+            // This link deliberately carries no signed state, so the callback
+            // refuses it and leaves the single-use code unspent for the
+            // exchange below. The refusal page is the expected outcome here.
+            `Open this and approve it as the account you publish from:\n${authorizeUrl}\n\nIt redirects to ${redirectUri}, which will report that the connection failed — that is expected on this path and the code is still good. Copy the whole address from the address bar.\n`,
           ),
       }),
   }),
