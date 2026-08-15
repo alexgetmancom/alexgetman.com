@@ -44,7 +44,7 @@ async function ambiguousPublication(db: UnsafeBackendDb): Promise<string> {
     .set({ status: "publishing", currentPhase: "provider.verify", lockedBy: "dead", lockedAt: "2000-01-01T00:00:00.000Z" })
     .where(eq(publishJobs.target, "threads_ru"))
     .run();
-  recoverStalePublishJobs(db, config);
+  recoverStalePublishJobs(db);
   return published.ref;
 }
 

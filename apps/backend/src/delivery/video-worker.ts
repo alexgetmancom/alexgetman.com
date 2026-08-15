@@ -22,6 +22,7 @@ import { verifyInstagramPublication } from "./social/instagram.js";
 
 const VIDEO_HEARTBEAT_INTERVAL_SECONDS = 30;
 
+import { PUBLISH_BACKOFF_MAX_SECONDS } from "../foundation/config.js";
 import {
   InstagramContainerInvalidError,
   InstagramContainerProcessingError,
@@ -33,6 +34,10 @@ import {
 } from "./video-publishers.js";
 import { pruneExpiredVideos } from "./video-retention.js";
 import { publishZernioInstagramReel } from "./zernio.js";
+
+/** Video jobs heartbeat at a tighter interval than the social pipeline, so
+ * this only has to be a few missed heartbeats wide to detect a crash. */
+const VIDEO_LOCK_TIMEOUT_SECONDS = 120;
 
 export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb): Promise<number> {
   recoverVideoLocks(backendDb, config);
@@ -333,7 +338,7 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
   const transition = failedJobTransition(cause, job.attemptCount, {
     maxAttempts: config.PUBLISH_MAX_ATTEMPTS,
     backoffBaseSeconds: config.PUBLISH_BACKOFF_BASE_SECONDS,
-    backoffMaxSeconds: config.PUBLISH_BACKOFF_MAX_SECONDS,
+    backoffMaxSeconds: PUBLISH_BACKOFF_MAX_SECONDS,
   });
   if (cause instanceof InstagramContainerProcessingError && transition.attempt < config.PUBLISH_MAX_ATTEMPTS) {
     const now = new Date().toISOString();
@@ -473,7 +478,7 @@ function composeYouTubeDescription(backendDb: BackendDb, actorId: number, metada
  * "unknown" error class this produces gets exactly one safety-net retry, same
  * as the social pipeline, so a genuinely stuck target still terminates quickly. */
 export function recoverVideoLocks(backendDb: BackendDb, config: BackendConfig): number {
-  const cutoff = new Date(Date.now() - config.VIDEO_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
+  const cutoff = new Date(Date.now() - VIDEO_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
   const now = new Date().toISOString();
   const stale = unsafeDb(backendDb)
     .db.select()
@@ -491,7 +496,7 @@ export function recoverVideoLocks(backendDb: BackendDb, config: BackendConfig): 
       const transition = failedJobTransition(new Error(error), job.attemptCount, {
         maxAttempts: config.PUBLISH_MAX_ATTEMPTS,
         backoffBaseSeconds: config.PUBLISH_BACKOFF_BASE_SECONDS,
-        backoffMaxSeconds: config.PUBLISH_BACKOFF_MAX_SECONDS,
+        backoffMaxSeconds: PUBLISH_BACKOFF_MAX_SECONDS,
       });
       const retry = !ambiguous && transition.status === "queued";
       const status = ambiguous ? "verification_required" : transition.status;

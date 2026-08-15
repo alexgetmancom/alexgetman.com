@@ -6,6 +6,9 @@ import { metricSchedule, posts, postTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { metricCheckpointAt } from "./metric-checkpoints.js";
 
+/** How long a metric-collection lock outlives the worker holding it. */
+export const METRIC_LOCK_TIMEOUT_SECONDS = 900;
+
 export type MetricTask = {
   postKey: string;
   target: string;
@@ -62,7 +65,7 @@ export function claimDueMetricTasks(
 ): MetricTask[] {
   if (targets.length === 0) return [];
   const now = new Date().toISOString();
-  const cutoff = new Date(Date.now() - config.METRIC_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
+  const cutoff = new Date(Date.now() - METRIC_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
   const rows = unsafeDb(backendDb)
     .db.select({
       postKey: metricSchedule.postKey,

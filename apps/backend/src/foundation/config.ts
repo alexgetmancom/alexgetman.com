@@ -20,6 +20,16 @@ function blankAsUnset(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(env).filter(([, value]) => value?.trim() !== ""));
 }
 
+/** How long a publish lock outlives the worker holding it before the watchdog
+ * may reclaim the job. Not env-configurable, and it lives here next to the
+ * publish timings that still are, and next to the checks below that read it:
+ * it has to exceed PUBLISH_JOB_TIMEOUT_SECONDS or the same job is picked up
+ * twice, and outlast two heartbeats or a working job is reclaimed. */
+export const PUBLISH_LOCK_TIMEOUT_SECONDS = 900;
+
+/** Ceiling on exponential publish retry backoff. */
+export const PUBLISH_BACKOFF_MAX_SECONDS = 3600;
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -46,7 +56,6 @@ const envSchema = z
     /** Moscow hour at which the editor receives one AI-generated opportunity inbox. */
     EDITORIAL_INBOX_HOUR_MSK: z.coerce.number().int().min(0).max(23).default(10),
     GROK_CLI_PATH: z.string().default("grok"),
-    GROK_CLI_TIMEOUT_SECONDS: z.coerce.number().int().positive().max(3_600).default(900),
     CONTROLLER_ADMIN_IDS: z
       .string()
       .default("")
@@ -84,7 +93,6 @@ const envSchema = z
     // check simply returns in 15 minutes. Ten seconds of waiting bought nothing
     // and dominated the average collection time.
     MAX_METRIC_TASKS_PER_CYCLE: z.coerce.number().int().positive().default(30),
-    METRIC_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
     OBSERVABILITY_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),
     ALERT_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(3600),
     WORKER_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
@@ -97,7 +105,6 @@ const envSchema = z
     // are terminal and require an explicit retry, because the provider may
     // have accepted the request while its response was lost.
     PUBLISH_JOB_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(3_600).default(600),
-    PUBLISH_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
     // Social publish jobs heartbeat (see publish-workflow.ts's withJobHeartbeat)
     // while a slow provider call is in flight, touching lockedAt so
     // recoverStalePublishJobs doesn't mistake "still working" for "worker crashed".
@@ -105,8 +112,6 @@ const envSchema = z
     // Initial delivery plus three exponential-backoff retries.
     PUBLISH_MAX_ATTEMPTS: z.coerce.number().int().positive().default(4),
     PUBLISH_BACKOFF_BASE_SECONDS: z.coerce.number().int().positive().default(60),
-    PUBLISH_BACKOFF_MAX_SECONDS: z.coerce.number().int().positive().default(3600),
-    FFMPEG_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(600),
     /** Where optional heavy media transforms execute. Remote workers are
      * deliberately opt-in so a stock self-hosted Studio keeps working. */
     MEDIA_PROCESSOR_PROVIDER: z.enum(["local", "remote_http"]).default("local"),
@@ -118,18 +123,12 @@ const envSchema = z
     STORY_CARD_DIR: z.string().default("/data/story-cards"),
     STORY_CARD_ASSETS_DIR: z.string().default("/app/apps/backend/assets/story-card"),
     STORY_CARD_RENDERER_ENTRY: z.string().default("/app/story-renderer/renderer-process.js"),
-    STORY_CARD_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(60).default(15),
     STORY_CARD_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
     // Dedicated mounted media volume; never place large Studio assets on the
     // pipeline/database disk mounted at /data.
     STUDIO_MEDIA_DIR: z.string().default("/data/video-media"),
     STUDIO_MEDIA_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
     VIDEO_MEDIA_DIR: z.string().default("/data/video-media"),
-    VIDEO_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
-    // Video jobs heartbeat (see video-worker.ts's withJobHeartbeat) at a tighter
-    // interval than the social pipeline, so this lock timeout only has to be a
-    // few missed heartbeats wide to safely detect a crash.
-    VIDEO_LOCK_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(120),
     // How many times reconciliation may ask a provider whether an ambiguous
     // publication exists before it stops polling and waits for an operator.
     // Higher than the publish budget on purpose: these are reads, and a
@@ -223,27 +222,27 @@ const envSchema = z
         message: "MCP_STUDIO_TOKEN and MCP_STUDIO_ACTOR_ID must be configured together",
       });
     }
-    // Heartbeat/lock/timeout values are only meaningful in relation to each
-    // other, and every field-level check above passes on a combination that
-    // makes the watchdog steal jobs from a worker that is still running.
-    for (const [heartbeatKey, lockKey] of [["PUBLISH_HEARTBEAT_INTERVAL_SECONDS", "PUBLISH_LOCK_TIMEOUT_SECONDS"]] as const) {
-      // Two missed heartbeats must still fit inside the lock window; at exactly
-      // one interval, ordinary scheduling jitter is enough to expire the lock.
-      if (env[heartbeatKey] * 2 >= env[lockKey]) {
-        context.addIssue({
-          code: "custom",
-          path: [heartbeatKey],
-          message: `${heartbeatKey} (${env[heartbeatKey]}s) must be less than half of ${lockKey} (${env[lockKey]}s), or the watchdog can reclaim a job that is still running`,
-        });
-      }
+    // Both settings below are only meaningful against the lock window they run
+    // inside, and every field-level check above passes on a combination that
+    // makes the watchdog steal jobs from a worker that is still running. The
+    // window itself is no longer configurable, so these compare against it.
+    //
+    // Two missed heartbeats must still fit inside the lock window; at exactly
+    // one interval, ordinary scheduling jitter is enough to expire the lock.
+    if (env.PUBLISH_HEARTBEAT_INTERVAL_SECONDS * 2 >= PUBLISH_LOCK_TIMEOUT_SECONDS) {
+      context.addIssue({
+        code: "custom",
+        path: ["PUBLISH_HEARTBEAT_INTERVAL_SECONDS"],
+        message: `PUBLISH_HEARTBEAT_INTERVAL_SECONDS (${env.PUBLISH_HEARTBEAT_INTERVAL_SECONDS}s) must be less than half the ${PUBLISH_LOCK_TIMEOUT_SECONDS}s publish lock window, or the watchdog can reclaim a job that is still running`,
+      });
     }
     // A provider call may legitimately occupy a worker for the whole job
     // timeout; the lock has to outlive it or the same job gets picked up twice.
-    if (env.PUBLISH_JOB_TIMEOUT_SECONDS >= env.PUBLISH_LOCK_TIMEOUT_SECONDS) {
+    if (env.PUBLISH_JOB_TIMEOUT_SECONDS >= PUBLISH_LOCK_TIMEOUT_SECONDS) {
       context.addIssue({
         code: "custom",
         path: ["PUBLISH_JOB_TIMEOUT_SECONDS"],
-        message: `PUBLISH_JOB_TIMEOUT_SECONDS (${env.PUBLISH_JOB_TIMEOUT_SECONDS}s) must be shorter than PUBLISH_LOCK_TIMEOUT_SECONDS (${env.PUBLISH_LOCK_TIMEOUT_SECONDS}s)`,
+        message: `PUBLISH_JOB_TIMEOUT_SECONDS (${env.PUBLISH_JOB_TIMEOUT_SECONDS}s) must be shorter than the ${PUBLISH_LOCK_TIMEOUT_SECONDS}s publish lock window`,
       });
     }
     // The MCP token authorizes an actor, so that actor has to be on the roster.

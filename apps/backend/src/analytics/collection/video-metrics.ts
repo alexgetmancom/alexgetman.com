@@ -12,6 +12,7 @@ import { requestJson } from "../../foundation/http.js";
 import { markSynced, mergeVideoSnapshot, metricNumber, upsertComment, upsertVideoSnapshot } from "../snapshots/creator-store.js";
 import { describeMetricFreeze, isTerminalMetricError, terminalIfMissingRemoteObject } from "./collectors/errors.js";
 import { nextVideoMetricCheckAt, videoMetricCheckpointAt } from "./metric-checkpoints.js";
+import { METRIC_LOCK_TIMEOUT_SECONDS } from "./metric-schedule.js";
 import { queryYouTubeAnalytics, youtubeAnalyticsCompletedEnd, youtubeAnalyticsDate } from "./youtube-analytics.js";
 
 /** Matches the "common.untitled" i18n fallback shown for drafts without a label;
@@ -88,7 +89,7 @@ type ZernioPostAnalytics = {
 /** Uses the same fixed-from-publication checkpoints as text-post metrics. */
 export async function runVideoMetricSchedule(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch): Promise<number> {
   ensureVideoMetricSchedule(backendDb);
-  const tasks = claimDueVideoMetricTasks(backendDb, config, config.MAX_METRIC_TASKS_PER_CYCLE);
+  const tasks = claimDueVideoMetricTasks(backendDb, config.MAX_METRIC_TASKS_PER_CYCLE);
   const youtubeTasks = tasks.filter((task) => task.target === "youtube_shorts");
   const youtubeTokens = new Map<"ru" | "en", string>();
   for (const locale of ["ru", "en"] as const) {
@@ -238,14 +239,9 @@ function ensureVideoMetricSchedule(backendDb: BackendDb): void {
   }
 }
 
-function claimDueVideoMetricTasks(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  limit: number,
-  worker = `video-metrics:${crypto.randomUUID()}`,
-): VideoMetricTask[] {
+function claimDueVideoMetricTasks(backendDb: BackendDb, limit: number, worker = `video-metrics:${crypto.randomUUID()}`): VideoMetricTask[] {
   const now = new Date().toISOString();
-  const cutoff = new Date(Date.now() - config.METRIC_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
+  const cutoff = new Date(Date.now() - METRIC_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
   const rows = unsafeDb(backendDb)
     .db.select({
       id: videoTargets.id,

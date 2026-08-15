@@ -5,7 +5,7 @@ import { drafts, postLocales, publications, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { jsonObject } from "../json.js";
 import { queueDraftStoryCards, readyStoryCardMedia, setStoryPublishMode, storyCardsForDraft } from "../story-cards/store.js";
-import { runStoryCardCycle } from "../story-cards/worker.js";
+import { runStoryCardCycle, STORY_CARD_TIMEOUT_SECONDS } from "../story-cards/worker.js";
 import { updateSource } from "./commands/content-repair.js";
 import { resolvePublicationRef } from "./publication-ref.js";
 
@@ -103,7 +103,7 @@ export async function backfillTextStoryCards(
 }
 
 async function waitForCards(backendDb: BackendDb, config: BackendConfig, draftId: number) {
-  const deadline = Date.now() + config.STORY_CARD_TIMEOUT_SECONDS * 2_000;
+  const deadline = Date.now() + STORY_CARD_TIMEOUT_SECONDS * 2_000;
   while (Date.now() < deadline) {
     const ready = readyStoryCardMedia(unsafeDb(backendDb).db, draftId);
     if (ready) return ready;

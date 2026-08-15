@@ -546,7 +546,7 @@ describe("publish queue", () => {
         })
         .where(eq(publishJobs.jobId, id))
         .run();
-      expect(recoverStalePublishJobs(backendDb, loadTestConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }))).toBe(1);
+      expect(recoverStalePublishJobs(backendDb)).toBe(1);
       const job = backendDb.db
         .select({ status: publishJobs.status, lockedBy: publishJobs.lockedBy })
         .from(publishJobs)
@@ -575,7 +575,7 @@ describe("publish queue", () => {
         .where(eq(publishJobs.jobId, id))
         .run();
 
-      expect(recoverStalePublishJobs(backendDb, loadTestConfig({}), 60)).toBe(1);
+      expect(recoverStalePublishJobs(backendDb, 60)).toBe(1);
     }).finally(() => setSystemTime());
   });
 
@@ -601,7 +601,7 @@ describe("publish queue", () => {
         .where(eq(publishJobs.jobId, id))
         .run();
 
-      expect(recoverStalePublishJobs(backendDb, loadTestConfig({}))).toBe(1);
+      expect(recoverStalePublishJobs(backendDb)).toBe(1);
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
         status: "verification_required",
       });
@@ -626,7 +626,7 @@ describe("publish queue", () => {
         .where(eq(publishJobs.jobId, id))
         .run();
 
-      expect(recoverStalePublishJobs(backendDb, loadTestConfig({}))).toBe(1);
+      expect(recoverStalePublishJobs(backendDb)).toBe(1);
       expect(
         backendDb.db
           .select({ status: publishJobs.status, currentPhase: publishJobs.currentPhase })
@@ -655,7 +655,7 @@ describe("publish queue", () => {
         .where(eq(publishJobs.jobId, id))
         .run();
 
-      expect(runPublishWatchdog(loadTestConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }), backendDb)).toBe(1);
+      expect(runPublishWatchdog(backendDb)).toBe(1);
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
         status: "verification_required",
       });
@@ -675,7 +675,7 @@ describe("publish queue", () => {
         .set({ currentPhase: "provider.publish", lockedAt: "2000-01-01T00:00:00.000Z" })
         .where(eq(publishJobs.jobId, id))
         .run();
-      recoverStalePublishJobs(backendDb, loadTestConfig({}));
+      recoverStalePublishJobs(backendDb);
 
       completePublishJob(backendDb, loadTestConfig({}), id, { ok: true, id: "late" }, claimed.lockId);
 

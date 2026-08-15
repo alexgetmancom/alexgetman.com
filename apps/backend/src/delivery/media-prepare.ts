@@ -157,7 +157,7 @@ async function normalizeVideoForPublicUpload(config: BackendConfig, inputPath: s
           "+faststart",
           outputPath,
         ];
-  await runFfmpeg(args, config.FFMPEG_TIMEOUT_SECONDS);
+  await runFfmpeg(args);
   return outputPath;
 }
 

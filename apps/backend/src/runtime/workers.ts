@@ -39,8 +39,8 @@ export async function runPublishCycle(
 
 /** Runs independently from delivery. A hung provider promise must never prevent
  * stale publishing locks from returning to the bounded retry policy. */
-export function runPublishWatchdog(config: BackendConfig, backendDb: BackendDb): number {
-  return recoverStalePublishJobs(backendDb, config);
+export function runPublishWatchdog(backendDb: BackendDb): number {
+  return recoverStalePublishJobs(backendDb);
 }
 
 async function runTimedCycle(
@@ -59,13 +59,13 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
   // locks behind. Do not wait the ordinary 15-minute crash TTL before the new
   // process can resume the same targets; the short grace still avoids racing a
   // request that was only just interrupted at the provider boundary.
-  const recoveredAtStartup = recoverStalePublishJobs(backendDb, config, PUBLISH_RESTART_LOCK_GRACE_SECONDS);
+  const recoveredAtStartup = recoverStalePublishJobs(backendDb, PUBLISH_RESTART_LOCK_GRACE_SECONDS);
   if (recoveredAtStartup) log("warn", "recovered interrupted publishing locks on worker startup", { recovered: recoveredAtStartup });
-  if (config.studio.siteEnabled) {
-    const recoveredSiteAtStartup = recoverStaleSiteJobs(backendDb, SITE_JOB_RESTART_LOCK_GRACE_SECONDS);
-    if (recoveredSiteAtStartup)
-      log("warn", "recovered interrupted site build locks on worker startup", { recovered: recoveredSiteAtStartup });
-  }
+  // Unconditional, like the loops below: a Studio whose site was turned off
+  // after a crash still owns the locks that crash left behind.
+  const recoveredSiteAtStartup = recoverStaleSiteJobs(backendDb, SITE_JOB_RESTART_LOCK_GRACE_SECONDS);
+  if (recoveredSiteAtStartup)
+    log("warn", "recovered interrupted site build locks on worker startup", { recovered: recoveredSiteAtStartup });
   const recoveredStoryCardsAtStartup = recoverStoryCardJobs(backendDb);
   if (recoveredStoryCardsAtStartup)
     log("warn", "recovered interrupted Story card locks on worker startup", { recovered: recoveredStoryCardsAtStartup });
@@ -115,7 +115,7 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
       await runTimedCycle("publishing.social.cycle", "claimed", () => runPublishCycle(config, backendDb));
     }),
     startWorkerLoop("publish-watchdog", WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
-      const recovered = runPublishWatchdog(config, backendDb);
+      const recovered = runPublishWatchdog(backendDb);
       if (recovered) log("warn", "recovered stale publishing locks", { recovered });
     }),
     startWorkerLoop("publication-reconciliation", Math.max(60, config.IDLE_POLL_INTERVAL_SECONDS) * 1000, async () => {
@@ -147,21 +147,19 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
         log("error", "failed to prune old metric samples", { error: error instanceof Error ? error.message : String(error) });
       }
     }),
-    ...(config.studio.siteEnabled
-      ? [
-          startWorkerLoop("site", SITE_JOB_POLL_INTERVAL_SECONDS * 1000, async () => {
-            await runTimedCycle("publishing.site.cycle", "claimed", () => runSiteJobCycle(config, backendDb));
-          }),
-        ]
-      : []),
-    ...(config.studio.siteEnabled
-      ? [
-          startWorkerLoop("site-watchdog", WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
-            const recovered = recoverStaleSiteJobs(backendDb);
-            if (recovered) log("warn", "recovered stale site build locks", { recovered });
-          }),
-        ]
-      : []),
+    // Started whether or not this Studio serves a site, and idle while it does
+    // not. Deciding at startup meant turning the site on left the pages served
+    // — those are read per request — with nothing building them until someone
+    // restarted the container, which is a seam an operator cannot see.
+    startWorkerLoop("site", SITE_JOB_POLL_INTERVAL_SECONDS * 1000, async () => {
+      if (!config.studio.siteEnabled) return;
+      await runTimedCycle("publishing.site.cycle", "claimed", () => runSiteJobCycle(config, backendDb));
+    }),
+    startWorkerLoop("site-watchdog", WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
+      if (!config.studio.siteEnabled) return;
+      const recovered = recoverStaleSiteJobs(backendDb);
+      if (recovered) log("warn", "recovered stale site build locks", { recovered });
+    }),
     startWorkerLoop("media-cache", 60 * 60 * 1000, async () => {
       const removed = await pruneMediaCache(config);
       if (removed) log("info", "pruned expired media cache", { removed });

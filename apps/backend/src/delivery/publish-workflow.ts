@@ -33,7 +33,7 @@ export async function runDeliveryPublishCycle(
   backendDb: BackendDb,
   publishers: DeliveryPorts = createPlatformPorts(config, fetch, targetRouting(backendDb)),
 ): Promise<number> {
-  recoverStalePublishJobs(backendDb, config);
+  recoverStalePublishJobs(backendDb);
   const candidates = duePublishJobs(backendDb, PUBLISH_CLAIM_LIMIT);
   const claimedByIndex: Array<ClaimedPublishJob | null> = Array.from({ length: candidates.length }, () => null);
   // One lane per target instead of one shared pool: a single global pLimit let a

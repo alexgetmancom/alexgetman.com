@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "bun:test";
 import { eq } from "drizzle-orm";
 import { workerState } from "../src/db/schema.js";
+import { loadConfig, withStudioProfile } from "../src/foundation/config.js";
 import { startCoreWorkers } from "../src/runtime/workers.js";
 import { withDb } from "./helpers/db.js";
 import { loadTestConfig, SITE_STUDIO_PROFILE } from "./helpers/studio-config.js";
@@ -63,28 +64,24 @@ describe("core worker runtime", () => {
     });
   });
 
-  it("does not start site workers for a Studio without a public site", async () => {
+  it("picks up a site turned on while it is already running", async () => {
+    // The regression this encodes reached production: the site loops used to be
+    // chosen at startup from siteEnabled, so turning the site on left the pages
+    // served — those are read per request — with nothing building them until
+    // someone restarted the container.
     await withDb(async (backendDb) => {
-      const config = loadTestConfig({ WORKER_HEARTBEAT_INTERVAL_SECONDS: "60" }, { siteEnabled: 0 });
+      const config = withStudioProfile(loadConfig({ WORKER_HEARTBEAT_INTERVAL_SECONDS: "60" }), backendDb);
+      backendDb.studioSettings.saveProfile({ siteEnabled: 0, updatedAt: new Date().toISOString() });
       const loops = startCoreWorkers(config, backendDb);
 
       try {
-        expect(loops.map((loop) => loop.name)).toEqual([
-          "platform-tokens",
-          "x-token",
-          "story-cards",
-          "queue",
-          "publish-watchdog",
-          "publication-reconciliation",
-          "notifications",
-          "video",
-          "metrics",
-          "creator-analytics",
-          "metric-retention",
-          "media-cache",
-          "operational-retention",
-          "observability",
-        ]);
+        // Present either way: whether they do anything is the tick's business.
+        expect(loops.map((loop) => loop.name)).toEqual(EXPECTED_WORKERS);
+        expect(config.studio.siteEnabled).toBe(false);
+
+        backendDb.studioSettings.saveProfile({ siteEnabled: 1, updatedAt: new Date().toISOString() });
+        // No restart, no new loops: the running config sees the new value.
+        expect(config.studio.siteEnabled).toBe(true);
       } finally {
         for (const loop of loops) loop.stop();
         jest.useRealTimers();

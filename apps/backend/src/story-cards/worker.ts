@@ -11,6 +11,9 @@ import { trackUsageAsync } from "../observability/usage.js";
 import { replanScheduledPostAfterStoryCardFailure, replanScheduledPostAfterStoryCards } from "../studio/services/posts.js";
 import { buildStoryCardCopy } from "./copy.js";
 
+/** A Story card render is a headless browser shot; past this it is hung. */
+export const STORY_CARD_TIMEOUT_SECONDS = 15;
+
 type ClaimedCard = typeof draftStoryCards.$inferSelect & { lockedBy: string; lockedAt: string };
 
 /** Renders at most one queued card. `preferDraftId` puts that draft's cards at the
@@ -179,14 +182,14 @@ async function renderStoryCard(config: BackendConfig, card: ClaimedCard, output:
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill("SIGKILL");
-    }, config.STORY_CARD_TIMEOUT_SECONDS * 1000);
+    }, STORY_CARD_TIMEOUT_SECONDS * 1000);
     try {
       // stdout is drained alongside stderr rather than left unread: an unread pipe
       // that fills stalls the child on write, and the kill above would then read as
       // a render timeout instead of a stuck reader.
       const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()]);
       rendererMs = Date.now() - rendererStartedAt;
-      if (timedOut) throw new Error(`story_card_renderer_failed: timed out after ${config.STORY_CARD_TIMEOUT_SECONDS}s`);
+      if (timedOut) throw new Error(`story_card_renderer_failed: timed out after ${STORY_CARD_TIMEOUT_SECONDS}s`);
       if (exitCode !== 0) throw new Error(`story_card_renderer_failed: ${stderr.slice(0, 800) || `exit ${exitCode}`}`);
       if (!fs.existsSync(output)) throw new Error("story_card_renderer_failed: output missing");
       outputBytes = fs.statSync(output).size;

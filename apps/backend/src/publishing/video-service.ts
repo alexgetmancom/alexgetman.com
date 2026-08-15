@@ -16,6 +16,10 @@ import { getVideoDraft, insertVideoJob, listVideoTargets, refreshVideoDraftStatu
 import type { VideoLocale, VideoMetadata, VideoTarget } from "./video-types.js";
 import { VIDEO_TARGETS } from "./video-types.js";
 
+/** Telegram refuses larger uploads, and the mounted media volume is sized
+ * around this. */
+const VIDEO_MAX_BYTES = 1_000_000_000;
+
 export function createVideoDraft(
   backendDb: BackendDb,
   actorId: number,
@@ -270,10 +274,10 @@ export async function validateVideoDraft(config: BackendConfig, backendDb: Backe
   if (path.extname(source).toLowerCase() !== ".mp4") throw new StudioError("err.need-mp4");
   const size = (await fs.promises.stat(source)).size;
   if (size <= 0) throw new StudioError("err.video-empty");
-  if (size > config.VIDEO_MAX_BYTES)
+  if (size > VIDEO_MAX_BYTES)
     throw new StudioError("err.video-too-big", {
       size: Math.ceil(size / 1024 / 1024),
-      limit: Math.floor(config.VIDEO_MAX_BYTES / 1024 / 1024),
+      limit: Math.floor(VIDEO_MAX_BYTES / 1024 / 1024),
     });
   for (const target of listVideoTargets(backendDb, videoDraftId)) {
     if (target.target === "youtube_shorts") {

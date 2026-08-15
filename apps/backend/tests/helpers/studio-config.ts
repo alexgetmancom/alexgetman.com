@@ -4,7 +4,12 @@ import { DEFAULT_STUDIO_PROFILE } from "../../src/studio.js";
 
 /** The Studio profile a test runs against unless it says otherwise. It is held
  * in memory rather than in the test database: most tests never open one, and a
- * profile is the Studio's identity, not part of the case under test. */
+ * profile is the Studio's identity, not part of the case under test.
+ *
+ * The overrides are copied, never aliased: the exported profiles below are
+ * shared module constants, and a test writing through one would change every
+ * later test in the file. A test whose subject is a setting changing mid-run
+ * builds its config over a real database instead, the way production does. */
 function memoryProfileStore(overrides: Partial<StudioProfileRecord>): Pick<StudioSettingsStore, "profile" | "saveProfile"> {
   let row: StudioProfileRecord = { id: 1, ...DEFAULT_STUDIO_PROFILE, updatedAt: "1970-01-01T00:00:00.000Z", ...overrides };
   return {

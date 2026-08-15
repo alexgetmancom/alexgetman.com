@@ -204,7 +204,8 @@ describe("video publication queue", () => {
         runAt: now,
         status: "running",
         lockedBy: "old-worker",
-        lockedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+        // Comfortably past the 120s video lock window, which is a constant now.
+        lockedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
         createdAt: now,
         updatedAt: now,
       })
@@ -244,13 +245,14 @@ describe("video publication queue", () => {
         status: "running",
         attemptCount: 0,
         lockedBy: "old-worker",
-        lockedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+        // Comfortably past the 120s video lock window, which is a constant now.
+        lockedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
         createdAt: now,
         updatedAt: now,
       })
       .run();
 
-    expect(recoverVideoLocks(backendDb, { ...videoConfig(), VIDEO_LOCK_TIMEOUT_SECONDS: 60 })).toBe(1);
+    expect(recoverVideoLocks(backendDb, videoConfig())).toBe(1);
     expect(backendDb.db.select().from(videoJobs).all()).toMatchObject([
       { status: "queued", attemptCount: 1, lockedBy: null, lockedAt: null, lastError: "worker_lost: video lock expired before completion" },
     ]);

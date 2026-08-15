@@ -7,6 +7,7 @@ import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js"
 import { type JsonObject, publishJobs } from "../db/schema.js";
 import { insertPublishJobSchema } from "../db/validation.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { PUBLISH_LOCK_TIMEOUT_SECONDS } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
 import { classifyPublishError, normalizePublishResult, type PublishResult } from "./errors.js";
@@ -142,11 +143,7 @@ function withLease(backendDb: BackendDb, jobId: number, settle: (tx: UnsafeBacke
   }
 }
 
-export function recoverStalePublishJobs(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  maxLockAgeSeconds = config.PUBLISH_LOCK_TIMEOUT_SECONDS,
-): number {
+export function recoverStalePublishJobs(backendDb: BackendDb, maxLockAgeSeconds = PUBLISH_LOCK_TIMEOUT_SECONDS): number {
   const cutoff = new Date(Date.now() - maxLockAgeSeconds * 1000).toISOString();
   const now = new Date().toISOString();
   const stale = unsafeDb(backendDb)

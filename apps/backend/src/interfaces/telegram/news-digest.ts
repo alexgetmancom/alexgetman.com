@@ -8,6 +8,9 @@ import { log } from "../../foundation/logger.js";
 import { zonedDateTimeParts } from "../../foundation/time.js";
 import { settingsService } from "../../studio/services/settings.js";
 
+/** The Grok CLI is a subprocess; past this it is not coming back. */
+const GROK_CLI_TIMEOUT_SECONDS = 900;
+
 type GrokProcess = {
   stdout: ReadableStream<Uint8Array>;
   stderr: ReadableStream<Uint8Array>;
@@ -59,7 +62,7 @@ export async function sendDailyNewsDigest(
     !options.force &&
     !claimSync(backendDb, key, {
       intervalSeconds: 24 * 60 * 60,
-      leaseSeconds: NEWS_DIGEST_EFFORTS.length * config.GROK_CLI_TIMEOUT_SECONDS + 60,
+      leaseSeconds: NEWS_DIGEST_EFFORTS.length * GROK_CLI_TIMEOUT_SECONDS + 60,
       owner,
     })
   )
@@ -142,14 +145,14 @@ async function runGrokAttempt(
   const timeout = setTimeout(() => {
     timedOut = true;
     child.kill();
-  }, config.GROK_CLI_TIMEOUT_SECONDS * 1000);
+  }, GROK_CLI_TIMEOUT_SECONDS * 1000);
   try {
     const [stdout, stderr, exitCode] = await Promise.all([
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),
       child.exited,
     ]);
-    if (timedOut) throw new Error(`Grok CLI timed out after ${config.GROK_CLI_TIMEOUT_SECONDS} seconds`);
+    if (timedOut) throw new Error(`Grok CLI timed out after ${GROK_CLI_TIMEOUT_SECONDS} seconds`);
     if (exitCode !== 0) throw new Error(`Grok CLI exited with code ${exitCode}: ${stderr.trim().slice(0, 500)}`);
     let response: unknown;
     try {

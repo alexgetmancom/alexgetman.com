@@ -55,7 +55,7 @@ export async function generateStoryMedia(
     try {
       if (config.MEDIA_PROCESSOR_PROVIDER === "remote_http")
         await transformRemotely(source, output, telegramOutput, video, config, fetchImpl);
-      else await withTimeout(runFfmpeg(args, config.FFMPEG_TIMEOUT_SECONDS), storyTransformTimeout(config), "story_transform_timeout");
+      else await withTimeout(runFfmpeg(args), storyTransformTimeout(config), "story_transform_timeout");
     } finally {
       transformMs = Date.now() - transformStartedAt;
     }

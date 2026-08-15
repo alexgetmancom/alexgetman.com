@@ -6,6 +6,7 @@ import { type BackendDb, unsafeDb } from "../db/client.js";
 import { postTargets, publishJobs, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { PUBLISH_BACKOFF_MAX_SECONDS, PUBLISH_LOCK_TIMEOUT_SECONDS } from "../foundation/config.js";
 import { isTargetAuthBlocked, recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
 import { classifyPublishError, nextRetryAt } from "../publishing/errors.js";
 import { refreshPublicationStatus } from "../publishing/publication-status.js";
@@ -32,7 +33,7 @@ export async function runPublicationReconciliation(
   // This claims publish and video jobs, so it ages out on the publish lock —
   // the metrics timeout is a different worker's setting and tuning that one
   // silently moved when reconciliation may steal a claim.
-  const staleBefore = new Date(Date.now() - config.PUBLISH_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
+  const staleBefore = new Date(Date.now() - PUBLISH_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
   const ordinary = unsafeDb(backendDb)
     .db.select({ job: publishJobs, target: postTargets })
     .from(publishJobs)
@@ -304,5 +305,5 @@ function deferVideoReconciliation(backendDb: BackendDb, config: BackendConfig, j
 
 function reconciliationNextAttempt(config: BackendConfig, attempt: number): string | null {
   if (attempt >= config.RECONCILE_MAX_ATTEMPTS) return null;
-  return nextRetryAt(attempt, config.PUBLISH_BACKOFF_BASE_SECONDS, config.PUBLISH_BACKOFF_MAX_SECONDS);
+  return nextRetryAt(attempt, config.PUBLISH_BACKOFF_BASE_SECONDS, PUBLISH_BACKOFF_MAX_SECONDS);
 }
