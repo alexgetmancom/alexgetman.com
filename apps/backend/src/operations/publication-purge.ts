@@ -1,17 +1,20 @@
 import { existsSync, unlinkSync } from "node:fs";
 import { parsePublicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
+import { videoTargetIsAbsent } from "../delivery/video-publishers.js";
 import { postDraftReferencesAsset } from "../delivery/video-retention.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { resolvePublicationRef } from "./publication-ref.js";
 
 type PurgeInput = { ref: string; apply: boolean };
 type SqlArgs = Array<string | number>;
 type PurgeStatement = { name: string; countSql: string; deleteSql: string; args: SqlArgs };
 type TargetState = { target: string; status: string; url: string | null };
+type VideoTargetState = TargetState & { externalId: string | null; deliveryProvider: string; providerPostId: string | null };
 
-export async function purgePublication(backendDb: BackendDb, input: PurgeInput, fetchImpl: typeof fetch) {
+export async function purgePublication(backendDb: BackendDb, config: BackendConfig, input: PurgeInput, fetchImpl: typeof fetch) {
   const parsed = parsePublicationRef(input.ref);
-  if (parsed?.kind === "video") return purgeVideoPublication(backendDb, parsed.id, input.apply, fetchImpl);
+  if (parsed?.kind === "video") return purgeVideoPublication(backendDb, config, parsed.id, input.apply, fetchImpl);
   const resolved = resolvePublicationRef(backendDb, input.ref);
   if (!resolved?.postId) throw new Error(`publication not found: ${input.ref}`);
   const sqlite = unsafeDb(backendDb).sqlite;
@@ -84,11 +87,18 @@ export async function purgePublication(backendDb: BackendDb, input: PurgeInput, 
  * off the draft by foreign key. What does not hang off it is the journal, which
  * is keyed by ref, and the source upload, which is shared with whatever else
  * points at the same asset. */
-async function purgeVideoPublication(backendDb: BackendDb, videoDraftId: number, apply: boolean, fetchImpl: typeof fetch) {
+async function purgeVideoPublication(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  videoDraftId: number,
+  apply: boolean,
+  fetchImpl: typeof fetch,
+) {
   const sqlite = unsafeDb(backendDb).sqlite;
   const ref = `video:${videoDraftId}`;
-  const draft = sqlite.query("SELECT studio_media_asset_id AS assetId FROM video_drafts WHERE id=?").get(videoDraftId) as {
+  const draft = sqlite.query("SELECT studio_media_asset_id AS assetId, locale FROM video_drafts WHERE id=?").get(videoDraftId) as {
     assetId: number;
+    locale: string;
   } | null;
   if (!draft) throw new Error(`publication not found: ${ref}`);
   const statements = videoPurgeStatements(videoDraftId, ref);
@@ -100,12 +110,13 @@ async function purgeVideoPublication(backendDb: BackendDb, videoDraftId: number,
   const files = orphanedAssetFiles(backendDb, draft.assetId, videoDraftId);
   if (!apply) return { ok: true, applied: false, action: "purge", ref, video_draft_id: videoDraftId, rows, files };
 
-  const verified = await assertTargetsAbsent(videoTargetStates(sqlite, videoDraftId), fetchImpl);
+  const verified = await assertVideoTargetsAbsent(config, videoTargetStates(sqlite, videoDraftId), draft.locale, fetchImpl);
   const deleted = sqlite
     .transaction(() => {
-      // Same fence as the text path, for the same reason: the HTTP proof cannot
-      // travel in a WHERE clause, so the delete only proceeds while the targets
-      // still read exactly as they did when they were checked.
+      // Same fence as the text path, for the same reason: the proof came from
+      // the platform and cannot travel in a WHERE clause, so the delete only
+      // proceeds while the targets still read exactly as they did when they
+      // were checked.
       if (targetSignature(videoTargetStates(sqlite, videoDraftId)) !== targetSignature(verified))
         throw new Error(`targets for ${ref} changed while it was being verified; nothing was deleted`);
       const result: Record<string, number> = {};
@@ -166,10 +177,31 @@ function videoPurgeStatements(videoDraftId: number, ref: string): PurgeStatement
   ];
 }
 
-function videoTargetStates(sqlite: ReturnType<typeof unsafeDb>["sqlite"], videoDraftId: number): TargetState[] {
+function videoTargetStates(sqlite: ReturnType<typeof unsafeDb>["sqlite"], videoDraftId: number): VideoTargetState[] {
   return sqlite
-    .query("SELECT target,status,external_url AS url FROM video_targets WHERE video_draft_id=? ORDER BY target")
-    .all(videoDraftId) as TargetState[];
+    .query(
+      "SELECT target,status,external_url AS url,external_id AS externalId,delivery_provider AS deliveryProvider,provider_post_id AS providerPostId FROM video_targets WHERE video_draft_id=? ORDER BY target",
+    )
+    .all(videoDraftId) as VideoTargetState[];
+}
+
+/** A published reel has no address that answers this question to a stranger:
+ * Instagram returns its login wall with HTTP 200 for a logged-out request, so
+ * the open-web check the text path uses would call a live reel absent. The
+ * platform is asked about the id instead, with the same credentials that
+ * published it. */
+async function assertVideoTargetsAbsent(
+  config: BackendConfig,
+  targets: VideoTargetState[],
+  locale: string,
+  fetchImpl: typeof fetch,
+): Promise<VideoTargetState[]> {
+  for (const target of targets) {
+    if (target.status !== "published") continue;
+    if (!(await videoTargetIsAbsent(config, target, locale === "en" ? "en" : "ru", fetchImpl)))
+      throw new Error(`${target.target} is still live on the platform`);
+  }
+  return targets;
 }
 
 /** The stored source file, but only when no other video draft and no post draft

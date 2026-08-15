@@ -1,11 +1,12 @@
 import { InstagramContainerInvalidError, isExpiredInstagramContainer } from "../delivery/social/instagram-container.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { type InstagramCredentials, instagramGraphHost } from "../foundation/external/instagram.js";
+import { type InstagramCredentials, instagramCredentialsForLocale, instagramGraphHost } from "../foundation/external/instagram.js";
 import { type VideoLocale, youtubeAccessToken } from "../foundation/external/youtube.js";
 import { ExternalTransportError, externalFetch, formBody, requestJson } from "../foundation/http.js";
 import { httpPublishError } from "../publishing/errors.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../publishing/video-types.js";
 import { AmbiguousPublicationError, ambiguousExternalMutation } from "./ambiguous-publication.js";
+import { verifyZernioPost } from "./zernio.js";
 
 type YouTubeVideo = { id: string };
 type YouTubeVideoList = { items?: Array<{ id?: string }> };
@@ -171,6 +172,47 @@ export async function verifyYouTubeVideo(
   );
   if (response.items?.[0]?.id !== videoId) throw new Error("YouTube verification did not find the expected video");
   return { id: videoId, url: `https://www.youtube.com/watch?v=${videoId}` };
+}
+
+/** Whether the platform still has a published video, asked of the platform
+ * itself. A public permalink cannot answer this: Instagram serves a login wall
+ * with HTTP 200 for a logged-out request whether or not the reel is there, so
+ * proving absence over the open web would either never succeed or, worse,
+ * succeed for a video that is still live. */
+export async function videoTargetIsAbsent(
+  config: BackendConfig,
+  target: { target: string; externalId: string | null; deliveryProvider: string; providerPostId: string | null },
+  locale: VideoLocale,
+  fetchImpl: typeof fetch,
+): Promise<boolean> {
+  if (target.deliveryProvider === "zernio") {
+    if (!target.providerPostId) throw new Error("cannot ask the provider about a target with no provider post id");
+    return absentIfMissing(() => verifyZernioPost(config, target.providerPostId as string));
+  }
+  if (!target.externalId) throw new Error(`cannot ask ${target.target} about a target with no external id`);
+  if (target.target === "youtube_shorts") return absentIfMissing(() => verifyYouTubeVideo(config, target.externalId as string, locale));
+  const { accessToken } = instagramCredentialsForLocale(config, locale);
+  if (!accessToken) throw new Error("Instagram credentials are missing");
+  return absentIfMissing(() =>
+    requestJson<InstagramContainer>(
+      fetchImpl,
+      `${instagramGraphBase(config, accessToken)}/${target.externalId}?fields=id&access_token=${encodeURIComponent(accessToken)}`,
+    ),
+  );
+}
+
+/** Only the platform saying the object is gone counts as absence. Anything
+ * else — a timeout, a revoked token, a rate limit — leaves the question
+ * unanswered, and an unanswered question must not erase a publication. */
+async function absentIfMissing(ask: () => Promise<unknown>): Promise<boolean> {
+  try {
+    await ask();
+    return false;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/does not exist|error_subcode\D*33|\b404\b|did not find the expected video/i.test(message)) return true;
+    throw new Error(`cannot prove the video is absent: ${message}`);
+  }
 }
 
 function preservedStatusFields(status: YouTubeStatus): Partial<YouTubeStatus> {

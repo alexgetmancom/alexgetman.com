@@ -362,7 +362,7 @@ const operationDefs = {
     // Purge has just deleted every event carrying this ref. Journalling the run
     // against it would put the first row of a fresh history back.
     journalRef: () => null,
-    handler: (context, input) => purgePublication(context.db(), input, context.fetchImpl),
+    handler: (context, input) => purgePublication(context.db(), context.config(), input, context.fetchImpl),
   }),
   settle: operation({
     summary: "Answer a target stuck in verification_required with what the platform actually shows.",

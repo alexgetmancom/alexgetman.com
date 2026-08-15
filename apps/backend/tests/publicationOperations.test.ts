@@ -14,7 +14,7 @@ import { createTestVideoAsset, createTestVideoDraft } from "./helpers/video.js";
 function context(db: ReturnType<typeof openBackendDb>, fetchImpl: typeof fetch = fetch): OperationContext {
   return {
     dbPath: ":memory:",
-    config: () => loadConfig({ CONTROLLER_ADMIN_IDS: "42" }),
+    config: () => loadConfig({ CONTROLLER_ADMIN_IDS: "42", INSTAGRAM_RU_ACCESS_TOKEN: "ru-token", INSTAGRAM_RU_USER_ID: "ru-user" }),
     db: () => db,
     fetchImpl,
     actorType: "test",
@@ -199,13 +199,26 @@ it("purges a video publication whose reel is gone, and the source it was the las
       )
       .run(ref, now);
 
-    // A reel that is still up must not be erasable, exactly as for text.
-    const stillLive = (async () => new Response("live", { status: 200 })) as unknown as typeof fetch;
+    // Absence is asked of the API by id, never of the public URL: Instagram
+    // answers a logged-out request for any reel address with its login wall and
+    // HTTP 200, which would read as "gone" for a reel that is still up.
+    const stillLive = (async () => new Response('{"id":"18118759130310334"}', { status: 200 })) as unknown as typeof fetch;
     await expect(runOperation("purge", context(backendDb, stillLive), { ref, apply: true })).rejects.toThrow(
-      "instagram_reels is still reachable",
+      "instagram_reels is still live on the platform",
     );
 
-    const notFound = (async () => new Response("gone", { status: 404 })) as unknown as typeof fetch;
+    // An unanswered question is not absence either: a revoked token must stop
+    // the purge rather than erase a publication nobody could ask about.
+    const unauthorized = (async () =>
+      new Response('{"error":{"message":"Invalid OAuth token"}}', { status: 401 })) as unknown as typeof fetch;
+    await expect(runOperation("purge", context(backendDb, unauthorized), { ref, apply: true })).rejects.toThrow(
+      "cannot prove the video is absent",
+    );
+
+    const notFound = (async () =>
+      new Response('{"error":{"message":"Object with ID does not exist","code":100,"error_subcode":33}}', {
+        status: 400,
+      })) as unknown as typeof fetch;
     const plan = (await runOperation("purge", context(backendDb, notFound), { ref })) as {
       applied: boolean;
       rows: Record<string, number>;
