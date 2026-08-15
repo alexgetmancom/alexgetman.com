@@ -23,7 +23,7 @@ const HOST_ONLY = [
   "restore",
   "import-x-analytics",
   "import-manual-analytics",
-  "capability-record",
+  "format-record",
   "replace-media",
   "site-media-images",
   "site-media-deduplicate",

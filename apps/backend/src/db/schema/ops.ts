@@ -93,8 +93,11 @@ export const credentialChecks = sqliteTable(
   (table) => [index("idx_credential_checks_last_checked_at").on(table.lastCheckedAt)],
 );
 
-export const platformCapabilities = sqliteTable(
-  "platform_capabilities",
+/** Which media formats each destination is proven to carry, and the post that
+ * proved it. Distinct from a credential being ready: this is about what the
+ * platform accepts, not about whether this Studio can reach it. */
+export const formatSupport = sqliteTable(
+  "format_support",
   {
     target: text().notNull(),
     formatKey: text().notNull(),

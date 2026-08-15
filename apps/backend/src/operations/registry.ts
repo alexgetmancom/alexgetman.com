@@ -11,10 +11,10 @@ import { log } from "../foundation/logger.js";
 import { checkDataDirectoriesWritable, requiredDataDirectories } from "../foundation/runtime/data-dirs.js";
 import { capabilityReport } from "../observability/capabilities.js";
 import { usageReport } from "../observability/usage.js";
-import { capabilitySummary, recordCapabilityPost } from "./capabilities.js";
 import { channelReport, connectChannel, disableChannel } from "./channels.js";
 import { replacePublishedMedia } from "./commands/media-replacement.js";
 import { doctorChecks } from "./doctor.js";
+import { formatSupportSummary, recordFormatEvidence } from "./format-support.js";
 import { buildOperationsGuide, formatOperationsGuide, type OperationCatalogEntry } from "./guide.js";
 import {
   applyMetricsBackfill,
@@ -252,12 +252,13 @@ const operationDefs = {
     agent: true,
     handler: (context) => channelReport(context.db()),
   }),
-  capabilities: operation({
-    summary: "Platform capability tests and what each one last proved.",
+  "format-support": operation({
+    summary: "Which media formats each target is proven to carry, and what proved it.",
+    note: "About what a platform accepts, not about whether its credentials are ready — `doctor` answers that.",
     schema: z.object({}),
     mutates: false,
     agent: true,
-    handler: (context) => capabilitySummary(context.db()),
+    handler: (context) => formatSupportSummary(context.db()),
   }),
   usage: operation({
     summary: "Which features are exercised and which have gone unused.",
@@ -542,16 +543,16 @@ const operationDefs = {
         ...(input.threads_en_followers === undefined ? {} : { threadsEnFollowers: input.threads_en_followers }),
       }),
   }),
-  "capability-record": operation({
-    summary: "Record the message that proves a platform capability test.",
+  "format-record": operation({
+    summary: "Record the message that proves a target carries a media format.",
     schema: z.object({
-      test: example(z.string().min(1), "T01").describe("capability test id"),
+      test: example(z.string().min(1), "T01").describe("format test id"),
       message_id: z.coerce.number().int().describe("message that demonstrates it"),
       notes: z.string().optional(),
     }),
     mutates: true,
     agent: false,
-    handler: (context, input) => ({ ok: true, status: recordCapabilityPost(context.db(), input.test, input.message_id, input.notes) }),
+    handler: (context, input) => ({ ok: true, status: recordFormatEvidence(context.db(), input.test, input.message_id, input.notes) }),
   }),
   "site-media-images": operation({
     summary: "Upload site images that were never pushed to media storage.",

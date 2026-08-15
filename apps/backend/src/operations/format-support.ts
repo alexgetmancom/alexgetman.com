@@ -1,7 +1,7 @@
 import { asc, eq, sql } from "drizzle-orm";
 import { TARGETS } from "../botTargets.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { mediaTestCases, platformCapabilities, posts, postTargets } from "../db/schema.js";
+import { formatSupport, mediaTestCases, posts, postTargets } from "../db/schema.js";
 
 const MEDIA_TEST_CASES = [
   ["T01", "text_only", "Text only", "Send a plain text message."],
@@ -21,11 +21,11 @@ const MEDIA_TEST_CASES = [
 // removed target fails loudly here instead of quietly narrowing the grade.
 const expectedTargets = ["telegram", "site_ru", "site_en", "threads_ru"];
 
-/** Operations fixture registry for supported delivery capabilities. */
-export function seedCapabilities(backendDb: BackendDb): void {
+/** Operations fixture registry for the media formats each target carries. */
+export function seedFormatSupport(backendDb: BackendDb): void {
   const known = new Set<string>(TARGETS.map(({ id }) => id));
   const unknown = expectedTargets.filter((target) => !known.has(target));
-  if (unknown.length) throw new Error(`capability fixture references unknown targets: ${unknown.join(", ")}`);
+  if (unknown.length) throw new Error(`format fixture references unknown targets: ${unknown.join(", ")}`);
   const now = new Date().toISOString();
   unsafeDb(backendDb).db.transaction((tx) => {
     for (const [testId, formatKey, title, recipe] of MEDIA_TEST_CASES) {
@@ -45,13 +45,13 @@ export function seedCapabilities(backendDb: BackendDb): void {
         })
         .run();
       for (const { id: target } of TARGETS)
-        tx.insert(platformCapabilities).values({ target, formatKey, status: "unknown", updatedAt: now }).onConflictDoNothing().run();
+        tx.insert(formatSupport).values({ target, formatKey, status: "unknown", updatedAt: now }).onConflictDoNothing().run();
     }
   });
 }
 
-export function recordCapabilityPost(backendDb: BackendDb, testId: string, messageId: number, notes?: string): string {
-  seedCapabilities(backendDb);
+export function recordFormatEvidence(backendDb: BackendDb, testId: string, messageId: number, notes?: string): string {
+  seedFormatSupport(backendDb);
   const test = unsafeDb(backendDb).db.select().from(mediaTestCases).where(eq(mediaTestCases.testId, testId)).get();
   if (!test) throw new Error(`unknown test: ${testId}`);
   const post = unsafeDb(backendDb).db.select({ postKey: posts.postKey }).from(posts).where(eq(posts.messageId, messageId)).get();
@@ -67,7 +67,7 @@ export function recordCapabilityPost(backendDb: BackendDb, testId: string, messa
       const status = row?.status === "published" ? "supported" : row?.skipped ? "blocked" : row?.status === "failed" ? "failed" : "unknown";
       if (expected.includes(target)) statuses.push(status);
       if (expected.includes(target) && ["supported", "failed", "blocked"].includes(status)) {
-        tx.insert(platformCapabilities)
+        tx.insert(formatSupport)
           .values({
             target,
             formatKey: test.formatKey,
@@ -79,7 +79,7 @@ export function recordCapabilityPost(backendDb: BackendDb, testId: string, messa
             updatedAt: now,
           })
           .onConflictDoUpdate({
-            target: [platformCapabilities.target, platformCapabilities.formatKey],
+            target: [formatSupport.target, formatSupport.formatKey],
             set: {
               status,
               evidenceTestId: testId,
@@ -110,7 +110,7 @@ export function recordCapabilityPost(backendDb: BackendDb, testId: string, messa
   );
 }
 
-export function capabilitySummary(backendDb: BackendDb): Record<string, unknown>[] {
+export function formatSupportSummary(backendDb: BackendDb): Record<string, unknown>[] {
   return unsafeDb(backendDb)
     .db.select({
       testId: mediaTestCases.testId,
@@ -118,10 +118,10 @@ export function capabilitySummary(backendDb: BackendDb): Record<string, unknown>
       formatKey: mediaTestCases.formatKey,
       status: mediaTestCases.status,
       lastMessageId: mediaTestCases.lastMessageId,
-      capabilities: sql<string>`json_group_object(${platformCapabilities.target}, ${platformCapabilities.status})`,
+      targets: sql<string>`json_group_object(${formatSupport.target}, ${formatSupport.status})`,
     })
     .from(mediaTestCases)
-    .leftJoin(platformCapabilities, eq(platformCapabilities.formatKey, mediaTestCases.formatKey))
+    .leftJoin(formatSupport, eq(formatSupport.formatKey, mediaTestCases.formatKey))
     .groupBy(mediaTestCases.testId)
     .orderBy(asc(mediaTestCases.testId))
     .all();

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { metricSchedule } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
-import { capabilitySummary, seedCapabilities } from "../src/operations/capabilities.js";
+import { formatSupportSummary, seedFormatSupport } from "../src/operations/format-support.js";
 import {
   applyMetricsBackfill,
   auditOperations,
@@ -111,9 +111,9 @@ describe("TypeScript operations tooling", () => {
   it("seeds all media capability cases", () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      seedCapabilities(backendDb);
-      expect(capabilitySummary(backendDb)).toHaveLength(9);
-      expect((backendDb.sqlite.prepare("SELECT count(*) AS count FROM platform_capabilities").get() as { count: number }).count).toBe(90);
+      seedFormatSupport(backendDb);
+      expect(formatSupportSummary(backendDb)).toHaveLength(9);
+      expect((backendDb.sqlite.prepare("SELECT count(*) AS count FROM format_support").get() as { count: number }).count).toBe(90);
     } finally {
       backendDb.close();
     }

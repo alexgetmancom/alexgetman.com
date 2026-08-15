@@ -64,7 +64,7 @@ and what to run when the local database is unusable. Get CLI output before readi
 production state, and never open the production database by hand.
 
 **Never run a mutation without an explicit request** — `backup`, `restore`, `--apply` variants,
-`capability-record`, channel connect/disable, `retry`, manual SQL, deployments.
+`format-record`, channel connect/disable, `retry`, manual SQL, deployments.
 
 Handed an X Analytics CSV, import it without asking: `import-x-analytics`, then `x-analytics`.
 

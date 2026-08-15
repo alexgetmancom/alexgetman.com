@@ -82,7 +82,7 @@ describe("openBackendDb", () => {
         "metric_schedule",
         "ops_actions",
         "pending_albums",
-        "platform_capabilities",
+        "format_support",
         "post_events",
         "post_locales",
         "post_metrics",
