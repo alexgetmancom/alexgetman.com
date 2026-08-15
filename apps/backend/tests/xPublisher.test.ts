@@ -13,9 +13,7 @@ import { loadTestConfig } from "./helpers/studio-config.js";
  * succeeded. These tests pin the sequence and the error classification.
  */
 
-const config = loadTestConfig({
-  X_CLIENT_ID: "client-id",
-  X_CLIENT_SECRET: "client-secret",
+const config = Object.assign(loadTestConfig({ X_CLIENT_ID: "client-id", X_CLIENT_SECRET: "client-secret" }), {
   X_ACCESS_TOKEN: "access-token",
   X_REFRESH_TOKEN: "refresh-token",
 });

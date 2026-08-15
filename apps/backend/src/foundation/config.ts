@@ -135,8 +135,6 @@ const envSchema = z
     THREADS_APP_SECRET: z.string().optional(),
     X_CLIENT_ID: z.string().optional(),
     X_CLIENT_SECRET: z.string().optional(),
-    X_ACCESS_TOKEN: z.string().optional(),
-    X_REFRESH_TOKEN: z.string().optional(),
     ENABLE_X_METRICS: booleanFlag(false),
     DISCORD_BOT_TOKEN: z.string().optional(),
     DISCORD_CHANNEL_ID: z.string().optional(),
@@ -250,6 +248,11 @@ export type EnvConfig = z.infer<typeof envSchema> & {
 };
 
 export type BackendConfig = EnvConfig & {
+  /** The connected X account's token pair. It has one home — the `platform_tokens`
+   * row a browser connection wrote — and reaches a configuration only through
+   * loadRuntimeConfig; .env never carries it. */
+  X_ACCESS_TOKEN?: string;
+  X_REFRESH_TOKEN?: string;
   VIDEO_PREPARE_LEAD_MINUTES: number;
   VIDEO_REMINDER_MINUTES: number;
   VIDEO_MEDIA_RETENTION_HOURS: number;

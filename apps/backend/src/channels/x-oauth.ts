@@ -74,9 +74,8 @@ export function applyStoredXTokens(config: BackendConfig, backendDb: BackendDb):
   if (!key) return;
   const row = unsafeDb(backendDb).db.select().from(platformTokens).where(eq(platformTokens.target, "x")).get();
   if (!row?.sealedRefreshToken) return;
-  const mutable = config as unknown as Record<string, unknown>;
-  mutable.X_ACCESS_TOKEN = open(row.sealedToken, key);
-  mutable.X_REFRESH_TOKEN = open(row.sealedRefreshToken, key);
+  config.X_ACCESS_TOKEN = open(row.sealedToken, key);
+  config.X_REFRESH_TOKEN = open(row.sealedRefreshToken, key);
 }
 
 export async function refreshXToken(
@@ -137,9 +136,8 @@ function installXTokens(config: BackendConfig, backendDb: BackendDb, tokens: XTo
       },
     })
     .run();
-  const mutable = config as unknown as Record<string, unknown>;
-  mutable.X_ACCESS_TOKEN = tokens.access_token;
-  mutable.X_REFRESH_TOKEN = tokens.refresh_token;
+  config.X_ACCESS_TOKEN = tokens.access_token;
+  config.X_REFRESH_TOKEN = tokens.refresh_token;
 }
 
 async function tokenRequest(config: BackendConfig, body: URLSearchParams, fetchImpl: typeof fetch): Promise<XTokenResponse> {

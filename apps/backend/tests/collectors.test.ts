@@ -7,19 +7,20 @@ import { collectX } from "../src/analytics/collection/collectors/x.js";
 import type { MetricTask } from "../src/analytics/collection/metric-schedule.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
-const config = loadTestConfig({
-  CONTROLLER_ADMIN_IDS: "42",
-  CONTROLLER_BOT_TOKEN: "token",
-  X_CLIENT_ID: "ck",
-  X_CLIENT_SECRET: "cs",
-  X_ACCESS_TOKEN: "at",
-  X_REFRESH_TOKEN: "ats",
-  THREADS_RU_ACCESS_TOKEN: "ru-token",
-  THREADS_EN_ACCESS_TOKEN: "en-token",
-  INSTAGRAM_RU_ACCESS_TOKEN: "shared-token",
-  INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
-  INSTAGRAM_EN_USER_ID: "en-user",
-});
+const config = Object.assign(
+  loadTestConfig({
+    CONTROLLER_ADMIN_IDS: "42",
+    CONTROLLER_BOT_TOKEN: "token",
+    X_CLIENT_ID: "ck",
+    X_CLIENT_SECRET: "cs",
+    THREADS_RU_ACCESS_TOKEN: "ru-token",
+    THREADS_EN_ACCESS_TOKEN: "en-token",
+    INSTAGRAM_RU_ACCESS_TOKEN: "shared-token",
+    INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
+    INSTAGRAM_EN_USER_ID: "en-user",
+  }),
+  { X_ACCESS_TOKEN: "at", X_REFRESH_TOKEN: "ats" },
+);
 
 function task(overrides: Partial<MetricTask> = {}): MetricTask {
   return {

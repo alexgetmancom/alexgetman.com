@@ -77,6 +77,12 @@ describe("X browser OAuth", () => {
       expect(restarted.X_REFRESH_TOKEN).toBe("refresh-one");
     }));
 
+  it("ignores an X token left behind in the environment", () => {
+    const config = loadTestConfig({ ...base, X_ACCESS_TOKEN: "stale-env-access", X_REFRESH_TOKEN: "stale-env-refresh" });
+    expect(config.X_ACCESS_TOKEN).toBeUndefined();
+    expect(config.X_REFRESH_TOKEN).toBeUndefined();
+  });
+
   it("rotates an expiring refresh token and persists the replacement", () =>
     withDb(async (backendDb) => {
       const config = loadTestConfig(base);

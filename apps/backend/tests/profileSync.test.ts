@@ -62,10 +62,7 @@ describe("creator profile sync boundary", () => {
 
   it("syncs X profile metrics through OAuth and keeps the account snapshot", async () => {
     await withDb(async (backendDb) => {
-      const config = loadTestConfig({
-        ENABLE_X_PROFILE_METRICS: "1",
-        X_CLIENT_ID: "consumer",
-        X_CLIENT_SECRET: "secret",
+      const config = Object.assign(loadTestConfig({ ENABLE_X_PROFILE_METRICS: "1", X_CLIENT_ID: "consumer", X_CLIENT_SECRET: "secret" }), {
         X_ACCESS_TOKEN: "access",
         X_REFRESH_TOKEN: "access-secret",
       });

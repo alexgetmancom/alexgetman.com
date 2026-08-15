@@ -281,8 +281,6 @@ const READY_ENV = {
   THREADS_EN_ACCESS_TOKEN: "token",
   X_CLIENT_ID: "key",
   X_CLIENT_SECRET: "secret",
-  X_ACCESS_TOKEN: "token",
-  X_REFRESH_TOKEN: "secret",
   TELEGRAM_CHANNEL_STORIES_API_ID: "1",
   TELEGRAM_CHANNEL_STORIES_API_HASH: "hash",
   TELEGRAM_CHANNEL_STORIES_SESSION: "session",
@@ -291,6 +289,12 @@ const READY_ENV = {
   INSTAGRAM_EN_USER_ID: "en",
   INSTAGRAM_EN_ACCESS_TOKEN: "token",
 };
+
+/** READY_ENV plus the X token pair, which reaches a configuration only from the
+ * connected account's stored row and never from the environment. */
+function readyConfig(): ReturnType<typeof loadTestConfig> {
+  return Object.assign(loadTestConfig(READY_ENV), { X_ACCESS_TOKEN: "token", X_REFRESH_TOKEN: "secret" });
+}
 
 const checkedAt = "2026-07-27T10:00:00.000Z";
 
@@ -337,7 +341,7 @@ describe("healthReport", () => {
   it("scopes health and dashboard credentials to registered channels", () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadTestConfig(READY_ENV);
+      const config = readyConfig();
       setHealthChannels(backendDb, ["telegram"]);
       insertCredential(backendDb, "telegram", "ready");
       insertCredential(backendDb, "threads_ru", "missing");
@@ -363,7 +367,7 @@ describe("healthReport", () => {
     try {
       setHealthChannels(backendDb, ["x"]);
       insertCredential(backendDb, "x", "ready");
-      const config = loadTestConfig(READY_ENV);
+      const config = readyConfig();
       insertExpectedWorkers(backendDb);
       const report = healthReport(config, backendDb);
 
@@ -384,7 +388,7 @@ describe("healthReport", () => {
       insertCredential(backendDb, "threads_ru", "expired");
       insertWorker(backendDb, "publisher", { ok: true });
 
-      expect(healthReport(loadTestConfig(READY_ENV), backendDb).ok).toBe(false);
+      expect(healthReport(readyConfig(), backendDb).ok).toBe(false);
     } finally {
       backendDb.close();
     }
@@ -395,7 +399,7 @@ describe("healthReport", () => {
     try {
       setHealthChannels(backendDb, ["x"]);
       insertCredential(backendDb, "x", "ready");
-      const config = loadTestConfig(READY_ENV);
+      const config = readyConfig();
       insertExpectedWorkers(backendDb, { queue: { ok: false, lastError: "stalled" } });
       expect(healthReport(config, backendDb).ok).toBe(false);
     } finally {
@@ -406,7 +410,7 @@ describe("healthReport", () => {
     try {
       setHealthChannels(clean, ["x"]);
       insertCredential(clean, "x", "ready");
-      const config = loadTestConfig(READY_ENV);
+      const config = readyConfig();
       insertExpectedWorkers(clean);
       expect(healthReport(config, clean).ok).toBe(true);
     } finally {
@@ -427,7 +431,7 @@ describe("healthReport", () => {
           updatedAt: "2000-01-01T00:00:00.000Z",
         })
         .run();
-      const report = healthReport(loadTestConfig(READY_ENV), backendDb);
+      const report = healthReport(readyConfig(), backendDb);
       expect(report.ok).toBe(false);
       expect(report.workers.find((worker) => worker.name === "queue")).toMatchObject({ stale: true });
     } finally {
@@ -462,7 +466,7 @@ describe("healthReport", () => {
       insertAlertEvent(backendDb, "error", checkedAt);
       insertAlertEvent(backendDb, "info", null);
 
-      expect(healthReport(loadTestConfig(READY_ENV), backendDb).pendingAlerts).toBe(2);
+      expect(healthReport(readyConfig(), backendDb).pendingAlerts).toBe(2);
     } finally {
       backendDb.close();
     }
@@ -472,7 +476,7 @@ describe("healthReport", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       backendDb.db.delete(channelConnections).run();
-      const report = healthReport(loadTestConfig(READY_ENV), backendDb);
+      const report = healthReport(readyConfig(), backendDb);
       expect(report).toMatchObject({ ok: false, pendingAlerts: 0, credentials: [], workers: [] });
       expect(report.missingWorkers).toEqual(expectedWorkerNames());
     } finally {
