@@ -111,6 +111,20 @@ describe("connecting an account", () => {
       expect(unused.calls).toEqual([]);
     }));
 
+  it("says which client type Google actually wants when it refuses one", () =>
+    withDb(async (backendDb) => {
+      // Google answers a Web or Desktop client with "Invalid client type",
+      // which reads as a mistyped id. It means the one thing an operator has to
+      // change, so the message says it.
+      const refusing = (async () =>
+        new Response(JSON.stringify({ error: "invalid_client", error_description: "Invalid client type." }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        })) as unknown as typeof fetch;
+
+      await expect(startConnect(config, backendDb, "youtube", "ru", refusing, now)).rejects.toThrow("TVs and Limited Input devices");
+    }));
+
   it("names what is missing instead of starting something that cannot finish", () =>
     withDb(async (backendDb) => {
       await expect(startConnect(loadTestConfig({}), backendDb, "youtube", "en", fetch, now)).rejects.toThrow(

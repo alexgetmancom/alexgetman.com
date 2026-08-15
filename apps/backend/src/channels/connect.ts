@@ -155,7 +155,18 @@ async function startYouTubeDevice(
     verification_url?: string;
     interval?: number;
     expires_in?: number;
-  }>(fetchImpl, DEVICE_CODE_URL, { method: "POST", body: formBody({ client_id: clientId ?? "", scope: YOUTUBE_SCOPE }) });
+  }>(fetchImpl, DEVICE_CODE_URL, { method: "POST", body: formBody({ client_id: clientId ?? "", scope: YOUTUBE_SCOPE }) }).catch(
+    (error: unknown) => {
+      // Google says only "Invalid client type", which reads as a broken id
+      // rather than the one thing it means: this project's OAuth client cannot
+      // do the device flow, and a Studio has no browser to redirect back into.
+      if (String(error).includes("invalid_client"))
+        throw new Error(
+          `Google refused the device flow for this client. YOUTUBE_${locale === "en" ? "EN" : "RU"}_CLIENT_ID must belong to an OAuth client of type "TVs and Limited Input devices"; a Web or Desktop client cannot start it.`,
+        );
+      throw error;
+    },
+  );
   if (!device.device_code || !device.user_code || !device.verification_url) throw new Error("Google returned no device code");
   const expiresInSeconds = device.expires_in ?? 1800;
   const row = {
