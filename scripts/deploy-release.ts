@@ -119,7 +119,13 @@ export async function deployRelease(inputs: DeployInputs, run: Runner, log: (mes
         `cp '${releaseFiles}/deploy/caddy/compose.yaml' ${CADDY_RUNTIME}/compose.yaml.next; ` +
         `docker compose -f ${CADDY_RUNTIME}/compose.yaml.next config --quiet; ` +
         `docker exec -i caddy caddy validate --adapter caddyfile --config - < ${CADDY_RUNTIME}/Caddyfile.next; ` +
-        `mv ${CADDY_RUNTIME}/Caddyfile.next ${CADDY_RUNTIME}/Caddyfile; mv ${CADDY_RUNTIME}/compose.yaml.next ${CADDY_RUNTIME}/compose.yaml; ` +
+        // The Caddyfile is bind-mounted into the container as a single file, so
+        // the mount follows the inode, not the name: `mv` would replace the name
+        // on the host and leave the container reading the old file forever, and
+        // the reload right after would report success on config nothing served.
+        // Overwrite the existing inode in place instead.
+        `cat ${CADDY_RUNTIME}/Caddyfile.next > ${CADDY_RUNTIME}/Caddyfile; rm ${CADDY_RUNTIME}/Caddyfile.next; ` +
+        `mv ${CADDY_RUNTIME}/compose.yaml.next ${CADDY_RUNTIME}/compose.yaml; ` +
         `docker exec caddy caddy reload --config /etc/caddy/Caddyfile`,
     );
   phase("caddy-config");
