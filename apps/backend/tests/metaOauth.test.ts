@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createApiHandler } from "../src/api.js";
+import { connectLink } from "../src/channels/connect-link.js";
 import { exchangeInstagramCode, metaOauthAuthorizeUrl, metaOauthConnectUrl, verifyMetaOauthState } from "../src/channels/meta-oauth.js";
 import { withDb } from "./helpers/db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
@@ -39,6 +40,39 @@ describe("Meta browser OAuth", () => {
     const instagramState = new URL(metaOauthConnectUrl(config, "instagram", "ru", now)).searchParams.get("state") ?? "";
     const instagram = new URL(metaOauthAuthorizeUrl(config, instagramState, now));
     expect(instagram.searchParams.get("scope")?.split(",")).toContain("instagram_business_manage_insights");
+  });
+
+  it("hands the same connect link to an interface that has no dashboard", () => {
+    // Connecting an account used to be something only the Command Center could
+    // start, so an operator working through the CLI or an agent could not be
+    // given the link at all. It authorizes nothing on its own: the state is
+    // signed and short-lived, and the account is attached by whoever approves
+    // the platform's consent screen.
+    const threads = connectLink(config, "threads", "ru", now);
+    expect(threads).toMatchObject({ platform: "threads", locale: "ru", expiresInMinutes: 10 });
+    const link = new URL(threads.url);
+    expect(link.origin + link.pathname).toBe("https://publisher.example.com/oauth/threads/start");
+    expect(verifyMetaOauthState(config, link.searchParams.get("state") ?? "", now)).toEqual({ platform: "threads", locale: "ru" });
+
+    // X keeps no second account per language, and its start route is guarded
+    // for the dashboard, so what it hands over is the platform's own link.
+    const x = connectLink(
+      loadTestConfig({
+        PUBLIC_BASE_URL: "https://publisher.example.com",
+        TOKEN_ENCRYPTION_KEY: KEY,
+        X_CLIENT_ID: "id",
+        X_CLIENT_SECRET: "s",
+      }),
+      "x",
+      "ru",
+      now,
+    );
+    expect(x.locale).toBeNull();
+    expect(new URL(x.url).origin).toBe("https://x.com");
+
+    // An unconfigured platform says so rather than handing over a link that
+    // lands the operator on a provider error page.
+    expect(() => connectLink(loadTestConfig({}), "instagram", "ru", now)).toThrow();
   });
 
   it("rejects tampered and expired links", () => {

@@ -6,6 +6,7 @@ import { xAnalyticsReport } from "../analytics/x-activity-report.js";
 import type { LocalizedProfiles, LocalizedText } from "../application/ports.js";
 import { targetDefinition } from "../botTargets.js";
 import { API_KEY_TARGETS, storeApiKey } from "../channels/api-keys.js";
+import { CONNECT_PLATFORMS, connectLink } from "../channels/connect-link.js";
 import { type BackendDb, baselineDrizzleMigrations, migrationStatus, unsafeDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -698,6 +699,18 @@ const operationDefs = {
         ...(input.label ? { label: input.label } : {}),
       });
     },
+  }),
+  "connect-link": operation({
+    summary: "A link that attaches an account to this Studio.",
+    note: "Open it in a browser and approve the platform's consent screen; the credential is stored sealed and reaches the running workers on its own. The link carries a signed, short-lived state and grants nothing by itself. Threads and Instagram need their app id and secret configured, X needs its client id and secret, and all three need TOKEN_ENCRYPTION_KEY.",
+    schema: z.object({
+      platform: z.enum(CONNECT_PLATFORMS).describe("platform to connect"),
+      locale: z.enum(["ru", "en"]).default("ru").describe("which language's account, for platforms this Studio keeps two of"),
+    }),
+    mutates: false,
+    agent: true,
+    handler: (context, input) => connectLink(context.config(), input.platform, input.locale),
+    format: (result: { url: string; expiresInMinutes: number }) => `${result.url}\n\nOpen within ${result.expiresInMinutes} minutes.`,
   }),
   "channel-disable": operation({
     summary: "Disable a channel, keeping its publication history attributable.",
