@@ -285,6 +285,8 @@ const en = {
   "settings.channels-pick": "Choose an account for this language ({count} found).",
   "settings.channels-error": "Could not load Zernio accounts.",
   "settings.channel-connected": "Channel connected",
+  "settings.device-code":
+    "Open {url}, enter the code {code} and approve access. You have {minutes} minutes; the channel connects itself once you are done.",
   "settings.connect-native": "↻ {platform} {locale} · native",
   "settings.channels-unsupported": "{count} account(s) hidden: their platform cannot be published to yet.",
   "settings.category-publishing-body": "📡 Publishing\n\nWhere posts go and what is appended to them.",
@@ -973,6 +975,8 @@ const ru = {
   "settings.channels-pick": "Выберите аккаунт для этого языка (найдено: {count}).",
   "settings.channels-error": "Не удалось загрузить аккаунты Zernio.",
   "settings.channel-connected": "Канал подключён",
+  "settings.device-code":
+    "Откройте {url}, введите код {code} и подтвердите доступ. У вас {minutes} минут; канал подключится сам, когда закончите.",
   "settings.connect-native": "↻ {platform} {locale} · native",
   "settings.channels-unsupported": "Скрыто аккаунтов: {count} — в их платформу публикация пока не поддерживается.",
   "settings.category-publishing-body": "📡 Публикация\n\nКуда уходят посты и что к ним добавляется.",

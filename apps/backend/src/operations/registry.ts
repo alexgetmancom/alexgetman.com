@@ -6,7 +6,7 @@ import { xAnalyticsReport } from "../analytics/x-activity-report.js";
 import type { LocalizedProfiles, LocalizedText } from "../application/ports.js";
 import { targetDefinition } from "../botTargets.js";
 import { API_KEY_TARGETS, storeApiKey } from "../channels/api-keys.js";
-import { CONNECT_PLATFORMS, connectLink } from "../channels/connect-link.js";
+import { CONNECT_PLATFORMS, type ConnectStart, startConnect } from "../channels/connect.js";
 import { type BackendDb, baselineDrizzleMigrations, migrationStatus, unsafeDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -48,7 +48,6 @@ import { loginTelegramStories } from "./telegram-stories-login.js";
 import { authorizeThreads } from "./threads-authorize.js";
 import { publicationTimeline } from "./timeline.js";
 import { verifyPostTargets } from "./verify.js";
-import { authorizeYouTube } from "./youtube-authorize.js";
 
 /** Config and the database are resolved on demand: `restore` and
  * `migrations-baseline` operate on the file itself and must not have it opened
@@ -701,16 +700,19 @@ const operationDefs = {
     },
   }),
   "connect-link": operation({
-    summary: "A link that attaches an account to this Studio.",
-    note: "Open it in a browser and approve the platform's consent screen; the credential is stored sealed and reaches the running workers on its own. The link carries a signed, short-lived state and grants nothing by itself. Threads and Instagram need their app id and secret configured, X needs its client id and secret, and all three need TOKEN_ENCRYPTION_KEY.",
+    summary: "Start connecting an account, and say what has to happen next.",
+    note: "Most platforms answer with a link to open, which carries a signed, short-lived state and authorizes nothing by itself. YouTube answers with an address and a code to type there, because Google's device flow is what a server with no browser can use; approval is picked up on its own within a minute and the account appears in the channel registry. Threads and Instagram need their app id and secret, X its client id and secret, YouTube its client id and secret for that language, and all of them TOKEN_ENCRYPTION_KEY.",
     schema: z.object({
       platform: z.enum(CONNECT_PLATFORMS).describe("platform to connect"),
       locale: z.enum(["ru", "en"]).default("ru").describe("which language's account, for platforms this Studio keeps two of"),
     }),
-    mutates: false,
+    mutates: true,
     agent: true,
-    handler: (context, input) => connectLink(context.config(), input.platform, input.locale),
-    format: (result: { url: string; expiresInMinutes: number }) => `${result.url}\n\nOpen within ${result.expiresInMinutes} minutes.`,
+    handler: (context, input) => startConnect(context.config(), context.db(), input.platform, input.locale, context.fetchImpl),
+    format: (result: ConnectStart) =>
+      result.kind === "redirect"
+        ? `${result.url}\n\nOpen within ${result.expiresInMinutes} minutes.`
+        : `${result.verificationUrl}\n\nEnter the code ${result.userCode} there within ${Math.round(result.expiresInSeconds / 60)} minutes. The connection completes on its own.`,
   }),
   "channel-disable": operation({
     summary: "Disable a channel, keeping its publication history attributable.",
@@ -762,22 +764,6 @@ const operationDefs = {
             // refuses it and leaves the single-use code unspent for the
             // exchange below. The refusal page is the expected outcome here.
             `Open this and approve it as the account you publish from:\n${authorizeUrl}\n\nIt redirects to ${redirectUri}, which will report that the connection failed — that is expected on this path and the code is still good. Copy the whole address from the address bar.\n`,
-          ),
-      }),
-  }),
-  "youtube-authorize": operation({
-    summary: "Obtain this Studio's YouTube refresh token by approving it on another device.",
-    note: 'Needs YOUTUBE_<LOCALE>_CLIENT_ID and _CLIENT_SECRET from a Google Cloud OAuth client of type "TV and Limited Input devices". Prints a short code to enter at the URL it shows, waits for approval, then prints the refresh token to put in .env.',
-    schema: z.object({ locale: z.enum(["ru", "en"]) }),
-    mutates: false,
-    // Prints a credential. An agent has no business holding one.
-    agent: false,
-    handler: async (context, input) =>
-      authorizeYouTube(context.config(), input.locale, {
-        fetchImpl: context.fetchImpl,
-        onPrompt: (prompt) =>
-          console.log(
-            `Open ${prompt.verificationUrl} and enter the code ${prompt.userCode}. Waiting up to ${Math.floor(prompt.expiresInSeconds / 60)} minutes.`,
           ),
       }),
   }),

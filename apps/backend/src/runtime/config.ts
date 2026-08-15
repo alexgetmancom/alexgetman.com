@@ -1,6 +1,7 @@
 import { applyStoredApiKeys } from "../channels/api-keys.js";
 import { applyStoredMetaTokens } from "../channels/meta-tokens.js";
 import { applyStoredXTokens } from "../channels/x-oauth.js";
+import { applyStoredYouTubeTokens } from "../channels/youtube-tokens.js";
 import type { BackendDb } from "../db/client.js";
 import { type BackendConfig, loadConfig, withStudioProfile } from "../foundation/config.js";
 
@@ -35,4 +36,5 @@ export function applyStoredCredentials(config: BackendConfig, backendDb: Backend
   applyStoredMetaTokens(config, backendDb);
   applyStoredXTokens(config, backendDb);
   applyStoredApiKeys(config, backendDb);
+  applyStoredYouTubeTokens(config, backendDb);
 }

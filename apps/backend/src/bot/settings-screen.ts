@@ -136,6 +136,27 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
     }
     const xUrl = studioChannels.xConnectUrl();
     if (xUrl) range.url(t(locale, "settings.connect-native", { platform: "X", locale: "EN" }), xUrl).row();
+    // YouTube answers with a code to type on another screen rather than a link
+    // to follow, so it is a button that starts the flow and shows the code; the
+    // approval is picked up by the credentials worker.
+    for (const channelLocale of ["ru", "en"] as const)
+      range.text(t(locale, "settings.connect-native", { platform: "YouTube", locale: channelLocale.toUpperCase() }), async (ctx) => {
+        try {
+          const started = await studioChannels.startConnect("youtube", channelLocale);
+          if (started.kind !== "device") throw new Error("YouTube is expected to answer with a code");
+          await ctx.answerCallbackQuery();
+          await ctx.editMessageText(
+            t(locale, "settings.device-code", {
+              url: started.verificationUrl,
+              code: started.userCode,
+              minutes: Math.round(started.expiresInSeconds / 60),
+            }),
+          );
+        } catch (error) {
+          await ctx.answerCallbackQuery({ text: describeError(locale, error).slice(0, 190), show_alert: true });
+        }
+      });
+    range.row();
     if (config.ZERNIO_API_KEY)
       range
         .text("➕ Zernio · RU", (ctx) => discoverZernio(ctx, actorId, "ru", locale))

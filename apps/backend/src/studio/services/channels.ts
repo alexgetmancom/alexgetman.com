@@ -1,3 +1,4 @@
+import { type ConnectPlatform, startConnect } from "../../channels/connect.js";
 import { isPublishableVideoPlatform } from "../../channels/destinations.js";
 import { type MetaOauthPlatform, metaOauthConnectPath, metaOauthConnectUrl } from "../../channels/meta-oauth.js";
 import { type ChannelInput, listChannels, registerChannel } from "../../channels/registry.js";
@@ -40,6 +41,11 @@ export function channelService(backendDb: BackendDb, config: BackendConfig, fetc
       } catch {
         return null;
       }
+    },
+    /** Starts a connection the way the CLI and the dashboard do. The bot needs
+     * it for platforms whose flow is a code rather than a link. */
+    startConnect(platform: ConnectPlatform, locale: "ru" | "en") {
+      return startConnect(config, backendDb, platform, locale, fetchImpl);
     },
     xConnectUrl(): string | null {
       try {

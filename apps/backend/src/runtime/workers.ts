@@ -1,6 +1,7 @@
 import { runAnalyticsCycle } from "../analytics/collection/creator-cycle.js";
 import { runMetricsCycle } from "../analytics/collection/metrics-cycle.js";
 import { pruneMetricSamples } from "../analytics/snapshots/metric-repository.js";
+import { redeemDeviceAuthorizations } from "../channels/connect.js";
 import { renewMetaTokens } from "../channels/meta-tokens.js";
 import { targetRouting } from "../channels/registry.js";
 import { refreshXToken } from "../channels/x-oauth.js";
@@ -112,6 +113,8 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
     // next restart.
     startWorkerLoop("credentials", 60 * 1000, async () => {
       applyStoredCredentials(config, backendDb);
+      const connected = await redeemDeviceAuthorizations(config, backendDb);
+      if (connected) log("info", "device authorizations completed", { connected });
     }),
     startWorkerLoop("x-token", 10 * 60 * 1000, async () => {
       const outcome = await refreshXToken(config, backendDb);

@@ -32,7 +32,7 @@ are connected by naming their platform and language.
 | X | `--target x` | `X_CLIENT_ID`, `X_CLIENT_SECRET`, then connect in Studio → Channels |
 | Instagram Stories | Studio → Channels, RU or EN | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `TOKEN_ENCRYPTION_KEY`, or a stored Zernio key |
 | Telegram Stories | `--target telegram_stories` | `TELEGRAM_CHANNEL_STORIES_API_ID`, `_API_HASH`, `_SESSION` |
-| YouTube | `--platform youtube --locale ru` | `YOUTUBE_*_CLIENT_ID`, `_CLIENT_SECRET`, `_REFRESH_TOKEN` |
+| YouTube | `connect-link --platform youtube --locale ru` | `YOUTUBE_*_CLIENT_ID`, `_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY` |
 | Instagram feed and Reels | Studio → Channels, RU or EN | same native Instagram login, or a stored Zernio key |
 | TikTok | `--platform tiktok --provider zernio` | a stored Zernio key — analytics only, never published to |
 
@@ -100,16 +100,18 @@ project would put it through Google's verification.
    `YOUTUBE_RU_CLIENT_SECRET` (or `YOUTUBE_EN_*`).
 
 ```bash
-docker compose exec app bun /app/ops/cli.js channel-connect --platform youtube --locale ru --provider native
-docker compose exec app bun /app/ops/cli.js youtube-authorize --locale ru
+docker compose exec app bun /app/ops/cli.js connect-link --platform youtube --locale ru
 ```
 
-The command prints a short code and a URL, waits while you approve on any device
-with a browser, and prints the refresh token to put in `.env`. That approval is
-the one manual step and it happens once: afterwards the Studio exchanges the
-refresh token for a short-lived access token on every upload by itself, and the
-refresh token does not expire unless you revoke it or leave it unused for six
-months.
+It answers with a short code and a URL. Approve on any device with a browser and
+the Studio finishes on its own within a minute: the refresh token is stored
+sealed in its database, the channel appears in the registry, and nothing has to
+be pasted into `.env` or restarted. The same connection can be started from
+Studio → Channels or from the Telegram bot — one flow, three surfaces. That
+approval is the single manual step and it happens once; afterwards the Studio
+exchanges the refresh token for a short-lived access token on every upload, and
+the refresh token does not expire unless you revoke it or leave it unused for
+six months.
 
 ## Threads
 

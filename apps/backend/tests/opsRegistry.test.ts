@@ -30,7 +30,6 @@ const HOST_ONLY = [
   "credential-set",
   "telegram-stories-login",
   "threads-authorize",
-  "youtube-authorize",
 ];
 
 function context(db: UnsafeBackendDb): OperationContext {

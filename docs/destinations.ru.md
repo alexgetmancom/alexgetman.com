@@ -32,7 +32,7 @@ docker compose exec app bun /app/ops/cli.js doctor
 | X | `--target x` | `X_CLIENT_ID`, `X_CLIENT_SECRET`, затем подключить в Studio → Channels |
 | Instagram Stories | Studio → Каналы, RU или EN | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `TOKEN_ENCRYPTION_KEY` либо сохранённый ключ Zernio |
 | Telegram Stories | `--target telegram_stories` | `TELEGRAM_CHANNEL_STORIES_API_ID`, `_API_HASH`, `_SESSION` |
-| YouTube | `--platform youtube --locale ru` | `YOUTUBE_*_CLIENT_ID`, `_CLIENT_SECRET`, `_REFRESH_TOKEN` |
+| YouTube | `connect-link --platform youtube --locale ru` | `YOUTUBE_*_CLIENT_ID`, `_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY` |
 | Instagram лента и Reels | Studio → Каналы, RU или EN | тот же native-вход Instagram либо сохранённый ключ Zernio |
 | TikTok | `--platform tiktok --provider zernio` | сохранённый ключ Zernio — только аналитика, публикации нет |
 
@@ -103,12 +103,14 @@ Cloud, а не на пользователя: общий клиент дал б�
    `YOUTUBE_RU_CLIENT_SECRET` (либо `YOUTUBE_EN_*`).
 
 ```bash
-docker compose exec app bun /app/ops/cli.js channel-connect --platform youtube --locale ru --provider native
-docker compose exec app bun /app/ops/cli.js youtube-authorize --locale ru
+docker compose exec app bun /app/ops/cli.js connect-link --platform youtube --locale ru
 ```
 
-Команда печатает короткий код и адрес, ждёт, пока вы подтвердите на любом
-устройстве с браузером, и печатает refresh-токен для `.env`. Это подтверждение —
+Команда отвечает коротким кодом и адресом. Подтвердите на любом устройстве с
+браузером — Studio закончит сама в течение минуты: refresh-токен ляжет
+запечатанным в её базу, канал появится в реестре, ничего не нужно вписывать в
+`.env` и перезапускать. Ту же операцию можно начать в Studio → Каналы и в
+Telegram-боте: один поток, три поверхности. Это подтверждение —
 единственный ручной шаг, и он делается один раз: дальше Studio сама меняет
 refresh-токен на короткоживущий access-токен перед каждой загрузкой, а сам
 refresh-токен не истекает, если вы не отзовёте доступ и не оставите приложение
