@@ -1,22 +1,28 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { videoPublicUrl } from "../content/video-assets.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { videoTargets } from "../db/schema.js";
-import { publishZernioInstagramReel } from "../delivery/zernio.js";
+import { videoJobs, videoTargets } from "../db/schema.js";
+import { publishZernioInstagramReel, zernioPostOutcome } from "../delivery/zernio.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { getVideoDraft, refreshVideoDraftStatus } from "./video-data.js";
 import type { InstagramMetadata } from "./video-types.js";
 
 /**
- * Answers a provider-routed video target that is stuck in verification_required.
+ * Asks the provider what became of a video publication whose outcome this
+ * Studio never learned, and records the answer.
  *
  * A publish that lost its worker cannot be retried blindly — nobody knows
- * whether the audience already has it — and there was no way to ask, so the
- * target stayed unanswered while the operator could see it was probably never
- * sent. Asking is safe here for one specific reason: the provider fences the
- * publication by the request id derived from the target, so re-issuing it
- * returns the post that already exists rather than making a second one. The
- * answer settles the target either way.
+ * whether the audience already has it — so the target sat unanswered with no
+ * way to ask. Asking is safe because the publication is fenced by its job's
+ * request id: re-issuing it returns the post the provider already made rather
+ * than making a second one.
+ *
+ * Three answers, three states. The platform link means published. A provider-side
+ * failure means the audience got nothing, so the target goes back to `failed`
+ * where the ordinary retry can pick it up — and that retry, being a new job,
+ * carries a new fence and can create the publication this attempt never made.
+ * Anything else is still in flight and stays in verification_required, which is
+ * the only state the reconciliation sweep watches.
  *
  * Deliberately provider-only. A native YouTube or Instagram upload has no such
  * fence, and re-sending one is how a video gets published twice.
@@ -33,9 +39,9 @@ export async function settleVideoTarget(
     .where(and(eq(videoTargets.videoDraftId, input.videoDraftId), eq(videoTargets.target, input.target)))
     .get();
   if (!row) throw new Error(`video:${input.videoDraftId} has no ${input.target} target`);
-  // What this answers is "the provider has it, the platform link is unknown",
+  // What this answers is "the provider took it, the platform has not confirmed",
   // which a target wears either as verification_required or as a published row
-  // with nothing to link to. Anything that already carries a link is settled.
+  // with nothing to link to. Anything carrying a link is already settled.
   if (row.externalId || row.externalUrl) throw new Error(`${input.target} already has its platform publication`);
   if (row.status !== "verification_required" && row.status !== "published")
     throw new Error(`${input.target} is ${row.status}, and only a target awaiting its platform link is settled this way`);
@@ -44,34 +50,50 @@ export async function settleVideoTarget(
   const accountId = row.providerAccountId;
   if (!accountId) throw new Error(`${input.target} has no provider account id`);
 
-  const draft = getVideoDraft(backendDb, input.videoDraftId);
-  const requestId = `video-target:${row.id}`;
+  const publishJob = unsafeDb(backendDb)
+    .db.select({ id: videoJobs.id })
+    .from(videoJobs)
+    .where(and(eq(videoJobs.videoTargetId, row.id), eq(videoJobs.kind, "publish")))
+    .orderBy(desc(videoJobs.id))
+    .get();
+  if (!publishJob) throw new Error(`${input.target} has no publish job to ask about`);
+  const requestId = `video-job:${publishJob.id}`;
   const plan = { ref: `video:${input.videoDraftId}`, target: input.target, provider: "zernio", requestId, applied: false };
   if (!input.apply) return plan;
 
-  const result = await publishZernioInstagramReel(
-    config,
-    { accountId, publicUrl: videoPublicUrl(backendDb, config, draft), metadata: row.metadataJson as InstagramMetadata, requestId },
-    fetchImpl,
-  );
+  // A publication we already know the id of is asked about; one we do not is
+  // asked for, under the fence that makes asking indistinguishable from having
+  // asked before.
+  const result = row.providerPostId
+    ? await zernioPostOutcome(config, row.providerPostId, fetchImpl)
+    : {
+        ...(await publishZernioInstagramReel(
+          config,
+          {
+            accountId,
+            publicUrl: videoPublicUrl(backendDb, config, getVideoDraft(backendDb, input.videoDraftId)),
+            metadata: row.metadataJson as InstagramMetadata,
+            requestId,
+          },
+          fetchImpl,
+        )),
+        failure: null as string | null,
+      };
+
   const now = new Date().toISOString();
-  const settled = Boolean(result.externalId || result.url);
-  // The provider publishes asynchronously, so a create that returns no platform
-  // link is not finished — it is exactly the state the reconciliation loop
-  // exists to close, and that loop only sees verification_required. Marking it
-  // published here is how the link stopped arriving: the row left the only
-  // sweep that could have filled it, carrying no link forever.
+  const landed = Boolean(result.externalId || result.url);
+  const status = landed ? "published" : result.failure ? "failed" : "verification_required";
   unsafeDb(backendDb)
     .db.update(videoTargets)
     .set({
-      status: settled ? "published" : "verification_required",
+      status,
       providerPostId: result.providerPostId,
       externalId: result.externalId,
       externalUrl: result.url,
-      publishedAt: row.publishedAt ?? (settled ? now : null),
-      lastError: settled ? null : "awaiting the platform link from the provider",
-      confirmationSource: settled ? "provider_verify" : "idempotency_replay",
-      verifiedAt: settled ? now : null,
+      publishedAt: landed ? (row.publishedAt ?? now) : null,
+      lastError: landed ? null : (result.failure ?? "awaiting the platform link from the provider"),
+      confirmationSource: landed ? "provider_verify" : "idempotency_replay",
+      verifiedAt: landed ? now : null,
       updatedAt: now,
     })
     .where(eq(videoTargets.id, row.id))
@@ -83,6 +105,7 @@ export async function settleVideoTarget(
     providerPostId: result.providerPostId,
     externalId: result.externalId,
     url: result.url,
-    status: settled ? "published" : "verification_required",
+    failure: result.failure,
+    status,
   };
 }

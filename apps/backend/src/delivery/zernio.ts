@@ -12,7 +12,8 @@ type ZernioPost = {
   id?: string;
   post?: ZernioPost;
   existingPost?: ZernioPost;
-  platforms?: Array<{ platform?: string; platformPostId?: string; platformPostUrl?: string }>;
+  status?: string;
+  platforms?: Array<{ platform?: string; platformPostId?: string; platformPostUrl?: string; status?: string; error?: string }>;
   platformAnalytics?: Array<{ platform?: string; platformPostId?: string; platformPostUrl?: string }>;
 };
 
@@ -159,6 +160,34 @@ export async function publishZernioInstagramReel(
     if (isAmbiguousTransportFailure(error)) throw new AmbiguousPublicationError("zernio", error);
     throw error;
   }
+}
+
+/**
+ * What the provider says became of one publication: the platform link when it
+ * landed, and the platform's own refusal when it did not.
+ *
+ * The provider accepts a publication before the platform has taken it, so
+ * "created" is not "published" — a Reel can sit at the provider as `failed`
+ * with nothing on the platform, and a Studio that read only the ids would show
+ * an audience a post that does not exist.
+ */
+export async function zernioPostOutcome(
+  config: BackendConfig,
+  providerPostId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ providerPostId: string; externalId: string | null; url: string | null; failure: string | null }> {
+  const response = await zernioRequest<{ post?: ZernioPost } & ZernioPost>(
+    config,
+    `posts/${encodeURIComponent(providerPostId)}`,
+    fetchImpl,
+  );
+  const post = response.post ?? response;
+  const instagram = (post.platforms ?? []).find((item) => item.platform === "instagram");
+  const failed = post.status === "failed" || instagram?.status === "failed";
+  return {
+    ...zernioPublishResult(post as ZernioPost, providerPostId),
+    failure: failed ? (instagram?.error ?? "the provider reported this publication as failed") : null,
+  };
 }
 
 export async function verifyZernioPost(

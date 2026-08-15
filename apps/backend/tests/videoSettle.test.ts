@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { videoTargets } from "../src/db/schema.js";
-import { replaceVideoTargets, saveVideoMetadata } from "../src/publishing/video-service.js";
+import { replaceVideoTargets, saveVideoMetadata, scheduleVideo } from "../src/publishing/video-service.js";
 import { settleVideoTarget } from "../src/publishing/video-settle.js";
 import { withDb } from "./helpers/db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
@@ -25,6 +25,12 @@ function stuckReel(backendDb: UnsafeBackendDb): number {
   const draftId = createTestVideoDraft(backendDb, 42, "/tmp/reel.mp4", 24);
   replaceVideoTargets(backendDb, draftId, ["instagram_reels"] as never);
   saveVideoMetadata(backendDb, draftId, "instagram_reels", { caption: "Clip" });
+  scheduleVideo(
+    backendDb,
+    draftId,
+    { instagram_reels: new Date(Date.now() + 60 * 60_000) },
+    { prepareLeadMinutes: 15, reminderMinutes: 5 },
+  );
   backendDb.sqlite
     .prepare(
       "UPDATE video_targets SET status='verification_required', delivery_provider='zernio', provider_account_id='maru-account', last_error='worker_lost: video lock expired before completion'",
@@ -50,7 +56,7 @@ describe("answering a video publication that lost its worker", () => {
       );
 
       expect(result.status).toBe("published");
-      expect(calls[0]?.requestId).toStartWith("video-target:");
+      expect(calls[0]?.requestId).toStartWith("video-job:");
       const row = backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, draftId)).get();
       expect(row).toMatchObject({ status: "published", externalId: "ig-1", providerPostId: "zernio-post" });
       expect(row?.verifiedAt).not.toBeNull();
@@ -74,6 +80,32 @@ describe("answering a video publication that lost its worker", () => {
       expect(result.status).toBe("verification_required");
       const row = backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, draftId)).get();
       expect(row).toMatchObject({ status: "verification_required", providerPostId: "zernio-post", externalId: null });
+    }));
+
+  it("puts a publication the provider could not deliver back where a retry can pick it up", () =>
+    withDb(async (backendDb) => {
+      const draftId = stuckReel(backendDb);
+      backendDb.sqlite.prepare("UPDATE video_targets SET provider_post_id='zernio-post'").run();
+      // The provider accepts before the platform takes it, so a created post can
+      // still be `failed` with nothing published. Calling that published is how
+      // a card claims a Reel the account does not have.
+      const { fetchImpl } = transport({
+        _id: "zernio-post",
+        status: "failed",
+        platforms: [{ platform: "instagram", status: "failed", error: "Instagram couldn't download your video" }],
+      });
+
+      const result = await settleVideoTarget(
+        config,
+        backendDb,
+        { videoDraftId: draftId, target: "instagram_reels", apply: true },
+        fetchImpl,
+      );
+
+      expect(result.status).toBe("failed");
+      const row = backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, draftId)).get();
+      expect(row).toMatchObject({ status: "failed", externalId: null, publishedAt: null });
+      expect(row?.lastError).toContain("download your video");
     }));
 
   it("refuses a target that already carries its platform publication", () =>
