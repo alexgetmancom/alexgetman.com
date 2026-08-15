@@ -1,5 +1,5 @@
 import { expect, it } from "bun:test";
-import { rmSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../src/foundation/config.js";
@@ -9,6 +9,7 @@ import { publicationTimeline } from "../src/operations/timeline.js";
 import { createStudioServices } from "../src/studio/services/index.js";
 import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { createTestVideoAsset, createTestVideoDraft } from "./helpers/video.js";
 
 function context(db: ReturnType<typeof openBackendDb>, fetchImpl: typeof fetch = fetch): OperationContext {
   return {
@@ -169,6 +170,85 @@ it("purges an absent publication and every stored publication path", async () =>
     });
   } finally {
     backendDb.close();
+  }
+});
+
+it("purges a video publication whose reel is gone, and the source it was the last to hold", async () => {
+  const backendDb = openBackendDb(":memory:");
+  const source = join(tmpdir(), `purge-video-${Date.now()}.mp4`);
+  try {
+    writeFileSync(source, "video");
+    const assetId = createTestVideoAsset(backendDb, 42, source);
+    const draftId = createTestVideoDraft(backendDb, 42, assetId, 24);
+    const ref = `video:${draftId}`;
+    const now = new Date().toISOString();
+    backendDb.sqlite
+      .query(
+        "INSERT INTO video_targets(video_draft_id,target,metadata_json,status,external_id,external_url,published_at,created_at,updated_at) VALUES (?,'instagram_reels','{}','published','18118759130310334','https://instagram.example/reel/deleted',?,?,?)",
+      )
+      .run(draftId, now, now, now);
+    const targetId = Number(
+      (backendDb.sqlite.query("SELECT id FROM video_targets WHERE video_draft_id=?").get(draftId) as { id: number }).id,
+    );
+    backendDb.sqlite
+      .query("INSERT INTO video_metric_schedule(video_target_id,next_check_at,frozen_at,updated_at) VALUES (?,?,?,?)")
+      .run(targetId, now, now, now);
+    backendDb.sqlite
+      .query(
+        "INSERT INTO post_events(post_key,target,event_type,severity,message,created_at) VALUES (?,'instagram_reels','x','warn','y',?)",
+      )
+      .run(ref, now);
+
+    // A reel that is still up must not be erasable, exactly as for text.
+    const stillLive = (async () => new Response("live", { status: 200 })) as unknown as typeof fetch;
+    await expect(runOperation("purge", context(backendDb, stillLive), { ref, apply: true })).rejects.toThrow(
+      "instagram_reels is still reachable",
+    );
+
+    const notFound = (async () => new Response("gone", { status: 404 })) as unknown as typeof fetch;
+    const plan = (await runOperation("purge", context(backendDb, notFound), { ref })) as {
+      applied: boolean;
+      rows: Record<string, number>;
+      files: string[];
+    };
+    expect(plan.applied).toBe(false);
+    expect(plan.rows).toMatchObject({ video_drafts: 1, video_targets: 1, video_metric_schedule: 1, post_events: 1 });
+    expect(plan.files).toEqual([source]);
+
+    const result = (await runOperation("purge", context(backendDb, notFound), { ref, apply: true })) as {
+      applied: boolean;
+      removed_files: string[];
+    };
+    expect(result.applied).toBe(true);
+    expect(result.removed_files).toEqual([source]);
+    expect(existsSync(source)).toBe(false);
+    expect(publicationTimeline(backendDb, ref)).toEqual({ ref, draft: null, jobs: [], targets: [], events: [] });
+    for (const table of ["video_drafts", "video_targets", "video_metric_schedule", "studio_media_assets"])
+      expect(backendDb.sqlite.query(`SELECT COUNT(*) AS count FROM ${table}`).get()).toEqual({ count: 0 });
+  } finally {
+    backendDb.close();
+    rmSync(source, { force: true });
+  }
+});
+
+it("keeps a source another draft still points at, and the asset row with it", async () => {
+  const backendDb = openBackendDb(":memory:");
+  const source = join(tmpdir(), `purge-shared-${Date.now()}.mp4`);
+  try {
+    writeFileSync(source, "video");
+    const assetId = createTestVideoAsset(backendDb, 42, source);
+    const draftId = createTestVideoDraft(backendDb, 42, assetId, 24);
+    const other = createTestVideoDraft(backendDb, 42, assetId, 24);
+
+    const plan = (await runOperation("purge", context(backendDb), { ref: `video:${draftId}` })) as { files: string[] };
+    expect(plan.files).toEqual([]);
+    await runOperation("purge", context(backendDb), { ref: `video:${draftId}`, apply: true });
+    expect(existsSync(source)).toBe(true);
+    expect(backendDb.sqlite.query("SELECT COUNT(*) AS count FROM studio_media_assets WHERE id=?").get(assetId)).toEqual({ count: 1 });
+    expect(backendDb.sqlite.query("SELECT COUNT(*) AS count FROM video_drafts WHERE id=?").get(other)).toEqual({ count: 1 });
+  } finally {
+    backendDb.close();
+    rmSync(source, { force: true });
   }
 });
 

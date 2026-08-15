@@ -78,7 +78,6 @@ function pruneStudioAssetSource(config: BackendConfig, backendDb: BackendDb, ass
     )
   )
     return;
-  // Post attachments still use durable JSON for compatibility with old drafts.
   // Never remove a shared source merely because the video side became final.
   if (postDraftReferencesAsset(backendDb, assetId)) return;
   const asset = unsafeDb(backendDb)
@@ -90,7 +89,9 @@ function pruneStudioAssetSource(config: BackendConfig, backendDb: BackendDb, ass
   fs.rmSync(asset.localPath, { force: true });
 }
 
-function postDraftReferencesAsset(backendDb: BackendDb, assetId: number): boolean {
+/** Post attachments still use durable JSON rather than a foreign key, so the
+ * only way to know an asset is unreferenced is to read every draft's media. */
+export function postDraftReferencesAsset(backendDb: BackendDb, assetId: number): boolean {
   return unsafeDb(backendDb)
     .db.select({ mediaRuJson: drafts.mediaRuJson, mediaEnJson: drafts.mediaEnJson })
     .from(drafts)

@@ -10,7 +10,7 @@ import { youtubeAccessToken } from "../../foundation/external/youtube.js";
 import { zernioRequest } from "../../foundation/external/zernio.js";
 import { requestJson } from "../../foundation/http.js";
 import { markSynced, mergeVideoSnapshot, metricNumber, upsertComment, upsertVideoSnapshot } from "../snapshots/creator-store.js";
-import { isTerminalMetricError, terminalIfMissingRemoteObject } from "./collectors/errors.js";
+import { describeMetricFreeze, isTerminalMetricError, terminalIfMissingRemoteObject } from "./collectors/errors.js";
 import { nextVideoMetricCheckAt, videoMetricCheckpointAt } from "./metric-checkpoints.js";
 import { queryYouTubeAnalytics, youtubeAnalyticsCompletedEnd, youtubeAnalyticsDate } from "./youtube-analytics.js";
 
@@ -110,7 +110,7 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
           target: "youtube_shorts",
           type: "analytics.video_metrics.frozen",
           severity: "warn",
-          message,
+          message: describeMetricFreeze(`${frozen.length} ${locale.toUpperCase()} videos`, "youtube_shorts", message),
           details: { video_target_ids: frozen.map((task) => task.id), reason: message },
           cooldownSeconds: 60 * 60,
         });
@@ -133,16 +133,21 @@ export async function runVideoMetricSchedule(config: BackendConfig, backendDb: B
         normalized instanceof Error ? normalized.message : String(normalized),
         isTerminalMetricError(normalized),
       );
-      if (frozen)
+      if (frozen) {
+        const ref = publicationRef("video", task.videoDraftId);
         recordDomainEvent(backendDb.events, {
-          ref: publicationRef("video", task.videoDraftId),
+          ref,
           target: task.target,
           type: "analytics.video_metrics.frozen",
           severity: "warn",
-          message: normalized.message,
+          // The ref stays in the message: alerts are deduplicated by their
+          // text, and a message naming only the platform would collapse two
+          // different videos failing the same way into one alert.
+          message: describeMetricFreeze(ref, task.target, normalized.message),
           details: { video_target_id: task.id, reason: normalized.message },
           cooldownSeconds: 60 * 60,
         });
+      }
     }
   }
   for (const locale of ["ru", "en"] as const) {
