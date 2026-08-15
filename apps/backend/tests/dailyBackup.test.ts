@@ -3,11 +3,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Bot } from "grammy";
-import { loadConfig } from "../src/foundation/config.js";
 import { sendDailyBackup } from "../src/interfaces/telegram/backup.js";
 import { settingsService } from "../src/studio/services/settings.js";
 import { openBackendDb } from "./helpers/open-db.js";
-import { MSK_STUDIO_CONFIG } from "./helpers/studio-config.js";
+import { loadTestConfig, MSK_STUDIO_PROFILE } from "./helpers/studio-config.js";
 
 type Sent = { actorId: number; filename: string; silent: boolean; caption: string };
 
@@ -45,7 +44,7 @@ const night = new Date("2026-08-14T00:30:00.000Z"); // 03:30, before the hour
 describe("daily database backup", () => {
   it("arrives once a day, silently, without anyone turning it on", async () => {
     await withDatabase(async (path, backendDb) => {
-      const config = loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, CONTROLLER_ADMIN_IDS: "42,7", PIPELINE_DB: path });
+      const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42,7", PIPELINE_DB: path }, MSK_STUDIO_PROFILE);
       const sent: Sent[] = [];
 
       expect(await sendDailyBackup(config, backendDb, recordingBot(sent), morning)).toBe("sent");
@@ -63,7 +62,7 @@ describe("daily database backup", () => {
 
   it("waits for the hour and obeys the setting", async () => {
     await withDatabase(async (path, backendDb) => {
-      const config = loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, CONTROLLER_ADMIN_IDS: "42", PIPELINE_DB: path });
+      const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", PIPELINE_DB: path }, MSK_STUDIO_PROFILE);
       const sent: Sent[] = [];
 
       expect(await sendDailyBackup(config, backendDb, recordingBot(sent), night)).toBe("not_due");
@@ -80,7 +79,7 @@ describe("daily database backup", () => {
 
   it("has nowhere to send it without an administrator", async () => {
     await withDatabase(async (path, backendDb) => {
-      const config = loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, PIPELINE_DB: path });
+      const config = loadTestConfig({ PIPELINE_DB: path }, MSK_STUDIO_PROFILE);
       expect(await sendDailyBackup(config, backendDb, recordingBot([]), morning)).toBe("no_admins");
     });
   });

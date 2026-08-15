@@ -3,10 +3,10 @@ import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { channelConnections, drafts, postSources, publicationSources, publishJobs, siteJobs } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { postService } from "../src/studio/services/posts.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 let backendDb: UnsafeBackendDb | null = null;
 
@@ -25,7 +25,7 @@ afterEach(() => {
 describe("Studio post commands", () => {
   it("previews EN entities and falls back to RU media exactly like delivery", () => {
     backendDb = openPostDb();
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
     const draftId = posts.create(42, {
       text: "Russian text",
       textEn: "English text",
@@ -50,7 +50,7 @@ describe("Studio post commands", () => {
 
   it("shares draft commands with configured Studio admins and rejects outsiders", () => {
     backendDb = openPostDb();
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42,7" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42,7" }));
     const draftId = posts.create(42, { text: "Private draft", textEn: "Private draft", entities: [], media: [] });
 
     expect(posts.get(7, draftId).id).toBe(draftId);
@@ -65,7 +65,7 @@ describe("Studio post commands", () => {
 
   it("resolves manual schedule plans before publishing them", () => {
     backendDb = openPostDb();
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Schedule", textEn: "Schedule", entities: [], media: [] });
 
     const manual = posts.manualSchedule(42, draftId, "both", "23:15");
@@ -75,7 +75,7 @@ describe("Studio post commands", () => {
 
   it("replans unfinished targets when a scheduled post's platforms change", () => {
     backendDb = openPostDb();
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Targets", textEn: "Targets", entities: [], media: [] });
     posts.toggleTarget(42, draftId, "threads_en");
     const ruAt = new Date(Date.now() + 5 * 60_000);
@@ -103,7 +103,7 @@ describe("Studio post commands", () => {
 
   it("rejects a post schedule that is already in the past", () => {
     backendDb = openPostDb();
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Past", textEn: "Past", entities: [], media: [] });
 
     expect(() => posts.schedule(42, draftId, { ruAt: new Date(Date.now() - 1_000), enAt: null })).toThrow("err.schedule-time-past");
@@ -111,7 +111,7 @@ describe("Studio post commands", () => {
 
   it("replans the durable payload when a scheduled post is edited", () => {
     backendDb = openPostDb();
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Before", textEn: "Before", entities: [], media: [] });
     const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 5 * 60_000), enAt: null });
 
@@ -133,7 +133,7 @@ describe("Studio post commands", () => {
       targetId: "site_ru",
       source: "test",
     });
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Before", textEn: "Before", entities: [], media: [] });
     posts.setStoryPublishMode(42, draftId, "all");
     const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 5 * 60_000), enAt: null });
@@ -147,7 +147,7 @@ describe("Studio post commands", () => {
 
   it("restores an unapproved EN translation as null when a replan rejects the edit", () => {
     backendDb = openPostDb();
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Before", textEn: "Before", entities: [], media: [] });
     posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 5 * 60_000), enAt: null });
 
@@ -166,7 +166,7 @@ describe("Studio post commands", () => {
 
   it("blocks material edits inside the publication lock window", () => {
     backendDb = openPostDb();
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Before", textEn: "Before", entities: [], media: [] });
     posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null });
 
@@ -178,7 +178,7 @@ describe("Studio post commands", () => {
 
   it("replaces copied publication sources when a scheduled draft changes them", () => {
     backendDb = openPostDb();
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Sources", textEn: "Sources", entities: [], media: [] });
     posts.replaceSources(42, draftId, ["https://before.example"]);
     const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 5 * 60_000), enAt: null });
@@ -192,7 +192,7 @@ describe("Studio post commands", () => {
 
   it("blocks content mutations after the publication is settled but allows rescheduling", () => {
     backendDb = openPostDb();
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Settled", textEn: "Settled", entities: [], media: [] });
     backendDb.db.update(drafts).set({ status: "published" }).where(eq(drafts.id, draftId)).run();
 
@@ -205,7 +205,7 @@ describe("Studio post commands", () => {
 
   it("does not duplicate final jobs when a settled post is rescheduled", () => {
     backendDb = openPostDb();
-    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+    const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
     const posts = postService(backendDb, config);
     const draftId = posts.create(42, { text: "Settled", textEn: "Settled", entities: [], media: [] });
     const firstAt = new Date(Date.now() + 5 * 60_000);

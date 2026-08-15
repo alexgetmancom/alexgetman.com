@@ -148,6 +148,13 @@
       "when": 1786804000000,
       "tag": "0020_format_support",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1786805000000,
+      "tag": "0021_studio_profile",
+      "breakpoints": true
     }
   ]
 }

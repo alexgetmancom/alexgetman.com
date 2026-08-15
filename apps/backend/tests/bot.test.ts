@@ -10,7 +10,6 @@ import { createDraftFromMessage, requireDraft } from "../src/content/drafts.js";
 import { entitiesToHtml } from "../src/content/text.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { botUiSettings } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { threadsPreviewText } from "../src/interfaces/telegram/delivery-previews.js";
 import { cancelDraft, scheduledDrafts } from "../src/publishing/draft-lifecycle.js";
 import { refreshPublicationStatus } from "../src/publishing/publication-status.js";
@@ -18,6 +17,7 @@ import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { postDeliveryProjections } from "../src/studio/projections.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 let backendDb: UnsafeBackendDb | null = null;
 
@@ -52,7 +52,7 @@ describe("Telegram controller flow", () => {
   it("keeps mode and manual target controls on one ordinary-publication card", () => {
     backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Card", textEn: "Card", entities: [], media: [] });
-    const preview = draftPreview(backendDb, draftId, loadConfig({}));
+    const preview = draftPreview(backendDb, draftId, loadTestConfig({}));
     expect(preview.text).toContain("Mode: *Manual*");
     expect(JSON.stringify(preview.keyboard)).toContain(`cycle_mode:${draftId}`);
     expect(JSON.stringify(preview.keyboard)).toContain(`view:${draftId}:platforms`);
@@ -67,7 +67,7 @@ describe("Telegram controller flow", () => {
     backendDb = openBotDb();
     backendDb.db.insert(botUiSettings).values({ actorId: 42, locale: "ru", updatedAt: new Date().toISOString() }).run();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Карточка", textEn: "Card", entities: [], media: [] });
-    const preview = draftPreview(backendDb, draftId, loadConfig({}));
+    const preview = draftPreview(backendDb, draftId, loadTestConfig({}));
 
     expect(preview.text).toContain("Режим: *Ручной*");
     expect(JSON.stringify(preview.keyboard)).toContain("Опубликовать");
@@ -83,7 +83,7 @@ describe("Telegram controller flow", () => {
       media: [],
     });
 
-    const preview = draftPreview(backendDb, draftId, loadConfig({}));
+    const preview = draftPreview(backendDb, draftId, loadTestConfig({}));
 
     expect(preview.text).toContain("\\*bold\\* \\[link\\] \\_under\\_ \\`code\\`");
     expect(preview.text).toContain("\\*English\\* \\[link\\] \\_under\\_ \\`code\\`");
@@ -159,7 +159,7 @@ describe("Telegram controller flow", () => {
 
   it("renders compact controls for a scheduled post", () => {
     backendDb = openBotDb();
-    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+    const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Scheduled", textEn: "Scheduled", entities: [], media: [] });
     const at = new Date(Date.now() + 60 * 60_000);
     publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt: at, enAt: at });
@@ -425,7 +425,7 @@ describe("Telegram controller flow", () => {
     backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Text only", textEn: "Text only", entities: [], media: [] });
 
-    const preview = draftPreview(backendDb, draftId, loadConfig({}), "confirm_publish");
+    const preview = draftPreview(backendDb, draftId, loadTestConfig({}), "confirm_publish");
     expect(preview.text).toContain("Will not be sent (no media): Telegram Stories, Instagram Stories RU, Instagram Stories EN.");
   });
 
@@ -500,7 +500,7 @@ describe("Telegram controller flow", () => {
     const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
     const fakeBot = { api: { sendMessage } } as unknown as Bot;
 
-    expect(await finalizePendingAlbums(fakeBot, backendDb, loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" }))).toBe(1);
+    expect(await finalizePendingAlbums(fakeBot, backendDb, loadTestConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" }))).toBe(1);
     const draft = backendDb.sqlite.prepare("SELECT text_ru, media_ru_json FROM drafts").get() as { text_ru: string; media_ru_json: string };
     expect(draft.text_ru).toBe("Album caption");
     expect(JSON.parse(draft.media_ru_json)).toHaveLength(2);
@@ -518,7 +518,7 @@ describe("Telegram controller flow", () => {
       throw new Error("Bad Request: message is too long");
     });
     const fakeBot = { api: { sendMessage } } as unknown as Bot;
-    const config = loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" });
+    const config = loadTestConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" });
 
     expect(await finalizePendingAlbums(fakeBot, backendDb, config)).toBe(1);
     expect(await finalizePendingAlbums(fakeBot, backendDb, config)).toBe(0);
@@ -549,7 +549,7 @@ describe("Telegram controller flow", () => {
       api: { sendMessage: mock(async () => ({ message_id: 100, date: 1, chat: { id: 42, type: "private" as const } })) },
     } as unknown as Bot;
 
-    expect(await finalizePendingAlbums(fakeBot, backendDb, loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" }))).toBe(1);
+    expect(await finalizePendingAlbums(fakeBot, backendDb, loadTestConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" }))).toBe(1);
     expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM drafts").get()).toEqual({ count: 1 });
     const draft = backendDb.sqlite
       .prepare("SELECT text_ru, text_en_approved, media_ru_json, media_en_json FROM drafts WHERE id=?")
@@ -586,7 +586,7 @@ describe("Telegram controller flow", () => {
     const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
     const fakeBot = { api: { sendMessage } } as unknown as Bot;
 
-    expect(await finalizePendingAlbums(fakeBot, backendDb, loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" }))).toBe(0);
+    expect(await finalizePendingAlbums(fakeBot, backendDb, loadTestConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" }))).toBe(0);
     expect(backendDb.sqlite.prepare("SELECT text_en_approved FROM drafts WHERE id=?").get(draftId)).toEqual({ text_en_approved: null });
     expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM pending_albums").get()).toEqual({ count: 0 });
     expect(sendMessage).not.toHaveBeenCalled();
@@ -609,8 +609,8 @@ describe("Telegram controller flow", () => {
     } as unknown as Bot;
 
     const completed = await Promise.all([
-      finalizePendingAlbums(fakeBot, backendDb, loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" })),
-      finalizePendingAlbums(fakeBot, backendDb, loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" })),
+      finalizePendingAlbums(fakeBot, backendDb, loadTestConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" })),
+      finalizePendingAlbums(fakeBot, backendDb, loadTestConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" })),
     ]);
     expect(completed).toEqual([1, 0]);
     expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM drafts").get()).toEqual({ count: 1 });
@@ -626,7 +626,7 @@ describe("Telegram controller flow", () => {
     const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
     const fakeBot = { api: { sendMessage } } as unknown as Bot;
 
-    expect(await finalizePendingAlbums(fakeBot, backendDb, loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" }))).toBe(1);
+    expect(await finalizePendingAlbums(fakeBot, backendDb, loadTestConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" }))).toBe(1);
     expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM pending_albums").get() as { count: number }).count).toBe(0);
   });
 
@@ -639,7 +639,7 @@ describe("Telegram controller flow", () => {
       .run(JSON.stringify([{ type: "photo", file_id: "one", local_path: "/imported/one.jpg" }]));
     const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
     const fakeBot = { api: { sendMessage } } as unknown as Bot;
-    const config = loadConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" });
+    const config = loadTestConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" });
     const attempts = () =>
       (db.sqlite.prepare("SELECT attempt_count AS n FROM pending_albums WHERE id='doomed'").get() as { n: number } | null)?.n ?? null;
 

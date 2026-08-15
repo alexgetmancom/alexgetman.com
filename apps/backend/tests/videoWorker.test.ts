@@ -5,11 +5,11 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
 import { videoJobs, videoTargets } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { recordAuthFailure } from "../src/observability/auth-circuit.js";
 import { replaceVideoTargets, saveVideoMetadata, scheduleVideo } from "../src/publishing/video-service.js";
 import { VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { useBackendDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoDraft } from "./helpers/video.js";
 
 /**
@@ -96,7 +96,7 @@ afterAll(() => {
 });
 
 function videoConfig(directory: string, overrides: Record<string, string> = {}) {
-  const config = loadConfig({
+  const config = loadTestConfig({
     YOUTUBE_RU_CLIENT_ID: "client",
     YOUTUBE_RU_CLIENT_SECRET: "secret",
     YOUTUBE_RU_REFRESH_TOKEN: "refresh",

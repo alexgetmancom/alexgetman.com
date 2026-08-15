@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { drafts, postEvents, postTargets, publications, publishJobs, siteJobs } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { createStudioServices } from "../src/studio/services/index.js";
 import { withDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("post publication retry", () => {
   it("requeues failed social and site targets and refuses a second retry", () =>
@@ -65,7 +65,7 @@ describe("post publication retry", () => {
         })
         .run();
 
-      const posts = createStudioServices(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" })).posts;
+      const posts = createStudioServices(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" })).posts;
       expect(backendDb.studioPosts.failedPublicationTargets(700).map((item) => item.target)).toEqual(["threads_en", "telegram", "site_en"]);
 
       expect(posts.retryTarget(42, 7)).toMatchObject({ requeued: 2, alreadyQueued: 0 });
@@ -132,7 +132,7 @@ describe("post publication retry", () => {
         ])
         .run();
 
-      const posts = createStudioServices(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" })).posts;
+      const posts = createStudioServices(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" })).posts;
       expect(posts.skipTarget(42, 8, "threads_ru")).toMatchObject({ abandoned: 1 });
 
       expect(backendDb.db.select({ target: publishJobs.target, status: publishJobs.status }).from(publishJobs).all()).toEqual([

@@ -3,7 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { generateStoryMedia } from "../src/delivery/story-media.js";
-import { loadConfig } from "../src/foundation/config.js";
+import type { BackendConfig } from "../src/foundation/config.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 /** These cases are about how the source is found, not about the encode, and the
  * real recipe needs a real image. stories.test.ts covers the ffmpeg arguments. */
@@ -27,7 +28,7 @@ function tempRoot(): string {
 }
 
 function config(root: string, overrides: Record<string, string> = {}) {
-  return loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "bot-token", DATA_DIR: root, ...overrides });
+  return loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "bot-token", DATA_DIR: root, ...overrides });
 }
 
 const JPEG = Buffer.from("jpeg bytes");
@@ -140,7 +141,7 @@ describe("generateStoryMedia source resolution", () => {
 
   it("cannot resolve a file id without a bot token", async () => {
     const root = tempRoot();
-    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", DATA_DIR: root });
+    const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", DATA_DIR: root });
 
     await expect(generateStoryMedia([{ type: "photo", file_id: "x" }], 1, "ru", config)).rejects.toThrow(
       "Cannot resolve story source media",
@@ -161,7 +162,7 @@ describe("generateStoryMedia remote provider", () => {
       MEDIA_PROCESSOR_PROVIDER: "remote_http",
       MEDIA_PROCESSOR_URL: "",
       MEDIA_PROCESSOR_TOKEN: "",
-    } as ReturnType<typeof loadConfig>;
+    } as BackendConfig;
 
     await expect(generateStoryMedia([{ type: "photo", local_path: source }], 1, "ru", remote)).rejects.toThrow(
       "media_processor_unavailable",
@@ -177,7 +178,7 @@ describe("generateStoryMedia remote provider", () => {
       MEDIA_PROCESSOR_PROVIDER: "remote_http",
       MEDIA_PROCESSOR_URL: "http://processor",
       MEDIA_PROCESSOR_TOKEN: "x".repeat(16),
-    } as ReturnType<typeof loadConfig>;
+    } as BackendConfig;
     const fetchImpl = (async () =>
       new Response("media_processor_busy", {
         status: 429,

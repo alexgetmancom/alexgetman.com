@@ -2,10 +2,10 @@ import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { postEvents, studioNotificationJobs, videoTargets } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { replaceVideoTargets } from "../src/publishing/video-service.js";
 import { videoService } from "../src/studio/services/videos.js";
 import { useBackendDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoDraft } from "./helpers/video.js";
 
 /**
@@ -37,7 +37,7 @@ mock.module("../src/delivery/video-publishers.js", () => ({
   },
 }));
 
-const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "token", VIDEO_MEDIA_RETENTION_HOURS: "24" });
+const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "token", VIDEO_MEDIA_RETENTION_HOURS: "24" });
 const testDb = useBackendDb();
 
 beforeAll(() => {

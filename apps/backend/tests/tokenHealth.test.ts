@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq } from "drizzle-orm";
 import { credentialChecks, postEvents } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { checkTokenHealth } from "../src/observability/token-health.js";
 import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 const tempDirectories: string[] = [];
 
@@ -35,7 +35,7 @@ describe("token health probes", () => {
         if (href.includes("debug_token")) return jsonResponse({ data: { expires_at: Math.floor(soon.getTime() / 1000) } });
         return jsonResponse({ id: "123" });
       });
-      const config = loadConfig({ INSTAGRAM_RU_ACCESS_TOKEN: "EAAtoken", INSTAGRAM_RU_USER_ID: "123" });
+      const config = loadTestConfig({ INSTAGRAM_RU_ACCESS_TOKEN: "EAAtoken", INSTAGRAM_RU_USER_ID: "123" });
       registerTestChannels(backendDb, ["instagram_ru"]);
 
       await checkTokenHealth(config, backendDb, fetchMock as unknown as typeof fetch);
@@ -66,7 +66,7 @@ describe("token health probes", () => {
         if (href.startsWith("https://www.googleapis.com/youtube/v3/channels")) return jsonResponse({ items: [{ id: "channel-1" }] });
         return jsonResponse({});
       });
-      const config = loadConfig({
+      const config = loadTestConfig({
         YOUTUBE_RU_CLIENT_ID: "client-id",
         YOUTUBE_RU_CLIENT_SECRET: "client-secret",
         YOUTUBE_RU_REFRESH_TOKEN: "refresh-token",
@@ -90,7 +90,7 @@ describe("token health probes", () => {
         calls.push(String(url));
         return jsonResponse({ id: String(url).includes("en-user") ? "en-user" : "ru-user" });
       });
-      const config = loadConfig({
+      const config = loadTestConfig({
         INSTAGRAM_RU_ACCESS_TOKEN: "EAAtoken",
         INSTAGRAM_RU_USER_ID: "ru-user",
         INSTAGRAM_EN_ACCESS_TOKEN: "IGtoken",

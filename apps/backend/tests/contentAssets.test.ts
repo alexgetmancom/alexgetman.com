@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { importStudioMediaFile } from "../src/content/assets.js";
 import type { BackendDb } from "../src/db/client.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 let backendDb: BackendDb | null = null;
 let directories: string[] = [];
@@ -28,7 +28,7 @@ describe("Studio media storage", () => {
     const secondPath = path.join(inputDirectory, "two.png");
     writeFileSync(firstPath, bytes);
     writeFileSync(secondPath, bytes);
-    const config = loadConfig({ STUDIO_MEDIA_DIR: storageDirectory, STUDIO_MEDIA_MAX_BYTES: "1000" });
+    const config = loadTestConfig({ STUDIO_MEDIA_DIR: storageDirectory, STUDIO_MEDIA_MAX_BYTES: "1000" });
 
     const first = await importStudioMediaFile(backendDb, config, 42, {
       filename: "one.jpg",

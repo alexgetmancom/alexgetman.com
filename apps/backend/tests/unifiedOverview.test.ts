@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { XActivityDashboardItem } from "../src/analytics/x-activity-dashboard.js";
 import { creatorProfileSnapshots, videoDrafts, videoMetricSnapshots, videoTargets } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { type CombinedSectionInput, renderCombinedSection } from "../src/interfaces/web/dashboard/combined-section.js";
 import { calendarDays } from "../src/interfaces/web/dashboard/daily-reach.js";
 import { renderHeroCard } from "../src/interfaces/web/dashboard/hero-section.js";
@@ -18,6 +17,7 @@ import { xActivityPost } from "../src/interfaces/web/dashboard/x-activity-posts.
 import { createOperationsService } from "../src/operations/service.js";
 import { registerTestChannels, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoAsset } from "./helpers/video.js";
 
 const hoursAgo = (hours: number): string => new Date(Date.now() - hours * 3_600_000).toISOString();
@@ -269,7 +269,7 @@ describe("unified overview video read model", () => {
   it("reuses the operations service for one database and configuration", () => {
     const backendDb = openOverviewDb();
     try {
-      const config = loadConfig({});
+      const config = loadTestConfig({});
       expect(createOperationsService(backendDb, config)).toBe(createOperationsService(backendDb, config));
     } finally {
       backendDb.close();
@@ -280,7 +280,7 @@ describe("unified overview video read model", () => {
     const backendDb = openOverviewDb();
     try {
       seedVideo(backendDb, new Date().toISOString());
-      const config = loadConfig({});
+      const config = loadTestConfig({});
 
       const readModel = loadDashboardReadModel(
         config,

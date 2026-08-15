@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { postEvents, studioNotificationJobs } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { cancelScheduledNotifications, runNotificationCycle, scheduleReminder } from "../src/notifications/jobs.js";
 import { postService } from "../src/studio/services/posts.js";
 import { settingsService } from "../src/studio/services/settings.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoDraft } from "./helpers/video.js";
 
 function openNotificationDb() {
@@ -73,7 +73,7 @@ describe("Studio notifications", () => {
   it("uses the owner's stored reminder interval when scheduling a post", () => {
     const backendDb = openNotificationDb();
     try {
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+      const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
       settingsService(backendDb).setNotifications(42, { reminderMinutes: 17 });
       const posts = postService(backendDb, config);
       const draftId = posts.create(42, { text: "Scheduled", textEn: "Scheduled", entities: [], media: [] });

@@ -5,7 +5,6 @@ import { type PublicationCallback, parseSessionCallback, publicationCallback } f
 import { getVideoState } from "../src/bot/video-ui.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { BackendDb } from "../src/db/client.js";
-import { loadConfig } from "../src/foundation/config.js";
 import {
   setTelegramPostCard,
   setTelegramVideoCard,
@@ -14,6 +13,7 @@ import {
 } from "../src/interfaces/telegram/control-cards.js";
 import { replaceVideoTargets } from "../src/publishing/video-service.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoDraft } from "./helpers/video.js";
 
 function videoCallback(data: string, messageId: number): Context {
@@ -36,7 +36,7 @@ describe("video publication card flow", () => {
   it("keeps the immediate confirmation on the current video card", async () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+      const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
       const draftId = createTestVideoDraft(backendDb, 42, "clip.mp4", 24);
       replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
       setTelegramVideoCard(backendDb, draftId, 100, 10);
@@ -63,7 +63,7 @@ describe("post publication card flow", () => {
   it("tracks the publish confirmation card after delivery previews", async () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+      const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
       const draftId = createDraftFromMessage(backendDb, 42, {
         text: "Video post",
         textEn: "Video post",

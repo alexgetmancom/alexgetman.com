@@ -62,13 +62,13 @@ docker compose up -d
 
 Caddy obtains and renews the TLS certificate itself, so there is no certbot and no renewal timer to set up. Within a minute the Command Center is at `https://your-domain/command-center`.
 
-The public website is off by default — most Studios publish to channels they already have and do not want another site to look after. Set `site_enabled: true` in `studio.yaml` to serve one at `https://your-domain/`, with its feeds, sitemap and Markdown endpoints.
+The public website is off by default — most Studios publish to channels they already have and do not want another site to look after. Run `ops studio-profile-set --site-enabled` to serve one at `https://your-domain/`, with its feeds, sitemap and Markdown endpoints. It takes effect on the next request.
 
 Temporary media that an external platform fetches during publishing is staged under `/data/media`, automatically created and owned by the container before the app drops privileges. The `/media/staging/` route remains available when the public site is off, so a fresh self-host does not need a manual directory or permission step.
 
 Only Caddy publishes ports; the application is reachable through it alone. Nothing else in `.env` is required to start — a Studio with no credentials serves its site and its Command Center and publishes nowhere. Add a Telegram bot, then connect destinations from the Command Center or over MCP; `docker compose exec app bun /app/ops/cli.js doctor` lists what each one still needs.
 
-`studio.yaml` holds deployment behavior that is not a publishing connection: whether this Studio serves a public site, its time zone, and video timing. Update with `docker compose pull && docker compose up -d`; diagnose with `docker compose logs -f app`.
+`ops studio-profile` shows what this Studio publishes as, its time zone, whether it serves a public site, and video timing; `ops studio-profile-set` changes them. They live in the database, so they survive a redeploy and need no restart. Update the image with `docker compose pull && docker compose up -d`; diagnose with `docker compose logs -f app`.
 
 Two things worth knowing on day one. The Studio sends you a copy of its database
 every day, silently, in the same Telegram chat you author from; it covers posts,
@@ -127,7 +127,7 @@ Copy the secret template:
 cp apps/backend/secrets.env.example apps/backend/secrets.env
 ```
 
-`studio.yaml` contains only deployment behavior that is not a publishing connection: whether this Studio serves the public site, its time zone, and video timing. Credentials stay in the ignored `apps/backend/secrets.env`; connected destinations live in the channel registry. Text posting, video posting and analytics always run. The second Studio is included as `studio.maru.yaml`.
+What a Studio publishes as, whether it serves the public site, its time zone and video timing live in its own database, read and written with `ops studio-profile`. Credentials stay in the ignored `apps/backend/secrets.env`; connected destinations live in the channel registry. Text posting, video posting and analytics always run.
 
 The private Telegram bot and MCP endpoint operate the same Studio services. Posts created through either interface land in the same drafts, schedules, publication jobs, and analytics.
 

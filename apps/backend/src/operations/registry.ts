@@ -3,6 +3,7 @@ import { importManualAnalytics } from "../analytics/import-manual-analytics.js";
 import { importXAnalyticsCsv } from "../analytics/import-x-csv.js";
 import { attachXActivityToPosts } from "../analytics/x-activity-linking.js";
 import { xAnalyticsReport } from "../analytics/x-activity-report.js";
+import type { LocalizedProfiles, LocalizedText } from "../application/ports.js";
 import { targetDefinition } from "../botTargets.js";
 import { type BackendDb, baselineDrizzleMigrations, migrationStatus, unsafeDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
@@ -11,6 +12,7 @@ import { log } from "../foundation/logger.js";
 import { checkDataDirectoriesWritable, requiredDataDirectories } from "../foundation/runtime/data-dirs.js";
 import { capabilityReport } from "../observability/capabilities.js";
 import { usageReport } from "../observability/usage.js";
+import { createStudioServices } from "../studio/services/index.js";
 import { channelReport, connectChannel, disableChannel } from "./channels.js";
 import { replacePublishedMedia } from "./commands/media-replacement.js";
 import { doctorChecks } from "./doctor.js";
@@ -97,6 +99,15 @@ function ask(question: string): string {
 const refSpelling = (value: string): string => (/^\d+$/.test(value) ? `post:${value}` : value);
 const refOption = example(z.string().trim().min(1), "post:160").describe("publication ref").transform(refSpelling);
 const applyOption = z.boolean().default(false).describe("perform the change; omitted it reports the plan only");
+
+/** A string this Studio publishes about itself, given as JSON keyed by language.
+ * Both languages are always supplied: an option that merged into the stored
+ * value would make clearing one language impossible to express. */
+const localizedTextOption = (description: string) =>
+  example(z.string(), '{"en":"Alex Getman","ru":"Алекс Гетман"}')
+    .optional()
+    .describe(description)
+    .transform((value) => (value == null ? undefined : (JSON.parse(value) as LocalizedText)));
 const localeOption = z.enum(["ru", "en"]).optional().describe("restrict to one language");
 /** Non-empty wherever it is optional: `--target=` used to reach the dispatcher
  * as the empty string, which reads as "no target given" and silently widens the
@@ -167,6 +178,48 @@ const operationDefs = {
         sqlite.close();
       }
     },
+  }),
+  "studio-profile": operation({
+    summary: "What this Studio publishes as, its time zone, whether it serves a public site, and video timing.",
+    schema: z.object({}),
+    mutates: false,
+    agent: true,
+    handler: (context) => createStudioServices(context.db(), context.config()).settings.studioProfile(),
+  }),
+  "studio-profile-set": operation({
+    summary: "Change this Studio's identity, time zone, public site switch or video timing.",
+    note: "Takes effect on the next request; no restart. Only the options given are changed, and each locale-keyed option replaces both languages at once.",
+    schema: z.object({
+      timezone: example(z.string().trim().min(1), "Europe/Moscow").optional().describe("IANA zone for every displayed schedule time"),
+      timezone_label: example(z.string().trim().min(1), "MSK").optional().describe("short suffix shown next to a time"),
+      site_enabled: z.boolean().optional().describe("serve the public website, its feeds and sitemap"),
+      prepare_lead_minutes: z.coerce.number().int().min(1).max(120).optional().describe("how long before a slot a video is prepared"),
+      reminder_minutes: z.coerce.number().int().min(1).max(60).optional().describe("how long before a slot you are reminded"),
+      retention_hours: z.coerce.number().int().min(24).max(720).optional().describe("how long prepared media is kept"),
+      name: localizedTextOption("this Studio's name, per language"),
+      tagline: localizedTextOption("one-line description, per language"),
+      about: localizedTextOption("longer description reaching llms.txt and structured data"),
+      profiles: example(z.string(), '{"en":[{"label":"Telegram","url":"https://t.me/example"}],"ru":[]}')
+        .optional()
+        .describe("social profiles listed in llms.txt and as sameAs, per language")
+        .transform((value) => (value == null ? undefined : (JSON.parse(value) as LocalizedProfiles))),
+    }),
+    mutates: true,
+    agent: true,
+    journalRef: () => "studio:profile",
+    handler: (context, input) =>
+      createStudioServices(context.db(), context.config()).settings.setStudioProfile({
+        timezone: input.timezone,
+        timezoneLabel: input.timezone_label,
+        siteEnabled: input.site_enabled,
+        prepareLeadMinutes: input.prepare_lead_minutes,
+        reminderMinutes: input.reminder_minutes,
+        retentionHours: input.retention_hours,
+        name: input.name,
+        tagline: input.tagline,
+        about: input.about,
+        profiles: input.profiles,
+      }),
   }),
   status: operation({
     summary: "Worker heartbeats, publication counts and metric schedule health.",

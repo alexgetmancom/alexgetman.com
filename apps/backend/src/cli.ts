@@ -1,5 +1,5 @@
 import { type BackendDb, openBackendDb } from "./db/client.js";
-import { type BackendConfig, loadConfig } from "./foundation/config.js";
+import { type BackendConfig, loadConfig, withStudioProfile } from "./foundation/config.js";
 import { operationInput, parseArguments } from "./operations/cli-args.js";
 import { type OperationContext, operationCatalog, operationDef, runOperation } from "./operations/registry.js";
 
@@ -26,7 +26,9 @@ async function main(): Promise<void> {
   const opened: { db: BackendDb | null; config: BackendConfig | null } = { db: null, config: null };
   const context: OperationContext = {
     dbPath,
-    config: () => (opened.config ??= loadConfig({ ...process.env, PIPELINE_DB: dbPath })),
+    // The Studio's own settings live in its database, so asking for the
+    // configuration opens it. Both stay lazy: `help` touches neither.
+    config: () => (opened.config ??= withStudioProfile(loadConfig({ ...process.env, PIPELINE_DB: dbPath }), context.db())),
     db: () => (opened.db ??= openBackendDb(dbPath)),
     fetchImpl: fetch,
     actorType: CLI_ACTOR,

@@ -58,7 +58,6 @@ services:
       STORY_CARD_DIR: /data/story-cards
       REMOTE_MEDIA_PATH: /data/media
       PUBLIC_MEDIA_BASE_URL: https://${DOMAIN:?set DOMAIN to the hostname this Studio answers on}/media/staging
-      STUDIO_CONFIG: /app/studio.yaml
       PUBLIC_BASE_URL: https://${DOMAIN:?set DOMAIN to the hostname this Studio answers on}
       NODE_ENV: production
       DEPLOYMENT_ENV: production
@@ -71,7 +70,6 @@ services:
       BIND_HOST: 0.0.0.0
       PORT: "8788"
     volumes:
-      - ./studio.yaml:/app/studio.yaml:ro
       - app-data:/data
     # No published ports: the application is reachable only through Caddy.
     expose:

@@ -4,12 +4,12 @@ import { handlePublicationCallback } from "../src/bot/callback-router.js";
 import { publicationCallback, versionedCallback } from "../src/bot/publication-callback.js";
 import { clearVideoState, getVideoState, saveVideoState } from "../src/bot/video-ui.js";
 import { type BackendDb, unsafeDb } from "../src/db/client.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { setTelegramVideoCard } from "../src/interfaces/telegram/control-cards.js";
 import { videoPreview } from "../src/interfaces/telegram/video-preview.js";
 import { replaceVideoTargets, scheduleVideo } from "../src/publishing/video-service.js";
 import { registerTestChannels, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoDraft } from "./helpers/video.js";
 
 let backendDb: BackendDb | null = null;
@@ -26,7 +26,7 @@ afterEach(() => {
   backendDb = null;
 });
 
-const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
 
 function draftCard(status: string) {
   return {
@@ -129,7 +129,7 @@ describe("video callback dispatch", () => {
 
   it("asks every platform for its own time before confirming a per-target schedule", async () => {
     backendDb = openVideoDb();
-    const bothPlatforms = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+    const bothPlatforms = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
     const draftId = createTestVideoDraft(backendDb, 42, "clip.mp4", 24);
     replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
     setTelegramVideoCard(backendDb, draftId, 100, 10);

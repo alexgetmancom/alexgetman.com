@@ -22,7 +22,7 @@
   "scripts": {
     "prepare": "lefthook install",
     "dev": "astro dev",
-    "demo": "bun scripts/dev-seed.ts --reset --simple && bun run build && DATA_DIR=$PWD/.dev-fixture/data STUDIO_MEDIA_DIR=$PWD/.dev-fixture/video-media VIDEO_MEDIA_DIR=$PWD/.dev-fixture/video-media MEDIA_CACHE_DIR=$PWD/.dev-fixture/media-cache STORY_CARD_DIR=$PWD/.dev-fixture/story-cards PIPELINE_DB=$PWD/.dev-fixture/pipeline.db SITE_PUBLIC_DIR=$PWD/.dev-fixture/site COMMAND_CENTER_TOKEN=dev STUDIO_CONFIG=$PWD/studio.yaml ASTRO_DIST_DIR=$PWD/dist bun run --filter @alexgetman/backend dev",
+    "demo": "bun scripts/dev-seed.ts --reset --simple && bun run build && DATA_DIR=$PWD/.dev-fixture/data STUDIO_MEDIA_DIR=$PWD/.dev-fixture/video-media VIDEO_MEDIA_DIR=$PWD/.dev-fixture/video-media MEDIA_CACHE_DIR=$PWD/.dev-fixture/media-cache STORY_CARD_DIR=$PWD/.dev-fixture/story-cards PIPELINE_DB=$PWD/.dev-fixture/pipeline.db SITE_PUBLIC_DIR=$PWD/.dev-fixture/site COMMAND_CENTER_TOKEN=dev ASTRO_DIST_DIR=$PWD/dist bun run --filter @alexgetman/backend dev",
     "build": "bun scripts/generate-responsive-images.ts && astro build",
     "preview": "astro preview",
     "astro": "astro",

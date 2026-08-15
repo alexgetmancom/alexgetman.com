@@ -4,11 +4,10 @@ import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashbo
 import { pruneMetricSamples } from "../src/analytics/snapshots/metric-repository.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { creatorProfiles, metricSamples, posts, postTargets, videoMetricSnapshots } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
 import { TEXT_TEST_CHANNELS, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { withDb as withFixtureDb } from "./helpers/db.js";
-import { SITE_STUDIO_CONFIG } from "./helpers/studio-config.js";
+import { loadTestConfig, SITE_STUDIO_PROFILE } from "./helpers/studio-config.js";
 
 const withDb = <T>(run: (backendDb: UnsafeBackendDb) => T | Promise<T>) =>
   withFixtureDb(run, [...TEXT_TEST_CHANNELS, ...VIDEO_TEST_CHANNELS]);
@@ -35,7 +34,7 @@ describe("creator analytics dashboards", () => {
         ])
         .run();
 
-      const config = loadConfig({ STUDIO_CONFIG: SITE_STUDIO_CONFIG });
+      const config = loadTestConfig({}, SITE_STUDIO_PROFILE);
       const dashboard = creatorDashboard(backendDb, config, 7);
       expect(dashboard.text).toContain("Видео: 1200 просмотров · 96 взаимодействий");
       expect(dashboard.text).toContain("YouTube: 1200 просмотров · 87 лайков · 130 подписчиков");
@@ -79,7 +78,7 @@ describe("creator analytics dashboards", () => {
         ])
         .run();
 
-      const config = loadConfig({ STUDIO_CONFIG: SITE_STUDIO_CONFIG });
+      const config = loadTestConfig({}, SITE_STUDIO_PROFILE);
 
       const dashboard = creatorDashboard(backendDb, config, 0, "en");
       expect(dashboard.text).toContain("Overall statistics");

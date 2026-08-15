@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { TelegramClient } from "@mtcute/bun";
-import { loadConfig } from "../src/foundation/config.js";
 import { loginTelegramStories } from "../src/operations/telegram-stories-login.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 const configured = {
   TELEGRAM_CHANNEL_STORIES_API_ID: "12345",
@@ -39,7 +39,7 @@ describe("telegram stories login", () => {
     // at the first Story.
     const { client, calls } = fakeClient();
     const result = await loginTelegramStories(
-      loadConfig(configured),
+      loadTestConfig(configured),
       prompts,
       () => {},
       () => client,
@@ -59,7 +59,7 @@ describe("telegram stories login", () => {
 
     await expect(
       loginTelegramStories(
-        loadConfig(configured),
+        loadTestConfig(configured),
         prompts,
         () => {},
         () => client,
@@ -72,7 +72,7 @@ describe("telegram stories login", () => {
     const { client } = fakeClient();
     await expect(
       loginTelegramStories(
-        loadConfig({}),
+        loadTestConfig({}),
         prompts,
         () => {},
         () => client,
@@ -80,7 +80,7 @@ describe("telegram stories login", () => {
     ).rejects.toThrow("TELEGRAM_CHANNEL_STORIES_API_ID");
     await expect(
       loginTelegramStories(
-        loadConfig({ TELEGRAM_CHANNEL_STORIES_API_ID: "1", TELEGRAM_CHANNEL_STORIES_API_HASH: "h" }),
+        loadTestConfig({ TELEGRAM_CHANNEL_STORIES_API_ID: "1", TELEGRAM_CHANNEL_STORIES_API_HASH: "h" }),
         prompts,
         () => {},
         () => client,

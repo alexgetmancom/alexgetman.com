@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { publishToTelegram } from "../src/delivery/social/telegram.js";
-import { loadConfig } from "../src/foundation/config.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 /**
  * The Telegram publisher is the one every text and photo post goes through,
@@ -13,7 +13,7 @@ import { loadConfig } from "../src/foundation/config.js";
  * silently disappears, an album that uploads local bytes instead of file ids.
  */
 
-const config = loadConfig({
+const config = loadTestConfig({
   CONTROLLER_BOT_TOKEN: "bot-token",
   TELEGRAM_API_BASE_URL: "https://telegram.local/",
   TELEGRAM_CHANNEL_USERNAME: "alexgetmancom",
@@ -35,7 +35,7 @@ function recorder(reply: (method: string) => unknown = () => ({ ok: true, result
 
 describe("publishToTelegram", () => {
   it("skips instead of failing when no bot token is configured", async () => {
-    const result = await publishToTelegram({ text: "hi" }, loadConfig({ TELEGRAM_CHANNEL_USERNAME: "alexgetmancom" }), (() => {
+    const result = await publishToTelegram({ text: "hi" }, loadTestConfig({ TELEGRAM_CHANNEL_USERNAME: "alexgetmancom" }), (() => {
       throw new Error("must not call Telegram");
     }) as unknown as typeof fetch);
     expect(result).toEqual({ skipped: true, reason: "missing Telegram bot token" });

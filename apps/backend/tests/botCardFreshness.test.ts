@@ -10,7 +10,6 @@ import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { BackendDb, UnsafeBackendDb } from "../src/db/client.js";
 import { draftStoryCards, videoDrafts } from "../src/db/schema.js";
 import { unsafeDb } from "../src/db/unsafe.js";
-import { loadConfig } from "../src/foundation/config.js";
 import {
   setTelegramPostCard,
   setTelegramVideoCard,
@@ -20,6 +19,7 @@ import {
 import { replaceVideoTargets } from "../src/publishing/video-service.js";
 import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoAsset, createTestVideoDraft } from "./helpers/video.js";
 
 function callbackContext(messageId: number): Context {
@@ -69,7 +69,7 @@ describe("Telegram card freshness", () => {
   it("tracks the publish confirmation card after delivery previews", async () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+      const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
       const draftId = createDraftFromMessage(backendDb, 42, {
         text: "Video post",
         textEn: "Video post",
@@ -115,7 +115,7 @@ describe("Telegram card freshness", () => {
         editMessageText: async () => undefined,
       } as unknown as Context;
 
-      const preview = draftPreview(backendDb, draftId, loadConfig({}), "schedule");
+      const preview = draftPreview(backendDb, draftId, loadTestConfig({}), "schedule");
       await executePublicationEffects(ctx, backendDb, [
         {
           type: "screen",
@@ -142,7 +142,7 @@ describe("Telegram card freshness", () => {
         reply: async () => ({ message_id: 21 }),
       } as unknown as Context;
 
-      const preview = draftPreview(backendDb, draftId, loadConfig({}));
+      const preview = draftPreview(backendDb, draftId, loadTestConfig({}));
       await executePublicationEffects(ctx, backendDb, [
         {
           type: "prompt",
@@ -161,7 +161,7 @@ describe("Telegram card freshness", () => {
   it("keeps the Story scheduling flow on the message that renders its next screen", async () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+      const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
       registerTestChannels(backendDb as UnsafeBackendDb, ["telegram_stories", "instagram_stories"]);
       const draftId = createDraftFromMessage(backendDb, 42, { text: "Card", textEn: "Card", entities: [], media: [] });
       for (const locale of ["ru", "en"] as const) {
@@ -258,7 +258,7 @@ describe("Telegram card freshness", () => {
   it("keeps a two-platform video schedule on the latest Telegram control message", async () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+      const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
       const draftId = createTestVideoDraft(backendDb, 42, "clip.mp4", 24);
       replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
       setTelegramVideoCard(backendDb, draftId, 100, 10);

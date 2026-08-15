@@ -200,6 +200,10 @@ export type StudioQueueVideoTarget = {
 };
 
 export type StudioSettingsStore = {
+  /** What this Studio is and how its deployment behaves. Always present: the
+   * migration that created the table inserted the fresh-install row with it. */
+  profile(): StudioProfileRecord;
+  saveProfile(input: Partial<Omit<StudioProfileRecord, "id">> & { updatedAt: string }): void;
   notifications(actorId: number): StudioNotificationSettingsRecord | null;
   locale(actorId: number): string | null;
   timezone(actorId: number): string | null;
@@ -221,6 +225,26 @@ export type StudioSettingsStore = {
   saveBotSettings(input: { actorId: number; youtubeSignature: string; updatedAt: string }): void;
   saveLocale(input: { actorId: number; locale: string; updatedAt: string }): void;
   saveTimezone(input: { actorId: number; timezone: string; updatedAt: string }): void;
+};
+
+/** A string this Studio publishes about itself, in each language it serves. */
+export type LocalizedText = { en: string; ru: string };
+export type StudioSocialProfile = { label: string; url: string };
+export type LocalizedProfiles = { en: StudioSocialProfile[]; ru: StudioSocialProfile[] };
+
+export type StudioProfileRecord = {
+  id: number;
+  timezone: string;
+  timezoneLabel: string;
+  siteEnabled: number;
+  videoPrepareLeadMinutes: number;
+  videoReminderMinutes: number;
+  videoRetentionHours: number;
+  nameJson: LocalizedText;
+  taglineJson: LocalizedText;
+  aboutJson: LocalizedText;
+  profilesJson: LocalizedProfiles;
+  updatedAt: string;
 };
 
 type StudioNotificationSettingsRecord = {

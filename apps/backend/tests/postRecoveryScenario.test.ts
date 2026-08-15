@@ -4,13 +4,13 @@ import { runCallbackBoundary } from "../src/bot/callback-boundary.js";
 import { handlePublicationCallback } from "../src/bot/callback-router.js";
 import { publicationCallback } from "../src/bot/publication-callback.js";
 import { drafts, postTargets, publications, publishJobs } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
 import { claimDuePublishJobs, enqueuePublishJobTx, failPublishJob } from "../src/publishing/queue.js";
 import { withDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
-const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
 
 describe("post recovery scenario", () => {
   it("notifies once, retries all failed targets once, and exposes no duplicate queue rows", async () =>

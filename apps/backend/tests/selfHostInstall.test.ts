@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig } from "../src/foundation/config.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 const root = join(import.meta.dir, "../../..");
 
@@ -25,7 +25,6 @@ function installEnvironment(overrides: Record<string, string> = {}): NodeJS.Proc
   return {
     ...env,
     PUBLIC_BASE_URL: "https://publisher.example.com",
-    STUDIO_CONFIG: join(root, "studio.yaml"),
     ...overrides,
   };
 }
@@ -36,7 +35,7 @@ describe("the published self-host install", () => {
     // Command Center. This failed for every fresh install: an .env file states
     // an unset key as `KEY=`, and those empty strings reached optional fields
     // as present-but-invalid values.
-    const config = loadConfig(installEnvironment({ COMMAND_CENTER_TOKEN: "a".repeat(64), CLIENT_IP_HASH_SALT: "b".repeat(64) }));
+    const config = loadTestConfig(installEnvironment({ COMMAND_CENTER_TOKEN: "a".repeat(64), CLIENT_IP_HASH_SALT: "b".repeat(64) }));
 
     expect(config.NODE_ENV).toBe("production");
     expect(config.PUBLIC_BASE_URL).toBe("https://publisher.example.com");
@@ -51,8 +50,8 @@ describe("the published self-host install", () => {
   });
 
   it("still refuses to start without the secrets it cannot invent", () => {
-    expect(() => loadConfig(installEnvironment())).toThrow("COMMAND_CENTER_TOKEN");
-    expect(() => loadConfig(installEnvironment({ COMMAND_CENTER_TOKEN: "a".repeat(64) }))).toThrow("CLIENT_IP_HASH_SALT");
+    expect(() => loadTestConfig(installEnvironment())).toThrow("COMMAND_CENTER_TOKEN");
+    expect(() => loadTestConfig(installEnvironment({ COMMAND_CENTER_TOKEN: "a".repeat(64) }))).toThrow("CLIENT_IP_HASH_SALT");
   });
 
   it("names no channel, so an unconfigured Studio cannot publish into someone else's", () => {
@@ -60,7 +59,7 @@ describe("the published self-host install", () => {
     // there now has nothing to publish to.
     expect(read("apps/backend/src/foundation/config.ts")).not.toContain('default("alexgetmancom")');
     expect(
-      loadConfig(installEnvironment({ COMMAND_CENTER_TOKEN: "a".repeat(64), CLIENT_IP_HASH_SALT: "b".repeat(64) }))
+      loadTestConfig(installEnvironment({ COMMAND_CENTER_TOKEN: "a".repeat(64), CLIENT_IP_HASH_SALT: "b".repeat(64) }))
         .TELEGRAM_CHANNEL_USERNAME,
     ).toBe("");
   });

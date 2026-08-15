@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { ApplicationPorts } from "../src/application/ports.js";
 import { settingsService } from "../src/studio/services/settings.js";
+import { DEFAULT_STUDIO_PROFILE } from "../src/studio.js";
 
 describe("application persistence ports", () => {
   it("runs the settings service without SQLite", () => {
@@ -12,6 +13,8 @@ describe("application persistence ports", () => {
     const ports: Pick<ApplicationPorts, "clock" | "studioSettings"> = {
       clock: { now: () => new Date("2026-01-02T03:04:05.000Z") },
       studioSettings: {
+        profile: () => ({ id: 1, ...DEFAULT_STUDIO_PROFILE, updatedAt: "1970-01-01T00:00:00.000Z" }),
+        saveProfile: () => {},
         notifications: () => null,
         locale: () => null,
         timezone: () => currentTimezone,

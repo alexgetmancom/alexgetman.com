@@ -77,9 +77,6 @@ beforeAll(async () => {
       NODE_ENV: "test",
       PIPELINE_DB: dbPath,
       SITE_PUBLIC_DIR: publicDir,
-      // This test is about the public site, so it asks for a Studio that serves
-      // one. The product default does not.
-      STUDIO_CONFIG: path.join(projectRoot, "apps/backend/tests/helpers/studio-site.yaml"),
     },
     stdout: "ignore",
     stderr: "pipe",

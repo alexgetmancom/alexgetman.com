@@ -34,11 +34,10 @@ describe("production deployment", () => {
     await deployRelease(inputs, run, () => {});
 
     const archive = scripts().find((script) => script.startsWith("tar -cf -"));
-    for (const file of ["deploy/alex.compose.yaml", "deploy/maru.compose.yaml", "studio.alex.yaml", "studio.maru.yaml"])
-      expect(archive).toContain(file);
-    expect(scripts().some((script) => script.includes("cp '/home/deploy/alexgetman-runtime/release-files/abc1234/studio.alex.yaml'"))).toBe(
-      true,
-    );
+    for (const file of ["deploy/alex.compose.yaml", "deploy/maru.compose.yaml"]) expect(archive).toContain(file);
+    expect(
+      scripts().some((script) => script.includes("cp '/home/deploy/alexgetman-runtime/release-files/abc1234/deploy/alex.compose.yaml'")),
+    ).toBe(true);
   });
 
   it("activates only after the configuration is in place, and verifies only after that", async () => {
@@ -49,7 +48,7 @@ describe("production deployment", () => {
     await deployRelease(inputs, run, () => {});
 
     const at = (needle: string) => scripts().findIndex((script) => script.includes(needle));
-    expect(at("studio.yaml.next")).toBeLessThan(at("/v1/deploy"));
+    expect(at("compose.yaml.next")).toBeLessThan(at("/v1/deploy"));
     expect(at("/v1/deploy")).toBeLessThan(at("readyz"));
     expect(at("readyz")).toBeLessThan(at("deploy-image.env.next"));
     expect(at("deploy-image.env.next")).toBeLessThan(at("rm -rf"));

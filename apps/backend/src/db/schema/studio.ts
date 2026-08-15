@@ -1,5 +1,27 @@
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import type { LocalizedProfiles, LocalizedText } from "../../application/ports.js";
+import { DEFAULT_STUDIO_PROFILE } from "../../studio.js";
 import { autoId, type JsonObject, type JsonValue, json, timestamps } from "./_shared.js";
+
+/** What this Studio is and how its deployment behaves: the identity it publishes
+ * under, its display time zone, whether it serves a public site, and video
+ * timing. One row per Studio instance, because the database is the Studio.
+ * Defaults describe a fresh install and never anyone else's identity. */
+export const studioProfile = sqliteTable("studio_profile", {
+  id: integer().primaryKey().default(1),
+  timezone: text().notNull().default(DEFAULT_STUDIO_PROFILE.timezone),
+  timezoneLabel: text().notNull().default(DEFAULT_STUDIO_PROFILE.timezoneLabel),
+  siteEnabled: integer().notNull().default(DEFAULT_STUDIO_PROFILE.siteEnabled),
+  videoPrepareLeadMinutes: integer().notNull().default(DEFAULT_STUDIO_PROFILE.videoPrepareLeadMinutes),
+  videoReminderMinutes: integer().notNull().default(DEFAULT_STUDIO_PROFILE.videoReminderMinutes),
+  videoRetentionHours: integer().notNull().default(DEFAULT_STUDIO_PROFILE.videoRetentionHours),
+  /** Localized identity, keyed by the locales this Studio serves. */
+  nameJson: json<LocalizedText>().notNull().default(DEFAULT_STUDIO_PROFILE.nameJson),
+  taglineJson: json<LocalizedText>().notNull().default(DEFAULT_STUDIO_PROFILE.taglineJson),
+  aboutJson: json<LocalizedText>().notNull().default(DEFAULT_STUDIO_PROFILE.aboutJson),
+  profilesJson: json<LocalizedProfiles>().notNull().default(DEFAULT_STUDIO_PROFILE.profilesJson),
+  updatedAt: text().notNull(),
+});
 
 /** Owner-level notification policy. It belongs to Studio, not to any interface. */
 export const studioNotificationSettings = sqliteTable("studio_notification_settings", {

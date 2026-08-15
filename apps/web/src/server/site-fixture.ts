@@ -187,6 +187,9 @@ export function seedSiteFixture(options: { dbPath: string; publicDir: string; po
   const now = new Date().toISOString();
   const imagePaths: string[] = [];
   try {
+    // A site fixture is for a Studio that serves a site. A fresh database does
+    // not, so every route under test would answer 404 without this.
+    backendDb.studioSettings.saveProfile({ siteEnabled: 1, updatedAt: now });
     for (const post of fixture) {
       const createdAt = post.dateUtc ?? now;
       rawDb.db.insert(publications).values({ postId: post.postId, status: "published", createdAt, updatedAt: now }).run();

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { createApiHandler } from "../src/api.js";
 import { exchangeInstagramCode, metaOauthAuthorizeUrl, metaOauthConnectUrl, verifyMetaOauthState } from "../src/channels/meta-oauth.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { withDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 const KEY = "cd".repeat(32);
 const now = new Date("2026-08-14T20:00:00.000Z");
-const config = loadConfig({
+const config = loadTestConfig({
   PUBLIC_BASE_URL: "https://publisher.example.com",
   TOKEN_ENCRYPTION_KEY: KEY,
   THREADS_APP_ID: "threads-id",

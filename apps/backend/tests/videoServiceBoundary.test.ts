@@ -4,15 +4,16 @@ import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { studioMediaAssets, studioNotificationJobs, videoJobs, videoTargets } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
+import type { BackendConfig } from "../src/foundation/config.js";
 import { replaceVideoTargets } from "../src/publishing/video-service.js";
 import { videoService } from "../src/studio/services/videos.js";
 import { VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { withDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoDraft } from "./helpers/video.js";
 
 type VideoFixture = {
-  config: ReturnType<typeof loadConfig>;
+  config: BackendConfig;
   directory: string;
   draftId: number;
 };
@@ -58,7 +59,7 @@ function fixture(backendDb: UnsafeBackendDb, targets = ["instagram_reels"]): Vid
   if (!asset) throw new Error("video fixture asset was not created");
   const draftId = createTestVideoDraft(backendDb, 42, asset.id, 24);
   replaceVideoTargets(backendDb, draftId, targets as ("youtube_shorts" | "instagram_reels")[]);
-  const config = loadConfig({
+  const config = loadTestConfig({
     CONTROLLER_ADMIN_IDS: "42",
     INSTAGRAM_RU_ACCESS_TOKEN: "instagram-token",
     INSTAGRAM_RU_USER_ID: "instagram-user",

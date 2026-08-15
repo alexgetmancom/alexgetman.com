@@ -5,18 +5,23 @@ import { join } from "node:path";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { publishContentIndex } from "../src/delivery/site-content-index.js";
 import { pingIndexNow } from "../src/delivery/site-index-now.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { refreshPublicationStatus } from "../src/publishing/publication-status.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("site parity", () => {
   it("publishes content memory and deduplicates IndexNow submissions", async () => {
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-site-parity-"));
     const backendDb = openBackendDb(join(dir, "pipeline.db"));
     registerTestChannels(backendDb, TEXT_TEST_CHANNELS);
-    const config = loadConfig({ DATA_DIR: dir, SITE_PUBLIC_DIR: dir, PUBLIC_BASE_URL: "https://example.test", INDEXNOW_ENABLED: "true" });
+    const config = loadTestConfig({
+      DATA_DIR: dir,
+      SITE_PUBLIC_DIR: dir,
+      PUBLIC_BASE_URL: "https://example.test",
+      INDEXNOW_ENABLED: "true",
+    });
     try {
       const draft = createDraftFromMessage(backendDb, 1, { text: "Русский заголовок", textEn: "English title", media: [], entities: [] });
       const postId = publishDraftToQueue(backendDb, draft);
@@ -38,7 +43,12 @@ describe("site parity", () => {
 
   it("retries an IndexNow batch after a rejected response", async () => {
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-indexnow-"));
-    const config = loadConfig({ DATA_DIR: dir, SITE_PUBLIC_DIR: dir, PUBLIC_BASE_URL: "https://example.test", INDEXNOW_ENABLED: "true" });
+    const config = loadTestConfig({
+      DATA_DIR: dir,
+      SITE_PUBLIC_DIR: dir,
+      PUBLIC_BASE_URL: "https://example.test",
+      INDEXNOW_ENABLED: "true",
+    });
     const fetchImpl = mock(async () => new Response("", { status: 500 })) as unknown as typeof fetch;
     await expect(pingIndexNow(config, ["https://example.test/post"], fetchImpl)).rejects.toThrow("500");
     await expect(pingIndexNow(config, ["https://example.test/post"], fetchImpl)).rejects.toThrow("500");

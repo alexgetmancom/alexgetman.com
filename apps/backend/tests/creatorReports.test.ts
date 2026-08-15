@@ -3,9 +3,9 @@ import { audienceAnalysis } from "../src/analytics/reports/audience.js";
 import { creatorVideoArchive, creatorVideoMetrics } from "../src/analytics/reports/video-archive.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { socialComments, videoMetricSnapshots } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
 import { withDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 const sampledAt = "2026-07-27T09:00:00.000Z";
 const realFetch = globalThis.fetch;
@@ -148,7 +148,7 @@ describe("creatorVideoMetrics", () => {
 });
 
 describe("audienceAnalysis", () => {
-  const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", DEEPSEEK_API_KEY: "sk-test" });
+  const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", DEEPSEEK_API_KEY: "sk-test" });
 
   function comment(backendDb: UnsafeBackendDb, targetId: number, text: string, publishedAt: string): void {
     backendDb.db
@@ -207,7 +207,7 @@ describe("audienceAnalysis", () => {
         return new Response("{}");
       }) as unknown as typeof fetch;
 
-      const noKey = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t" });
+      const noKey = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t" });
       expect(await audienceAnalysis(backendDb, noKey, "en", impl)).toContain("add DEEPSEEK_API_KEY");
       expect(called).toBe(false);
     });

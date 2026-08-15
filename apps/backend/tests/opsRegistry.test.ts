@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { listChannels } from "../src/channels/registry.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { mcpResponse } from "../src/interfaces/mcp.js";
 import { type OperationContext, operationCatalog, operationDef, operationUsage, runOperation } from "../src/operations/registry.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 let backendDb: UnsafeBackendDb | null = null;
 
@@ -35,7 +35,7 @@ const HOST_ONLY = [
 function context(db: UnsafeBackendDb): OperationContext {
   return {
     dbPath: ":memory:",
-    config: () => loadConfig({ CONTROLLER_ADMIN_IDS: "42" }),
+    config: () => loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }),
     db: () => db,
     fetchImpl: fetch,
     actorType: "test",
@@ -139,7 +139,7 @@ describe("operations registry", () => {
 
   it("serves every agent operation as an MCP tool and nothing else", async () => {
     backendDb = openBackendDb(":memory:");
-    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+    const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
 
     const listed = (await mcpResponse(backendDb, config, { jsonrpc: "2.0", id: 1, method: "tools/list" }, "key", 42)) as {
       result: { tools: Array<{ name: string }> };
@@ -156,7 +156,7 @@ describe("operations registry", () => {
 
   it("refuses a host-only operation asked for over MCP", async () => {
     backendDb = openBackendDb(":memory:");
-    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+    const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
 
     const response = (await mcpResponse(
       backendDb,
@@ -171,7 +171,7 @@ describe("operations registry", () => {
 
   it("names the offending field when an agent calls an operation wrongly", async () => {
     backendDb = openBackendDb(":memory:");
-    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+    const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
 
     const response = (await mcpResponse(
       backendDb,
@@ -187,7 +187,7 @@ describe("operations registry", () => {
 
   it("keeps the CLI's own spellings off the agent surface", async () => {
     backendDb = openBackendDb(":memory:");
-    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" });
+    const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" });
     const listed = (await mcpResponse(backendDb, config, { jsonrpc: "2.0", id: 1, method: "tools/list" }, "key", 42)) as {
       result: { tools: Array<{ name: string; description: string; inputSchema: { properties?: Record<string, object> } }> };
     };
@@ -203,7 +203,7 @@ describe("operations registry", () => {
 
   it("answers a batch as a batch and a notification with nothing", async () => {
     backendDb = openBackendDb(":memory:");
-    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" });
+    const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" });
     const batch = (await mcpResponse(
       backendDb,
       config,

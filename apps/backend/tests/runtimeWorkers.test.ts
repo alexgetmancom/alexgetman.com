@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "bun:test";
 import { eq } from "drizzle-orm";
 import { workerState } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { startCoreWorkers } from "../src/runtime/workers.js";
 import { withDb } from "./helpers/db.js";
-import { SITE_STUDIO_CONFIG } from "./helpers/studio-config.js";
+import { loadTestConfig, SITE_STUDIO_PROFILE } from "./helpers/studio-config.js";
 
 const EXPECTED_WORKERS = [
   "platform-tokens",
@@ -37,7 +36,7 @@ afterEach(() => {
 describe("core worker runtime", () => {
   it("starts every enabled loop and persists lifecycle heartbeats", async () => {
     await withDb(async (backendDb) => {
-      const config = loadConfig({ STUDIO_CONFIG: SITE_STUDIO_CONFIG, WORKER_HEARTBEAT_INTERVAL_SECONDS: "1" });
+      const config = loadTestConfig({ WORKER_HEARTBEAT_INTERVAL_SECONDS: "1" }, SITE_STUDIO_PROFILE);
       const loops = startCoreWorkers(config, backendDb);
 
       try {
@@ -66,8 +65,7 @@ describe("core worker runtime", () => {
 
   it("does not start site workers for a Studio without a public site", async () => {
     await withDb(async (backendDb) => {
-      const config = loadConfig({ STUDIO_CONFIG: SITE_STUDIO_CONFIG, WORKER_HEARTBEAT_INTERVAL_SECONDS: "60" });
-      config.studio.siteEnabled = false;
+      const config = loadTestConfig({ WORKER_HEARTBEAT_INTERVAL_SECONDS: "60" }, { siteEnabled: 0 });
       const loops = startCoreWorkers(config, backendDb);
 
       try {

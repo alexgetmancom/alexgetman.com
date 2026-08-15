@@ -19,19 +19,19 @@ import {
   videoTargets,
 } from "../src/db/schema.js";
 import { recoverVideoLocks, runVideoCycle } from "../src/delivery/video-worker.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { videoPreview } from "../src/interfaces/telegram/video-preview.js";
 import { listVideoTargets } from "../src/publishing/video-data.js";
 import { cancelVideo, replaceVideoTargets, retryVideoTarget, saveVideoMetadata, scheduleVideo } from "../src/publishing/video-service.js";
 import { videoService } from "../src/studio/services/videos.js";
 import { VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { useBackendDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoDraft } from "./helpers/video.js";
 
 const testDb = useBackendDb(VIDEO_TEST_CHANNELS);
 
 function videoConfig() {
-  return loadConfig({});
+  return loadTestConfig({});
 }
 
 function videoContext(input: { text?: string; callback?: string } = {}) {

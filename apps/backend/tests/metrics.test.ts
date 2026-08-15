@@ -5,15 +5,15 @@ import { createMetricCollectors, SUPPORTED_METRIC_TARGETS } from "../src/analyti
 import { claimDueMetricTasks, type MetricTask } from "../src/analytics/collection/metric-schedule.js";
 import { runMetricsCycle } from "../src/analytics/collection/metrics-cycle.js";
 import { metricSamples, metricSchedule, postMetrics, posts, postTargets, workerState } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("metrics cycle", () => {
   it("schedules published targets and persists metric samples", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
       seedPublishedPost(backendDb, "post:1", "threads_ru");
-      const checked = await runMetricsCycle(loadConfig({ MAX_METRIC_TASKS_PER_CYCLE: "10" }), backendDb, {
+      const checked = await runMetricsCycle(loadTestConfig({ MAX_METRIC_TASKS_PER_CYCLE: "10" }), backendDb, {
         threads_ru: async () => ({
           metrics: { views: 120, likes: 9 },
           source: "test_api",
@@ -61,7 +61,7 @@ describe("metrics cycle", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       seedPublishedPost(backendDb, "post:2", "threads_ru");
-      await runMetricsCycle(loadConfig({}), backendDb, {
+      await runMetricsCycle(loadTestConfig({}), backendDb, {
         threads_ru: async () => {
           throw new Error("upstream unavailable");
         },
@@ -82,7 +82,7 @@ describe("metrics cycle", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       seedPublishedPost(backendDb, "post:paid-x", "x");
-      const config = loadConfig({ MAX_METRIC_TASKS_PER_CYCLE: "10" });
+      const config = loadTestConfig({ MAX_METRIC_TASKS_PER_CYCLE: "10" });
       const collectors = createMetricCollectors(config);
       expect(collectors.x).toBeUndefined();
       expect(await runMetricsCycle(config, backendDb, collectors)).toBe(0);
@@ -96,7 +96,7 @@ describe("metrics cycle", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       seedPublishedPost(backendDb, "post:terminal", "threads_ru");
-      await runMetricsCycle(loadConfig({}), backendDb, {
+      await runMetricsCycle(loadTestConfig({}), backendDb, {
         threads_ru: async () => {
           throw new TerminalMetricError("post expired");
         },
@@ -132,7 +132,9 @@ describe("metrics cycle", () => {
           },
         ])
         .run();
-      expect(claimDueMetricTasks(backendDb, loadConfig({ MAX_METRIC_TASKS_PER_CYCLE: "1" }), ["threads_ru"])[0]?.postKey).toBe("post:old");
+      expect(claimDueMetricTasks(backendDb, loadTestConfig({ MAX_METRIC_TASKS_PER_CYCLE: "1" }), ["threads_ru"])[0]?.postKey).toBe(
+        "post:old",
+      );
     } finally {
       backendDb.close();
     }
@@ -154,7 +156,7 @@ describe("metrics cycle", () => {
         })
         .run();
 
-      const checked = await runMetricsCycle(loadConfig({ MAX_METRIC_TASKS_PER_CYCLE: "1" }), backendDb, {
+      const checked = await runMetricsCycle(loadTestConfig({ MAX_METRIC_TASKS_PER_CYCLE: "1" }), backendDb, {
         threads_ru: async () => ({ metrics: { views: 42 }, source: "test_api", raw: null }),
       });
 
@@ -192,7 +194,7 @@ describe("metrics cycle", () => {
         ])
         .run();
 
-      await runMetricsCycle(loadConfig({ ENABLE_X_METRICS: "1" }), backendDb, {});
+      await runMetricsCycle(loadTestConfig({ ENABLE_X_METRICS: "1" }), backendDb, {});
 
       expect(
         backendDb.db
@@ -213,7 +215,7 @@ describe("metrics cycle", () => {
 
   it("keeps the static supported list in step with the collectors it guards", () => {
     expect([...(SUPPORTED_METRIC_TARGETS as readonly string[])].sort()).toEqual(
-      Object.keys(createMetricCollectors(loadConfig({ ENABLE_X_METRICS: "1" }))).sort(),
+      Object.keys(createMetricCollectors(loadTestConfig({ ENABLE_X_METRICS: "1" }))).sort(),
     );
   });
 });
@@ -221,7 +223,7 @@ describe("metrics cycle", () => {
 describe("Telegram public metrics", () => {
   // The channel is the subject of these tests, so they name it rather than
   // leaning on a default. It used to be a live channel of this deployment.
-  const telegramConfig = () => loadConfig({ TELEGRAM_CHANNEL_USERNAME: "alexgetmancom" });
+  const telegramConfig = () => loadTestConfig({ TELEGRAM_CHANNEL_USERNAME: "alexgetmancom" });
   it("loads the target post directly, parses compact views, and sums reactions", async () => {
     const html = `<section><div data-post="alexgetmancom/523"><span class="tgme_widget_message_views">1.2K</span><span class="tgme_reaction"><i></i>3</span><span class="tgme_reaction"><i></i>2</span></div></section>`;
     let requestedUrl = "";

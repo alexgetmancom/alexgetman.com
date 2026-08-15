@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { draftPreview } from "../src/bot/preview.js";
 import { drafts } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { requirePostEditAllowed } from "../src/studio/services/post-access.js";
 import { withDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("locale-aware post edit lock", () => {
   it("locks only the locale that is due soon", () =>
@@ -27,7 +27,7 @@ describe("locale-aware post edit lock", () => {
           updatedAt: now.toISOString(),
         })
         .run();
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", POST_EDIT_LOCK_MINUTES: "2" });
+      const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", POST_EDIT_LOCK_MINUTES: "2" });
 
       expect(() => requirePostEditAllowed(backendDb, config, 42, 8, now, "ru")).toThrow("err.post-too-close-to-publish");
       expect(requirePostEditAllowed(backendDb, config, 42, 8, now, "en").id).toBe(8);

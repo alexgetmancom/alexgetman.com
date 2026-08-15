@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { translatePostText } from "../src/bot/post-translation.js";
-import { loadConfig } from "../src/foundation/config.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("post translation fallback", () => {
   it("produces no translation when the provider is unavailable", async () => {
@@ -10,7 +10,7 @@ describe("post translation fallback", () => {
       // It used to answer with the Russian text it was handed, which is the one
       // answer that cannot be told apart from a real translation: the draft
       // looked finished and the English channels published Russian.
-      expect(await translatePostText("Русский текст", loadConfig({ DEEPSEEK_API_KEY: "test-key" }))).toBeUndefined();
+      expect(await translatePostText("Русский текст", loadTestConfig({ DEEPSEEK_API_KEY: "test-key" }))).toBeUndefined();
     } finally {
       globalThis.fetch = originalFetch;
     }

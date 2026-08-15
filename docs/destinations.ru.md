@@ -25,7 +25,7 @@ docker compose exec app bun /app/ops/cli.js doctor
 
 | Площадка | Чем подключить | Что нужно |
 | --- | --- | --- |
-| Сайт | `--target site_ru` / `site_en` | ничего, плюс `site_enabled: true` в `studio.yaml` |
+| Сайт | `--target site_ru` / `site_en` | ничего, плюс `ops studio-profile-set --site-enabled` |
 | Telegram-канал | `--target telegram` | `CONTROLLER_BOT_TOKEN` |
 | Discord | `--target discord` | `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID` |
 | Threads | Studio → Каналы, RU или EN | `THREADS_APP_ID`, `THREADS_APP_SECRET`, `TOKEN_ENCRYPTION_KEY` либо `ZERNIO_API_KEY` |

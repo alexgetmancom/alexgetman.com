@@ -4,11 +4,11 @@ import { targetLocale } from "../src/botTargets.js";
 import { type BackendDb, unsafeDb } from "../src/db/client.js";
 import { publishJobs, siteJobs } from "../src/db/schema.js";
 import type { DeliveryPorts } from "../src/delivery/ports.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { runPublishCycle } from "../src/runtime/workers.js";
 import { postService } from "../src/studio/services/posts.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 let backendDb: BackendDb | null = null;
 
@@ -46,7 +46,7 @@ function enTargetsDueNow(db: BackendDb, postId: number): string[] {
 describe("partial locale scheduling", () => {
   it("finishes a RU-only post without waiting for an EN schedule", () => {
     backendDb = openPostDb();
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Russian", textEn: "English", entities: [], media: [] });
     expect(posts.cycleMode(42, draftId)).toBe("full");
     expect(posts.cycleMode(42, draftId)).toBe("ru");
@@ -63,7 +63,7 @@ describe("partial locale scheduling", () => {
 
   it("finishes an EN-only post without waiting for a RU schedule", () => {
     backendDb = openPostDb();
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Russian", textEn: "English", entities: [], media: [] });
     expect(posts.cycleMode(42, draftId)).toBe("full");
     expect(posts.cycleMode(42, draftId)).toBe("ru");
@@ -81,7 +81,7 @@ describe("partial locale scheduling", () => {
 
   it("does not publish EN while its time has not been chosen yet", () => {
     backendDb = openPostDb();
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Russian", textEn: "English", entities: [], media: [] });
 
     // The editor picks "RU now" and has not reached the EN slot screen yet.
@@ -94,7 +94,7 @@ describe("partial locale scheduling", () => {
 
   it("queues EN once its time is chosen", () => {
     backendDb = openPostDb();
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Russian", textEn: "English", entities: [], media: [] });
 
     const first = posts.scheduleAt(42, draftId, "ru", new Date());
@@ -114,7 +114,7 @@ describe("partial locale scheduling", () => {
 
   it("represents a locale published now without a fake future timestamp", () => {
     backendDb = openPostDb();
-    const posts = postService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
     const draftId = posts.create(42, { text: "Russian", textEn: "English", entities: [], media: [] });
 
     const postId = posts.schedule(42, draftId, { ruAt: new Date(), enAt: null, immediateLocale: "ru" });
@@ -133,7 +133,7 @@ describe("partial locale scheduling", () => {
 
   it("publishes each scheduled locale exactly once when the worker reaches both times", async () => {
     backendDb = openPostDb();
-    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+    const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
     const posts = postService(backendDb, config);
     const draftId = posts.create(42, { text: "Russian", textEn: "English", entities: [], media: [] });
     const base = new Date();

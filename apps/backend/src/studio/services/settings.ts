@@ -1,4 +1,4 @@
-import type { ApplicationPorts } from "../../application/ports.js";
+import type { ApplicationPorts, LocalizedProfiles, LocalizedText } from "../../application/ports.js";
 import { fixUrlSlashes } from "../../content/message.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
@@ -54,9 +54,76 @@ function readNewsDigest(backendDb: SettingsDependencies) {
   return { enabled: row?.enabled === 1, hour: row?.hour ?? 10, minute: row?.minute ?? 0, prompt: row?.prompt?.trim() ?? "" };
 }
 
+/** What this Studio is and how its deployment behaves, as an operator sees it. */
+function readProfile(backendDb: SettingsDependencies) {
+  const row = backendDb.studioSettings.profile();
+  return {
+    timezone: row.timezone,
+    timezoneLabel: row.timezoneLabel,
+    siteEnabled: row.siteEnabled !== 0,
+    video: {
+      prepareLeadMinutes: row.videoPrepareLeadMinutes,
+      reminderMinutes: row.videoReminderMinutes,
+      retentionHours: row.videoRetentionHours,
+    },
+    name: row.nameJson,
+    tagline: row.taglineJson,
+    about: row.aboutJson,
+    profiles: row.profilesJson,
+  };
+}
+
+export type StudioProfileInput = {
+  timezone?: string | undefined;
+  timezoneLabel?: string | undefined;
+  siteEnabled?: boolean | undefined;
+  prepareLeadMinutes?: number | undefined;
+  reminderMinutes?: number | undefined;
+  retentionHours?: number | undefined;
+  name?: LocalizedText | undefined;
+  tagline?: LocalizedText | undefined;
+  about?: LocalizedText | undefined;
+  profiles?: LocalizedProfiles | undefined;
+};
+
 /** Owner settings commands used by Telegram today and any future Studio adapter. */
 export function settingsService(backendDb: SettingsDependencies) {
   return {
+    studioProfile() {
+      return readProfile(backendDb);
+    },
+    setStudioProfile(input: StudioProfileInput) {
+      if (input.timezone != null && !isValidTimeZone(input.timezone.trim())) throw new StudioError("err.timezone-invalid");
+      if (
+        input.prepareLeadMinutes != null &&
+        (!Number.isInteger(input.prepareLeadMinutes) || input.prepareLeadMinutes < 1 || input.prepareLeadMinutes > 120)
+      )
+        throw new StudioError("err.video-prepare-lead-range");
+      if (
+        input.reminderMinutes != null &&
+        (!Number.isInteger(input.reminderMinutes) || input.reminderMinutes < 1 || input.reminderMinutes > 60)
+      )
+        throw new StudioError("err.reminder-range");
+      if (
+        input.retentionHours != null &&
+        (!Number.isInteger(input.retentionHours) || input.retentionHours < 24 || input.retentionHours > 720)
+      )
+        throw new StudioError("err.video-retention-range");
+      backendDb.studioSettings.saveProfile({
+        ...(input.timezone != null ? { timezone: input.timezone.trim() } : {}),
+        ...(input.timezoneLabel != null ? { timezoneLabel: input.timezoneLabel.trim() } : {}),
+        ...(input.siteEnabled != null ? { siteEnabled: Number(input.siteEnabled) } : {}),
+        ...(input.prepareLeadMinutes != null ? { videoPrepareLeadMinutes: input.prepareLeadMinutes } : {}),
+        ...(input.reminderMinutes != null ? { videoReminderMinutes: input.reminderMinutes } : {}),
+        ...(input.retentionHours != null ? { videoRetentionHours: input.retentionHours } : {}),
+        ...(input.name != null ? { nameJson: input.name } : {}),
+        ...(input.tagline != null ? { taglineJson: input.tagline } : {}),
+        ...(input.about != null ? { aboutJson: input.about } : {}),
+        ...(input.profiles != null ? { profilesJson: input.profiles } : {}),
+        updatedAt: backendDb.clock.now().toISOString(),
+      });
+      return readProfile(backendDb);
+    },
     locale(actorId: number): StudioLocale {
       return readLocale(backendDb, actorId);
     },

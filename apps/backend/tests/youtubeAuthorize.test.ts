@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { loadConfig } from "../src/foundation/config.js";
 import { authorizeYouTube } from "../src/operations/youtube-authorize.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 const credentials = { YOUTUBE_RU_CLIENT_ID: "client", YOUTUBE_RU_CLIENT_SECRET: "secret" };
 
@@ -21,7 +21,7 @@ describe("youtube authorize", () => {
     // consent screen. Treating that as a failure would make the command unusable
     // for exactly as long as a person takes to open a browser.
     const prompts: { verificationUrl: string; userCode: string }[] = [];
-    const result = await authorizeYouTube(loadConfig(credentials), "ru", {
+    const result = await authorizeYouTube(loadTestConfig(credentials), "ru", {
       fetchImpl: responder({
         "device/code": [{ device_code: "d", user_code: "ABCD-EFGH", verification_url: "https://google.com/device", interval: 1 }],
         "oauth2.googleapis.com/token": [{ error: "authorization_pending" }, { error: "slow_down" }, { refresh_token: "1//refresh" }],
@@ -38,7 +38,7 @@ describe("youtube authorize", () => {
 
   it("stops on a real refusal instead of polling until the deadline", async () => {
     await expect(
-      authorizeYouTube(loadConfig(credentials), "ru", {
+      authorizeYouTube(loadTestConfig(credentials), "ru", {
         fetchImpl: responder({
           "device/code": [{ device_code: "d", user_code: "X", verification_url: "https://google.com/device", interval: 1 }],
           "oauth2.googleapis.com/token": [{ error: "access_denied" }],
@@ -49,6 +49,6 @@ describe("youtube authorize", () => {
   });
 
   it("names the two settings to create before anything else", async () => {
-    await expect(authorizeYouTube(loadConfig({}), "en", { sleep: async () => {} })).rejects.toThrow("YOUTUBE_EN_CLIENT_ID");
+    await expect(authorizeYouTube(loadTestConfig({}), "en", { sleep: async () => {} })).rejects.toThrow("YOUTUBE_EN_CLIENT_ID");
   });
 });

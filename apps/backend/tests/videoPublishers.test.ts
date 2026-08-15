@@ -11,8 +11,8 @@ import {
   prepareYouTubeVideo,
   publishInstagramReel,
 } from "../src/delivery/video-publishers.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { classifyPublishError, retryAfterSecondsFromError } from "../src/publishing/errors.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 /**
  * These publishers reach for the global fetch rather than taking one, so the
@@ -25,7 +25,7 @@ import { classifyPublishError, retryAfterSecondsFromError } from "../src/publish
  * makes the worker retry a creation_id that can never succeed.
  */
 
-const config = loadConfig({
+const config = loadTestConfig({
   YOUTUBE_RU_CLIENT_ID: "client",
   YOUTUBE_RU_CLIENT_SECRET: "secret",
   YOUTUBE_RU_REFRESH_TOKEN: "refresh",

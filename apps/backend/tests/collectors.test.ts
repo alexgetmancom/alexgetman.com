@@ -5,9 +5,9 @@ import { collectTelegram, collectTelegramStory } from "../src/analytics/collecti
 import { collectThreads } from "../src/analytics/collection/collectors/threads.js";
 import { collectX } from "../src/analytics/collection/collectors/x.js";
 import type { MetricTask } from "../src/analytics/collection/metric-schedule.js";
-import { loadConfig } from "../src/foundation/config.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
-const config = loadConfig({
+const config = loadTestConfig({
   CONTROLLER_ADMIN_IDS: "42",
   CONTROLLER_BOT_TOKEN: "token",
   X_CLIENT_ID: "ck",
@@ -67,7 +67,7 @@ async function rejection(promise: Promise<unknown>): Promise<Error> {
 describe("collectTelegram", () => {
   it("rejects malformed Telegram story tasks before opening MTProto", async () => {
     const storyTask = task({ target: "telegram_stories", externalId: "not-a-number" });
-    const storyConfig = loadConfig({
+    const storyConfig = loadTestConfig({
       TELEGRAM_CHANNEL_STORIES_API_ID: "123",
       TELEGRAM_CHANNEL_STORIES_API_HASH: "hash",
       TELEGRAM_CHANNEL_STORIES_SESSION: "session",
@@ -79,7 +79,7 @@ describe("collectTelegram", () => {
   });
 
   it("accepts Telegram links and converts compact view and reaction counts", async () => {
-    const telegramConfig = loadConfig({ TELEGRAM_CHANNEL_USERNAME: "@alexchannel" });
+    const telegramConfig = loadTestConfig({ TELEGRAM_CHANNEL_USERNAME: "@alexchannel" });
     const fetchMock = (async () =>
       new Response(
         '<section data-post="alexchannel/42"><span class="tgme_widget_message_views">1.2K</span><i class="tgme_reaction">x</i>3</section>',
@@ -164,7 +164,7 @@ describe("collectThreads", () => {
   });
 
   it("refuses an English target when only the Russian token is configured", async () => {
-    const ruOnly = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", THREADS_RU_ACCESS_TOKEN: "ru-token" });
+    const ruOnly = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", THREADS_RU_ACCESS_TOKEN: "ru-token" });
     const { fetch: impl, calls } = recordingFetch(() => json({ data: [] }));
     await expect(collectThreads(task({ target: "threads_en", url: "https://x.test/p" }), ruOnly, impl)).rejects.toThrow(
       "missing_threads_token_or_id",
@@ -188,7 +188,7 @@ describe("collectThreads", () => {
   });
 
   it("refuses to call out with no token or no ids", async () => {
-    const noToken = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t" });
+    const noToken = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t" });
     const { fetch: impl, calls } = recordingFetch(() => json({ data: [] }));
 
     await expect(collectThreads(task({ target: "threads_ru" }), noToken, impl)).rejects.toThrow("missing_threads_token_or_id");
@@ -255,7 +255,7 @@ describe("collectInstagramStory", () => {
   });
 
   it("routes an IG-prefixed token to graph.instagram.com and anything else to graph.facebook.com", async () => {
-    const igConfig = loadConfig({
+    const igConfig = loadTestConfig({
       CONTROLLER_ADMIN_IDS: "42",
       CONTROLLER_BOT_TOKEN: "t",
       INSTAGRAM_EN_ACCESS_TOKEN: "IGtoken",
@@ -271,7 +271,7 @@ describe("collectInstagramStory", () => {
   });
 
   it("uses the Russian locale token", async () => {
-    const perLocale = loadConfig({
+    const perLocale = loadTestConfig({
       CONTROLLER_ADMIN_IDS: "42",
       CONTROLLER_BOT_TOKEN: "t",
       INSTAGRAM_RU_ACCESS_TOKEN: "ru-only",
@@ -283,7 +283,7 @@ describe("collectInstagramStory", () => {
   });
 
   it("refuses to call out with no token or no story id", async () => {
-    const noToken = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t" });
+    const noToken = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t" });
     const { fetch: impl, calls } = recordingFetch(() => json({ data: [] }));
 
     await expect(collectInstagramStory(storyTask(), noToken, impl)).rejects.toThrow("missing_instagram_story_token_or_id");

@@ -1,5 +1,4 @@
 import { describe, expect, it, mock } from "bun:test";
-import { loadConfig } from "../src/foundation/config.js";
 import {
   deploymentPromoteCallback,
   deploymentRollbackCallback,
@@ -9,6 +8,7 @@ import {
   requestDeploymentPromote,
   requestDeploymentRollback,
 } from "../src/foundation/deployment.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 const revision = "a".repeat(40);
 const agent = { DEPLOY_AGENT_URL: "http://host.docker.internal:9899", DEPLOY_AGENT_TOKEN: "t".repeat(16) };
@@ -40,8 +40,8 @@ describe("deployment agent requests", () => {
       return Response.json({ ok: true, release: revision, currentRevision: revision });
     });
 
-    await requestDeploymentRollback(loadConfig(agent), "maru", revision, fetchImpl);
-    await requestDeploymentPromote(loadConfig(agent), "maru", revision, fetchImpl);
+    await requestDeploymentRollback(loadTestConfig(agent), "maru", revision, fetchImpl);
+    await requestDeploymentPromote(loadTestConfig(agent), "maru", revision, fetchImpl);
 
     expect(calls.map((call) => call.url)).toEqual([
       "http://host.docker.internal:9899/v1/rollback/maru",
@@ -54,7 +54,7 @@ describe("deployment agent requests", () => {
   it("does not issue network requests when deployment control is disabled", async () => {
     const fetchImpl = mock(fetch);
 
-    await expect(requestDeploymentRollback(loadConfig({}), "maru", revision, fetchImpl)).resolves.toEqual({
+    await expect(requestDeploymentRollback(loadTestConfig({}), "maru", revision, fetchImpl)).resolves.toEqual({
       ok: false,
       message: "Deployment agent is not configured.",
     });
@@ -71,7 +71,7 @@ describe("deployment agent requests", () => {
     });
 
     await expect(
-      requestDeploymentPromote(loadConfig(agent), "worker", revision, fetchImpl, async (milliseconds) => {
+      requestDeploymentPromote(loadTestConfig(agent), "worker", revision, fetchImpl, async (milliseconds) => {
         sleeps.push(milliseconds);
       }),
     ).resolves.toEqual({
@@ -90,7 +90,7 @@ describe("deployment agent requests", () => {
       return Response.json({ ok: false, message: "This button belongs to an older source release." }, { status: 409 });
     });
 
-    await expect(requestDeploymentPromote(loadConfig(agent), "worker", revision, fetchImpl, async () => {})).resolves.toEqual({
+    await expect(requestDeploymentPromote(loadTestConfig(agent), "worker", revision, fetchImpl, async () => {})).resolves.toEqual({
       ok: false,
       message: "This button belongs to an older source release.",
     });

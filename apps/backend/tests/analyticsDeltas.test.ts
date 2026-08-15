@@ -7,11 +7,10 @@ import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashbo
 import { recordProfileSnapshot } from "../src/analytics/snapshots/creator-store.js";
 import { registerChannel } from "../src/channels/registry.js";
 import { creatorProfileSnapshots, creatorProfiles, metricSamples, postEvents, videoMetricSnapshots } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
 import { registerTestChannels } from "./helpers/channels.js";
 import { withDb } from "./helpers/db.js";
-import { SITE_STUDIO_CONFIG } from "./helpers/studio-config.js";
+import { loadTestConfig, SITE_STUDIO_PROFILE } from "./helpers/studio-config.js";
 
 describe("creator analytics deltas", () => {
   it("reports a video delta instead of a lifetime total for an older publication", async () => {
@@ -28,7 +27,7 @@ describe("creator analytics deltas", () => {
         .insert(videoMetricSnapshots)
         .values({ videoTargetId: targetId, platform: "youtube_shorts", metricsJson: { views: 180, likes: 8 }, sampledAt: now })
         .run();
-      const config = loadConfig({ STUDIO_CONFIG: SITE_STUDIO_CONFIG });
+      const config = loadTestConfig({}, SITE_STUDIO_PROFILE);
 
       expect(creatorDashboard(backendDb, config, 1).text).toContain("Видео: 80 просмотров · 3 взаимодействий");
     });
@@ -49,7 +48,7 @@ describe("creator analytics deltas", () => {
           { postKey: "post:2", target: "telegram", metricName: "likes", value: 9, sampledAt: now },
         ])
         .run();
-      const config = loadConfig({ STUDIO_CONFIG: SITE_STUDIO_CONFIG });
+      const config = loadTestConfig({}, SITE_STUDIO_PROFILE);
       const text = creatorDashboard(backendDb, config, 1).text;
       expect(text).toContain("Сайт: 45 просмотров материалов");
       expect(text).toContain("Посты: 30 просмотров · 5 взаимодействий");

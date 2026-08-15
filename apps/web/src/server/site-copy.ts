@@ -31,7 +31,7 @@ type SiteChrome = {
   noPosts: string;
 };
 
-/** Who this Studio publishes as, from studio.yaml. An install that has not
+/** Who this Studio publishes as, from its profile row. An install that has not
  * said names itself by its own domain, which is true and belongs to nobody
  * else — the alternative was serving the publisher's name and social accounts
  * from every stranger's site. */

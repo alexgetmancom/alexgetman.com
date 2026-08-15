@@ -3,12 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { prepareMediaItems, pruneMediaCache } from "../src/delivery/media-prepare.js";
-import { loadConfig } from "../src/foundation/config.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("media preparation", () => {
   it("reuses durable local and public files for identical target uploads", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-media-race-"));
-    const config = loadConfig({
+    const config = loadTestConfig({
       CONTROLLER_BOT_TOKEN: "token",
       TELEGRAM_API_BASE_URL: "https://telegram.local",
       MEDIA_CACHE_DIR: path.join(dir, "cache"),
@@ -39,7 +39,7 @@ describe("media preparation", () => {
   it("prunes only expired managed cache files", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-media-prune-"));
     try {
-      const config = loadConfig({
+      const config = loadTestConfig({
         MEDIA_CACHE_DIR: path.join(dir, "cache"),
         REMOTE_MEDIA_PATH: path.join(dir, "public"),
         MEDIA_CACHE_TTL_SECONDS: "1",

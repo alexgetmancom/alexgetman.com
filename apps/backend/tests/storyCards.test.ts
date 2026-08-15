@@ -8,7 +8,6 @@ import sharp from "sharp";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { draftStoryCards, drafts, postEvents, postLocales, publicationSources, publishJobs, siteJobs } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { backfillTextStoryCards } from "../src/operations/story-card-backfill.js";
 import { localizeTargetPayload } from "../src/publishing/payload.js";
 import { createPublicationPlan } from "../src/publishing/publication-plan.js";
@@ -20,6 +19,7 @@ import { runStoryCardCycle } from "../src/story-cards/worker.js";
 import { postService } from "../src/studio/services/posts.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 let backendDb: UnsafeBackendDb | null = null;
 
@@ -84,7 +84,7 @@ describe("text Story cards", () => {
     backendDb = openStoryDb();
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "story-card-test-"));
     temporaryDirectories.push(directory);
-    const config = loadConfig({
+    const config = loadTestConfig({
       DATA_DIR: directory,
       STORY_CARD_DIR: directory,
       STORY_CARD_ASSETS_DIR: storyCardAssets,
@@ -213,7 +213,7 @@ describe("text Story cards", () => {
     backendDb = openStoryDb();
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scheduled-story-edit-test-"));
     temporaryDirectories.push(directory);
-    const config = loadConfig({
+    const config = loadTestConfig({
       CONTROLLER_ADMIN_IDS: "42",
       DATA_DIR: directory,
       STORY_CARD_DIR: directory,
@@ -243,7 +243,7 @@ describe("text Story cards", () => {
     backendDb = openStoryDb();
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "failed-story-card-test-"));
     temporaryDirectories.push(directory);
-    const config = loadConfig({
+    const config = loadTestConfig({
       CONTROLLER_ADMIN_IDS: "42",
       DATA_DIR: directory,
       STORY_CARD_DIR: directory,
@@ -283,7 +283,7 @@ describe("text Story cards", () => {
     backendDb = openStoryDb();
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "story-card-backfill-test-"));
     temporaryDirectories.push(directory);
-    const config = loadConfig({
+    const config = loadTestConfig({
       DATA_DIR: directory,
       STORY_CARD_DIR: directory,
       STORY_CARD_ASSETS_DIR: storyCardAssets,

@@ -7,7 +7,7 @@ import { publishInstagramStory } from "../src/delivery/social/instagram.js";
 import { InstagramContainerInvalidError } from "../src/delivery/social/instagram-container.js";
 import { telegramStoryCaption, telegramStoryCaptionInput, telegramStoryUploadMedia } from "../src/delivery/social/telegramStories.js";
 import { generateStoryMedia } from "../src/delivery/story-media.js";
-import { loadConfig } from "../src/foundation/config.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 const ffmpegCalls: string[][] = [];
 const instantSleep = async (_milliseconds: number): Promise<void> => {};
@@ -32,7 +32,7 @@ describe("story publishers", () => {
       Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"),
     );
     try {
-      const generated = await generateStoryMedia([{ type: "photo", local_path: source }], 1, "ru", loadConfig({ DATA_DIR: dir }));
+      const generated = await generateStoryMedia([{ type: "photo", local_path: source }], 1, "ru", loadTestConfig({ DATA_DIR: dir }));
       expect(generated[0]).toMatchObject({ story_width: 1080, story_height: 1920 });
       expect(fs.existsSync(String(generated[0]?.story_local_path))).toBe(true);
     } finally {
@@ -45,7 +45,7 @@ describe("story publishers", () => {
     const source = path.join(dir, "source.mp4");
     fs.writeFileSync(source, "fake video");
     try {
-      const generated = await generateStoryMedia([{ type: "video", local_path: source }], 2, "en", loadConfig({ DATA_DIR: dir }));
+      const generated = await generateStoryMedia([{ type: "video", local_path: source }], 2, "en", loadTestConfig({ DATA_DIR: dir }));
       expect(generated[0]).toMatchObject({ story_width: 1080, story_height: 1920 });
       expect(String(generated[0]?.story_local_path)).toEndWith(".mp4");
       expect(fs.existsSync(String(generated[0]?.story_local_path))).toBe(true);
@@ -121,7 +121,7 @@ describe("story publishers", () => {
       requests.push({ url: String(input), ...(init ? { init } : {}) });
       return new Response(JSON.stringify(responses.shift()), { status: 200 });
     }) as unknown as typeof fetch;
-    const config = loadConfig({
+    const config = loadTestConfig({
       INSTAGRAM_RU_ACCESS_TOKEN: "IG-token",
       INSTAGRAM_RU_USER_ID: "ig-user",
     });
@@ -166,7 +166,7 @@ describe("story publishers", () => {
       }
       return new Response(JSON.stringify(responses.shift()), { status: 200 });
     }) as unknown as typeof fetch;
-    const config = loadConfig({
+    const config = loadTestConfig({
       INSTAGRAM_RU_ACCESS_TOKEN: "IG-token",
       INSTAGRAM_RU_USER_ID: "ig-user",
     });
@@ -200,7 +200,7 @@ describe("story publishers", () => {
       }
       return new Response(JSON.stringify(responses.shift()), { status: 200 });
     }) as unknown as typeof fetch;
-    const config = loadConfig({
+    const config = loadTestConfig({
       INSTAGRAM_RU_ACCESS_TOKEN: "IG-token",
       INSTAGRAM_RU_USER_ID: "ig-user",
     });

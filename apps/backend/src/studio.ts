@@ -1,70 +1,69 @@
-import { existsSync, readFileSync } from "node:fs";
-import { parse } from "yaml";
-import * as z from "zod";
+import type { ApplicationPorts, StudioProfileRecord, StudioSocialProfile } from "./application/ports.js";
 
-/** A string this Studio publishes about itself, in each language it serves. */
-const localizedText = z
-  .object({ en: z.string().default(""), ru: z.string().default("") })
-  .strict()
-  .prefault({});
-
-const profileList = z
-  .array(z.object({ label: z.string().min(1), url: z.url() }).strict())
-  .default([])
-  .describe("social profiles listed in llms.txt and the home page's sameAs");
-
-const studioSchema = z
-  .object({
-    timezone: z.string().default("Europe/Moscow"),
-    timezone_label: z.string().default("MSK"),
-    site_enabled: z.boolean().default(true),
-    // Who this Studio publishes as. Empty is a working site that simply names
-    // itself by its domain — the alternative was shipping one person's name,
-    // biography and social accounts to everyone who installs the image.
-    site: z
-      .object({
-        name: localizedText,
-        tagline: localizedText,
-        about: localizedText,
-        profiles: z.object({ en: profileList, ru: profileList }).strict().prefault({}),
-      })
-      .strict()
-      .prefault({}),
-    video: z
-      .object({
-        prepare_lead_minutes: z.number().int().min(1).max(120).default(15),
-        reminder_minutes: z.number().int().min(1).max(60).default(5),
-        retention_hours: z.number().int().min(24).max(720).default(24),
-      })
-      .strict()
-      .prefault({}),
-  })
-  .strict();
+/**
+ * A Studio nobody has configured yet: UTC, no public site, and an identity it
+ * does not claim. The single source of these values — the table's column
+ * defaults and the in-memory profile tests run against both read it, so a fresh
+ * install and a fresh test agree by construction. Shipping anything else here
+ * would put one person's name, biography and accounts into every install.
+ */
+export const DEFAULT_STUDIO_PROFILE = {
+  timezone: "UTC",
+  timezoneLabel: "UTC",
+  siteEnabled: 0,
+  videoPrepareLeadMinutes: 15,
+  videoReminderMinutes: 5,
+  videoRetentionHours: 24,
+  nameJson: { en: "", ru: "" },
+  taglineJson: { en: "", ru: "" },
+  aboutJson: { en: "", ru: "" },
+  profilesJson: { en: [], ru: [] },
+} as const satisfies Omit<StudioProfileRecord, "id" | "updatedAt">;
 
 export type StudioConfig = {
   timezone: string;
   timezoneLabel: string;
   siteEnabled: boolean;
   /** What this Studio says it is, resolved per language. */
-  site: (locale: "en" | "ru") => { name: string; tagline: string; about: string; profiles: { label: string; url: string }[] };
+  site: (locale: "en" | "ru") => { name: string; tagline: string; about: string; profiles: StudioSocialProfile[] };
   video: { prepare_lead_minutes: number; reminder_minutes: number; retention_hours: number };
 };
 
-export function loadStudioConfig(path = process.env.STUDIO_CONFIG ?? "studio.yaml"): StudioConfig {
-  const value = existsSync(path) ? parse(readFileSync(path, "utf8")) : {};
-  // The schema is the single source of every default; this function only
-  // renames snake_case config keys to the camelCase the app reads.
-  const parsed = studioSchema.parse(value ?? {});
+/**
+ * The Studio's own settings, read from the database on every access rather than
+ * captured at boot: an operator who changes the time zone or turns the public
+ * site on expects the next request to reflect it, not the next deploy. Each read
+ * is a single indexed row from a local SQLite file, so this is cheaper than the
+ * cache invalidation it replaces.
+ */
+export function studioConfig(ports: Pick<ApplicationPorts, "studioSettings">): StudioConfig {
+  const read = () => ports.studioSettings.profile();
   return {
-    timezone: parsed.timezone,
-    timezoneLabel: parsed.timezone_label,
-    siteEnabled: parsed.site_enabled,
-    site: (locale) => ({
-      name: parsed.site.name[locale],
-      tagline: parsed.site.tagline[locale],
-      about: parsed.site.about[locale],
-      profiles: parsed.site.profiles[locale],
-    }),
-    video: parsed.video,
+    get timezone() {
+      return read().timezone;
+    },
+    get timezoneLabel() {
+      return read().timezoneLabel;
+    },
+    get siteEnabled() {
+      return read().siteEnabled !== 0;
+    },
+    site: (locale) => {
+      const row = read();
+      return {
+        name: row.nameJson[locale],
+        tagline: row.taglineJson[locale],
+        about: row.aboutJson[locale],
+        profiles: row.profilesJson[locale],
+      };
+    },
+    get video() {
+      const row = read();
+      return {
+        prepare_lead_minutes: row.videoPrepareLeadMinutes,
+        reminder_minutes: row.videoReminderMinutes,
+        retention_hours: row.videoRetentionHours,
+      };
+    },
   };
 }

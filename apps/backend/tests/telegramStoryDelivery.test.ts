@@ -5,7 +5,8 @@ import {
   telegramStoryCaptionInput,
   telegramStoryUploadMedia,
 } from "../src/delivery/social/telegramStories.js";
-import { loadConfig } from "../src/foundation/config.js";
+import type { BackendConfig } from "../src/foundation/config.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 /** Everything a channel story needs except the one field under test. Reaching
  * MTProto from a test is not possible, so these cases pin the guard ladder that
@@ -31,7 +32,7 @@ const payload = {
 
 describe("publishTelegramStory guards", () => {
   it("skips without media rather than connecting to Telegram", async () => {
-    expect(await publishTelegramStory({ text: "No media" }, loadConfig(storyEnv))).toEqual({
+    expect(await publishTelegramStory({ text: "No media" }, loadTestConfig(storyEnv))).toEqual({
       ok: false,
       skipped: true,
       reason: "missing_media",
@@ -41,7 +42,7 @@ describe("publishTelegramStory guards", () => {
   it("skips media that carries neither a story path nor a local path", async () => {
     const remoteOnly = { text: "t", media: [{ type: "photo", vpsUrl: "https://cdn.test/a.jpg" }] };
 
-    expect(await publishTelegramStory(remoteOnly, loadConfig(storyEnv))).toMatchObject({ skipped: true, reason: "missing_media" });
+    expect(await publishTelegramStory(remoteOnly, loadTestConfig(storyEnv))).toMatchObject({ skipped: true, reason: "missing_media" });
   });
 
   it("skips on a partial MTProto session instead of attempting a connection", async () => {
@@ -54,7 +55,7 @@ describe("publishTelegramStory guards", () => {
       "TELEGRAM_CHANNEL_STORIES_API_HASH",
       "TELEGRAM_CHANNEL_STORIES_SESSION",
     ] as const) {
-      const config = { ...loadConfig(storyEnv), [missing]: undefined } as ReturnType<typeof loadConfig>;
+      const config = { ...loadTestConfig(storyEnv), [missing]: undefined } as BackendConfig;
 
       expect(await publishTelegramStory(payload, config)).toMatchObject({
         skipped: true,
@@ -64,15 +65,15 @@ describe("publishTelegramStory guards", () => {
   });
 
   it("skips when no story channel is named", async () => {
-    const config = { ...loadConfig(storyEnv), TELEGRAM_STORIES_CHANNEL: "" } as ReturnType<typeof loadConfig>;
+    const config = { ...loadTestConfig(storyEnv), TELEGRAM_STORIES_CHANNEL: "" } as BackendConfig;
 
     expect(await publishTelegramStory(payload, config)).toMatchObject({ skipped: true, reason: "missing_story_channel" });
   });
 
   it("reports every guard as skipped rather than failed, so the queue does not retry it", async () => {
     const results = [
-      await publishTelegramStory({ text: "t" }, loadConfig(storyEnv)),
-      await publishTelegramStory(payload, loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "token" })),
+      await publishTelegramStory({ text: "t" }, loadTestConfig(storyEnv)),
+      await publishTelegramStory(payload, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "token" })),
     ];
 
     for (const result of results) expect(result).toMatchObject({ ok: false, skipped: true });

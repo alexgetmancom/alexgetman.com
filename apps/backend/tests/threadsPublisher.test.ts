@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { splitText } from "../src/delivery/social/payload.js";
 import { publishToThreads } from "../src/delivery/social/threads.js";
-import { loadConfig } from "../src/foundation/config.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 /**
  * Threads publishes in two phases — build a container, then publish it — and
@@ -11,7 +11,7 @@ import { loadConfig } from "../src/foundation/config.js";
  * through a scripted transport instead of asserting on a single happy call.
  */
 
-const config = loadConfig({
+const config = loadTestConfig({
   THREADS_RU_ACCESS_TOKEN: "threads-token",
   THREADS_RETRY_DELAY_MS: "1",
   THREADS_CONTAINER_TIMEOUT_SECONDS: "1",
@@ -48,7 +48,7 @@ function transport(replies: { publishIds?: string[]; containerIds?: string[]; st
 
 describe("publishToThreads", () => {
   it("skips instead of failing when no token is configured", async () => {
-    const result = await publishToThreads({ text: "hi" }, loadConfig({}), (() => {
+    const result = await publishToThreads({ text: "hi" }, loadTestConfig({}), (() => {
       throw new Error("must not call Threads");
     }) as unknown as typeof fetch);
     expect(result).toEqual({ skipped: true, reason: "missing THREADS_RU_ACCESS_TOKEN" });
@@ -56,7 +56,7 @@ describe("publishToThreads", () => {
 
   it("uses the selected account token without rewriting the shared config", async () => {
     const { fetchImpl, creations } = transport({});
-    const bilingual = loadConfig({ THREADS_RU_ACCESS_TOKEN: "ru-token", THREADS_EN_ACCESS_TOKEN: "en-token" });
+    const bilingual = loadTestConfig({ THREADS_RU_ACCESS_TOKEN: "ru-token", THREADS_EN_ACCESS_TOKEN: "en-token" });
 
     await publishToThreads({ text: "hello" }, bilingual, fetchImpl, "threads_en");
 

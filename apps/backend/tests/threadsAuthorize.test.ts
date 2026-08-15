@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { threadsAuthorizeUrl } from "../src/channels/meta-oauth.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { authorizationCode, authorizeThreads } from "../src/operations/threads-authorize.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 const configured = { THREADS_APP_ID: "990602627938098", THREADS_APP_SECRET: "app-secret", PUBLIC_BASE_URL: "https://studio.example.com" };
 
@@ -27,7 +27,7 @@ describe("threads authorization", () => {
     });
 
     const result = await authorizeThreads(
-      loadConfig(configured),
+      loadTestConfig(configured),
       "ru",
       async () => "https://studio.example.com/oauth/threads?code=AQBx-hBsH3#_",
       { fetchImpl },
@@ -42,7 +42,7 @@ describe("threads authorization", () => {
   it("sends back the same redirect it sent the operator to", async () => {
     // Meta rejects the exchange when the two differ, and the failure says
     // nothing about which half was wrong.
-    const config = loadConfig(configured);
+    const config = loadTestConfig(configured);
     const { requests, fetchImpl } = threads({ short: { access_token: "short-lived" }, long: { access_token: "long-lived" } });
     await authorizeThreads(config, "en", async () => "code-pasted-bare", { fetchImpl });
 
@@ -53,9 +53,9 @@ describe("threads authorization", () => {
   });
 
   it("asks for both halves of the Threads app before opening a browser", async () => {
-    await expect(authorizeThreads(loadConfig({ PUBLIC_BASE_URL: "https://studio.example.com" }), "ru", async () => "code")).rejects.toThrow(
-      "THREADS_APP_ID",
-    );
+    await expect(
+      authorizeThreads(loadTestConfig({ PUBLIC_BASE_URL: "https://studio.example.com" }), "ru", async () => "code"),
+    ).rejects.toThrow("THREADS_APP_ID");
   });
 
   describe("reading what the operator pasted", () => {

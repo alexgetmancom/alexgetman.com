@@ -2,19 +2,19 @@ import { expect, it } from "bun:test";
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig } from "../src/foundation/config.js";
 import type { OperationContext } from "../src/operations/registry.js";
 import { runOperation } from "../src/operations/registry.js";
 import { publicationTimeline } from "../src/operations/timeline.js";
 import { createStudioServices } from "../src/studio/services/index.js";
 import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoAsset, createTestVideoDraft } from "./helpers/video.js";
 
 function context(db: ReturnType<typeof openBackendDb>, fetchImpl: typeof fetch = fetch): OperationContext {
   return {
     dbPath: ":memory:",
-    config: () => loadConfig({ CONTROLLER_ADMIN_IDS: "42", INSTAGRAM_RU_ACCESS_TOKEN: "ru-token", INSTAGRAM_RU_USER_ID: "ru-user" }),
+    config: () => loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", INSTAGRAM_RU_ACCESS_TOKEN: "ru-token", INSTAGRAM_RU_USER_ID: "ru-user" }),
     db: () => db,
     fetchImpl,
     actorType: "test",
@@ -22,7 +22,7 @@ function context(db: ReturnType<typeof openBackendDb>, fetchImpl: typeof fetch =
 }
 
 function connectThreads(backendDb: ReturnType<typeof openBackendDb>): void {
-  createStudioServices(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" })).channels.connect({
+  createStudioServices(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" })).channels.connect({
     platform: "threads_ru",
     locale: "ru",
     provider: "native",
@@ -75,7 +75,7 @@ it("does not require a Story decision when every Story target is disabled", () =
   writeFileSync(ruCard, "ru");
   writeFileSync(enCard, "en");
   try {
-    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+    const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
     const posts = createStudioServices(backendDb, config).posts;
     const draftId = posts.create(
       42,

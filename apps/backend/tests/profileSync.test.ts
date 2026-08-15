@@ -4,8 +4,8 @@ import { syncCommunityProfiles, syncXProfile, syncZernioChannelProfile } from ".
 import { claimSync } from "../src/analytics/snapshots/creator-store.js";
 import { registerChannel } from "../src/channels/registry.js";
 import { analyticsSync, creatorProfileSnapshots, creatorProfiles } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { withDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("creator profile sync boundary", () => {
   it("reclaims a crashed sync by lease age instead of refresh cadence", async () => {
@@ -34,7 +34,7 @@ describe("creator profile sync boundary", () => {
         provider: "zernio",
         providerAccountId: "account-1",
       });
-      const config = loadConfig({ ZERNIO_API_KEY: "a".repeat(16) });
+      const config = loadTestConfig({ ZERNIO_API_KEY: "a".repeat(16) });
       const fetchMock = (async () =>
         new Response(JSON.stringify([{ _id: "account-1", username: "marux_play", followersCount: 306 }]))) as unknown as typeof fetch;
       expect(
@@ -62,7 +62,7 @@ describe("creator profile sync boundary", () => {
 
   it("syncs X profile metrics through OAuth and keeps the account snapshot", async () => {
     await withDb(async (backendDb) => {
-      const config = loadConfig({
+      const config = loadTestConfig({
         ENABLE_X_PROFILE_METRICS: "1",
         X_CLIENT_ID: "consumer",
         X_CLIENT_SECRET: "secret",
@@ -100,7 +100,7 @@ describe("creator profile sync boundary", () => {
 
   it("collects Telegram and Threads community profiles independently", async () => {
     await withDb(async (backendDb) => {
-      const config = loadConfig({
+      const config = loadTestConfig({
         CONTROLLER_BOT_TOKEN: "bot-token",
         THREADS_RU_ACCESS_TOKEN: "threads-token",
         TELEGRAM_CHANNEL_USERNAME: "@alexchannel",

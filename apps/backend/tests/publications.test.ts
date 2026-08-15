@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { studioMediaAssets } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { postService } from "../src/studio/services/posts.js";
 import { videoService } from "../src/studio/services/videos.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 let backendDb: UnsafeBackendDb | null = null;
 
@@ -37,7 +37,7 @@ function videoAssetId(db: UnsafeBackendDb): number {
 describe("Studio publication services", () => {
   it("creates posts and videos through their direct service boundaries", () => {
     backendDb = openBackendDb(":memory:");
-    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+    const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
     const posts = postService(backendDb, config);
     const videos = videoService(backendDb, config);
 

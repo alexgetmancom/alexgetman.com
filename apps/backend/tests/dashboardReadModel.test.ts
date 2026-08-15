@@ -1,9 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { loadConfig } from "../src/foundation/config.js";
 import { zonedRollingPeriodBounds } from "../src/foundation/time.js";
 import { pipelineOverviewPayload } from "../src/operations/read-model.js";
 import { openBackendDb } from "./helpers/open-db.js";
-import { MSK_STUDIO_CONFIG } from "./helpers/studio-config.js";
+import { loadTestConfig, MSK_STUDIO_PROFILE } from "./helpers/studio-config.js";
 
 describe("dashboard read model bounds", () => {
   it("filters samples, aggregates them into time buckets, and omits provider raw payloads", () => {
@@ -54,7 +53,7 @@ describe("dashboard read model bounds", () => {
         targets: { telegram: Record<string, unknown> };
       };
       const payload = pipelineOverviewPayload(
-        loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, PIPELINE_DB: ":memory:" }),
+        loadTestConfig({ PIPELINE_DB: ":memory:" }, MSK_STUDIO_PROFILE),
         backendDb,
         0,
         1,
@@ -81,7 +80,7 @@ describe("dashboard read model bounds", () => {
       expect(target).not.toHaveProperty("raw");
 
       const longPeriod = pipelineOverviewPayload(
-        loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, PIPELINE_DB: ":memory:" }),
+        loadTestConfig({ PIPELINE_DB: ":memory:" }, MSK_STUDIO_PROFILE),
         backendDb,
         0,
         30,
@@ -98,7 +97,7 @@ describe("dashboard read model bounds", () => {
       );
 
       const compact = pipelineOverviewPayload(
-        loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, PIPELINE_DB: ":memory:" }),
+        loadTestConfig({ PIPELINE_DB: ":memory:" }, MSK_STUDIO_PROFILE),
         backendDb,
         0,
         1,

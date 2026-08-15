@@ -2,11 +2,10 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { publishJobs } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { type OperationContext, runOperation } from "../src/operations/registry.js";
 import { recoverStalePublishJobs } from "../src/publishing/queue.js";
 import { openBackendDb } from "./helpers/open-db.js";
-import { SITE_STUDIO_CONFIG } from "./helpers/studio-config.js";
+import { loadTestConfig, SITE_STUDIO_PROFILE } from "./helpers/studio-config.js";
 
 let backendDb: UnsafeBackendDb | null = null;
 afterEach(() => {
@@ -14,14 +13,16 @@ afterEach(() => {
   backendDb = null;
 });
 
-const config = loadConfig({
-  CONTROLLER_ADMIN_IDS: "42",
-  MCP_STUDIO_TOKEN: "a".repeat(16),
-  MCP_STUDIO_ACTOR_ID: "42",
-  STUDIO_CONFIG: SITE_STUDIO_CONFIG,
-  THREADS_RU_ACCESS_TOKEN: "t".repeat(20),
-  THREADS_RU_USER_ID: "1",
-});
+const config = loadTestConfig(
+  {
+    CONTROLLER_ADMIN_IDS: "42",
+    MCP_STUDIO_TOKEN: "a".repeat(16),
+    MCP_STUDIO_ACTOR_ID: "42",
+    THREADS_RU_ACCESS_TOKEN: "t".repeat(20),
+    THREADS_RU_USER_ID: "1",
+  },
+  SITE_STUDIO_PROFILE,
+);
 
 function context(db: UnsafeBackendDb): OperationContext {
   return { dbPath: ":memory:", config: () => config, db: () => db, fetchImpl: fetch, actorType: "test" };

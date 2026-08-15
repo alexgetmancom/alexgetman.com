@@ -1,16 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import type { Bot } from "grammy";
-import { loadConfig } from "../src/foundation/config.js";
 import { sendWeeklyAnalyticsSummary } from "../src/interfaces/telegram/analytics-summary.js";
 import { settingsService } from "../src/studio/services/settings.js";
 import { openBackendDb } from "./helpers/open-db.js";
-import { MSK_STUDIO_CONFIG } from "./helpers/studio-config.js";
+import { loadTestConfig, MSK_STUDIO_PROFILE } from "./helpers/studio-config.js";
 
 describe("weekly analytics summary", () => {
   it("uses one Studio-wide setting and sends to every administrator", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, CONTROLLER_ADMIN_IDS: "42,7" });
+      const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42,7" }, MSK_STUDIO_PROFILE);
       settingsService(backendDb).setWeeklyDigest({ enabled: true, weekday: 1 });
       const sent: number[] = [];
       const bot = {
@@ -34,7 +33,7 @@ describe("weekly analytics summary", () => {
   it("waits until 21:00 in the Studio timezone", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, CONTROLLER_ADMIN_IDS: "42" });
+      const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }, MSK_STUDIO_PROFILE);
       settingsService(backendDb).setWeeklyDigest({ weekday: 1 });
       const bot = { api: { sendMessage: async () => undefined } } as unknown as Bot;
 

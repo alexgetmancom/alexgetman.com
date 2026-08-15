@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { createApiHandler } from "../src/api.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 const COMMAND_TOKEN = "b".repeat(16);
 
 function testConfig() {
-  return loadConfig({
+  return loadTestConfig({
     CONTROLLER_ADMIN_IDS: "42",
     MCP_STUDIO_TOKEN: "a".repeat(16),
     MCP_STUDIO_ACTOR_ID: "42",
@@ -50,7 +50,7 @@ describe("Command Center Studio tab", () => {
   it("hides the studio tab when no Studio actor is configured", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ COMMAND_CENTER_TOKEN: COMMAND_TOKEN });
+      const config = loadTestConfig({ COMMAND_CENTER_TOKEN: COMMAND_TOKEN });
       const app = createApiHandler({ config, backendDb });
       const response = await app(
         new Request("http://localhost/command-center?tab=studio", { headers: { "X-Admin-Token": COMMAND_TOKEN } }),

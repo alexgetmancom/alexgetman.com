@@ -1,17 +1,17 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { videoDrafts, videoJobs, videoTargets } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { replaceVideoTargets, saveVideoMetadata, scheduleVideo, updateVideoLabel } from "../src/publishing/video-service.js";
 import { videoService } from "../src/studio/services/videos.js";
 import { VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { useBackendDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoDraft } from "./helpers/video.js";
 
 const testDb = useBackendDb(VIDEO_TEST_CHANNELS);
 
 function videoConfig() {
-  const config = loadConfig({});
+  const config = loadTestConfig({});
   return config;
 }
 

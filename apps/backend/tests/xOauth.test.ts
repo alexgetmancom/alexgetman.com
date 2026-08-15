@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { createApiHandler } from "../src/api.js";
 import { applyStoredXTokens, exchangeXCode, refreshXToken, xOauthAuthorizeUrl } from "../src/channels/x-oauth.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { withDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 const KEY = "ef".repeat(32);
 const now = new Date("2026-08-14T20:00:00.000Z");
@@ -17,7 +17,7 @@ const base = {
 describe("X browser OAuth", () => {
   it("starts only from an authenticated Command Center and redirects to X", () =>
     withDb(async (backendDb) => {
-      const app = createApiHandler({ config: loadConfig(base), backendDb });
+      const app = createApiHandler({ config: loadTestConfig(base), backendDb });
       expect((await app(new Request("https://publisher.example.com/oauth/x/start"))).status).toBe(400);
       const response = await app(
         new Request("https://publisher.example.com/oauth/x/start", { headers: { "X-Command-Token": "command-secret" } }),
@@ -29,7 +29,7 @@ describe("X browser OAuth", () => {
     }));
 
   it("creates an encrypted PKCE state and asks for renewable publishing access", () => {
-    const authorization = new URL(xOauthAuthorizeUrl(loadConfig(base), now));
+    const authorization = new URL(xOauthAuthorizeUrl(loadTestConfig(base), now));
     expect(authorization.origin + authorization.pathname).toBe("https://x.com/i/oauth2/authorize");
     expect(authorization.searchParams.get("redirect_uri")).toBe("https://publisher.example.com/oauth/x");
     expect(authorization.searchParams.get("code_challenge_method")).toBe("S256");
@@ -45,7 +45,7 @@ describe("X browser OAuth", () => {
 
   it("exchanges the code, seals both tokens, and reloads them after restart", () =>
     withDb(async (backendDb) => {
-      const config = loadConfig(base);
+      const config = loadTestConfig(base);
       const state = new URL(xOauthAuthorizeUrl(config, now)).searchParams.get("state") ?? "";
       const fetchImpl = (async (input: string | URL, init?: RequestInit) => {
         const url = String(input);
@@ -71,7 +71,7 @@ describe("X browser OAuth", () => {
       expect(row.refresh).not.toContain("refresh-one");
       expect(row.accountId).toBe("42");
 
-      const restarted = loadConfig(base);
+      const restarted = loadTestConfig(base);
       applyStoredXTokens(restarted, backendDb);
       expect(restarted.X_ACCESS_TOKEN).toBe("access-one");
       expect(restarted.X_REFRESH_TOKEN).toBe("refresh-one");
@@ -79,7 +79,7 @@ describe("X browser OAuth", () => {
 
   it("rotates an expiring refresh token and persists the replacement", () =>
     withDb(async (backendDb) => {
-      const config = loadConfig(base);
+      const config = loadTestConfig(base);
       const state = new URL(xOauthAuthorizeUrl(config, now)).searchParams.get("state") ?? "";
       let tokenCall = 0;
       const fetchImpl = (async (input: string | URL) => {

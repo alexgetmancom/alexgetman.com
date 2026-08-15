@@ -39,7 +39,6 @@ services:
       - bot-api
     environment:
       DATA_DIR: /data
-      STUDIO_CONFIG: /app/studio.yaml
       PIPELINE_DB: /data/pipeline.db
       TRUSTED_CLIENT_IP_HEADER: x-real-ip
       SITE_PUBLIC_DIR: /data/site
@@ -59,7 +58,6 @@ services:
       BIND_HOST: 0.0.0.0
       PORT: "8788"
     volumes:
-      - ${STUDIO_CONFIG_FILE:-./studio.yaml}:/app/studio.yaml:ro
       - ./data:/data
       - ${ALEX_MEDIA_CACHE_DIR_HOST:-./media-cache}:/data/media-cache
       - ${ALEX_VIDEO_MEDIA_DIR_HOST:-./video-media}:/data/video-media

@@ -100,9 +100,9 @@ afterAll(() => {
 });
 
 const { createPlatformPorts } = await import("../src/delivery/ports/social.js");
-const { loadConfig } = await import("../src/foundation/config.js");
+const { loadTestConfig } = await import("./helpers/studio-config.js");
 
-const config = loadConfig({
+const config = loadTestConfig({
   CONTROLLER_BOT_TOKEN: "bot",
   TELEGRAM_CHANNEL_USERNAME: "alexgetmancom",
   THREADS_RU_ACCESS_TOKEN: "threads-shared",
@@ -140,7 +140,7 @@ const image = (fileId: string) => ({ type: "IMAGE" as const, fileId });
 describe("createPlatformPorts", () => {
   it("refuses a target whose credentials are missing before touching the provider", async () => {
     reset();
-    const ports = createPlatformPorts(loadConfig({}));
+    const ports = createPlatformPorts(loadTestConfig({}));
     // Validation is a separate hook the workflow runs first; publish itself
     // does not re-check, so this is the only gate before a provider call.
     await expect(ports.threads_en?.validate(job("threads_en", { text: "hi" }))).rejects.toThrow(/not configured: THREADS_EN_ACCESS_TOKEN/);

@@ -3,9 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Bot } from "grammy";
-import { type BackendConfig, loadConfig } from "../src/foundation/config.js";
+import type { BackendConfig } from "../src/foundation/config.js";
 import { importTelegramAlbumMedia } from "../src/interfaces/telegram/media-ingress.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 function botWith(getFile: (fileId: string) => Promise<{ file_path?: string }>): Bot {
   return { api: { getFile } } as unknown as Bot;
@@ -19,7 +20,7 @@ function withIngress<T>(
 ): Promise<T> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-media-ingress-"));
   const backendDb = openBackendDb(":memory:");
-  const config = loadConfig({ CONTROLLER_BOT_TOKEN: "token", STUDIO_MEDIA_DIR: dir, ...env });
+  const config = loadTestConfig({ CONTROLLER_BOT_TOKEN: "token", STUDIO_MEDIA_DIR: dir, ...env });
   return fn({ dir, backendDb, config }).finally(() => {
     backendDb.close();
     fs.rmSync(dir, { recursive: true, force: true });

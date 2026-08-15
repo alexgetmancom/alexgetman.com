@@ -4,9 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApiHandler } from "../src/api.js";
 import { studioMediaAssets } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { openBackendDb } from "./helpers/open-db.js";
-import { SITE_STUDIO_CONFIG } from "./helpers/studio-config.js";
+import { loadTestConfig, SITE_STUDIO_PROFILE } from "./helpers/studio-config.js";
 
 function request(app: ReturnType<typeof createApiHandler>, body: unknown, authorization?: string) {
   return app(
@@ -22,12 +21,14 @@ describe("Studio MCP", () => {
   it("exposes owner-bound Studio commands only to the configured bearer token and audits mutations", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({
-        STUDIO_CONFIG: SITE_STUDIO_CONFIG,
-        CONTROLLER_ADMIN_IDS: "42",
-        MCP_STUDIO_TOKEN: "a".repeat(16),
-        MCP_STUDIO_ACTOR_ID: "42",
-      });
+      const config = loadTestConfig(
+        {
+          CONTROLLER_ADMIN_IDS: "42",
+          MCP_STUDIO_TOKEN: "a".repeat(16),
+          MCP_STUDIO_ACTOR_ID: "42",
+        },
+        SITE_STUDIO_PROFILE,
+      );
       const app = createApiHandler({ config, backendDb });
       const anonymousTools = await request(app, { jsonrpc: "2.0", id: 1, method: "tools/list" });
       expect(JSON.stringify(await anonymousTools.json())).not.toContain("studio_post_create");
@@ -129,7 +130,10 @@ describe("Studio MCP", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const token = "a".repeat(16);
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: token, MCP_STUDIO_ACTOR_ID: "42" });
+      const config = loadTestConfig(
+        { CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: token, MCP_STUDIO_ACTOR_ID: "42" },
+        SITE_STUDIO_PROFILE,
+      );
       const app = createApiHandler({ config, backendDb });
       const authorization = `Bearer ${token}`;
       const now = new Date().toISOString();
@@ -218,12 +222,15 @@ describe("Studio MCP", () => {
     const directory = mkdtempSync(join(tmpdir(), "alexgetman-mcp-media-"));
     try {
       const token = "a".repeat(16);
-      const config = loadConfig({
-        CONTROLLER_ADMIN_IDS: "42",
-        MCP_STUDIO_TOKEN: token,
-        MCP_STUDIO_ACTOR_ID: "42",
-        STUDIO_MEDIA_DIR: directory,
-      });
+      const config = loadTestConfig(
+        {
+          CONTROLLER_ADMIN_IDS: "42",
+          MCP_STUDIO_TOKEN: token,
+          MCP_STUDIO_ACTOR_ID: "42",
+          STUDIO_MEDIA_DIR: directory,
+        },
+        SITE_STUDIO_PROFILE,
+      );
       const app = createApiHandler({ config, backendDb });
       const authorization = `Bearer ${token}`;
       const created = await request(
@@ -270,7 +277,10 @@ describe("Studio MCP", () => {
   it("accepts a notification without answering it", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" });
+      const config = loadTestConfig(
+        { CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" },
+        SITE_STUDIO_PROFILE,
+      );
       const app = createApiHandler({ config, backendDb });
 
       // Every client sends this right after the handshake. A response to a
@@ -291,15 +301,18 @@ describe("Studio MCP", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const token = "a".repeat(16);
-      const config = loadConfig({
-        CONTROLLER_ADMIN_IDS: "42",
-        MCP_STUDIO_TOKEN: token,
-        MCP_STUDIO_ACTOR_ID: "42",
-        THREADS_RU_ACCESS_TOKEN: "t".repeat(20),
-        THREADS_RU_USER_ID: "1",
-        THREADS_EN_ACCESS_TOKEN: "e".repeat(20),
-        THREADS_EN_USER_ID: "2",
-      });
+      const config = loadTestConfig(
+        {
+          CONTROLLER_ADMIN_IDS: "42",
+          MCP_STUDIO_TOKEN: token,
+          MCP_STUDIO_ACTOR_ID: "42",
+          THREADS_RU_ACCESS_TOKEN: "t".repeat(20),
+          THREADS_RU_USER_ID: "1",
+          THREADS_EN_ACCESS_TOKEN: "e".repeat(20),
+          THREADS_EN_USER_ID: "2",
+        },
+        SITE_STUDIO_PROFILE,
+      );
       const app = createApiHandler({ config, backendDb });
       const authorization = `Bearer ${token}`;
       const call = async (name: string, args: unknown) => {

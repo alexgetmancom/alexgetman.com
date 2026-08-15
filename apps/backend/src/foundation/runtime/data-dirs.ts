@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { BackendConfig } from "../config.js";
+import type { EnvConfig } from "../config.js";
 
 export type DataDirectoryCheck = { name: string; path: string; writable: boolean; error?: string };
 
@@ -8,7 +8,7 @@ export type DataDirectoryCheck = { name: string; path: string; writable: boolean
  * under. A bind-mounted host path that didn't exist yet is auto-created by
  * Docker as root. The public-site directory is deployment-specific; every
  * other pipeline is always active. */
-export function requiredDataDirectories(config: BackendConfig): { name: string; path: string }[] {
+export function requiredDataDirectories(config: EnvConfig): { name: string; path: string }[] {
   const entries = [
     { name: "DATA_DIR", path: config.DATA_DIR },
     { name: "STUDIO_MEDIA_DIR", path: config.STUDIO_MEDIA_DIR },
@@ -16,7 +16,10 @@ export function requiredDataDirectories(config: BackendConfig): { name: string; 
     { name: "MEDIA_CACHE_DIR", path: config.MEDIA_CACHE_DIR },
     { name: "STORY_CARD_DIR", path: config.STORY_CARD_DIR },
     { name: "REMOTE_MEDIA_PATH", path: config.REMOTE_MEDIA_PATH },
-    ...(config.studio.siteEnabled ? [{ name: "SITE_PUBLIC_DIR", path: config.SITE_PUBLIC_DIR }] : []),
+    // Prepared whether or not this Studio serves a site: the entrypoint fixes
+    // ownership before the database it would have to ask is even readable, and
+    // an unused empty directory costs nothing next to a bind mount owned by root.
+    { name: "SITE_PUBLIC_DIR", path: config.SITE_PUBLIC_DIR },
   ];
   const seen = new Set<string>();
   return entries.filter((entry) => {

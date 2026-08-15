@@ -11,10 +11,10 @@ import {
   siteJobs,
 } from "../src/db/schema.js";
 import { runPublicationReconciliation } from "../src/delivery/publication-reconciliation.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { refreshPublicationStatus } from "../src/publishing/publication-status.js";
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
 import { withDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("publication reconciliation", () => {
   it("emits one completion event for an earlier locale while a later locale waits", () =>
@@ -177,7 +177,7 @@ describe("publication reconciliation", () => {
         new Response(JSON.stringify({ id: "thread-81", permalink: "https://www.threads.net/@owner/post/81" }), {
           status: 200,
         })) as unknown as typeof fetch;
-      expect(await runPublicationReconciliation(backendDb, loadConfig({ THREADS_RU_ACCESS_TOKEN: "token" }), fetchImpl)).toMatchObject({
+      expect(await runPublicationReconciliation(backendDb, loadTestConfig({ THREADS_RU_ACCESS_TOKEN: "token" }), fetchImpl)).toMatchObject({
         checked: 1,
         resolved: 1,
         unresolved: 0,
@@ -204,7 +204,7 @@ describe("publication reconciliation", () => {
         payload: { text: "retried before it turned ambiguous" },
       });
       const now = new Date().toISOString();
-      const config = loadConfig({ PUBLISH_MAX_ATTEMPTS: "3", THREADS_RU_ACCESS_TOKEN: "token" });
+      const config = loadTestConfig({ PUBLISH_MAX_ATTEMPTS: "3", THREADS_RU_ACCESS_TOKEN: "token" });
       backendDb.db
         .update(publishJobs)
         // Two failed publishes, then a lost confirmation: the publish budget is
@@ -248,7 +248,7 @@ describe("publication reconciliation", () => {
         .run();
 
       const fetchImpl = (async () => new Response("expired token", { status: 401 })) as unknown as typeof fetch;
-      expect(await runPublicationReconciliation(backendDb, loadConfig({ THREADS_RU_ACCESS_TOKEN: "token" }), fetchImpl)).toMatchObject({
+      expect(await runPublicationReconciliation(backendDb, loadTestConfig({ THREADS_RU_ACCESS_TOKEN: "token" }), fetchImpl)).toMatchObject({
         checked: 1,
         resolved: 0,
         unresolved: 1,
@@ -273,7 +273,7 @@ describe("publication reconciliation", () => {
         .values({ postKey: "post:82", target: "telegram", status: "verification_required", updatedAt: now })
         .run();
 
-      const config = loadConfig({ RECONCILE_MAX_ATTEMPTS: "1" });
+      const config = loadTestConfig({ RECONCILE_MAX_ATTEMPTS: "1" });
       expect(await runPublicationReconciliation(backendDb, config)).toMatchObject({ checked: 1, resolved: 0, unresolved: 1 });
       expect(
         backendDb.db

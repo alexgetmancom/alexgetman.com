@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApiHandler } from "../src/api.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
-import { loadConfig } from "../src/foundation/config.js";
+import type { BackendConfig } from "../src/foundation/config.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 const tempDirs: string[] = [];
 
@@ -27,7 +28,7 @@ function tempDb() {
   return backendDb;
 }
 
-function createApiApp(config: ReturnType<typeof loadConfig>, backendDb: ReturnType<typeof openBackendDb>) {
+function createApiApp(config: BackendConfig, backendDb: ReturnType<typeof openBackendDb>) {
   const handler = createApiHandler({ config, backendDb });
   return {
     request(path: string, init?: RequestInit) {
@@ -41,7 +42,7 @@ describe("Astro endpoint controller", () => {
     const dataDir = tempDir("alexgetman-ready-");
     const backendDb = openBackendDb(join(dataDir, "pipeline.db"), 5000);
     try {
-      const app = createApiApp(loadConfig({ DATA_DIR: dataDir }), backendDb);
+      const app = createApiApp(loadTestConfig({ DATA_DIR: dataDir }), backendDb);
       const response = await app.request("/readyz");
       const body = (await response.json()) as { ok: boolean; checks: Record<string, { ok: boolean }> };
       expect(response.status).toBe(200);
@@ -60,7 +61,7 @@ describe("Astro endpoint controller", () => {
       // The deploy gate curls /readyz with --fail, so an unwritable volume has
       // to surface as a non-2xx status, not as a green body field.
       chmodSync(dataDir, 0o500);
-      const response = await createApiApp(loadConfig({ DATA_DIR: dataDir }), backendDb).request("/readyz");
+      const response = await createApiApp(loadTestConfig({ DATA_DIR: dataDir }), backendDb).request("/readyz");
       expect(response.status).toBe(503);
       expect(((await response.json()) as { checks: Record<string, { ok: boolean }> }).checks.data_dir_writable?.ok).toBe(false);
     } finally {
@@ -74,8 +75,7 @@ describe("Astro endpoint controller", () => {
     const siteDir = tempDir("alexgetman-unused-site-");
     const backendDb = openBackendDb(join(dataDir, "pipeline.db"), 5000);
     try {
-      const config = loadConfig({
-        STUDIO_CONFIG: join(import.meta.dir, "../../../studio.maru.yaml"),
+      const config = loadTestConfig({
         DATA_DIR: dataDir,
         SITE_PUBLIC_DIR: siteDir,
       });
@@ -91,7 +91,7 @@ describe("Astro endpoint controller", () => {
   it("does not let a URL token authorize command-center mutations", async () => {
     const backendDb = tempDb();
     try {
-      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
+      const app = createApiApp(loadTestConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
       // A URL token is readable in proxy logs and Referer headers, so it
       // authorizes reads only: a mutation has to carry a header, form field or
       // the HttpOnly cookie.
@@ -112,7 +112,7 @@ describe("Astro endpoint controller", () => {
   it("stops a run of command-center login guesses", async () => {
     const backendDb = tempDb();
     try {
-      const config = loadConfig({ COMMAND_CENTER_TOKEN: "secret" });
+      const config = loadTestConfig({ COMMAND_CENTER_TOKEN: "secret" });
       const app = createApiApp(config, backendDb);
       const origin = new URL(config.COMMAND_CENTER_URL).origin;
       const guess = () => {
@@ -141,7 +141,7 @@ describe("Astro endpoint controller", () => {
   it("serves a stable compact command-center fingerprint", async () => {
     const backendDb = tempDb();
     try {
-      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
+      const app = createApiApp(loadTestConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
       const firstResponse = await app.request("/api/command-center/fingerprint", { headers: { "X-Command-Token": "secret" } });
       const secondResponse = await app.request("/api/command-center/fingerprint", { headers: { "X-Command-Token": "secret" } });
       const first = await firstResponse.json();
@@ -167,7 +167,7 @@ describe("Astro endpoint controller", () => {
   it("loads publication details in bounded authenticated batches", async () => {
     const backendDb = tempDb();
     try {
-      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
+      const app = createApiApp(loadTestConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
       expect((await app.request("/api/command-center/publication-details")).status).toBe(403);
       const response = await app.request("/api/command-center/publication-details?period=1&offset=0&limit=50", {
         headers: { "X-Command-Token": "secret" },
@@ -184,7 +184,7 @@ describe("Astro endpoint controller", () => {
     const backendDb = tempDb();
     try {
       const app = createApiApp(
-        loadConfig({
+        loadTestConfig({
           CLIENT_IP_HASH_SALT: "test-salt-value!",
           TRUSTED_CLIENT_IP_HEADER: "x-real-ip",
         }),
@@ -241,7 +241,7 @@ describe("Astro endpoint controller", () => {
     try {
       const draftId = createDraftFromMessage(backendDb, 42, { text: "Исходник", textEn: "Original", entities: [], media: [] });
       const postId = publishDraftToQueue(backendDb, draftId);
-      const app = createApiApp(loadConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
+      const app = createApiApp(loadTestConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
       const response = await app.request("/api/command-center/action", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -279,7 +279,7 @@ describe("Astro endpoint controller", () => {
         )
         .run(new Date().toISOString());
       const app = createApiApp(
-        loadConfig({
+        loadTestConfig({
           COMMAND_CENTER_TOKEN: "secret",
           PUBLIC_BASE_URL: "https://marux.ru",
           SITE_PUBLIC_DIR: dir,

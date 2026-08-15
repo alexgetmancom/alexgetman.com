@@ -1,5 +1,5 @@
 /** Single source for zone-aware date math and display, driven by the
- * `timezone`/`timezone_label` configured in studio.yaml (see foundation/config.ts).
+ * `timezone`/`timezoneLabel` on this Studio's profile row (see studio.ts).
  * Every Studio surface that shows or slots a schedule time reads from here. */
 import { STUDIO_LOCALE_TAGS, type StudioLocale } from "./locale.js";
 

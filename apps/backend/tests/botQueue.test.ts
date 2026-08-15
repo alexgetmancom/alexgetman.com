@@ -2,11 +2,11 @@ import { describe, expect, it, setSystemTime } from "bun:test";
 import type { Context } from "grammy";
 import { queueScreen, showQueue } from "../src/bot/queue.js";
 import { draftStoryCards, drafts, posts, postTargets, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import type { StudioQueueSnapshot } from "../src/studio/services/queue.js";
 import { queueService } from "../src/studio/services/queue.js";
 import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoAsset } from "./helpers/video.js";
 
 describe("Telegram work queue", () => {
@@ -76,7 +76,7 @@ describe("Telegram work queue", () => {
         })
         .run();
 
-      expect(queueService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "7" })).headline(7).published).toEqual({
+      expect(queueService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "7" })).headline(7).published).toEqual({
         id: 1,
         label: "Published post",
         kind: "post",
@@ -169,7 +169,7 @@ describe("Telegram work queue", () => {
         .values({ videoDraftId: video.id, target: "youtube_shorts", metadataJson: {}, status: "draft", createdAt: now, updatedAt: now })
         .run();
 
-      const snapshot = queueService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "7,8" })).snapshot(7);
+      const snapshot = queueService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "7,8" })).snapshot(7);
       expect(snapshot.upcoming).toHaveLength(1);
       expect(snapshot.upcoming[0]?.label).toBe("Запланированный пост");
       expect(snapshot.drafts.map((item) => item.label)).toEqual(["Чужой черновик", "Черновик поста", "Черновик видео"]);
@@ -224,7 +224,7 @@ describe("Telegram work queue", () => {
         })
         .run();
 
-      const snapshot = queueService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "7" })).snapshot(7);
+      const snapshot = queueService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "7" })).snapshot(7);
       expect(snapshot.upcoming).toEqual([
         expect.objectContaining({ id: scheduled.id, label: "Recent scheduled video", kind: "video", targets: 1 }),
       ]);
@@ -269,7 +269,7 @@ describe("Telegram work queue", () => {
         .run();
       void futureDraft;
 
-      const snapshot = queueService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "7" })).snapshot(7);
+      const snapshot = queueService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "7" })).snapshot(7);
       expect(snapshot.upcoming).toHaveLength(0);
       expect(snapshot.drafts.map((item) => item.label)).toEqual(["⏳ RU then EN", "⏳ RU already handled"]);
     } finally {
@@ -326,7 +326,7 @@ describe("Telegram work queue", () => {
         })
         .run();
 
-      const label = queueService(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "7" })).snapshot(7).drafts[0]?.label;
+      const label = queueService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "7" })).snapshot(7).drafts[0]?.label;
       expect(label).toBe(`${"x".repeat(37)}😀`);
       expect(label).not.toMatch(/[\uD800-\uDFFF]/u);
     } finally {
@@ -378,7 +378,7 @@ describe("Telegram work queue", () => {
         },
       } as unknown as Context;
 
-      await showQueue(ctx, backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "7" }));
+      await showQueue(ctx, backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "7" }));
       const buttonText = options?.reply_markup?.inline_keyboard?.[0]?.[0]?.text;
       expect(buttonText).toBeTruthy();
       encodeURIComponent(buttonText ?? "");

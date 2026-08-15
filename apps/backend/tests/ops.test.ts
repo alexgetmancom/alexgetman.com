@@ -4,7 +4,6 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { metricSchedule } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { formatSupportSummary, seedFormatSupport } from "../src/operations/format-support.js";
 import {
   applyMetricsBackfill,
@@ -19,6 +18,7 @@ import { diagnoseMediaProcessor, mediaProcessorStatus, reprocessPostMedia } from
 import { compactOperationsStatus } from "../src/operations/status.js";
 import { publicationTimeline } from "../src/operations/timeline.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 function insertVideoAsset(backendDb: ReturnType<typeof openBackendDb>): void {
   backendDb.sqlite
@@ -55,7 +55,7 @@ describe("TypeScript operations tooling", () => {
   });
 
   it("diagnoses the remote media processor with an authenticated idempotent fixture", async () => {
-    const config = loadConfig({
+    const config = loadTestConfig({
       MEDIA_PROCESSOR_PROVIDER: "remote_http",
       MEDIA_PROCESSOR_URL: "http://127.0.0.1:9087",
       MEDIA_PROCESSOR_TOKEN: "a".repeat(16),
@@ -82,7 +82,7 @@ describe("TypeScript operations tooling", () => {
           "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,payload_json,created_at,updated_at) VALUES (106,'post:106',106,'instagram_stories','published',?,?,?)",
         )
         .run(JSON.stringify({ locale: "en", media: [{ type: "IMAGE", localPath: "/tmp/source.jpg" }] }), now, now);
-      const plan = await reprocessPostMedia(backendDb, loadConfig({}), "post:106", false);
+      const plan = await reprocessPostMedia(backendDb, loadTestConfig({}), "post:106", false);
       expect(plan).toMatchObject({ ok: true, apply: false, count: 1 });
     } finally {
       backendDb.close();
@@ -133,7 +133,7 @@ describe("TypeScript operations tooling", () => {
         .run(now);
       const plan = buildMetricsBackfillPlan(backendDb, { targets: ["threads_ru"] });
       expect(plan).toHaveLength(1);
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+      const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
       expect(withMaintenanceLock(backendDb, () => applyMetricsBackfill(backendDb, config, plan, true))).toBe(1);
       expect(
         backendDb.sqlite.prepare("SELECT check_count,frozen_at FROM metric_schedule WHERE post_key='post:1' AND target='threads_ru'").get(),
@@ -182,7 +182,7 @@ describe("TypeScript operations tooling", () => {
         .prepare('INSERT INTO worker_state(name,state_json,updated_at) VALUES (\'queue\',\'{"ok":true,"last_run_at":"2026-01-01"}\',?)')
         .run(now);
 
-      const status = compactOperationsStatus(loadConfig({ PIPELINE_DB: ":memory:" }), backendDb);
+      const status = compactOperationsStatus(loadTestConfig({ PIPELINE_DB: ":memory:" }), backendDb);
 
       expect(status.ok).toBe(false);
       expect(status.missingWorkers).toContain("story-cards");
@@ -227,7 +227,7 @@ describe("TypeScript operations tooling", () => {
       backendDb.sqlite
         .prepare("INSERT INTO video_jobs(video_draft_id,kind,run_at,status,created_at,updated_at) VALUES (1,'publish',?,'failed',?,?)")
         .run(now, now, now);
-      const config = loadConfig({ PIPELINE_DB: ":memory:" });
+      const config = loadTestConfig({ PIPELINE_DB: ":memory:" });
       const status = compactOperationsStatus(config, backendDb);
 
       expect(status.ok).toBe(false);

@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { publishToX } from "../src/delivery/social/x.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 /**
  * X is the only target with a chunked upload protocol — INIT, APPEND per
@@ -13,7 +13,7 @@ import { HttpPublishError } from "../src/publishing/errors.js";
  * succeeded. These tests pin the sequence and the error classification.
  */
 
-const config = loadConfig({
+const config = loadTestConfig({
   X_CLIENT_ID: "client-id",
   X_CLIENT_SECRET: "client-secret",
   X_ACCESS_TOKEN: "access-token",
@@ -62,7 +62,7 @@ function withTempFile<T>(bytes: Buffer, name: string, fn: (file: string) => Prom
 describe("publishToX", () => {
   it("refuses to start without complete credentials", async () => {
     await expect(
-      publishToX({ text: "hi" }, loadConfig({ X_CLIENT_ID: "only-one" }), (() => {
+      publishToX({ text: "hi" }, loadTestConfig({ X_CLIENT_ID: "only-one" }), (() => {
         throw new Error("must not call X");
       }) as unknown as typeof fetch),
     ).rejects.toThrow("missing X OAuth access token");

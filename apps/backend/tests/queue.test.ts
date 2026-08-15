@@ -4,7 +4,6 @@ import type { UnsafeBackendDb } from "../src/db/client.js";
 import { type JsonObject, postEvents, postTargets, publishJobs } from "../src/db/schema.js";
 import { AmbiguousPublicationError } from "../src/delivery/ambiguous-publication.js";
 import type { DeliveryAdapter, DeliveryPorts, DeliveryPublisher } from "../src/delivery/ports.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { recordAuthFailure } from "../src/observability/auth-circuit.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
 import {
@@ -16,6 +15,7 @@ import {
 } from "../src/publishing/queue.js";
 import { runPublishCycle, runPublishWatchdog } from "../src/runtime/workers.js";
 import { withDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 /** Test-only convenience over enqueuePublishJobTx: derives a postId/postKey from
  * messageId so queue-mechanics tests don't need a real publication behind each job. */
@@ -66,7 +66,7 @@ describe("publish queue", () => {
       const [claimed] = claimDuePublishJobs(backendDb, 1, "active-worker");
       if (!claimed) throw new Error("job was not claimed");
 
-      failPublishJob(backendDb, loadConfig({}), id, new HttpPublishError("server error", 503), "stale-worker");
+      failPublishJob(backendDb, loadTestConfig({}), id, new HttpPublishError("server error", 503), "stale-worker");
 
       expect(
         backendDb.db
@@ -93,7 +93,7 @@ describe("publish queue", () => {
 
       failPublishJob(
         backendDb,
-        loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }),
+        loadTestConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }),
         id,
         new HttpPublishError("server error", 503),
         claimed.lockId,
@@ -155,7 +155,7 @@ describe("publish queue", () => {
       });
       expect(claimDuePublishJobs(backendDb, 10)).toEqual([]);
       backendDb.db.update(publishJobs).set({ publishAt: null }).where(eq(publishJobs.jobId, id)).run();
-      await runPublishCycle(loadConfig({}), backendDb, testPorts({ test_platform: async () => ({ ok: true, id: "due" }) }));
+      await runPublishCycle(loadTestConfig({}), backendDb, testPorts({ test_platform: async () => ({ ok: true, id: "due" }) }));
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
         status: "published",
       });
@@ -169,7 +169,7 @@ describe("publish queue", () => {
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
       const claimed = await runPublishCycle(
-        loadConfig({}),
+        loadTestConfig({}),
         backendDb,
         testPorts({
           test_platform: async () => ({ ok: true, id: "test-platform-1", url: "https://example.test/posts/test-platform-1" }),
@@ -218,7 +218,7 @@ describe("publish queue", () => {
       let publishCalls = 0;
 
       await runPublishCycle(
-        loadConfig({}),
+        loadTestConfig({}),
         backendDb,
         testPorts({
           "blocked-target": async () => {
@@ -245,7 +245,7 @@ describe("publish queue", () => {
     withDb(async (backendDb) => {
       const id = enqueuePublishJob(backendDb, { messageId: 1013, target: "missing-target", payload: { title: "Queued" } });
 
-      expect(await runPublishCycle(loadConfig({}), backendDb, {})).toBe(1);
+      expect(await runPublishCycle(loadTestConfig({}), backendDb, {})).toBe(1);
       expect(
         backendDb.db
           .select({ status: publishJobs.status, lockedBy: publishJobs.lockedBy, lastError: publishJobs.lastError })
@@ -291,7 +291,7 @@ describe("publish queue", () => {
           return { ok: true, id: "fast" };
         },
       });
-      await runPublishCycle(loadConfig({}), backendDb, publishers);
+      await runPublishCycle(loadTestConfig({}), backendDb, publishers);
       // Two jobs on the same target never overlap...
       expect(maxActiveSlow).toBe(1);
       // ...and the second one owns no expiring lock while it waits in that lane.
@@ -315,7 +315,7 @@ describe("publish queue", () => {
           releasePublish = resolve;
         });
         const cycle = runPublishCycle(
-          loadConfig({ PUBLISH_HEARTBEAT_INTERVAL_SECONDS: "1" }),
+          loadTestConfig({ PUBLISH_HEARTBEAT_INTERVAL_SECONDS: "1" }),
           backendDb,
           testPorts({
             "slow-target": async () => {
@@ -351,7 +351,7 @@ describe("publish queue", () => {
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
       await runPublishCycle(
-        loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }),
+        loadTestConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }),
         backendDb,
         testPorts({
           test_platform: async () => {
@@ -384,7 +384,7 @@ describe("publish queue", () => {
         payload: { title: "Queued" },
       });
       await runPublishCycle(
-        loadConfig({}),
+        loadTestConfig({}),
         backendDb,
         testPorts({
           "ambiguous-provider": async () => {
@@ -416,7 +416,7 @@ describe("publish queue", () => {
           throw new Error("unclassified upstream response");
         },
       });
-      const config = loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" });
+      const config = loadTestConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" });
       await runPublishCycle(config, backendDb, publishers);
       expect(
         backendDb.db
@@ -450,7 +450,7 @@ describe("publish queue", () => {
           prepareStarted = resolve;
         });
         const cycle = runPublishCycle(
-          loadConfig({ PUBLISH_JOB_TIMEOUT_SECONDS: "1" }),
+          loadTestConfig({ PUBLISH_JOB_TIMEOUT_SECONDS: "1" }),
           backendDb,
           testPorts({
             "slow-provider": testAdapter(async () => ({ ok: true }), {
@@ -496,7 +496,7 @@ describe("publish queue", () => {
           prepareStarted = resolve;
         });
         const cycle = runPublishCycle(
-          loadConfig({ PUBLISH_JOB_TIMEOUT_SECONDS: "1" }),
+          loadTestConfig({ PUBLISH_JOB_TIMEOUT_SECONDS: "1" }),
           backendDb,
           testPorts({
             "slow-prepare": testAdapter(
@@ -546,7 +546,7 @@ describe("publish queue", () => {
         })
         .where(eq(publishJobs.jobId, id))
         .run();
-      expect(recoverStalePublishJobs(backendDb, loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }))).toBe(1);
+      expect(recoverStalePublishJobs(backendDb, loadTestConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }))).toBe(1);
       const job = backendDb.db
         .select({ status: publishJobs.status, lockedBy: publishJobs.lockedBy })
         .from(publishJobs)
@@ -575,7 +575,7 @@ describe("publish queue", () => {
         .where(eq(publishJobs.jobId, id))
         .run();
 
-      expect(recoverStalePublishJobs(backendDb, loadConfig({}), 60)).toBe(1);
+      expect(recoverStalePublishJobs(backendDb, loadTestConfig({}), 60)).toBe(1);
     }).finally(() => setSystemTime());
   });
 
@@ -601,7 +601,7 @@ describe("publish queue", () => {
         .where(eq(publishJobs.jobId, id))
         .run();
 
-      expect(recoverStalePublishJobs(backendDb, loadConfig({}))).toBe(1);
+      expect(recoverStalePublishJobs(backendDb, loadTestConfig({}))).toBe(1);
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
         status: "verification_required",
       });
@@ -626,7 +626,7 @@ describe("publish queue", () => {
         .where(eq(publishJobs.jobId, id))
         .run();
 
-      expect(recoverStalePublishJobs(backendDb, loadConfig({}))).toBe(1);
+      expect(recoverStalePublishJobs(backendDb, loadTestConfig({}))).toBe(1);
       expect(
         backendDb.db
           .select({ status: publishJobs.status, currentPhase: publishJobs.currentPhase })
@@ -655,7 +655,7 @@ describe("publish queue", () => {
         .where(eq(publishJobs.jobId, id))
         .run();
 
-      expect(runPublishWatchdog(loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }), backendDb)).toBe(1);
+      expect(runPublishWatchdog(loadTestConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }), backendDb)).toBe(1);
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
         status: "verification_required",
       });
@@ -675,9 +675,9 @@ describe("publish queue", () => {
         .set({ currentPhase: "provider.publish", lockedAt: "2000-01-01T00:00:00.000Z" })
         .where(eq(publishJobs.jobId, id))
         .run();
-      recoverStalePublishJobs(backendDb, loadConfig({}));
+      recoverStalePublishJobs(backendDb, loadTestConfig({}));
 
-      completePublishJob(backendDb, loadConfig({}), id, { ok: true, id: "late" }, claimed.lockId);
+      completePublishJob(backendDb, loadTestConfig({}), id, { ok: true, id: "late" }, claimed.lockId);
 
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, id)).get()).toEqual({
         status: "verification_required",
@@ -688,7 +688,7 @@ describe("publish queue", () => {
     withDb((backendDb) => {
       const id = enqueuePublishJob(backendDb, { messageId: 106, target: "test_platform", payload: { text_en: "Queued" } });
       claimDuePublishJobs(backendDb, 1, "test-worker");
-      completePublishJob(backendDb, loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }), id, {
+      completePublishJob(backendDb, loadTestConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }), id, {
         ok: false,
         id: "at://did/app.bsky.feed.post/root",
         retryable: true,
@@ -713,7 +713,7 @@ describe("publish queue", () => {
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
       await runPublishCycle(
-        loadConfig({}),
+        loadTestConfig({}),
         backendDb,
         testPorts({
           test_platform: async () => {
@@ -745,7 +745,7 @@ describe("publish queue", () => {
       const first = enqueuePublishJob(backendDb, { messageId: 201, target: "test_platform", payload: { title: "One" } });
       const second = enqueuePublishJob(backendDb, { messageId: 202, target: "test_platform", payload: { title: "Two" } });
       claimDuePublishJobs(backendDb, 1, "test-worker");
-      completePublishJob(backendDb, loadConfig({}), first, { ok: true, id: "first" });
+      completePublishJob(backendDb, loadTestConfig({}), first, { ok: true, id: "first" });
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, second)).get()).toEqual({
         status: "queued",
       });
@@ -755,7 +755,7 @@ describe("publish queue", () => {
     withDb((backendDb) => {
       const id = enqueuePublishJob(backendDb, { messageId: 301, target: "threads_en", payload: { text_en: "One\n\nTwo" } });
       claimDuePublishJobs(backendDb, 1, "test-worker");
-      completePublishJob(backendDb, loadConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }), id, {
+      completePublishJob(backendDb, loadTestConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }), id, {
         partial: true,
         ids: ["root-id"],
         error: "reply container missing",

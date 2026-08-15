@@ -25,7 +25,7 @@ are connected by naming their platform and language.
 
 | Destination | Connect with | Needs |
 | --- | --- | --- |
-| Website | `--target site_ru` / `site_en` | nothing, plus `site_enabled: true` in `studio.yaml` |
+| Website | `--target site_ru` / `site_en` | nothing, plus `ops studio-profile-set --site-enabled` |
 | Telegram channel | `--target telegram` | `CONTROLLER_BOT_TOKEN` |
 | Discord | `--target discord` | `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID` |
 | Threads | Studio → Channels, RU or EN | `THREADS_APP_ID`, `THREADS_APP_SECRET`, `TOKEN_ENCRYPTION_KEY`, or `ZERNIO_API_KEY` |

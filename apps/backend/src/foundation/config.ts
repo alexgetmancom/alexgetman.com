@@ -1,6 +1,7 @@
 import path from "node:path";
 import * as z from "zod";
-import { loadStudioConfig, type StudioConfig } from "../studio.js";
+import type { ApplicationPorts } from "../application/ports.js";
+import { type StudioConfig, studioConfig } from "../studio.js";
 
 /** Env flags arrive as strings, so the default has to be a string too: a boolean
  * default would be handed to the transform below on any Zod version that does
@@ -27,7 +28,6 @@ const envSchema = z
     PORT: z.coerce.number().int().positive().default(8788),
     BIND_HOST: z.string().default("127.0.0.1"),
     DATA_DIR: z.string().default("/data"),
-    STUDIO_CONFIG: z.string().default("studio.yaml"),
     PIPELINE_DB: z.string().default("/data/pipeline.db"),
     // Telegram's own API. A deployment that runs a local Bot API server — the
     // way to lift the 50 MB download limit for video — points this at it
@@ -136,7 +136,8 @@ const envSchema = z
     // platform can take a while to expose a freshly created object.
     RECONCILE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(8),
     // VIDEO_PREPARE_LEAD_MINUTES / VIDEO_REMINDER_MINUTES / VIDEO_MEDIA_RETENTION_HOURS
-    // are owned by studio.yaml (see loadConfig); they are not env-configurable.
+    // are owned by the studio_profile row (see withStudioProfile); they are not
+    // env-configurable.
     SITE_PUBLIC_DIR: z.string().default("/data/site"),
     THREADS_RU_ACCESS_TOKEN: z.string().optional(),
     THREADS_EN_ACCESS_TOKEN: z.string().optional(),
@@ -258,12 +259,9 @@ const envSchema = z
     }
   });
 
-export type BackendConfig = z.infer<typeof envSchema> & {
-  VIDEO_PREPARE_LEAD_MINUTES: number;
-  VIDEO_REMINDER_MINUTES: number;
-  VIDEO_MEDIA_RETENTION_HOURS: number;
-  TIMEZONE: string;
-  TIMEZONE_LABEL: string;
+/** What .env alone determines. Everything the Studio itself owns is added by
+ * withStudioProfile once the database is open. */
+export type EnvConfig = z.infer<typeof envSchema> & {
   controllerBotToken: string | undefined;
   commandCenterToken: string | undefined;
   /** Where this Studio's dashboard lives. Derived, never configured: it is
@@ -278,10 +276,36 @@ export type BackendConfig = z.infer<typeof envSchema> & {
    * renews, so without this the next comparison would be against the renewal
    * and every check would look like an operator had changed something. */
   metaTokenSeeds: Record<string, string | undefined>;
+};
+
+export type BackendConfig = EnvConfig & {
+  VIDEO_PREPARE_LEAD_MINUTES: number;
+  VIDEO_REMINDER_MINUTES: number;
+  VIDEO_MEDIA_RETENTION_HOURS: number;
+  TIMEZONE: string;
+  TIMEZONE_LABEL: string;
   studio: StudioConfig;
 };
 
-export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): BackendConfig {
+/**
+ * Attaches the settings the Studio owns to the settings its host owns. Every
+ * added field is a getter over the same live `studio` view, so a setting changed
+ * through `ops` reaches the next reader without a restart and there is exactly
+ * one place the value comes from.
+ */
+export function withStudioProfile(env: EnvConfig, ports: Pick<ApplicationPorts, "studioSettings">): BackendConfig {
+  const studio = studioConfig(ports);
+  return Object.defineProperties({ ...env } as BackendConfig, {
+    studio: { value: studio, enumerable: true },
+    TIMEZONE: { get: () => studio.timezone, enumerable: true },
+    TIMEZONE_LABEL: { get: () => studio.timezoneLabel, enumerable: true },
+    VIDEO_PREPARE_LEAD_MINUTES: { get: () => studio.video.prepare_lead_minutes, enumerable: true },
+    VIDEO_REMINDER_MINUTES: { get: () => studio.video.reminder_minutes, enumerable: true },
+    VIDEO_MEDIA_RETENTION_HOURS: { get: () => studio.video.retention_hours, enumerable: true },
+  });
+}
+
+export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): EnvConfig {
   const env = blankAsUnset(rawEnv);
   const parsed = envSchema.parse(env);
   if (parsed.NODE_ENV === "production" && parsed.DEPLOYMENT_ENV !== "production")
@@ -292,7 +316,6 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): BackendConf
     if (!parsed.COMMAND_CENTER_TOKEN) throw new Error("COMMAND_CENTER_TOKEN is required in production");
     if (!env.CLIENT_IP_HASH_SALT) throw new Error("CLIENT_IP_HASH_SALT is required in production");
   }
-  const studio = loadStudioConfig(parsed.STUDIO_CONFIG);
   // Same hazard, different surface: the default is a live site, so a Studio
   // that does not name its own would put the first one's domain in its feeds,
   // its sitemap and its canonical URLs.
@@ -304,11 +327,6 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): BackendConf
   return {
     ...parsed,
     REMOTE_MEDIA_PATH: remoteMediaPath,
-    VIDEO_PREPARE_LEAD_MINUTES: studio.video.prepare_lead_minutes,
-    VIDEO_REMINDER_MINUTES: studio.video.reminder_minutes,
-    VIDEO_MEDIA_RETENTION_HOURS: studio.video.retention_hours,
-    TIMEZONE: studio.timezone,
-    TIMEZONE_LABEL: studio.timezoneLabel,
     controllerBotToken: parsed.CONTROLLER_BOT_TOKEN,
     commandCenterToken: parsed.COMMAND_CENTER_TOKEN,
     COMMAND_CENTER_URL: `${parsed.PUBLIC_BASE_URL.replace(/\/$/, "")}/command-center`,
@@ -319,6 +337,5 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): BackendConf
       INSTAGRAM_RU_ACCESS_TOKEN: parsed.INSTAGRAM_RU_ACCESS_TOKEN,
       INSTAGRAM_EN_ACCESS_TOKEN: parsed.INSTAGRAM_EN_ACCESS_TOKEN,
     },
-    studio,
   };
 }

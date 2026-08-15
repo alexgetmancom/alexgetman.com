@@ -1,4 +1,4 @@
-// The default mirrors studio.yaml's factory timezone; callers on the server
+// The default mirrors the studio profile's factory timezone; callers on the server
 // should pass getRuntime().config.TIMEZONE so a config change doesn't leave
 // the site rendering dates in a stale zone (see foundation/config.ts).
 export function formatDate(value: string, locale = "en-GB", timeZone = "Europe/Moscow"): string {

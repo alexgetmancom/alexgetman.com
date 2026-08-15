@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { asc, count, eq } from "drizzle-orm";
 import { opsActions, posts, postTargets, publicationSources, publications, publishJobs, siteJobs } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { runOperationCommand } from "../src/operations/commands.js";
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
 import { postService } from "../src/studio/services/posts.js";
 import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("command center actions", () => {
   it("rebuilds retried jobs from the source using the target locale", async () => {
@@ -117,7 +117,7 @@ describe("command center actions", () => {
       const result = await runOperationCommand(
         backendDb,
         { action: "edit", ref: "post:8", locale: "en", text: "Updated EN", apply: true },
-        loadConfig({}),
+        loadTestConfig({}),
         fetchImpl,
       );
 
@@ -171,7 +171,7 @@ describe("command center actions", () => {
       const result = await runOperationCommand(
         backendDb,
         { action: "delete", ref: "post:9", locale: "en", republish: true, apply: true },
-        loadConfig({ THREADS_EN_ACCESS_TOKEN: "token" }),
+        loadTestConfig({ THREADS_EN_ACCESS_TOKEN: "token" }),
         fetchImpl,
       );
       expect(requests).toEqual([{ url: "https://graph.threads.net/v1.0/page_post?access_token=token", method: "DELETE" }]);
@@ -226,7 +226,7 @@ describe("command center actions", () => {
       const result = await runOperationCommand(
         backendDb,
         { action: "delete", ref: "post:19", target: "threads_en", republish: true, apply: true },
-        loadConfig({ THREADS_EN_ACCESS_TOKEN: "token" }),
+        loadTestConfig({ THREADS_EN_ACCESS_TOKEN: "token" }),
         fetchImpl,
       );
 
@@ -287,7 +287,7 @@ describe("command center actions", () => {
       await runOperationCommand(
         backendDb,
         { action: "delete", ref: "post:21", target: "threads_en", apply: true },
-        loadConfig({ THREADS_EN_ACCESS_TOKEN: "token" }),
+        loadTestConfig({ THREADS_EN_ACCESS_TOKEN: "token" }),
         (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch,
       );
 
@@ -369,7 +369,7 @@ describe("command center actions", () => {
       const plan = await runOperationCommand(
         backendDb,
         { action: "delete", ref: "post:9", locale: "en", republish: true },
-        loadConfig({ THREADS_EN_ACCESS_TOKEN: "token" }),
+        loadTestConfig({ THREADS_EN_ACCESS_TOKEN: "token" }),
         fetchImpl,
       );
 
@@ -430,7 +430,7 @@ describe("command center actions", () => {
   it("reschedules a Studio post by locale through the operations command", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+      const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
       const posts = postService(backendDb, config);
       registerTestChannels(backendDb, ["telegram"]);
       const draftId = posts.create(42, { text: "RU", textEn: "EN", entities: [], media: [] });

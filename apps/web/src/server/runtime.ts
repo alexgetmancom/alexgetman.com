@@ -5,7 +5,7 @@ import { type BackendDb, openBackendDb } from "../../../backend/src/db/client.js
 import type { RawBackendDb } from "../../../backend/src/db/unsafe.js";
 import { unsafeDb } from "../../../backend/src/db/unsafe.js";
 import { recordDomainEvent } from "../../../backend/src/domain/events.js";
-import { type BackendConfig, loadConfig } from "../../../backend/src/foundation/config.js";
+import { type BackendConfig, loadConfig, withStudioProfile } from "../../../backend/src/foundation/config.js";
 import { configureLogging, log } from "../../../backend/src/foundation/logger.js";
 import { checkDataDirectoriesWritable, requiredDataDirectories } from "../../../backend/src/foundation/runtime/data-dirs.js";
 import { assertFfmpegAvailable, configureFfmpegConcurrency } from "../../../backend/src/foundation/runtime/ffmpeg.js";
@@ -37,10 +37,13 @@ export function startRuntime(): AppRuntime {
   // hand out a closed database.
   runtime = runtimeGlobal.__alexgetmanRuntime;
   if (runtime) return runtime;
-  const config = loadConfig(Bun.env);
-  configureLogging(config.LOG_LEVEL);
+  const env = loadConfig(Bun.env);
+  configureLogging(env.LOG_LEVEL);
   configureFfmpegConcurrency(FFMPEG_MAX_CONCURRENCY);
-  const backendDb = openBackendDb(config.PIPELINE_DB);
+  // The database is opened before the configuration is complete, because the
+  // Studio's own settings live in it. Only PIPELINE_DB is needed to get here.
+  const backendDb = openBackendDb(env.PIPELINE_DB);
+  const config = withStudioProfile(env, backendDb);
   // Before anything reads a platform token: a credential this Studio renewed
   // for itself lives in the database, and .env holds the value it grew from.
   // Applying it here keeps one name for the effective token everywhere else.

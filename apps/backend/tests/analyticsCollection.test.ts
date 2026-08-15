@@ -13,11 +13,11 @@ import {
   videoMetricSchedule,
   videoMetricSnapshots,
 } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { flushUsage } from "../src/observability/usage.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
 import { TEXT_TEST_CHANNELS, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { withDb as withFixtureDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 const withDb = <T>(run: (backendDb: UnsafeBackendDb) => T | Promise<T>) =>
   withFixtureDb(run, [...TEXT_TEST_CHANNELS, ...VIDEO_TEST_CHANNELS]);
@@ -25,7 +25,7 @@ const withDb = <T>(run: (backendDb: UnsafeBackendDb) => T | Promise<T>) =>
 describe("creator analytics collection", () => {
   it("retains live YouTube channel counters when the Analytics API is unavailable", async () => {
     await withDb(async (backendDb) => {
-      const config = loadConfig({
+      const config = loadTestConfig({
         YOUTUBE_RU_CLIENT_ID: "client",
         YOUTUBE_RU_CLIENT_SECRET: "secret",
         YOUTUBE_RU_REFRESH_TOKEN: "refresh",
@@ -67,7 +67,7 @@ describe("creator analytics collection", () => {
 
   it("does not count empty scheduler ticks as video metric collections", async () => {
     await withDb(async (backendDb) => {
-      const config = loadConfig({});
+      const config = loadTestConfig({});
 
       expect(await runAnalyticsCycle(config, backendDb)).toBe(0);
       flushUsage(backendDb);
@@ -85,7 +85,7 @@ describe("creator analytics collection", () => {
         provider: "zernio",
         providerAccountId: "tiktok-account",
       });
-      const config = loadConfig({
+      const config = loadTestConfig({
         ENABLE_X_PROFILE_METRICS: "1",
         X_CLIENT_ID: "consumer",
         X_CLIENT_SECRET: "secret",
@@ -114,7 +114,7 @@ describe("creator analytics collection", () => {
 
   it("syncs native Instagram profile snapshots with the matching locale credentials", async () => {
     await withDb(async (backendDb) => {
-      const config = loadConfig({
+      const config = loadTestConfig({
         INSTAGRAM_RU_ACCESS_TOKEN: "ru-token",
         INSTAGRAM_RU_USER_ID: "ru-user",
         INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
@@ -158,7 +158,7 @@ describe("creator analytics collection", () => {
         externalId: "reel-1",
         locale: "en",
       });
-      const config = loadConfig({
+      const config = loadTestConfig({
         INSTAGRAM_RU_ACCESS_TOKEN: "token",
         INSTAGRAM_RU_USER_ID: "user",
         INSTAGRAM_EN_ACCESS_TOKEN: "en-token",
@@ -193,7 +193,7 @@ describe("creator analytics collection", () => {
         publishedAt,
         externalId: "youtube-scope-test",
       });
-      const config = loadConfig({
+      const config = loadTestConfig({
         YOUTUBE_RU_CLIENT_ID: "client",
         YOUTUBE_RU_CLIENT_SECRET: "secret",
         YOUTUBE_RU_REFRESH_TOKEN: "refresh",
@@ -241,7 +241,7 @@ describe("creator analytics collection", () => {
         publishedAt,
         externalId: "missing-reel",
       });
-      const config = loadConfig({ INSTAGRAM_RU_ACCESS_TOKEN: "token", INSTAGRAM_RU_USER_ID: "user" });
+      const config = loadTestConfig({ INSTAGRAM_RU_ACCESS_TOKEN: "token", INSTAGRAM_RU_USER_ID: "user" });
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
         if (url.includes("missing-reel")) return new Response(JSON.stringify({ error: { message: "media not found" } }), { status: 404 });
@@ -270,7 +270,7 @@ describe("creator analytics collection", () => {
         publishedAt,
         externalId: "delayed-analytics",
       });
-      const config = loadConfig({
+      const config = loadTestConfig({
         YOUTUBE_RU_CLIENT_ID: "client",
         YOUTUBE_RU_CLIENT_SECRET: "secret",
         YOUTUBE_RU_REFRESH_TOKEN: "refresh",
@@ -323,7 +323,7 @@ describe("creator analytics collection", () => {
         publishedAt,
         externalId: "native-comments",
       });
-      const config = loadConfig({ INSTAGRAM_RU_ACCESS_TOKEN: "token", INSTAGRAM_RU_USER_ID: "user" });
+      const config = loadTestConfig({ INSTAGRAM_RU_ACCESS_TOKEN: "token", INSTAGRAM_RU_USER_ID: "user" });
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
         if (url.includes("fields=like_count"))
@@ -363,7 +363,7 @@ describe("creator analytics collection", () => {
         .insert(videoMetricSchedule)
         .values({ videoTargetId: targetId, checkpointIndex: 1, lastCheckedAt, nextCheckAt: oldNextCheckAt, updatedAt: lastCheckedAt })
         .run();
-      const config = loadConfig({});
+      const config = loadTestConfig({});
       expect(
         await runVideoMetricSchedule(config, backendDb, (async () => {
           throw new Error("provider should not be called");
@@ -387,7 +387,7 @@ describe("creator analytics collection", () => {
         publishedAt,
         externalId: "youtube-analytics-test",
       });
-      const config = loadConfig({
+      const config = loadTestConfig({
         YOUTUBE_RU_CLIENT_ID: "client",
         YOUTUBE_RU_CLIENT_SECRET: "secret",
         YOUTUBE_RU_REFRESH_TOKEN: "refresh",
@@ -478,7 +478,7 @@ describe("creator analytics collection", () => {
           targetIds.map((videoTargetId) => ({ videoTargetId, nextCheckAt: new Date(Date.now() - 1_000).toISOString(), updatedAt: now })),
         )
         .run();
-      const config = loadConfig({
+      const config = loadTestConfig({
         YOUTUBE_RU_CLIENT_ID: "client",
         YOUTUBE_RU_CLIENT_SECRET: "secret",
         YOUTUBE_RU_REFRESH_TOKEN: "revoked",
@@ -522,7 +522,7 @@ describe("creator analytics collection", () => {
         providerAccountId: "maru-account",
         providerPostId: "zernio-post",
       });
-      const config = loadConfig({
+      const config = loadTestConfig({
         ZERNIO_API_KEY: "a".repeat(16),
       });
       registerChannel(backendDb, {

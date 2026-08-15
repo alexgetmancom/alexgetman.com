@@ -31,11 +31,6 @@ if (!image) {
   process.exit(1);
 }
 
-/** This walk is the public SSR routes, so it needs a Studio that serves them.
- * The shipped studio.yaml has the site off, which is right for an install and
- * would make every route here a 404. */
-const studioConfig = path.resolve("apps/backend/tests/helpers/studio-site.yaml");
-
 const container = `image-smoke-${process.pid}`;
 const volume = `image-smoke-${process.pid}`;
 const port = 18000 + (process.pid % 20000);
@@ -80,19 +75,7 @@ try {
     }
   }
 
-  const configCheck = await run([
-    "docker",
-    "run",
-    "--rm",
-    "--entrypoint",
-    "bun",
-    "-v",
-    `${studioConfig}:/app/studio.yaml:ro`,
-    "-e",
-    "STUDIO_CONFIG=/app/studio.yaml",
-    image,
-    "/app/entrypoint/config-check.js",
-  ]);
+  const configCheck = await run(["docker", "run", "--rm", "--entrypoint", "bun", image, "/app/entrypoint/config-check.js"]);
   check(configCheck.code === 0, "production config preflight", configCheck.out.trim());
   if (configCheck.code !== 0) throw new Error("production config preflight failed");
 
@@ -123,8 +106,6 @@ try {
     `127.0.0.1:${port}:8788`,
     "-v",
     `${volume}:/data`,
-    "-v",
-    `${studioConfig}:/app/studio.yaml:ro`,
     "-e",
     "DATA_DIR=/data",
     "-e",
@@ -135,8 +116,6 @@ try {
     "MEDIA_CACHE_DIR=/data/media-cache",
     "-e",
     "VIDEO_MEDIA_DIR=/data/video-media",
-    "-e",
-    "STUDIO_CONFIG=/app/studio.yaml",
     "-e",
     "BIND_HOST=0.0.0.0",
     "-e",
@@ -185,6 +164,14 @@ try {
   }
   check(ready, "container becomes ready");
   if (!ready) throw new Error("never became ready");
+
+  /** The routes below are the public SSR site, which a fresh install does not
+   * serve. Turning it on through `ops` against the running container is also
+   * the assertion that a Studio setting reaches the next request: nothing here
+   * restarts anything between this call and the walk. */
+  const siteOn = await run(["docker", "exec", "-u", "bun", container, "bun", "/app/ops/cli.js", "studio-profile-set", "--site-enabled"]);
+  check(siteOn.code === 0, "public site enabled through ops", siteOn.out.trim());
+  if (siteOn.code !== 0) throw new Error("could not enable the public site");
 
   /** Minimum body size per route. A missing runtime dependency renders as a
    * 500 with an empty body, so both the status and the length matter. */

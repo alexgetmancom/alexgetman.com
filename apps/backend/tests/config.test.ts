@@ -1,13 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { loadConfig } from "../src/foundation/config.js";
-import { loadStudioConfig } from "../src/studio.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("loadConfig", () => {
   it("keeps production data paths compatible", () => {
-    const config = loadConfig({});
+    const config = loadTestConfig({});
     expect(config.PIPELINE_DB).toBe("/data/pipeline.db");
     expect(config.TELEGRAM_API_BASE_URL).toBe("https://api.telegram.org");
     expect(config.LOG_LEVEL).toBe("info");
@@ -19,10 +15,10 @@ describe("loadConfig", () => {
   });
 
   it("requires an explicit matching production environment", () => {
-    expect(() => loadConfig({ NODE_ENV: "production", COMMAND_CENTER_TOKEN: "b".repeat(16) })).toThrow("DEPLOYMENT_ENV=production");
-    expect(() => loadConfig({ DEPLOYMENT_ENV: "production", COMMAND_CENTER_TOKEN: "b".repeat(16) })).toThrow("NODE_ENV=production");
+    expect(() => loadTestConfig({ NODE_ENV: "production", COMMAND_CENTER_TOKEN: "b".repeat(16) })).toThrow("DEPLOYMENT_ENV=production");
+    expect(() => loadTestConfig({ DEPLOYMENT_ENV: "production", COMMAND_CENTER_TOKEN: "b".repeat(16) })).toThrow("NODE_ENV=production");
     expect(
-      loadConfig({
+      loadTestConfig({
         NODE_ENV: "production",
         DEPLOYMENT_ENV: "production",
         COMMAND_CENTER_TOKEN: "b".repeat(16),
@@ -43,56 +39,58 @@ describe("loadConfig", () => {
       CLIENT_IP_HASH_SALT: "s".repeat(16),
       TELEGRAM_CHANNEL_USERNAME: "example",
     };
-    expect(() => loadConfig(production)).toThrow("PUBLIC_BASE_URL");
+    expect(() => loadTestConfig(production)).toThrow("PUBLIC_BASE_URL");
 
     // One address, one setting: the dashboard URL and the media base follow the
     // site rather than being configured a second time.
-    const config = loadConfig({ ...production, PUBLIC_BASE_URL: "https://studio.example.com/" });
+    const config = loadTestConfig({ ...production, PUBLIC_BASE_URL: "https://studio.example.com/" });
     expect(config.COMMAND_CENTER_URL).toBe("https://studio.example.com/command-center");
     expect(config.PUBLIC_MEDIA_BASE_URL).toBe("https://studio.example.com/media/staging");
     expect(
-      loadConfig({ ...production, PUBLIC_BASE_URL: "https://s.example.com", PUBLIC_MEDIA_BASE_URL: "https://cdn.example.com/m" })
+      loadTestConfig({ ...production, PUBLIC_BASE_URL: "https://s.example.com", PUBLIC_MEDIA_BASE_URL: "https://cdn.example.com/m" })
         .PUBLIC_MEDIA_BASE_URL,
     ).toBe("https://cdn.example.com/m");
   });
 
   it("derives temporary media storage beside a custom site volume", () => {
-    const config = loadConfig({ SITE_PUBLIC_DIR: "/srv/studio/site", PUBLIC_BASE_URL: "https://studio.example.com" });
+    const config = loadTestConfig({ SITE_PUBLIC_DIR: "/srv/studio/site", PUBLIC_BASE_URL: "https://studio.example.com" });
     expect(config.REMOTE_MEDIA_PATH).toBe("/srv/studio/media");
     expect(config.PUBLIC_MEDIA_BASE_URL).toBe("https://studio.example.com/media/staging");
   });
 
   it("uses controller token as primary bot token", () => {
-    const config = loadConfig({ CONTROLLER_BOT_TOKEN: "controller" });
+    const config = loadTestConfig({ CONTROLLER_BOT_TOKEN: "controller" });
     expect(config.controllerBotToken).toBe("controller");
   });
 
   it("accepts the production controller admin variable", () => {
-    const config = loadConfig({ CONTROLLER_ADMIN_IDS: "101, 202" });
+    const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "101, 202" });
     expect(config.CONTROLLER_ADMIN_IDS).toEqual([101, 202]);
   });
 
   it("requires a complete private deployment-agent configuration", () => {
-    expect(() => loadConfig({ DEPLOY_AGENT_URL: "http://host.docker.internal:9899" })).toThrow("DEPLOY_AGENT_URL and DEPLOY_AGENT_TOKEN");
-    expect(() => loadConfig({ DEPLOY_AGENT_TOKEN: "a".repeat(16) })).toThrow("DEPLOY_AGENT_URL and DEPLOY_AGENT_TOKEN");
-    expect(loadConfig({ DEPLOY_AGENT_URL: "http://host.docker.internal:9899", DEPLOY_AGENT_TOKEN: "a".repeat(16) }).DEPLOY_AGENT_URL).toBe(
-      "http://host.docker.internal:9899",
+    expect(() => loadTestConfig({ DEPLOY_AGENT_URL: "http://host.docker.internal:9899" })).toThrow(
+      "DEPLOY_AGENT_URL and DEPLOY_AGENT_TOKEN",
     );
+    expect(() => loadTestConfig({ DEPLOY_AGENT_TOKEN: "a".repeat(16) })).toThrow("DEPLOY_AGENT_URL and DEPLOY_AGENT_TOKEN");
+    expect(
+      loadTestConfig({ DEPLOY_AGENT_URL: "http://host.docker.internal:9899", DEPLOY_AGENT_TOKEN: "a".repeat(16) }).DEPLOY_AGENT_URL,
+    ).toBe("http://host.docker.internal:9899");
   });
 
   it("requires Studio MCP token and owner to be configured together", () => {
-    expect(() => loadConfig({ MCP_STUDIO_TOKEN: "a".repeat(16) })).toThrow("MCP_STUDIO_TOKEN and MCP_STUDIO_ACTOR_ID");
-    expect(() => loadConfig({ MCP_STUDIO_ACTOR_ID: "42" })).toThrow("MCP_STUDIO_TOKEN and MCP_STUDIO_ACTOR_ID");
-    expect(() => loadConfig({ MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" })).toThrow(
+    expect(() => loadTestConfig({ MCP_STUDIO_TOKEN: "a".repeat(16) })).toThrow("MCP_STUDIO_TOKEN and MCP_STUDIO_ACTOR_ID");
+    expect(() => loadTestConfig({ MCP_STUDIO_ACTOR_ID: "42" })).toThrow("MCP_STUDIO_TOKEN and MCP_STUDIO_ACTOR_ID");
+    expect(() => loadTestConfig({ MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" })).toThrow(
       "MCP_STUDIO_ACTOR_ID must belong to STUDIO_ACTOR_IDS",
     );
     expect(
-      loadConfig({ CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" }).MCP_STUDIO_ACTOR_ID,
+      loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" }).MCP_STUDIO_ACTOR_ID,
     ).toBe(42);
   });
 
   it("rejects the removed ADMIN_IDS name when an MCP owner needs the roster", () => {
-    expect(() => loadConfig({ ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" })).toThrow(
+    expect(() => loadTestConfig({ ADMIN_IDS: "42", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "42" })).toThrow(
       "MCP_STUDIO_ACTOR_ID must belong to STUDIO_ACTOR_IDS",
     );
   });
@@ -100,30 +98,11 @@ describe("loadConfig", () => {
   it("accepts a Studio actor that is not a Telegram admin", () => {
     // The point of the roster: an MCP-only deployment has an owner without
     // granting anyone bot access.
-    const config = loadConfig({ STUDIO_ACTOR_IDS: "7", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "7" });
+    const config = loadTestConfig({ STUDIO_ACTOR_IDS: "7", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "7" });
     expect(config.MCP_STUDIO_ACTOR_ID).toBe(7);
     expect(config.CONTROLLER_ADMIN_IDS).toEqual([]);
-    expect(() => loadConfig({ STUDIO_ACTOR_IDS: "7", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "8" })).toThrow(
+    expect(() => loadTestConfig({ STUDIO_ACTOR_IDS: "7", MCP_STUDIO_TOKEN: "a".repeat(16), MCP_STUDIO_ACTOR_ID: "8" })).toThrow(
       "MCP_STUDIO_ACTOR_ID must belong to STUDIO_ACTOR_IDS",
     );
-  });
-
-  it("rejects retired feature switches and unknown Studio sections", () => {
-    const directory = mkdtempSync(join(tmpdir(), "studio-config-"));
-    try {
-      const retired = join(directory, "retired.yaml");
-      writeFileSync(retired, "site_enabled: true\nmodules:\n  text_posting: true\n");
-      expect(() => loadStudioConfig(retired)).toThrow(/modules/);
-
-      const unknown = join(directory, "unknown.yaml");
-      writeFileSync(unknown, "site_enabled: false\ncommand_center:\n  default_mode: video\n");
-      expect(() => loadStudioConfig(unknown)).toThrow(/command_center/);
-
-      const retiredAnalyticsDefault = join(directory, "retired-analytics-default.yaml");
-      writeFileSync(retiredAnalyticsDefault, "site_enabled: true\nanalytics:\n  default_tab: posts\n");
-      expect(() => loadStudioConfig(retiredAnalyticsDefault)).toThrow(/analytics/);
-    } finally {
-      rmSync(directory, { recursive: true, force: true });
-    }
   });
 });

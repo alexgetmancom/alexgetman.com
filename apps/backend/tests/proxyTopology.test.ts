@@ -77,6 +77,5 @@ describe("host proxy topology", () => {
     expect(compose).toContain("${DOMAIN:?");
     // Only the proxy is reachable from outside.
     expect(compose).not.toMatch(/ports:[\s\S]*?8788:8788/);
-    expect(read("studio.yaml")).not.toContain("Europe/Moscow");
   });
 });

@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig } from "../src/foundation/config.js";
 import {
   checkDataDirectoriesWritable,
   fixDataDirectoriesOwnership,
@@ -10,7 +9,7 @@ import {
   resolveUnixUser,
   retainedSupplementaryGroups,
 } from "../src/foundation/runtime/data-dirs.js";
-import { SITE_STUDIO_CONFIG } from "./helpers/studio-config.js";
+import { loadTestConfig, SITE_STUDIO_PROFILE } from "./helpers/studio-config.js";
 
 const tempRoots: string[] = [];
 
@@ -29,15 +28,17 @@ afterEach(() => {
 describe("requiredDataDirectories", () => {
   it("lists every always-required directory plus the site for a Studio that has one", () => {
     const root = tempRoot();
-    const config = loadConfig({
-      STUDIO_CONFIG: SITE_STUDIO_CONFIG,
-      DATA_DIR: join(root, "data"),
-      MEDIA_CACHE_DIR: join(root, "media-cache"),
-      STUDIO_MEDIA_DIR: join(root, "video-media"),
-      VIDEO_MEDIA_DIR: join(root, "video-media"),
-      SITE_PUBLIC_DIR: join(root, "site"),
-    });
-    // Repo studio.yaml: site enabled. Video directories are always required.
+    const config = loadTestConfig(
+      {
+        DATA_DIR: join(root, "data"),
+        MEDIA_CACHE_DIR: join(root, "media-cache"),
+        STUDIO_MEDIA_DIR: join(root, "video-media"),
+        VIDEO_MEDIA_DIR: join(root, "video-media"),
+        SITE_PUBLIC_DIR: join(root, "site"),
+      },
+      SITE_STUDIO_PROFILE,
+    );
+    // Video directories are always required.
     const names = requiredDataDirectories(config).map((entry) => entry.name);
     expect(names).toContain("DATA_DIR");
     expect(names).toContain("MEDIA_CACHE_DIR");
@@ -45,34 +46,9 @@ describe("requiredDataDirectories", () => {
     expect(names).toContain("SITE_PUBLIC_DIR");
     // STUDIO_MEDIA_DIR and VIDEO_MEDIA_DIR resolve to one path here: listed once.
     expect(names).toContain("STUDIO_MEDIA_DIR");
-    expect(names).toContain("REMOTE_MEDIA_PATH");
-  });
-
-  it("omits the site directory for a Studio without a public site", () => {
-    const root = tempRoot();
-    // Absolute path: loadStudioConfig resolves a relative STUDIO_CONFIG against
-    // process.cwd(), which differs between a root-level `bun test` run and
-    // `bun run --filter @alexgetman/backend test` (cwd apps/backend).
-    const config = loadConfig({
-      STUDIO_CONFIG: join(import.meta.dir, "../../../studio.maru.yaml"),
-      YOUTUBE_RU_CLIENT_ID: "test",
-      YOUTUBE_RU_CLIENT_SECRET: "test",
-      YOUTUBE_RU_REFRESH_TOKEN: "test",
-      INSTAGRAM_RU_ACCESS_TOKEN: "test",
-      INSTAGRAM_RU_USER_ID: "test",
-      DATA_DIR: join(root, "data"),
-      MEDIA_CACHE_DIR: join(root, "media-cache"),
-      STUDIO_MEDIA_DIR: join(root, "video-media"),
-      VIDEO_MEDIA_DIR: join(root, "video-media"),
-      SITE_PUBLIC_DIR: join(root, "site"),
-    });
-    const entries = requiredDataDirectories(config);
-    const names = entries.map((entry) => entry.name);
-    expect(names).toContain("STUDIO_MEDIA_DIR");
-    // Same resolved path as STUDIO_MEDIA_DIR in this config: listed once.
     expect(names).not.toContain("VIDEO_MEDIA_DIR");
-    expect(names).not.toContain("SITE_PUBLIC_DIR");
-    expect(entries.filter((entry) => entry.path === join(root, "video-media"))).toHaveLength(1);
+    expect(requiredDataDirectories(config).filter((entry) => entry.path === join(root, "video-media"))).toHaveLength(1);
+    expect(names).toContain("REMOTE_MEDIA_PATH");
   });
 });
 

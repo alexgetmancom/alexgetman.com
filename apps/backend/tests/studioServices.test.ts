@@ -2,16 +2,16 @@ import { describe, expect, it } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadConfig } from "../src/foundation/config.js";
 import { flushUsage } from "../src/observability/usage.js";
 import { createStudioServices } from "../src/studio/services/index.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("Studio service boundaries", () => {
   it("reuses the service bundle for one database and configuration", () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({});
+      const config = loadTestConfig({});
       expect(createStudioServices(backendDb, config)).toBe(createStudioServices(backendDb, config));
     } finally {
       backendDb.close();
@@ -22,7 +22,7 @@ describe("Studio service boundaries", () => {
     const backendDb = openBackendDb(":memory:");
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "studio-service-media-"));
     try {
-      const config = loadConfig({ STUDIO_MEDIA_DIR: directory, STUDIO_MEDIA_MAX_BYTES: "1000" });
+      const config = loadTestConfig({ STUDIO_MEDIA_DIR: directory, STUDIO_MEDIA_MAX_BYTES: "1000" });
       const media = createStudioServices(backendDb, config).media;
       const bytes = new Uint8Array([1, 2, 3, 4]);
       const first = await media.import(42, {
@@ -51,7 +51,7 @@ describe("Studio service boundaries", () => {
   it("keeps locale and YouTube signature in the shared settings service", () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const settings = createStudioServices(backendDb, loadConfig({})).settings;
+      const settings = createStudioServices(backendDb, loadTestConfig({})).settings;
       expect(settings.locale(42)).toBe("en");
       settings.setLocale(42, "ru");
       expect(settings.locale(42)).toBe("ru");
@@ -72,7 +72,7 @@ describe("Studio service boundaries", () => {
   it("registers channels through the shared channel service", () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig({});
+      const config = loadTestConfig({});
       const channels = createStudioServices(backendDb, config).channels;
       const result = channels.connect({
         platform: "instagram",
@@ -99,7 +99,7 @@ describe("Studio service boundaries", () => {
   it("keeps every analytics operation behind the shared Studio boundary", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const analytics = createStudioServices(backendDb, loadConfig({})).analytics;
+      const analytics = createStudioServices(backendDb, loadTestConfig({})).analytics;
 
       expect(analytics.postArchive(0, "en").total).toBe(0);
       expect(typeof analytics.postMetrics(999, "en")).toBe("string");

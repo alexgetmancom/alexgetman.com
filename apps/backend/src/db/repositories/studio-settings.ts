@@ -7,6 +7,7 @@ import {
   studioNewsDigestSettings,
   studioNotificationJobs,
   studioNotificationSettings,
+  studioProfile,
   studioWeeklyDigestSettings,
 } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
@@ -14,6 +15,19 @@ import type { BackendDatabase } from "../types.js";
 /** SQLite adapter for owner and Studio-wide settings. */
 export function createStudioSettingsStore(db: BackendDatabase): StudioSettingsStore {
   return {
+    profile() {
+      const row = db.select().from(studioProfile).where(eq(studioProfile.id, 1)).get();
+      // The migration inserts row 1, so a missing row means the file was
+      // hand-edited or restored from a partial copy. Failing here is better
+      // than silently serving someone a Studio with no identity.
+      if (!row) throw new Error("studio_profile row 1 is missing; restore the database or re-run migrations");
+      return row;
+    },
+
+    saveProfile(input) {
+      db.update(studioProfile).set(input).where(eq(studioProfile.id, 1)).run();
+    },
+
     notifications(actorId) {
       return db.select().from(studioNotificationSettings).where(eq(studioNotificationSettings.actorId, actorId)).get() ?? null;
     },

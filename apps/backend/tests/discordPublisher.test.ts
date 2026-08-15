@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { deleteDiscordMessage, publishToDiscord, verifyDiscordMessage } from "../src/delivery/social/discord.js";
-import { loadConfig } from "../src/foundation/config.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 /**
  * Discord's create-message API is a single call, so what is worth pinning here
@@ -9,7 +9,7 @@ import { loadConfig } from "../src/foundation/config.js";
  * the permalink is only claimed when the guild is known.
  */
 
-const config = loadConfig({
+const config = loadTestConfig({
   DISCORD_BOT_TOKEN: "bot-token",
   DISCORD_CHANNEL_ID: "555",
   DISCORD_GUILD_ID: "777",
@@ -86,7 +86,7 @@ describe("Discord publisher", () => {
 
   it("leaves the permalink unset when the guild is not configured", async () => {
     const { fetchImpl } = transport(["42"]);
-    const withoutGuild = loadConfig({ DISCORD_BOT_TOKEN: "bot-token", DISCORD_CHANNEL_ID: "555" });
+    const withoutGuild = loadTestConfig({ DISCORD_BOT_TOKEN: "bot-token", DISCORD_CHANNEL_ID: "555" });
     const result = await publishToDiscord({ text: "Hello" }, withoutGuild, fetchImpl);
 
     expect(result).toMatchObject({ ok: true, id: "42", url: null });
@@ -94,7 +94,7 @@ describe("Discord publisher", () => {
 
   it("refuses to publish without credentials instead of calling the API", async () => {
     const { calls, fetchImpl } = transport();
-    await expect(publishToDiscord({ text: "Hello" }, loadConfig({}), fetchImpl)).rejects.toThrow(
+    await expect(publishToDiscord({ text: "Hello" }, loadTestConfig({}), fetchImpl)).rejects.toThrow(
       "Discord is not configured: DISCORD_BOT_TOKEN, DISCORD_CHANNEL_ID",
     );
     expect(calls).toHaveLength(0);

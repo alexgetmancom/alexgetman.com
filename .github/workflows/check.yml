@@ -72,11 +72,11 @@ jobs:
                 backend_image=true
                 deployment=true
                 ;;
-              apps/web/*|apps/backend/src/*|apps/backend/assets/*|apps/backend/drizzle/*|apps/backend/tsconfig.json|apps/backend/Dockerfile.release|apps/backend/Dockerfile.runtime-base|astro.config.ts|bunfig.toml|scripts/generate-responsive-images.ts|scripts/image-smoke.ts|apps/backend/tests/helpers/studio-site.yaml|svelte.config.ts|tsconfig.base.json|tsconfig.json)
+              apps/web/*|apps/backend/src/*|apps/backend/assets/*|apps/backend/drizzle/*|apps/backend/tsconfig.json|apps/backend/Dockerfile.release|apps/backend/Dockerfile.runtime-base|astro.config.ts|bunfig.toml|scripts/generate-responsive-images.ts|scripts/image-smoke.ts|svelte.config.ts|tsconfig.base.json|tsconfig.json)
                 backend_image=true
                 deployment=true
                 ;;
-              deploy/alex.compose.yaml | deploy/maru.compose.yaml | studio.alex.yaml | studio.maru.yaml)
+              deploy/alex.compose.yaml | deploy/maru.compose.yaml)
                 deployment=true
                 ;;
               deploy/deploy-agent.ts | deploy/retry.ts)
@@ -251,9 +251,7 @@ jobs:
           bun build apps/backend/src/runtime/config-check.ts --outdir entrypoint --target bun --minify --sourcemap=external
           test -f entrypoint/docker-entrypoint.js
           test -f entrypoint/config-check.js
-          STUDIO_CONFIG="$PWD/studio.alex.yaml" bun entrypoint/config-check.js
-          STUDIO_CONFIG="$PWD/studio.maru.yaml" bun entrypoint/config-check.js
-          STUDIO_CONFIG="$PWD/studio.yaml" bun entrypoint/config-check.js
+          bun entrypoint/config-check.js
           grep -q '"/app/entrypoint/docker-entrypoint.js"' apps/backend/Dockerfile
           grep -q '"/app/entrypoint/docker-entrypoint.js"' apps/backend/Dockerfile.release
           bun build apps/backend/src/story-cards/renderer-process.ts --outdir story-renderer --target bun --minify --sourcemap=external

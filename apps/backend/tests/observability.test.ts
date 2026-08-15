@@ -2,7 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
 import { alertDedup, channelConnections, credentialChecks, postEvents, publishJobs, siteJobs, workerState } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
+import type { BackendConfig } from "../src/foundation/config.js";
 import { expectedWorkerNames } from "../src/foundation/runtime/worker-state.js";
 import { renderDashboard } from "../src/interfaces/web/dashboard.js";
 import { deliverPendingAlerts } from "../src/observability/alerts.js";
@@ -12,13 +12,14 @@ import { recordMemoryPressure } from "../src/observability/runtime-health.js";
 import { commandCenterPayload } from "../src/operations/command-center.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 function testHarness() {
   const backendDb = openBackendDb(":memory:");
   registerTestChannels(backendDb, [...TEXT_TEST_CHANNELS, ...VIDEO_TEST_CHANNELS]);
   const sendMessage = mock(async () => ({ message_id: 1, date: 1, chat: { id: 42, type: "private" as const } }));
   const alertsPort = { sendAlert: async (_text: string) => void (await sendMessage()) };
-  const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "token", ALERT_COOLDOWN_SECONDS: "3600" });
+  const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "token", ALERT_COOLDOWN_SECONDS: "3600" });
   return { backendDb, sendMessage, alertsPort, config };
 }
 
@@ -307,7 +308,7 @@ function insertWorker(backendDb: ReturnType<typeof openBackendDb>, name: string,
 
 function insertExpectedWorkers(
   backendDb: ReturnType<typeof openBackendDb>,
-  config: ReturnType<typeof loadConfig>,
+  config: BackendConfig,
   overrides: Record<string, Record<string, boolean | string>> = {},
 ): void {
   for (const name of expectedWorkerNames(config)) insertWorker(backendDb, name, overrides[name] ?? { phase: "idle" });
@@ -338,7 +339,7 @@ describe("healthReport", () => {
   it("scopes health and dashboard credentials to registered channels", () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const config = loadConfig(READY_ENV);
+      const config = loadTestConfig(READY_ENV);
       setHealthChannels(backendDb, ["telegram"]);
       insertCredential(backendDb, "telegram", "ready");
       insertCredential(backendDb, "threads_ru", "missing");
@@ -364,7 +365,7 @@ describe("healthReport", () => {
     try {
       setHealthChannels(backendDb, ["x"]);
       insertCredential(backendDb, "x", "ready");
-      const config = loadConfig(READY_ENV);
+      const config = loadTestConfig(READY_ENV);
       insertExpectedWorkers(backendDb, config);
       const report = healthReport(config, backendDb);
 
@@ -385,7 +386,7 @@ describe("healthReport", () => {
       insertCredential(backendDb, "threads_ru", "expired");
       insertWorker(backendDb, "publisher", { ok: true });
 
-      expect(healthReport(loadConfig(READY_ENV), backendDb).ok).toBe(false);
+      expect(healthReport(loadTestConfig(READY_ENV), backendDb).ok).toBe(false);
     } finally {
       backendDb.close();
     }
@@ -396,7 +397,7 @@ describe("healthReport", () => {
     try {
       setHealthChannels(backendDb, ["x"]);
       insertCredential(backendDb, "x", "ready");
-      const config = loadConfig(READY_ENV);
+      const config = loadTestConfig(READY_ENV);
       insertExpectedWorkers(backendDb, config, { queue: { ok: false, lastError: "stalled" } });
       expect(healthReport(config, backendDb).ok).toBe(false);
     } finally {
@@ -407,7 +408,7 @@ describe("healthReport", () => {
     try {
       setHealthChannels(clean, ["x"]);
       insertCredential(clean, "x", "ready");
-      const config = loadConfig(READY_ENV);
+      const config = loadTestConfig(READY_ENV);
       insertExpectedWorkers(clean, config);
       expect(healthReport(config, clean).ok).toBe(true);
     } finally {
@@ -428,7 +429,7 @@ describe("healthReport", () => {
           updatedAt: "2000-01-01T00:00:00.000Z",
         })
         .run();
-      const report = healthReport(loadConfig(READY_ENV), backendDb);
+      const report = healthReport(loadTestConfig(READY_ENV), backendDb);
       expect(report.ok).toBe(false);
       expect(report.workers.find((worker) => worker.name === "queue")).toMatchObject({ stale: true });
     } finally {
@@ -443,7 +444,7 @@ describe("healthReport", () => {
       insertCredential(backendDb, "x", "ready");
       insertWorker(backendDb, "publisher", { ok: true });
       const { CONTROLLER_ADMIN_IDS, CONTROLLER_BOT_TOKEN } = READY_ENV;
-      const report = healthReport(loadConfig({ CONTROLLER_ADMIN_IDS, CONTROLLER_BOT_TOKEN }), backendDb);
+      const report = healthReport(loadTestConfig({ CONTROLLER_ADMIN_IDS, CONTROLLER_BOT_TOKEN }), backendDb);
 
       expect(report.ok).toBe(false);
       expect(report.capabilities.find((capability) => capability.target === "x")).toMatchObject({
@@ -463,7 +464,7 @@ describe("healthReport", () => {
       insertAlertEvent(backendDb, "error", checkedAt);
       insertAlertEvent(backendDb, "info", null);
 
-      expect(healthReport(loadConfig(READY_ENV), backendDb).pendingAlerts).toBe(2);
+      expect(healthReport(loadTestConfig(READY_ENV), backendDb).pendingAlerts).toBe(2);
     } finally {
       backendDb.close();
     }
@@ -473,9 +474,9 @@ describe("healthReport", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       backendDb.db.delete(channelConnections).run();
-      const report = healthReport(loadConfig(READY_ENV), backendDb);
+      const report = healthReport(loadTestConfig(READY_ENV), backendDb);
       expect(report).toMatchObject({ ok: false, pendingAlerts: 0, credentials: [], workers: [] });
-      expect(report.missingWorkers).toEqual(expectedWorkerNames(loadConfig(READY_ENV)));
+      expect(report.missingWorkers).toEqual(expectedWorkerNames(loadTestConfig(READY_ENV)));
     } finally {
       backendDb.close();
     }

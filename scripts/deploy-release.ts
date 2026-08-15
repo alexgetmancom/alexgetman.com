@@ -42,7 +42,7 @@ const IMAGE_PATTERN = "^ghcr.io/alexgetmancom/solo-publisher@sha256:[0-9a-fA-F]{
  * it: a run that fails after the commit that changed it would otherwise leave
  * the host on a configuration the repository has moved past, and no later run
  * would ever mention those files again. */
-const ALWAYS_SHIPPED = ["deploy/alex.compose.yaml", "deploy/maru.compose.yaml", "studio.alex.yaml", "studio.maru.yaml"];
+const ALWAYS_SHIPPED = ["deploy/alex.compose.yaml", "deploy/maru.compose.yaml"];
 
 export async function deployRelease(inputs: DeployInputs, run: Runner, log: (message: string) => void = console.log): Promise<void> {
   for (const [name, value] of [
@@ -90,9 +90,8 @@ export async function deployRelease(inputs: DeployInputs, run: Runner, log: (mes
 
   await ssh(
     `set -e; cp '${releaseFiles}/deploy/alex.compose.yaml' ${RUNTIME}/compose.yaml.next; ` +
-      `cp '${releaseFiles}/studio.alex.yaml' ${RUNTIME}/studio.yaml.next; ` +
       `docker compose --env-file ${RUNTIME}/deploy-image.env -f ${RUNTIME}/compose.yaml.next config --quiet; ` +
-      `mv ${RUNTIME}/compose.yaml.next ${RUNTIME}/compose.yaml; mv ${RUNTIME}/studio.yaml.next ${RUNTIME}/studio.yaml`,
+      `mv ${RUNTIME}/compose.yaml.next ${RUNTIME}/compose.yaml`,
   );
   if (inputs.deployAgentChanged)
     await ssh(
@@ -104,9 +103,8 @@ export async function deployRelease(inputs: DeployInputs, run: Runner, log: (mes
   if (inputs.maruDeployEnabled)
     await ssh(
       `set -e; cp '${releaseFiles}/deploy/maru.compose.yaml' ${MARU_RUNTIME}/maru.compose.yaml.next; ` +
-        `cp '${releaseFiles}/studio.maru.yaml' ${MARU_RUNTIME}/studio.yaml.next; ` +
         `docker compose --env-file ${MARU_RUNTIME}/deploy-image.env -f ${MARU_RUNTIME}/maru.compose.yaml.next config --quiet; ` +
-        `mv ${MARU_RUNTIME}/maru.compose.yaml.next ${MARU_RUNTIME}/maru.compose.yaml; mv ${MARU_RUNTIME}/studio.yaml.next ${MARU_RUNTIME}/studio.yaml`,
+        `mv ${MARU_RUNTIME}/maru.compose.yaml.next ${MARU_RUNTIME}/maru.compose.yaml`,
     );
   phase("runtime-config");
 

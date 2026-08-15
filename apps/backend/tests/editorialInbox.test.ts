@@ -1,9 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { posts } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { type EditorialInboxBot, sendDailyEditorialInbox } from "../src/interfaces/telegram/editorial-inbox.js";
 import { withDb } from "./helpers/db.js";
-import { MSK_STUDIO_CONFIG } from "./helpers/studio-config.js";
+import { loadTestConfig, MSK_STUDIO_PROFILE } from "./helpers/studio-config.js";
 
 describe("daily editorial inbox", () => {
   it("sends one AI-generated opportunity inbox per Moscow day", async () => {
@@ -39,12 +38,14 @@ describe("daily editorial inbox", () => {
           }),
           { status: 200 },
         );
-      const config = loadConfig({
-        STUDIO_CONFIG: MSK_STUDIO_CONFIG,
-        CONTROLLER_ADMIN_IDS: "42",
-        DEEPSEEK_API_KEY: "key",
-        EDITORIAL_INBOX_HOUR_MSK: "10",
-      });
+      const config = loadTestConfig(
+        {
+          CONTROLLER_ADMIN_IDS: "42",
+          DEEPSEEK_API_KEY: "key",
+          EDITORIAL_INBOX_HOUR_MSK: "10",
+        },
+        MSK_STUDIO_PROFILE,
+      );
       const now = new Date("2026-07-20T07:30:00.000Z");
 
       expect(await sendDailyEditorialInbox(config, backendDb, bot, now, fetchImpl as unknown as typeof fetch)).toBe(true);
@@ -75,12 +76,14 @@ describe("daily editorial inbox", () => {
         return new Response(JSON.stringify({ choices: [{ message: { content: '{"items":[]}' } }] }), { status: 200 });
       }) as unknown as typeof fetch;
       const bot: EditorialInboxBot = { api: { sendMessage: async () => undefined } };
-      const config = loadConfig({
-        STUDIO_CONFIG: MSK_STUDIO_CONFIG,
-        CONTROLLER_ADMIN_IDS: "42",
-        DEEPSEEK_API_KEY: "key",
-        EDITORIAL_INBOX_HOUR_MSK: "10",
-      });
+      const config = loadTestConfig(
+        {
+          CONTROLLER_ADMIN_IDS: "42",
+          DEEPSEEK_API_KEY: "key",
+          EDITORIAL_INBOX_HOUR_MSK: "10",
+        },
+        MSK_STUDIO_PROFILE,
+      );
 
       await sendDailyEditorialInbox(config, backendDb, bot, new Date("2026-07-20T07:30:00.000Z"), fetchImpl);
 
@@ -92,12 +95,14 @@ describe("daily editorial inbox", () => {
   it("waits for the configured Moscow delivery hour", async () => {
     await withDb(async (backendDb) => {
       const bot: EditorialInboxBot = { api: { sendMessage: async () => undefined } };
-      const config = loadConfig({
-        STUDIO_CONFIG: MSK_STUDIO_CONFIG,
-        CONTROLLER_ADMIN_IDS: "42",
-        DEEPSEEK_API_KEY: "key",
-        EDITORIAL_INBOX_HOUR_MSK: "10",
-      });
+      const config = loadTestConfig(
+        {
+          CONTROLLER_ADMIN_IDS: "42",
+          DEEPSEEK_API_KEY: "key",
+          EDITORIAL_INBOX_HOUR_MSK: "10",
+        },
+        MSK_STUDIO_PROFILE,
+      );
       expect(await sendDailyEditorialInbox(config, backendDb, bot, new Date("2026-07-20T06:30:00.000Z"))).toBe(false);
     });
   });

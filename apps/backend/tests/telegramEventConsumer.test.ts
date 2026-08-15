@@ -3,15 +3,14 @@ import type { Bot } from "grammy";
 import { refreshPostControlCard } from "../src/bot/progress.js";
 import { alertDedup, botUiSettings, drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
 import { recordDomainEvent } from "../src/domain/events.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { setTelegramPostCard, setTelegramPostProgressCard, setTelegramVideoCard } from "../src/interfaces/telegram/control-cards.js";
 import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";
 import { refreshVideoControlCard, sendStudioCompletion, sendStudioReminder } from "../src/interfaces/telegram/video-notifications.js";
 import { withDb } from "./helpers/db.js";
-import { MSK_STUDIO_CONFIG } from "./helpers/studio-config.js";
+import { loadTestConfig, MSK_STUDIO_PROFILE } from "./helpers/studio-config.js";
 import { createTestVideoAsset } from "./helpers/video.js";
 
-const config = loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, CONTROLLER_ADMIN_IDS: "42" });
+const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }, MSK_STUDIO_PROFILE);
 
 function milestone(message: string) {
   return { type: "analytics.milestone.reached", severity: "info" as const, message };
@@ -175,7 +174,7 @@ describe("Telegram event consumer", () => {
         options,
       }));
       const bot = { api: { sendMessage } } as unknown as Bot;
-      const sharedConfig = loadConfig({ STUDIO_CONFIG: MSK_STUDIO_CONFIG, CONTROLLER_ADMIN_IDS: "42,7" });
+      const sharedConfig = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42,7" }, MSK_STUDIO_PROFILE);
 
       await sendStudioReminder(backendDb, bot, sharedConfig, {
         postKey: "video:10",

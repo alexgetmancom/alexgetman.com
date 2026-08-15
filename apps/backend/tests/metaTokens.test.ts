@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { applyStoredMetaTokens, installMetaToken, renewMetaTokens } from "../src/channels/meta-tokens.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { withDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 const KEY = "ab".repeat(32);
 const base = { TOKEN_ENCRYPTION_KEY: KEY, THREADS_RU_ACCESS_TOKEN: "seed-token" };
@@ -26,7 +26,7 @@ describe("meta token renewal", () => {
     withDb(async (backendDb) => {
       // Meta renews by issuing a new token, so the renewal has to be stored: the
       // .env file is the host's and read-only.
-      const config = loadConfig(base);
+      const config = loadTestConfig(base);
       const { fetchImpl } = renewer({ "graph.threads.net": "renewed-token" });
 
       expect(await renewMetaTokens(config, backendDb, fetchImpl, longAgo)).toContainEqual({ target: "threads_ru", status: "renewed" });
@@ -34,14 +34,14 @@ describe("meta token renewal", () => {
       expect(config.THREADS_RU_ACCESS_TOKEN).toBe("renewed-token");
 
       // A fresh process reads it back out of the database.
-      const restarted = loadConfig(base);
+      const restarted = loadTestConfig(base);
       applyStoredMetaTokens(restarted, backendDb);
       expect(restarted.THREADS_RU_ACCESS_TOKEN).toBe("renewed-token");
     }));
 
   it("leaves a recently renewed token alone", () =>
     withDb(async (backendDb) => {
-      const config = loadConfig(base);
+      const config = loadTestConfig(base);
       const { fetchImpl, calls } = renewer({ "graph.threads.net": "renewed-token" });
       await renewMetaTokens(config, backendDb, fetchImpl, longAgo);
       const after = calls.length;
@@ -60,11 +60,11 @@ describe("meta token renewal", () => {
       // A Studio switched off for two months comes back with a token Meta will
       // no longer renew, and the human puts a new one in .env. That is newer
       // intent than anything stored, and the stored one must not win.
-      const config = loadConfig(base);
+      const config = loadTestConfig(base);
       const { fetchImpl } = renewer({ "graph.threads.net": "renewed-token" });
       await renewMetaTokens(config, backendDb, fetchImpl, longAgo);
 
-      const replaced = loadConfig({ ...base, THREADS_RU_ACCESS_TOKEN: "hand-issued-token" });
+      const replaced = loadTestConfig({ ...base, THREADS_RU_ACCESS_TOKEN: "hand-issued-token" });
       applyStoredMetaTokens(replaced, backendDb);
       expect(replaced.THREADS_RU_ACCESS_TOKEN).toBe("hand-issued-token");
     }));
@@ -73,7 +73,7 @@ describe("meta token renewal", () => {
     withDb(async (backendDb) => {
       // Every install worked this way before the feature existed, and an install
       // that has not opted in keeps working exactly like that.
-      const config = loadConfig({ THREADS_RU_ACCESS_TOKEN: "seed-token" });
+      const config = loadTestConfig({ THREADS_RU_ACCESS_TOKEN: "seed-token" });
       const { fetchImpl, calls } = renewer({ "graph.threads.net": "renewed-token" });
 
       expect(await renewMetaTokens(config, backendDb, fetchImpl, longAgo)).toEqual([]);
@@ -84,7 +84,7 @@ describe("meta token renewal", () => {
   it("keeps the credential out of the backup in readable form", () =>
     withDb(async (backendDb) => {
       // This table travels in the daily backup to a chat.
-      const config = loadConfig(base);
+      const config = loadTestConfig(base);
       const { fetchImpl } = renewer({ "graph.threads.net": "renewed-token" });
       await renewMetaTokens(config, backendDb, fetchImpl, longAgo);
 
@@ -95,12 +95,12 @@ describe("meta token renewal", () => {
 
   it("loads a browser-issued token and Instagram account id without an env seed", () =>
     withDb((backendDb) => {
-      const running = loadConfig({ TOKEN_ENCRYPTION_KEY: KEY });
+      const running = loadTestConfig({ TOKEN_ENCRYPTION_KEY: KEY });
       installMetaToken(running, backendDb, "instagram_ru", "oauth-token", "ig-42", longAgo);
       expect(running.INSTAGRAM_RU_ACCESS_TOKEN).toBe("oauth-token");
       expect(running.INSTAGRAM_RU_USER_ID).toBe("ig-42");
 
-      const restarted = loadConfig({ TOKEN_ENCRYPTION_KEY: KEY });
+      const restarted = loadTestConfig({ TOKEN_ENCRYPTION_KEY: KEY });
       applyStoredMetaTokens(restarted, backendDb);
       expect(restarted.INSTAGRAM_RU_ACCESS_TOKEN).toBe("oauth-token");
       expect(restarted.INSTAGRAM_RU_USER_ID).toBe("ig-42");
@@ -111,7 +111,7 @@ describe("meta token renewal", () => {
 
   it("reports a refusal instead of silently leaving a dying token in place", () =>
     withDb(async (backendDb) => {
-      const config = loadConfig(base);
+      const config = loadTestConfig(base);
       const { fetchImpl } = renewer({});
 
       expect(await renewMetaTokens(config, backendDb, fetchImpl, later)).toContainEqual({ target: "threads_ru", status: "failed" });
@@ -126,9 +126,15 @@ describe("a token connected through the browser", () => {
       // .env is not where that account's token lives and editing it changes
       // nothing. Documented, and warned about at startup, because silence here
       // costs an hour.
-      installMetaToken(loadConfig({ TOKEN_ENCRYPTION_KEY: KEY }), backendDb, "threads_ru", "browser-installed-token", "17841405793187218");
+      installMetaToken(
+        loadTestConfig({ TOKEN_ENCRYPTION_KEY: KEY }),
+        backendDb,
+        "threads_ru",
+        "browser-installed-token",
+        "17841405793187218",
+      );
 
-      const restarted = loadConfig({ TOKEN_ENCRYPTION_KEY: KEY, THREADS_RU_ACCESS_TOKEN: "hand-issued-token" });
+      const restarted = loadTestConfig({ TOKEN_ENCRYPTION_KEY: KEY, THREADS_RU_ACCESS_TOKEN: "hand-issued-token" });
       applyStoredMetaTokens(restarted, backendDb);
 
       expect(restarted.THREADS_RU_ACCESS_TOKEN).toBe("browser-installed-token");

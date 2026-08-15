@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { registerChannel, targetRouting } from "../src/channels/registry.js";
 import { createPlatformAdapters } from "../src/delivery/platform-adapters.js";
-import { loadConfig } from "../src/foundation/config.js";
 import { capabilityReport } from "../src/observability/capabilities.js";
 import type { ClaimedPublishJob } from "../src/publishing/queue.js";
 import { withDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
-const zernioConfig = loadConfig({ ZERNIO_API_KEY: "z".repeat(16), THREADS_RU_ACCESS_TOKEN: "native-token" });
+const zernioConfig = loadTestConfig({ ZERNIO_API_KEY: "z".repeat(16), THREADS_RU_ACCESS_TOKEN: "native-token" });
 
 function job(overrides: Record<string, unknown> = {}): ClaimedPublishJob {
   return {
@@ -95,7 +95,7 @@ describe("delivery through a provider", () => {
       registerChannel(backendDb, { platform: "threads", locale: "ru", provider: "zernio", targetId: "threads_ru" });
       registerChannel(backendDb, { platform: "threads", locale: "en", provider: "native", targetId: "threads_en" });
 
-      const report = new Map(capabilityReport(loadConfig({}), backendDb).map((entry) => [entry.target, entry.required]));
+      const report = new Map(capabilityReport(loadTestConfig({}), backendDb).map((entry) => [entry.target, entry.required]));
       expect(report.get("threads_ru")).toEqual(["ZERNIO_API_KEY"]);
       expect(report.get("threads_en")).toEqual(["THREADS_EN_ACCESS_TOKEN"]);
 

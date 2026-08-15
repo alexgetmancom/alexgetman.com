@@ -1,13 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import type { Bot } from "grammy";
-import { loadConfig } from "../src/foundation/config.js";
 import { startTelegramWorkers } from "../src/interfaces/telegram/worker.js";
 import { withDb } from "./helpers/db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("Telegram interface workers", () => {
   it("runs event delivery, alerts and slow daily jobs in independent loops", async () => {
     await withDb(async (backendDb) => {
-      const config = loadConfig({ CONTROLLER_ADMIN_IDS: "42" });
+      const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
       const bot = { api: {} } as Bot;
       const workers = startTelegramWorkers(config, backendDb, bot);
       try {

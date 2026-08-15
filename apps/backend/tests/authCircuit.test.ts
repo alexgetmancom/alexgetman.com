@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { credentialChecks, type JsonObject } from "../src/db/schema.js";
-import { loadConfig } from "../src/foundation/config.js";
 import {
   isTargetAuthBlocked,
   recordAuthFailure,
@@ -15,6 +14,7 @@ import {
 import { HttpPublishError } from "../src/publishing/errors.js";
 import { claimDuePublishJobs, enqueuePublishJobTx, failPublishJob } from "../src/publishing/queue.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { loadTestConfig } from "./helpers/studio-config.js";
 
 function tempDb() {
   const dir = mkdtempSync(join(tmpdir(), "alexgetman-auth-circuit-"));
@@ -80,7 +80,7 @@ describe("auth circuit breaker", () => {
         const id = enqueue(i);
         const [claimed] = claimDuePublishJobs(backendDb, 1);
         if (!claimed) throw new Error("job was not claimed");
-        failPublishJob(backendDb, loadConfig({}), id, new HttpPublishError("unauthorized", 401), claimed.lockId);
+        failPublishJob(backendDb, loadTestConfig({}), id, new HttpPublishError("unauthorized", 401), claimed.lockId);
       }
 
       expect(isTargetAuthBlocked(backendDb, "test_platform")).toBe(true);
