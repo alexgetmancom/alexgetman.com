@@ -33,8 +33,12 @@ export async function settleVideoTarget(
     .where(and(eq(videoTargets.videoDraftId, input.videoDraftId), eq(videoTargets.target, input.target)))
     .get();
   if (!row) throw new Error(`video:${input.videoDraftId} has no ${input.target} target`);
-  if (row.status !== "verification_required")
-    throw new Error(`${input.target} is ${row.status}, and only a target awaiting verification is settled this way`);
+  // What this answers is "the provider has it, the platform link is unknown",
+  // which a target wears either as verification_required or as a published row
+  // with nothing to link to. Anything that already carries a link is settled.
+  if (row.externalId || row.externalUrl) throw new Error(`${input.target} already has its platform publication`);
+  if (row.status !== "verification_required" && row.status !== "published")
+    throw new Error(`${input.target} is ${row.status}, and only a target awaiting its platform link is settled this way`);
   if (row.deliveryProvider !== "zernio")
     throw new Error(`${input.target} is delivered natively, which has no idempotent replay: settle it from what the platform shows`);
   const accountId = row.providerAccountId;
@@ -52,15 +56,20 @@ export async function settleVideoTarget(
   );
   const now = new Date().toISOString();
   const settled = Boolean(result.externalId || result.url);
+  // The provider publishes asynchronously, so a create that returns no platform
+  // link is not finished — it is exactly the state the reconciliation loop
+  // exists to close, and that loop only sees verification_required. Marking it
+  // published here is how the link stopped arriving: the row left the only
+  // sweep that could have filled it, carrying no link forever.
   unsafeDb(backendDb)
     .db.update(videoTargets)
     .set({
-      status: "published",
+      status: settled ? "published" : "verification_required",
       providerPostId: result.providerPostId,
       externalId: result.externalId,
       externalUrl: result.url,
-      publishedAt: now,
-      lastError: null,
+      publishedAt: row.publishedAt ?? (settled ? now : null),
+      lastError: settled ? null : "awaiting the platform link from the provider",
       confirmationSource: settled ? "provider_verify" : "idempotency_replay",
       verifiedAt: settled ? now : null,
       updatedAt: now,
@@ -68,5 +77,12 @@ export async function settleVideoTarget(
     .where(eq(videoTargets.id, row.id))
     .run();
   refreshVideoDraftStatus(backendDb, input.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
-  return { ...plan, applied: true, providerPostId: result.providerPostId, externalId: result.externalId, url: result.url };
+  return {
+    ...plan,
+    applied: true,
+    providerPostId: result.providerPostId,
+    externalId: result.externalId,
+    url: result.url,
+    status: settled ? "published" : "verification_required",
+  };
 }
