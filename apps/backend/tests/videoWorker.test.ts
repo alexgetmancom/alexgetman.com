@@ -299,9 +299,7 @@ describe("video job execution", () => {
     reset();
     await withDirectory(async (directory) => {
       const backendDb = testDb.open();
-      const config = videoConfig(directory, {
-        ZERNIO_API_KEY: "z".repeat(16),
-      });
+      const config = Object.assign(videoConfig(directory), { ZERNIO_API_KEY: "z".repeat(16) });
       registerChannel(backendDb, {
         platform: "instagram",
         locale: "ru",

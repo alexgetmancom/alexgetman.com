@@ -9,11 +9,7 @@ import { loadTestConfig } from "./helpers/studio-config.js";
  * the permalink is only claimed when the guild is known.
  */
 
-const config = loadTestConfig({
-  DISCORD_BOT_TOKEN: "bot-token",
-  DISCORD_CHANNEL_ID: "555",
-  DISCORD_GUILD_ID: "777",
-});
+const config = Object.assign(loadTestConfig({ DISCORD_CHANNEL_ID: "555", DISCORD_GUILD_ID: "777" }), { DISCORD_BOT_TOKEN: "bot-token" });
 
 type Recorded = { url: string; method: string; authorization: string | null; body: unknown };
 
@@ -86,7 +82,7 @@ describe("Discord publisher", () => {
 
   it("leaves the permalink unset when the guild is not configured", async () => {
     const { fetchImpl } = transport(["42"]);
-    const withoutGuild = loadTestConfig({ DISCORD_BOT_TOKEN: "bot-token", DISCORD_CHANNEL_ID: "555" });
+    const withoutGuild = Object.assign(loadTestConfig({ DISCORD_CHANNEL_ID: "555" }), { DISCORD_BOT_TOKEN: "bot-token" });
     const result = await publishToDiscord({ text: "Hello" }, withoutGuild, fetchImpl);
 
     expect(result).toMatchObject({ ok: true, id: "42", url: null });

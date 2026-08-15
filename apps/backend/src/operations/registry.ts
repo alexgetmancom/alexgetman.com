@@ -5,6 +5,7 @@ import { attachXActivityToPosts } from "../analytics/x-activity-linking.js";
 import { xAnalyticsReport } from "../analytics/x-activity-report.js";
 import type { LocalizedProfiles, LocalizedText } from "../application/ports.js";
 import { targetDefinition } from "../botTargets.js";
+import { API_KEY_TARGETS, storeApiKey } from "../channels/api-keys.js";
 import { type BackendDb, baselineDrizzleMigrations, migrationStatus, unsafeDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -676,6 +677,16 @@ const operationDefs = {
     mutates: true,
     agent: true,
     handler: (context, input) => disableChannel(context.db(), input.channel),
+  }),
+  "credential-set": operation({
+    summary: "Store an API key this Studio is handed rather than negotiates.",
+    note: 'Reads the key from standard input, so it never appears in a command line or a shell history: `printf %s "$KEY" | ops credential-set --target zernio`. The key is checked against the service before it is stored, and .env is not consulted for it afterwards.',
+    schema: z.object({ target: z.enum(API_KEY_TARGETS).describe("service the key belongs to") }),
+    mutates: true,
+    // Writes a credential, and reads it from the terminal running the command.
+    agent: false,
+    handler: async (context, input) => storeApiKey(context.config(), context.db(), input.target, await Bun.stdin.text(), context.fetchImpl),
+    format: (result: { target: string; account: string }) => `${result.target} key stored (${result.account})`,
   }),
   "telegram-stories-login": operation({
     summary: "Sign this Studio's Stories account in and store its session.",

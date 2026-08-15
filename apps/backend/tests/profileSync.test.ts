@@ -34,7 +34,7 @@ describe("creator profile sync boundary", () => {
         provider: "zernio",
         providerAccountId: "account-1",
       });
-      const config = loadTestConfig({ ZERNIO_API_KEY: "a".repeat(16) });
+      const config = Object.assign(loadTestConfig({}), { ZERNIO_API_KEY: "a".repeat(16) });
       const fetchMock = (async () =>
         new Response(JSON.stringify([{ _id: "account-1", username: "marux_play", followersCount: 306 }]))) as unknown as typeof fetch;
       expect(

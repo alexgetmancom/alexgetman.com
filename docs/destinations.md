@@ -27,14 +27,14 @@ are connected by naming their platform and language.
 | --- | --- | --- |
 | Website | `--target site_ru` / `site_en` | nothing, plus `ops studio-profile-set --site-enabled` |
 | Telegram channel | `--target telegram` | `CONTROLLER_BOT_TOKEN` |
-| Discord | `--target discord` | `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID` |
-| Threads | Studio → Channels, RU or EN | `THREADS_APP_ID`, `THREADS_APP_SECRET`, `TOKEN_ENCRYPTION_KEY`, or `ZERNIO_API_KEY` |
+| Discord | `--target discord` | `DISCORD_CHANNEL_ID`, then `ops credential-set --target discord` |
+| Threads | Studio → Channels, RU or EN | `THREADS_APP_ID`, `THREADS_APP_SECRET`, `TOKEN_ENCRYPTION_KEY`, or a stored Zernio key |
 | X | `--target x` | `X_CLIENT_ID`, `X_CLIENT_SECRET`, then connect in Studio → Channels |
-| Instagram Stories | Studio → Channels, RU or EN | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `TOKEN_ENCRYPTION_KEY`, or `ZERNIO_API_KEY` |
+| Instagram Stories | Studio → Channels, RU or EN | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `TOKEN_ENCRYPTION_KEY`, or a stored Zernio key |
 | Telegram Stories | `--target telegram_stories` | `TELEGRAM_CHANNEL_STORIES_API_ID`, `_API_HASH`, `_SESSION` |
 | YouTube | `--platform youtube --locale ru` | `YOUTUBE_*_CLIENT_ID`, `_CLIENT_SECRET`, `_REFRESH_TOKEN` |
-| Instagram feed and Reels | Studio → Channels, RU or EN | same native Instagram login, or `ZERNIO_API_KEY` |
-| TikTok | `--platform tiktok --provider zernio` | `ZERNIO_API_KEY` — analytics only, never published to |
+| Instagram feed and Reels | Studio → Channels, RU or EN | same native Instagram login, or a stored Zernio key |
+| TikTok | `--platform tiktok --provider zernio` | a stored Zernio key — analytics only, never published to |
 
 ## Native or through a provider
 
@@ -63,9 +63,14 @@ people's accounts is the point at which Meta review matters.
 docker compose exec app bun /app/ops/cli.js channel-connect --target threads_en --provider zernio --account-id <id>
 ```
 
-A channel connected this way needs one `ZERNIO_API_KEY` instead of the
-platform's tokens — for feed posts, for Threads and for Stories alike — and
-`doctor` asks for exactly that. In the Telegram bot, Settings → Channels lists
+A channel connected this way needs one Zernio key instead of the platform's
+tokens — for feed posts, for Threads and for Stories alike — and `doctor` asks
+for exactly that. The key is not an .env setting: it is checked against Zernio
+and stored sealed in this Studio's database, the way an OAuth token is.
+
+```bash
+printf %s "$ZERNIO_KEY" | docker compose exec -T app bun /app/ops/cli.js credential-set --target zernio
+``` In the Telegram bot, Settings → Channels lists
 the accounts the provider reports so you can pick one instead of typing an id.
 
 Native remains the default: a destination no provider carries is delivered

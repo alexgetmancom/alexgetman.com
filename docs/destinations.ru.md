@@ -27,14 +27,14 @@ docker compose exec app bun /app/ops/cli.js doctor
 | --- | --- | --- |
 | Сайт | `--target site_ru` / `site_en` | ничего, плюс `ops studio-profile-set --site-enabled` |
 | Telegram-канал | `--target telegram` | `CONTROLLER_BOT_TOKEN` |
-| Discord | `--target discord` | `DISCORD_BOT_TOKEN`, `DISCORD_CHANNEL_ID` |
-| Threads | Studio → Каналы, RU или EN | `THREADS_APP_ID`, `THREADS_APP_SECRET`, `TOKEN_ENCRYPTION_KEY` либо `ZERNIO_API_KEY` |
+| Discord | `--target discord` | `DISCORD_CHANNEL_ID`, затем `ops credential-set --target discord` |
+| Threads | Studio → Каналы, RU или EN | `THREADS_APP_ID`, `THREADS_APP_SECRET`, `TOKEN_ENCRYPTION_KEY` либо сохранённый ключ Zernio |
 | X | `--target x` | `X_CLIENT_ID`, `X_CLIENT_SECRET`, затем подключить в Studio → Channels |
-| Instagram Stories | Studio → Каналы, RU или EN | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `TOKEN_ENCRYPTION_KEY` либо `ZERNIO_API_KEY` |
+| Instagram Stories | Studio → Каналы, RU или EN | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `TOKEN_ENCRYPTION_KEY` либо сохранённый ключ Zernio |
 | Telegram Stories | `--target telegram_stories` | `TELEGRAM_CHANNEL_STORIES_API_ID`, `_API_HASH`, `_SESSION` |
 | YouTube | `--platform youtube --locale ru` | `YOUTUBE_*_CLIENT_ID`, `_CLIENT_SECRET`, `_REFRESH_TOKEN` |
-| Instagram лента и Reels | Studio → Каналы, RU или EN | тот же native-вход Instagram либо `ZERNIO_API_KEY` |
-| TikTok | `--platform tiktok --provider zernio` | `ZERNIO_API_KEY` — только аналитика, публикации нет |
+| Instagram лента и Reels | Studio → Каналы, RU или EN | тот же native-вход Instagram либо сохранённый ключ Zernio |
+| TikTok | `--platform tiktok --provider zernio` | сохранённый ключ Zernio — только аналитика, публикации нет |
 
 ## Нативно или через провайдера
 
@@ -63,8 +63,16 @@ token в `.env` и перезапускать сервис больше не н�
 docker compose exec app bun /app/ops/cli.js channel-connect --target threads_en --provider zernio --account-id <id>
 ```
 
-Такому каналу нужен один `ZERNIO_API_KEY` вместо токенов площадки — и для ленты,
-и для Threads, и для Stories, — и `doctor` спросит именно его. В Telegram-боте
+Такому каналу нужен один ключ Zernio вместо токенов площадки — и для ленты,
+и для Threads, и для Stories, — и `doctor` спросит именно его. Ключ не живёт
+в `.env`: он проверяется в Zernio и хранится запечатанным в базе этой Studio,
+как и OAuth-токен.
+
+```bash
+printf %s "$ZERNIO_KEY" | docker compose exec -T app bun /app/ops/cli.js credential-set --target zernio
+```
+
+В Telegram-боте
 Настройки → Каналы показывают аккаунты, которые вернул провайдер, так что id
 можно выбрать, а не вводить.
 

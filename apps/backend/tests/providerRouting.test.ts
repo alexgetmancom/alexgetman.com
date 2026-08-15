@@ -6,7 +6,7 @@ import type { ClaimedPublishJob } from "../src/publishing/queue.js";
 import { withDb } from "./helpers/db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
-const zernioConfig = loadTestConfig({ ZERNIO_API_KEY: "z".repeat(16), THREADS_RU_ACCESS_TOKEN: "native-token" });
+const zernioConfig = Object.assign(loadTestConfig({ THREADS_RU_ACCESS_TOKEN: "native-token" }), { ZERNIO_API_KEY: "z".repeat(16) });
 
 function job(overrides: Record<string, unknown> = {}): ClaimedPublishJob {
   return {

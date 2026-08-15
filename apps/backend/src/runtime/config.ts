@@ -1,3 +1,4 @@
+import { applyStoredApiKeys } from "../channels/api-keys.js";
 import { applyStoredMetaTokens } from "../channels/meta-tokens.js";
 import { applyStoredXTokens } from "../channels/x-oauth.js";
 import type { BackendDb } from "../db/client.js";
@@ -18,5 +19,6 @@ export function loadRuntimeConfig(env: NodeJS.ProcessEnv, backendDb: BackendDb):
   const config = withStudioProfile(loadConfig(env), backendDb);
   applyStoredMetaTokens(config, backendDb);
   applyStoredXTokens(config, backendDb);
+  applyStoredApiKeys(config, backendDb);
   return config;
 }

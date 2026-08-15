@@ -136,7 +136,6 @@ const envSchema = z
     X_CLIENT_ID: z.string().optional(),
     X_CLIENT_SECRET: z.string().optional(),
     ENABLE_X_METRICS: booleanFlag(false),
-    DISCORD_BOT_TOKEN: z.string().optional(),
     DISCORD_CHANNEL_ID: z.string().optional(),
     // Only used to build the message permalink: the create-message response
     // carries the channel but not the guild it lives in.
@@ -149,7 +148,6 @@ const envSchema = z
     INSTAGRAM_APP_ID: z.string().optional(),
     INSTAGRAM_APP_SECRET: z.string().optional(),
     INSTAGRAM_GRAPH_API_VERSION: z.string().default("v23.0"),
-    ZERNIO_API_KEY: z.string().min(16).optional(),
     YOUTUBE_RU_CLIENT_ID: z.string().optional(),
     YOUTUBE_RU_CLIENT_SECRET: z.string().optional(),
     YOUTUBE_RU_REFRESH_TOKEN: z.string().optional(),
@@ -248,11 +246,13 @@ export type EnvConfig = z.infer<typeof envSchema> & {
 };
 
 export type BackendConfig = EnvConfig & {
-  /** The connected X account's token pair. It has one home — the `platform_tokens`
-   * row a browser connection wrote — and reaches a configuration only through
-   * loadRuntimeConfig; .env never carries it. */
+  /** Platform credentials with one home — the `platform_tokens` row a browser
+   * connection or `credential-set` wrote. They reach a configuration only
+   * through loadRuntimeConfig; .env never carries them. */
   X_ACCESS_TOKEN?: string;
   X_REFRESH_TOKEN?: string;
+  ZERNIO_API_KEY?: string;
+  DISCORD_BOT_TOKEN?: string;
   VIDEO_PREPARE_LEAD_MINUTES: number;
   VIDEO_REMINDER_MINUTES: number;
   VIDEO_MEDIA_RETENTION_HOURS: number;

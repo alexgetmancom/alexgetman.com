@@ -2,7 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { publishZernioInstagramReel } from "../src/delivery/zernio.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
-const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t", ZERNIO_API_KEY: "zernio-placeholder-not-a-secret" });
+const config = Object.assign(loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", CONTROLLER_BOT_TOKEN: "t" }), {
+  ZERNIO_API_KEY: "zernio-placeholder-not-a-secret",
+});
 
 const input = {
   accountId: "acct-1",

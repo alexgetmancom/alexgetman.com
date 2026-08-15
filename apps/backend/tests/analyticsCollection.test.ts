@@ -90,9 +90,8 @@ describe("creator analytics collection", () => {
           ENABLE_X_PROFILE_METRICS: "1",
           X_CLIENT_ID: "consumer",
           X_CLIENT_SECRET: "secret",
-          ZERNIO_API_KEY: "a".repeat(16),
         }),
-        { X_ACCESS_TOKEN: "access", X_REFRESH_TOKEN: "access-secret" },
+        { X_ACCESS_TOKEN: "access", X_REFRESH_TOKEN: "access-secret", ZERNIO_API_KEY: "a".repeat(16) },
       );
       const fetchMock = (async (input: URL | RequestInfo) => {
         const url = String(input);
@@ -523,9 +522,7 @@ describe("creator analytics collection", () => {
         providerAccountId: "maru-account",
         providerPostId: "zernio-post",
       });
-      const config = loadTestConfig({
-        ZERNIO_API_KEY: "a".repeat(16),
-      });
+      const config = Object.assign(loadTestConfig({}), { ZERNIO_API_KEY: "a".repeat(16) });
       registerChannel(backendDb, {
         platform: "instagram",
         locale: "ru",
