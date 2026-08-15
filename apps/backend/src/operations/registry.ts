@@ -627,25 +627,12 @@ const operationDefs = {
   }),
   "channel-connect": operation({
     summary: "Connect a publishing route.",
-    note: "A text or story route needs only `target`: it already names the platform and the language, and asking for them again is a way to store a channel that disagrees with itself. A video account needs `platform` with `locale`.",
+    note: "A text or story route needs only `target`: it already names the platform and the language, and asking for them again is a way to store a channel that disagrees with itself. A video account needs `platform` with `locale`. Instagram is one connection: an account connected with platform `instagram` and a locale brings both its Reel and its Story with it.",
     schema: z.object({
       platform: example(z.string().min(1), "youtube|instagram").describe("platform to connect").optional(),
       locale: z.enum(["ru", "en"]).optional(),
       provider: example(z.string().default("native"), "native|zernio").describe("delivery provider"),
-      target: z
-        .enum([
-          "telegram",
-          "site_ru",
-          "site_en",
-          "threads_ru",
-          "threads_en",
-          "x",
-          "discord",
-          "telegram_stories",
-          "instagram_stories_ru",
-          "instagram_stories",
-        ])
-        .optional(),
+      target: z.enum(["telegram", "site_ru", "site_en", "threads_ru", "threads_en", "x", "discord", "telegram_stories"]).optional(),
       account_id: z.string().optional(),
       label: z.string().optional(),
     }),

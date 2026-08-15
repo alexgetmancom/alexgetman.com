@@ -109,21 +109,14 @@ function connectNativeRoutes(
     });
     return;
   }
+  // One account, one row: the Reel and the Story are two things this account
+  // publishes, and the registry derives the Story target from it.
   channels.connect({
     platform: "instagram",
     locale,
     provider: "native",
     providerAccountId: accountId,
     label: `Instagram ${locale.toUpperCase()} · ${account}`,
-  });
-  const targetId = locale === "ru" ? "instagram_stories_ru" : "instagram_stories";
-  channels.connect({
-    platform: targetId,
-    locale,
-    provider: "native",
-    providerAccountId: accountId,
-    targetId,
-    label: `Instagram Stories ${locale.toUpperCase()} · ${account}`,
   });
 }
 

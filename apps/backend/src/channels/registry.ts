@@ -34,6 +34,11 @@ export function registerChannel(backendDb: BackendDb, input: ChannelInput): Chan
     const known = ACCOUNT_PLATFORMS.join(", ");
     throw new Error(`Unknown platform: ${input.platform}. Account platforms are ${known}; a text channel names its target instead.`);
   }
+  // Instagram's Story is served by the Instagram account, so connecting it
+  // separately would store the same account twice and let the two disagree
+  // about which provider carries it.
+  if (input.targetId && Object.values(INSTAGRAM_STORY_TARGET).includes(input.targetId))
+    throw new Error(`${input.targetId} is served by the Instagram account: connect the instagram platform for ${input.locale} instead`);
   const now = new Date().toISOString();
   const id = input.targetId ?? channelId(input.platform, input.locale);
   backendDb.channels.upsert(
@@ -66,16 +71,30 @@ export function registerChannel(backendDb: BackendDb, input: ChannelInput): Chan
 export function targetRouting(backendDb: BackendDb): Record<string, { provider: string; accountId: string | null }> {
   const routing: Record<string, { provider: string; accountId: string | null }> = {};
   for (const channel of listChannels(backendDb))
-    if (channel.targetId) routing[channel.targetId] = { provider: channel.provider, accountId: channel.providerAccountId };
+    for (const target of channelTargets(channel)) routing[target] = { provider: channel.provider, accountId: channel.providerAccountId };
   return routing;
 }
 
 export function registeredPostTargetIds(backendDb: BackendDb): Set<string> {
-  return new Set(
-    listChannels(backendDb)
-      .map((connection) => connection.targetId)
-      .filter((target): target is string => Boolean(target)),
-  );
+  return new Set(listChannels(backendDb).flatMap(channelTargets));
+}
+
+/** The story target an Instagram account also serves, by the account's language.
+ *
+ * Connecting Instagram is connecting the account, not one of the two things it
+ * publishes: the Reel and the Story reach the same profile with the same
+ * credential, native or through the provider. Kept as two target ids because
+ * that is what a publication names, and the asymmetric spelling is the one
+ * every publication in the database already uses. */
+const INSTAGRAM_STORY_TARGET: Record<string, string> = { ru: "instagram_stories_ru", en: "instagram_stories" };
+
+/** Every publication target one connected channel serves. A text or story route
+ * names its own; an Instagram account brings its Story target with it. */
+export function channelTargets(channel: ChannelConnection): string[] {
+  if (channel.targetId) return [channel.targetId];
+  if (channel.platform !== "instagram") return [];
+  const story = INSTAGRAM_STORY_TARGET[channel.locale];
+  return story ? [story] : [];
 }
 
 /** The registry is the only source of enabled publication targets. */

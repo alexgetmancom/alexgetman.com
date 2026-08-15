@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { channelForVideo, listChannels, registerChannel } from "../src/channels/registry.js";
+import { channelForVideo, listChannels, registerChannel, registeredPostTargetIds, targetRouting } from "../src/channels/registry.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { channelConnections, publishJobs } from "../src/db/schema.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
@@ -32,6 +32,27 @@ describe("channel registry", () => {
         providerAccountId: "new-account",
       });
       expect(channelForVideo(backendDb, "instagram_reels", "en")?.providerAccountId).toBe("new-account");
+    }));
+
+  it("serves the Story target from the Instagram account, whichever way it is delivered", () =>
+    withDb((backendDb) => {
+      backendDb.db.delete(channelConnections).run();
+      registerChannel(backendDb, { platform: "instagram", locale: "ru", provider: "zernio", providerAccountId: "maru-account" });
+      registerChannel(backendDb, { platform: "instagram", locale: "en", provider: "native" });
+
+      // One account, both of the things it publishes: connecting Instagram used
+      // to leave Stories unconnected, and a Studio reaching Instagram only
+      // through the provider had no way to connect them at all.
+      expect(registeredPostTargetIds(backendDb)).toEqual(new Set(["instagram_stories_ru", "instagram_stories"]));
+      expect(targetRouting(backendDb).instagram_stories_ru).toEqual({ provider: "zernio", accountId: "maru-account" });
+      expect(targetRouting(backendDb).instagram_stories).toEqual({ provider: "native", accountId: null });
+      expect(channelForVideo(backendDb, "instagram_reels", "ru")?.providerAccountId).toBe("maru-account");
+
+      // And the account is the only place it can be connected: a second row for
+      // the Story is the same account able to disagree with itself.
+      expect(() =>
+        registerChannel(backendDb, { platform: "instagram_stories", locale: "ru", provider: "native", targetId: "instagram_stories_ru" }),
+      ).toThrow("served by the Instagram account");
     }));
 
   it("uses only registered targets when creating publication jobs", () =>

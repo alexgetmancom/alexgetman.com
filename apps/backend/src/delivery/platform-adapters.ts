@@ -59,7 +59,7 @@ export function createPlatformAdapters(
     Object.entries(publishers).map(([target, publish]) => {
       const adapter: DeliveryAdapter = {
         publish,
-        validate: async () => validatePlatformTarget(target, config),
+        validate: async () => validatePlatformTarget(target, config, throughProvider(target)),
         prepare: async (job) => (target === "telegram" ? job : prepare(job, config)),
         verify: async (_job, result) => verifyPlatformPublication(target, result, config, fetchImpl),
         ...mutations[target],
@@ -168,7 +168,14 @@ export async function verifyPlatformPublication(
   }
 }
 
-function validatePlatformTarget(target: string, config: BackendConfig): void {
+function validatePlatformTarget(target: string, config: BackendConfig, throughProvider: boolean): void {
+  // What a target needs is what its delivery path reads. A story routed through
+  // the provider was still asked for the Instagram tokens it never touches, so
+  // a Studio that only ever had the provider key could not publish one.
+  if (throughProvider) {
+    if (!config.ZERNIO_API_KEY) throw new Error("Delivery through the provider is not configured: ZERNIO_API_KEY");
+    return;
+  }
   if (targetInGroup(TARGET_GROUPS.instagramStory, target)) {
     const credentials = instagramCredentialsForLocale(config, target === "instagram_stories" ? "en" : "ru");
     const missing = [credentials.accessToken ? null : "Instagram access token", credentials.userId ? null : "Instagram user id"].filter(
