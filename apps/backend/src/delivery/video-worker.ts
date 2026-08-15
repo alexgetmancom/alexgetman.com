@@ -24,6 +24,7 @@ const VIDEO_HEARTBEAT_INTERVAL_SECONDS = 30;
 
 import { PUBLISH_BACKOFF_BASE_SECONDS, PUBLISH_BACKOFF_MAX_SECONDS, PUBLISH_MAX_ATTEMPTS } from "../foundation/config.js";
 import { ALERT_COOLDOWN_SECONDS } from "../observability/alerts.js";
+import { zernioPublishFence } from "../publishing/video-fence.js";
 import {
   InstagramContainerInvalidError,
   InstagramContainerProcessingError,
@@ -270,11 +271,7 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
       accountId,
       publicUrl: videoPublicUrl(backendDb, config, draft),
       metadata: metadata as InstagramMetadata,
-      // Fenced by the job, not the target: a lost worker retrying the same job
-      // must replay rather than publish twice, while a retry the operator asked
-      // for after a settled failure is a new attempt and has to be able to
-      // create the publication the failed one never made.
-      requestId: `video-job:${job.id}`,
+      requestId: zernioPublishFence(job),
     });
     if (!ownsVideoJob(backendDb, job)) return;
     updateVideoTarget(unsafeDb(backendDb).db, target.id, {

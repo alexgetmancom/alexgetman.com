@@ -13,7 +13,9 @@ import { log } from "../foundation/logger.js";
 import { checkDataDirectoriesWritable, requiredDataDirectories } from "../foundation/runtime/data-dirs.js";
 import { capabilityReport } from "../observability/capabilities.js";
 import { usageReport } from "../observability/usage.js";
+import { retryVideoTarget } from "../publishing/video-service.js";
 import { settleVideoTarget } from "../publishing/video-settle.js";
+import type { VideoTarget } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { channelReport, connectChannel, disableChannel } from "./channels.js";
 import { replacePublishedMedia } from "./commands/media-replacement.js";
@@ -443,6 +445,20 @@ const operationDefs = {
         apply: input.apply,
         actorType: context.actorType,
       });
+    },
+  }),
+  "video-retry": operation({
+    summary: "Queue a failed video target again.",
+    note: "Only a target that failed: a publication whose outcome is unknown is answered with `video-settle` first, because a retry of something that may have landed is a second post. The new attempt carries a new idempotency fence, so it can publish what the failed one never did.",
+    schema: z.object({
+      draft: example(z.coerce.number().int().positive(), "232").describe("video draft id"),
+      target: example(z.string().trim().min(1), "instagram_reels").describe("video target"),
+    }),
+    mutates: true,
+    agent: true,
+    handler: (context, input) => {
+      retryVideoTarget(context.db(), input.draft, input.target as VideoTarget);
+      return { ref: `video:${input.draft}`, target: input.target, requeued: 1 };
     },
   }),
   "video-settle": operation({

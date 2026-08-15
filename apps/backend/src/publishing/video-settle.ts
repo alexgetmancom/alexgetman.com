@@ -5,6 +5,7 @@ import { videoJobs, videoTargets } from "../db/schema.js";
 import { publishZernioInstagramReel, zernioPostOutcome } from "../delivery/zernio.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { getVideoDraft, refreshVideoDraftStatus } from "./video-data.js";
+import { zernioPublishFence } from "./video-fence.js";
 import type { InstagramMetadata } from "./video-types.js";
 
 /**
@@ -51,13 +52,13 @@ export async function settleVideoTarget(
   if (!accountId) throw new Error(`${input.target} has no provider account id`);
 
   const publishJob = unsafeDb(backendDb)
-    .db.select({ id: videoJobs.id })
+    .db.select({ id: videoJobs.id, runAt: videoJobs.runAt })
     .from(videoJobs)
     .where(and(eq(videoJobs.videoTargetId, row.id), eq(videoJobs.kind, "publish")))
     .orderBy(desc(videoJobs.id))
     .get();
   if (!publishJob) throw new Error(`${input.target} has no publish job to ask about`);
-  const requestId = `video-job:${publishJob.id}`;
+  const requestId = zernioPublishFence(publishJob);
   const plan = { ref: `video:${input.videoDraftId}`, target: input.target, provider: "zernio", requestId, applied: false };
   if (!input.apply) return plan;
 
