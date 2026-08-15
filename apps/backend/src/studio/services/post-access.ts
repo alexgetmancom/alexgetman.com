@@ -5,6 +5,10 @@ import { StudioError } from "../../foundation/errors.js";
 import { isPostDraftMutable } from "../../publishing/state.js";
 import { requireOwnedPublication } from "./publication-access.js";
 
+/** Refuse material post edits shortly before delivery so one locale cannot
+ * silently publish the old payload while another publishes the new one. */
+const POST_EDIT_LOCK_MINUTES = 2;
+
 /** Shared access and decoding rules for post use cases. */
 export function requireOwnedDraft(ports: Pick<ApplicationPorts, "drafts">, config: BackendConfig, actorId: number, draftId: number) {
   return requireOwnedPublication(ports.drafts.get(draftId), config, actorId, `draft ${draftId} not found`, "err.post-not-yours");
@@ -33,7 +37,7 @@ export function requirePostEditAllowed(
   locale?: "ru" | "en",
 ): DraftRecord {
   const draft = requireMutableDraft(ports, config, actorId, draftId);
-  const lockUntil = now.getTime() + config.POST_EDIT_LOCK_MINUTES * 60_000;
+  const lockUntil = now.getTime() + POST_EDIT_LOCK_MINUTES * 60_000;
   const scheduledTimes = (
     locale === "ru" ? [draft.scheduled_at] : locale === "en" ? [draft.scheduled_en_at] : [draft.scheduled_at, draft.scheduled_en_at]
   )

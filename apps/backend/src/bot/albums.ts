@@ -15,6 +15,10 @@ import { type PostSessionStep, type PostWizardStep, postStepData } from "./post-
 import { translatePostText } from "./post-translation.js";
 import { postPreviewCard } from "./publication-renderers.js";
 
+/** Telegram delivers an album as separate messages; this is how long the
+ * group is left to arrive in full before it is treated as complete. */
+const CONTROLLER_ALBUM_SETTLE_SECONDS = 4;
+
 // pending_albums.notified lifecycle: an album is SETTLED once its caption and
 // media are collected, then CLAIMED by exactly one worker before finalization.
 const ALBUM_SETTLED = 1;
@@ -105,7 +109,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
     .set({ notified: ALBUM_SETTLED })
     .where(and(eq(pendingAlbums.notified, ALBUM_CLAIMED), lte(pendingAlbums.updatedAt, claimCutoff)))
     .run();
-  const cutoff = new Date(now.getTime() - config.CONTROLLER_ALBUM_SETTLE_SECONDS * 1000).toISOString();
+  const cutoff = new Date(now.getTime() - CONTROLLER_ALBUM_SETTLE_SECONDS * 1000).toISOString();
   const rows = unsafeDb(backendDb)
     .db.select({
       id: pendingAlbums.id,

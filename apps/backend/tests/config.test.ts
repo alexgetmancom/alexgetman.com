@@ -7,7 +7,6 @@ describe("loadConfig", () => {
     expect(config.PIPELINE_DB).toBe("/data/pipeline.db");
     expect(config.TELEGRAM_API_BASE_URL).toBe("https://api.telegram.org");
     expect(config.LOG_LEVEL).toBe("info");
-    expect(config.STUDIO_MEDIA_MAX_BYTES).toBe(1_000_000_000);
     expect(config.STUDIO_MEDIA_DIR).toBe("/data/video-media");
     expect(config.REMOTE_MEDIA_PATH).toBe("/data/media");
     expect(config.PUBLIC_MEDIA_BASE_URL).toBe("https://alexgetman.com/media/staging");

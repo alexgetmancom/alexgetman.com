@@ -11,6 +11,8 @@ import { trackUsageAsync } from "../observability/usage.js";
 import { replanScheduledPostAfterStoryCardFailure, replanScheduledPostAfterStoryCards } from "../studio/services/posts.js";
 import { buildStoryCardCopy } from "./copy.js";
 
+export const STORY_CARD_MAX_ATTEMPTS = 3;
+
 /** A Story card render is a headless browser shot; past this it is hung. */
 export const STORY_CARD_TIMEOUT_SECONDS = 15;
 
@@ -55,7 +57,7 @@ export async function runStoryCardCycle(config: BackendConfig, backendDb: Backen
     recordWorkerState(backendDb, "story-cards", { claimed: 1, published: 1 });
   } catch (error) {
     const attempt = card.attemptCount + 1;
-    const retry = attempt < config.STORY_CARD_MAX_ATTEMPTS;
+    const retry = attempt < STORY_CARD_MAX_ATTEMPTS;
     const now = new Date().toISOString();
     unsafeDb(backendDb)
       .db.update(draftStoryCards)

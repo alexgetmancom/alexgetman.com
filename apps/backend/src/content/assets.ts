@@ -6,6 +6,10 @@ import type { BackendDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 
+/** The mounted media volume is sized around this, and the HTTP upload path
+ * rejects a larger body before it reads it. */
+export const STUDIO_MEDIA_MAX_BYTES = 1_000_000_000;
+
 type StudioMediaKind = "photo" | "video";
 
 type ImportedStudioMedia = {
@@ -20,7 +24,7 @@ type ImportedStudioMediaFile = Omit<ImportedStudioMedia, "bytes"> & { localPath:
 /** Content-owned file storage. Interfaces hand it bytes; delivery later decides how to upload them. */
 export async function importStudioMediaAsset(backendDb: BackendDb, config: BackendConfig, actorId: number, input: ImportedStudioMedia) {
   if (input.bytes.byteLength === 0) throw new Error("Media file is empty.");
-  assertStudioMediaSize(input.bytes.byteLength, config.STUDIO_MEDIA_MAX_BYTES);
+  assertStudioMediaSize(input.bytes.byteLength, STUDIO_MEDIA_MAX_BYTES);
   const temporary = path.join(config.STUDIO_MEDIA_DIR, ".incoming", `${crypto.randomUUID()}`);
   await fs.promises.mkdir(path.dirname(temporary), { recursive: true });
   await fs.promises.writeFile(temporary, input.bytes);
@@ -36,7 +40,7 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
   const stat = await fs.promises.stat(input.localPath);
   const byteSize = input.byteSize ?? stat.size;
   if (byteSize === 0) throw new Error("Media file is empty.");
-  assertStudioMediaSize(byteSize, config.STUDIO_MEDIA_MAX_BYTES);
+  assertStudioMediaSize(byteSize, STUDIO_MEDIA_MAX_BYTES);
   const kind = mediaKind(input.contentType, input.filename);
   if (!kind) throw new Error("Only image and MP4 video uploads are supported.");
   const extension = mediaExtension(kind, input.contentType, input.filename);

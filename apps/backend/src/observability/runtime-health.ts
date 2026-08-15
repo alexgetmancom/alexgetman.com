@@ -4,6 +4,7 @@ import { type BackendDb, unsafeDb } from "../db/client.js";
 import { type JsonValue, workerState } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { ALERT_COOLDOWN_SECONDS } from "./alerts.js";
 
 const RUNTIME_STATE_KEY = "runtime";
 const RESTART_WINDOW_SECONDS = 30 * 60;
@@ -79,7 +80,7 @@ export function recordProcessRestart(config: BackendConfig, backendDb: BackendDb
     details: { bootedAt, previousBootedAt: previous.bootedAt, previousUptimeSeconds, restartsInWindow: restartsAt.length },
     // Only the escalated event needs suppression; a plain restart is not
     // delivered anywhere, and cooling it would hide a real restart history.
-    ...(looping ? { cooldownSeconds: config.ALERT_COOLDOWN_SECONDS } : {}),
+    ...(looping ? { cooldownSeconds: ALERT_COOLDOWN_SECONDS } : {}),
   });
   return true;
 }
@@ -127,6 +128,6 @@ export function recordMemoryPressure(
     target: "runtime",
     message: `Backend rss ${toMb(rss)}MB is ${usedPercent}% of the ${toMb(limitBytes)}MB container limit`,
     details: { rssMb: toMb(rss), limitMb: toMb(limitBytes), usedPercent },
-    cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
+    cooldownSeconds: ALERT_COOLDOWN_SECONDS,
   });
 }

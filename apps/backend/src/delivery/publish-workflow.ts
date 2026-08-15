@@ -6,6 +6,7 @@ import { type BackendDb, unsafeDb } from "../db/client.js";
 import { publishJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { PUBLISH_HEARTBEAT_INTERVAL_SECONDS } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { withJobHeartbeat } from "../foundation/runtime/job-heartbeat.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
@@ -83,7 +84,7 @@ export async function runDeliveryPublishCycle(
                 throw new Error(`auth_circuit_open: ${job.target} has a failing credential, publish paused until it recovers`);
               }
               const delivery = await withJobHeartbeat(
-                config.PUBLISH_HEARTBEAT_INTERVAL_SECONDS,
+                PUBLISH_HEARTBEAT_INTERVAL_SECONDS,
                 () =>
                   unsafeDb(backendDb)
                     .db.update(publishJobs)

@@ -30,6 +30,16 @@ export const PUBLISH_LOCK_TIMEOUT_SECONDS = 900;
 /** Ceiling on exponential publish retry backoff. */
 export const PUBLISH_BACKOFF_MAX_SECONDS = 3600;
 
+/** Social publish jobs heartbeat while a slow provider call is in flight (see
+ * publish-workflow.ts), touching lockedAt so the watchdog does not mistake
+ * "still working" for "worker crashed". Two missed beats must still fit inside
+ * the lock window, or a working job gets reclaimed. */
+export const PUBLISH_HEARTBEAT_INTERVAL_SECONDS = 180;
+
+/** Initial delivery plus three exponential-backoff retries. */
+export const PUBLISH_MAX_ATTEMPTS = 4;
+export const PUBLISH_BACKOFF_BASE_SECONDS = 60;
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -53,8 +63,6 @@ const envSchema = z
     MCP_STUDIO_TOKEN: z.string().min(16).optional(),
     MCP_STUDIO_ACTOR_ID: z.coerce.number().int().positive().optional(),
     DEEPSEEK_API_KEY: z.string().optional(),
-    /** Moscow hour at which the editor receives one AI-generated opportunity inbox. */
-    EDITORIAL_INBOX_HOUR_MSK: z.coerce.number().int().min(0).max(23).default(10),
     GROK_CLI_PATH: z.string().default("grok"),
     CONTROLLER_ADMIN_IDS: z
       .string()
@@ -82,6 +90,11 @@ const envSchema = z
     // into the first one's audience. Removing the default removes the hazard,
     // and with it the requirement that every install name a channel.
     TELEGRAM_CHANNEL_USERNAME: z.string().default(""),
+    // A provider call must not hold the complete queue loop forever. Timeouts
+    // are terminal and require an explicit retry, because the provider may have
+    // accepted the request while its response was lost. Stays configurable
+    // because it is the one publish timing a test has to be able to shorten.
+    PUBLISH_JOB_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(3_600).default(600),
     METRICS_REFRESH_INTERVAL_SECONDS: z.coerce.number().int().positive().default(10),
     /** Refreshes account-level followers and aggregate platform insights. */
     CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS: z.coerce
@@ -89,51 +102,22 @@ const envSchema = z
       .int()
       .min(60)
       .default(60 * 60),
-    // The public t.me page answers in about 90ms or not at all, and a failed
-    // check simply returns in 15 minutes. Ten seconds of waiting bought nothing
-    // and dominated the average collection time.
-    MAX_METRIC_TASKS_PER_CYCLE: z.coerce.number().int().positive().default(30),
     OBSERVABILITY_INTERVAL_SECONDS: z.coerce.number().int().positive().default(300),
-    ALERT_COOLDOWN_SECONDS: z.coerce.number().int().positive().default(3600),
-    WORKER_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
     IDLE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(5),
-    // Refuse material post edits shortly before delivery so one locale cannot
-    // silently publish the old payload while another publishes the new one.
-    POST_EDIT_LOCK_MINUTES: z.coerce.number().int().min(1).max(60).default(2),
-    CONTROLLER_ALBUM_SETTLE_SECONDS: z.coerce.number().positive().default(4),
-    // A provider call must not hold the complete queue loop forever. Timeouts
-    // are terminal and require an explicit retry, because the provider may
-    // have accepted the request while its response was lost.
-    PUBLISH_JOB_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(3_600).default(600),
-    // Social publish jobs heartbeat (see publish-workflow.ts's withJobHeartbeat)
-    // while a slow provider call is in flight, touching lockedAt so
-    // recoverStalePublishJobs doesn't mistake "still working" for "worker crashed".
-    PUBLISH_HEARTBEAT_INTERVAL_SECONDS: z.coerce.number().int().positive().default(180),
-    // Initial delivery plus three exponential-backoff retries.
-    PUBLISH_MAX_ATTEMPTS: z.coerce.number().int().positive().default(4),
-    PUBLISH_BACKOFF_BASE_SECONDS: z.coerce.number().int().positive().default(60),
     /** Where optional heavy media transforms execute. Remote workers are
      * deliberately opt-in so a stock self-hosted Studio keeps working. */
     MEDIA_PROCESSOR_PROVIDER: z.enum(["local", "remote_http"]).default("local"),
     MEDIA_PROCESSOR_URL: z.url().optional(),
     MEDIA_PROCESSOR_TOKEN: z.string().min(16).optional(),
     MEDIA_PROCESSOR_TIMEOUT_SECONDS: z.coerce.number().int().min(10).max(3600).default(900),
-    MEDIA_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
     MEDIA_CACHE_DIR: z.string().default("/data/media-cache"),
     STORY_CARD_DIR: z.string().default("/data/story-cards"),
     STORY_CARD_ASSETS_DIR: z.string().default("/app/apps/backend/assets/story-card"),
     STORY_CARD_RENDERER_ENTRY: z.string().default("/app/story-renderer/renderer-process.js"),
-    STORY_CARD_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
     // Dedicated mounted media volume; never place large Studio assets on the
     // pipeline/database disk mounted at /data.
     STUDIO_MEDIA_DIR: z.string().default("/data/video-media"),
-    STUDIO_MEDIA_MAX_BYTES: z.coerce.number().int().positive().max(2_000_000_000).default(1_000_000_000),
     VIDEO_MEDIA_DIR: z.string().default("/data/video-media"),
-    // How many times reconciliation may ask a provider whether an ambiguous
-    // publication exists before it stops polling and waits for an operator.
-    // Higher than the publish budget on purpose: these are reads, and a
-    // platform can take a while to expose a freshly created object.
-    RECONCILE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(8),
     // VIDEO_PREPARE_LEAD_MINUTES / VIDEO_REMINDER_MINUTES / VIDEO_MEDIA_RETENTION_HOURS
     // are owned by the studio_profile row (see withStudioProfile); they are not
     // env-configurable.
@@ -143,10 +127,12 @@ const envSchema = z
     /** The Threads app's own id and secret, which are not the Meta app's — the
      * dashboard shows both pairs. Only `threads-authorize` needs them: they
      * mint the tokens above and are never used to publish. */
-    THREADS_APP_ID: z.string().optional(),
-    THREADS_APP_SECRET: z.string().optional(),
+    // Both stay configurable: a test has to be able to shorten the wait for a
+    // container that never leaves IN_PROGRESS.
     THREADS_CONTAINER_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(180),
     THREADS_RETRY_DELAY_MS: z.coerce.number().int().min(1).max(30_000).default(2_000),
+    THREADS_APP_ID: z.string().optional(),
+    THREADS_APP_SECRET: z.string().optional(),
     X_CLIENT_ID: z.string().optional(),
     X_CLIENT_SECRET: z.string().optional(),
     X_ACCESS_TOKEN: z.string().optional(),
@@ -220,20 +206,6 @@ const envSchema = z
         code: "custom",
         path: ["MCP_STUDIO_TOKEN"],
         message: "MCP_STUDIO_TOKEN and MCP_STUDIO_ACTOR_ID must be configured together",
-      });
-    }
-    // Both settings below are only meaningful against the lock window they run
-    // inside, and every field-level check above passes on a combination that
-    // makes the watchdog steal jobs from a worker that is still running. The
-    // window itself is no longer configurable, so these compare against it.
-    //
-    // Two missed heartbeats must still fit inside the lock window; at exactly
-    // one interval, ordinary scheduling jitter is enough to expire the lock.
-    if (env.PUBLISH_HEARTBEAT_INTERVAL_SECONDS * 2 >= PUBLISH_LOCK_TIMEOUT_SECONDS) {
-      context.addIssue({
-        code: "custom",
-        path: ["PUBLISH_HEARTBEAT_INTERVAL_SECONDS"],
-        message: `PUBLISH_HEARTBEAT_INTERVAL_SECONDS (${env.PUBLISH_HEARTBEAT_INTERVAL_SECONDS}s) must be less than half the ${PUBLISH_LOCK_TIMEOUT_SECONDS}s publish lock window, or the watchdog can reclaim a job that is still running`,
       });
     }
     // A provider call may legitimately occupy a worker for the whole job

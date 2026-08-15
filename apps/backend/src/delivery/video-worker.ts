@@ -22,7 +22,8 @@ import { verifyInstagramPublication } from "./social/instagram.js";
 
 const VIDEO_HEARTBEAT_INTERVAL_SECONDS = 30;
 
-import { PUBLISH_BACKOFF_MAX_SECONDS } from "../foundation/config.js";
+import { PUBLISH_BACKOFF_BASE_SECONDS, PUBLISH_BACKOFF_MAX_SECONDS, PUBLISH_MAX_ATTEMPTS } from "../foundation/config.js";
+import { ALERT_COOLDOWN_SECONDS } from "../observability/alerts.js";
 import {
   InstagramContainerInvalidError,
   InstagramContainerProcessingError,
@@ -336,11 +337,11 @@ function completeVideoJob(backendDb: BackendDb, job: VideoJob): boolean {
 function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, config: BackendConfig): boolean {
   const error = cause instanceof Error ? cause.message : String(cause);
   const transition = failedJobTransition(cause, job.attemptCount, {
-    maxAttempts: config.PUBLISH_MAX_ATTEMPTS,
-    backoffBaseSeconds: config.PUBLISH_BACKOFF_BASE_SECONDS,
+    maxAttempts: PUBLISH_MAX_ATTEMPTS,
+    backoffBaseSeconds: PUBLISH_BACKOFF_BASE_SECONDS,
     backoffMaxSeconds: PUBLISH_BACKOFF_MAX_SECONDS,
   });
-  if (cause instanceof InstagramContainerProcessingError && transition.attempt < config.PUBLISH_MAX_ATTEMPTS) {
+  if (cause instanceof InstagramContainerProcessingError && transition.attempt < PUBLISH_MAX_ATTEMPTS) {
     const now = new Date().toISOString();
     let failed = false;
     unsafeDb(backendDb).db.transaction((tx) => {
@@ -390,7 +391,7 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
   });
   if (!failed) return false;
   refreshVideoDraftStatus(backendDb, job.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
-  if (!retry) recordVideoTargetOutcome(backendDb, job, error, "failed", config.ALERT_COOLDOWN_SECONDS);
+  if (!retry) recordVideoTargetOutcome(backendDb, job, error, "failed", ALERT_COOLDOWN_SECONDS);
   return true;
 }
 
@@ -419,7 +420,7 @@ function requireVideoVerification(backendDb: BackendDb, job: VideoJob, cause: un
   });
   if (!settled) return false;
   refreshVideoDraftStatus(backendDb, job.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
-  recordVideoTargetOutcome(backendDb, job, error, "verification_required", config.ALERT_COOLDOWN_SECONDS);
+  recordVideoTargetOutcome(backendDb, job, error, "verification_required", ALERT_COOLDOWN_SECONDS);
   return true;
 }
 
@@ -494,8 +495,8 @@ export function recoverVideoLocks(backendDb: BackendDb, config: BackendConfig): 
       const target = job.videoTargetId == null ? null : tx.select().from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
       const ambiguous = job.kind === "publish" || (job.kind === "prepare" && target?.target === "youtube_shorts");
       const transition = failedJobTransition(new Error(error), job.attemptCount, {
-        maxAttempts: config.PUBLISH_MAX_ATTEMPTS,
-        backoffBaseSeconds: config.PUBLISH_BACKOFF_BASE_SECONDS,
+        maxAttempts: PUBLISH_MAX_ATTEMPTS,
+        backoffBaseSeconds: PUBLISH_BACKOFF_BASE_SECONDS,
         backoffMaxSeconds: PUBLISH_BACKOFF_MAX_SECONDS,
       });
       const retry = !ambiguous && transition.status === "queued";
@@ -526,13 +527,7 @@ export function recoverVideoLocks(backendDb: BackendDb, config: BackendConfig): 
   });
   for (const job of stale) refreshVideoDraftStatus(backendDb, job.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
   for (const { job, error, verificationRequired } of terminalFailures) {
-    recordVideoTargetOutcome(
-      backendDb,
-      job,
-      error,
-      verificationRequired ? "verification_required" : "failed",
-      config.ALERT_COOLDOWN_SECONDS,
-    );
+    recordVideoTargetOutcome(backendDb, job, error, verificationRequired ? "verification_required" : "failed", ALERT_COOLDOWN_SECONDS);
     recordVideoCompletionIfFinal(backendDb, job.videoDraftId);
   }
   return recovered;

@@ -23,6 +23,8 @@ import { pruneOperationalHistory, withMaintenanceLock } from "../operations/main
 import { recoverStalePublishJobs } from "../publishing/queue.js";
 import { recoverStoryCardJobs, runStoryCardCycle } from "../story-cards/worker.js";
 
+const WORKER_HEARTBEAT_INTERVAL_SECONDS = 60;
+
 const WATCHDOG_INTERVAL_SECONDS = 60;
 const SITE_JOB_POLL_INTERVAL_SECONDS = 10;
 const PROFILE_POLL_INTERVAL_SECONDS = 300;
@@ -70,7 +72,7 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
   if (recoveredStoryCardsAtStartup)
     log("warn", "recovered interrupted Story card locks on worker startup", { recovered: recoveredStoryCardsAtStartup });
   const startWorkerLoop = (name: string, intervalMs: number, task: () => void | Promise<void>) => {
-    const heartbeatIntervalMs = config.WORKER_HEARTBEAT_INTERVAL_SECONDS * 1000;
+    const heartbeatIntervalMs = WORKER_HEARTBEAT_INTERVAL_SECONDS * 1000;
     let publishStartupHeartbeat = true;
     return startLoop(name, intervalMs, task, {
       onStart: () => {

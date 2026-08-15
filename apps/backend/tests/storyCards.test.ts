@@ -15,7 +15,7 @@ import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { buildStoryCardCopy, MAX_LINES, TEMPLATE_VERSION } from "../src/story-cards/copy.js";
 import { discardDraftStoryCards, readyStoryCardMedia, setStoryPublishMode, storyCardsForDraft } from "../src/story-cards/store.js";
 import { emojiAssetFile, STORY_CARD_EMOJI_LEFT, STORY_CARD_EMOJI_SIZE, storyCardEmojiTop } from "../src/story-cards/svg.js";
-import { runStoryCardCycle } from "../src/story-cards/worker.js";
+import { runStoryCardCycle, STORY_CARD_MAX_ATTEMPTS } from "../src/story-cards/worker.js";
 import { postService } from "../src/studio/services/posts.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
@@ -249,14 +249,20 @@ describe("text Story cards", () => {
       STORY_CARD_DIR: directory,
       STORY_CARD_ASSETS_DIR: storyCardAssets,
       STORY_CARD_RENDERER_ENTRY: path.join(directory, "missing-renderer.ts"),
-      STORY_CARD_MAX_ATTEMPTS: "1",
     });
     const posts = postService(backendDb, config);
     const draftId = posts.create(42, { text: "Text", textEn: "Text", entities: [], media: [] });
     setStoryPublishMode(backendDb.db, draftId, "all");
     const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 60_000), enAt: null });
 
-    expect(await runStoryCardCycle(config, backendDb)).toBe(1);
+    // Every attempt fails on a renderer that is not there; the card is only
+    // given up once the retry budget itself is spent.
+    for (let attempt = 0; attempt < STORY_CARD_MAX_ATTEMPTS; attempt += 1) {
+      expect(await runStoryCardCycle(config, backendDb)).toBe(1);
+      // Each failure parks the card behind its retry backoff; the test is about
+      // the budget running out, not about waiting for the clock.
+      backendDb.db.update(draftStoryCards).set({ nextAttemptAt: null }).where(eq(draftStoryCards.draftId, draftId)).run();
+    }
 
     expect(backendDb.db.select().from(draftStoryCards).where(eq(draftStoryCards.draftId, draftId)).get()?.status).toBe("failed");
     expect(

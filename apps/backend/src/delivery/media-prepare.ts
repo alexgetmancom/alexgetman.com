@@ -7,6 +7,8 @@ import { videoBounds } from "../publishing/platform-profiles.js";
 import { copyFileAtomically } from "./site-media-storage.js";
 import { mediaExtension, type PublishMediaItem } from "./social/payload.js";
 
+const MEDIA_CACHE_TTL_SECONDS = 86_400;
+
 export async function prepareMediaItems(
   config: BackendConfig,
   sourceItems: PublishMediaItem[],
@@ -74,7 +76,7 @@ function isTelegramStoryTarget(target: string | undefined): boolean {
 }
 
 export async function pruneMediaCache(config: BackendConfig, now = Date.now()): Promise<number> {
-  const cutoff = now - config.MEDIA_CACHE_TTL_SECONDS * 1000;
+  const cutoff = now - MEDIA_CACHE_TTL_SECONDS * 1000;
   // `.incoming` holds pre-hash upload temporaries; they are removed on the happy
   // path but leak when the process dies mid-import, so age them out here too.
   const roots = [

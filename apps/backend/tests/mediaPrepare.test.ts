@@ -42,7 +42,6 @@ describe("media preparation", () => {
       const config = loadTestConfig({
         MEDIA_CACHE_DIR: path.join(dir, "cache"),
         REMOTE_MEDIA_PATH: path.join(dir, "public"),
-        MEDIA_CACHE_TTL_SECONDS: "1",
       });
       fs.mkdirSync(config.MEDIA_CACHE_DIR, { recursive: true });
       fs.mkdirSync(config.REMOTE_MEDIA_PATH, { recursive: true });
@@ -50,7 +49,8 @@ describe("media preparation", () => {
       const publicCached = path.join(config.REMOTE_MEDIA_PATH, "cache-asset.jpg");
       const unrelated = path.join(config.REMOTE_MEDIA_PATH, "editorial.jpg");
       for (const file of [cached, publicCached, unrelated]) fs.writeFileSync(file, "x");
-      const old = new Date(Date.now() - 10_000);
+      // Comfortably past the 24h cache TTL, which is a constant now.
+      const old = new Date(Date.now() - 48 * 60 * 60_000);
       for (const file of [cached, publicCached, unrelated]) fs.utimesSync(file, old, old);
       expect(await pruneMediaCache(config)).toBe(2);
       expect(fs.existsSync(unrelated)).toBe(true);

@@ -1,16 +1,15 @@
 import { createBot } from "../../../backend/src/bot.js";
-import { applyStoredMetaTokens } from "../../../backend/src/channels/meta-tokens.js";
-import { applyStoredXTokens } from "../../../backend/src/channels/x-oauth.js";
 import { type BackendDb, openBackendDb } from "../../../backend/src/db/client.js";
 import type { RawBackendDb } from "../../../backend/src/db/unsafe.js";
 import { unsafeDb } from "../../../backend/src/db/unsafe.js";
 import { recordDomainEvent } from "../../../backend/src/domain/events.js";
-import { type BackendConfig, loadConfig, withStudioProfile } from "../../../backend/src/foundation/config.js";
+import { type BackendConfig, loadConfig } from "../../../backend/src/foundation/config.js";
 import { configureLogging, log } from "../../../backend/src/foundation/logger.js";
 import { checkDataDirectoriesWritable, requiredDataDirectories } from "../../../backend/src/foundation/runtime/data-dirs.js";
 import { assertFfmpegAvailable, configureFfmpegConcurrency } from "../../../backend/src/foundation/runtime/ffmpeg.js";
 import type { ScheduledLoop } from "../../../backend/src/foundation/scheduler.js";
 import { startTelegramWorkers } from "../../../backend/src/interfaces/telegram/worker.js";
+import { loadRuntimeConfig } from "../../../backend/src/runtime/config.js";
 import { startCoreWorkers } from "../../../backend/src/runtime/workers.js";
 import { createStudioServices, type StudioServices } from "../../../backend/src/studio/services/index.js";
 
@@ -41,14 +40,10 @@ export function startRuntime(): AppRuntime {
   configureLogging(env.LOG_LEVEL);
   configureFfmpegConcurrency(FFMPEG_MAX_CONCURRENCY);
   // The database is opened before the configuration is complete, because the
-  // Studio's own settings live in it. Only PIPELINE_DB is needed to get here.
+  // Studio's own settings and its stored platform tokens live in it. Only
+  // PIPELINE_DB is needed to get here.
   const backendDb = openBackendDb(env.PIPELINE_DB);
-  const config = withStudioProfile(env, backendDb);
-  // Before anything reads a platform token: a credential this Studio renewed
-  // for itself lives in the database, and .env holds the value it grew from.
-  // Applying it here keeps one name for the effective token everywhere else.
-  applyStoredMetaTokens(config, backendDb);
-  applyStoredXTokens(config, backendDb);
+  const config = loadRuntimeConfig(Bun.env, backendDb);
   const studio = createStudioServices(backendDb, config);
   const bot = createBot(config, backendDb);
   const loops = config.NODE_ENV === "test" ? [] : [...startCoreWorkers(config, backendDb), ...startTelegramWorkers(config, backendDb, bot)];

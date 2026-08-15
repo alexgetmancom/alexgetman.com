@@ -6,7 +6,8 @@ import { type BackendDb, unsafeDb } from "../db/client.js";
 import { postTargets, publishJobs, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { PUBLISH_BACKOFF_MAX_SECONDS, PUBLISH_LOCK_TIMEOUT_SECONDS } from "../foundation/config.js";
+import { PUBLISH_BACKOFF_BASE_SECONDS, PUBLISH_BACKOFF_MAX_SECONDS, PUBLISH_LOCK_TIMEOUT_SECONDS } from "../foundation/config.js";
+import { ALERT_COOLDOWN_SECONDS } from "../observability/alerts.js";
 import { isTargetAuthBlocked, recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
 import { classifyPublishError, nextRetryAt } from "../publishing/errors.js";
 import { refreshPublicationStatus } from "../publishing/publication-status.js";
@@ -15,6 +16,12 @@ import { refreshVideoDraftStatus } from "../publishing/video-data.js";
 import { verifyPlatformPublication } from "./platform-adapters.js";
 import { verifyYouTubeVideo } from "./video-publishers.js";
 import { verifyZernioPost } from "./zernio.js";
+
+/** How many times reconciliation may ask a provider whether an ambiguous
+ * publication exists before it stops polling and waits for an operator. Higher
+ * than the publish budget on purpose: these are reads, and a platform can take
+ * a while to expose a freshly created object. */
+export const RECONCILE_MAX_ATTEMPTS = 8;
 
 type ReconciliationResult = { checked: number; resolved: number; unresolved: number; oldestAt: string | null };
 
@@ -41,7 +48,7 @@ export async function runPublicationReconciliation(
     .where(
       and(
         eq(publishJobs.status, "verification_required"),
-        lt(publishJobs.reconcileAttemptCount, config.RECONCILE_MAX_ATTEMPTS),
+        lt(publishJobs.reconcileAttemptCount, RECONCILE_MAX_ATTEMPTS),
         or(isNull(publishJobs.nextAttemptAt), lte(publishJobs.nextAttemptAt, nowIso)),
         or(isNull(publishJobs.lockedBy), isNull(publishJobs.lockedAt), lt(publishJobs.lockedAt, staleBefore)),
       ),
@@ -141,7 +148,7 @@ export async function runPublicationReconciliation(
       and(
         eq(videoTargets.status, "verification_required"),
         eq(videoJobs.status, "verification_required"),
-        lt(videoJobs.reconcileAttemptCount, config.RECONCILE_MAX_ATTEMPTS),
+        lt(videoJobs.reconcileAttemptCount, RECONCILE_MAX_ATTEMPTS),
         or(isNull(videoJobs.nextAttemptAt), lte(videoJobs.nextAttemptAt, nowIso)),
         or(isNull(videoJobs.lockedBy), isNull(videoJobs.lockedAt), lt(videoJobs.lockedAt, staleBefore)),
       ),
@@ -262,7 +269,7 @@ export async function runPublicationReconciliation(
       severity: "warn",
       message: `${unresolvedTimes.length} publication(s) still require verification; oldest since ${unresolvedTimes[0]}`,
       details: { count: unresolvedTimes.length, oldest_at: unresolvedTimes[0] },
-      cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
+      cooldownSeconds: ALERT_COOLDOWN_SECONDS,
     });
   }
   return { checked, resolved, unresolved: unresolvedTimes.length, oldestAt: unresolvedTimes[0] ?? null };
@@ -304,6 +311,6 @@ function deferVideoReconciliation(backendDb: BackendDb, config: BackendConfig, j
 }
 
 function reconciliationNextAttempt(config: BackendConfig, attempt: number): string | null {
-  if (attempt >= config.RECONCILE_MAX_ATTEMPTS) return null;
-  return nextRetryAt(attempt, config.PUBLISH_BACKOFF_BASE_SECONDS, PUBLISH_BACKOFF_MAX_SECONDS);
+  if (attempt >= RECONCILE_MAX_ATTEMPTS) return null;
+  return nextRetryAt(attempt, PUBLISH_BACKOFF_BASE_SECONDS, PUBLISH_BACKOFF_MAX_SECONDS);
 }

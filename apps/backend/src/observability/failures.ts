@@ -5,6 +5,7 @@ import { publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { PUBLISH_LOCK_TIMEOUT_SECONDS } from "../foundation/config.js";
+import { ALERT_COOLDOWN_SECONDS } from "./alerts.js";
 
 /** Records Delivery failures as durable domain events; no alert transport is used here. */
 export function recordPublicationFailures(config: BackendConfig, backendDb: BackendDb): void {
@@ -18,7 +19,7 @@ export function recordPublicationFailures(config: BackendConfig, backendDb: Back
   // below: a failed site job is terminal, so without a cutoff every old failure
   // stays in this result set and produces a fresh alert once per cooldown window
   // forever. Only failures that moved recently are worth reporting.
-  const siteFailureWindowStart = new Date(Date.now() - config.ALERT_COOLDOWN_SECONDS * 1000).toISOString();
+  const siteFailureWindowStart = new Date(Date.now() - ALERT_COOLDOWN_SECONDS * 1000).toISOString();
   const failedSite = unsafeDb(backendDb)
     .db.select()
     .from(siteJobs)
@@ -34,7 +35,7 @@ export function recordPublicationFailures(config: BackendConfig, backendDb: Back
       target: job.target,
       message: `Publish job ${job.jobId} exceeded lock timeout`,
       details: { jobId: job.jobId, lockedAt: job.lockedAt },
-      cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
+      cooldownSeconds: ALERT_COOLDOWN_SECONDS,
     });
   // A social job records its own `publish.job.failed` event in the transaction
   // that moves it to the terminal state. Do not rediscover terminal jobs here:
@@ -48,6 +49,6 @@ export function recordPublicationFailures(config: BackendConfig, backendDb: Back
       target: "site",
       message: job.lastError ?? `Site job ${job.jobId} failed`,
       details: { jobId: job.jobId, reason: job.reason },
-      cooldownSeconds: config.ALERT_COOLDOWN_SECONDS,
+      cooldownSeconds: ALERT_COOLDOWN_SECONDS,
     });
 }

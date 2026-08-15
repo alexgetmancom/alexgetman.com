@@ -5,6 +5,9 @@ import { alertDedup, postEvents } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 
+/** How long one alert subject stays quiet after it has been reported. */
+export const ALERT_COOLDOWN_SECONDS = 3600;
+
 export type AlertPort = { sendAlert?: (text: string) => Promise<void> };
 
 /** Delivers unacknowledged durable events through an optional transport adapter. */
@@ -31,7 +34,7 @@ export async function deliverPendingAlerts(config: BackendConfig, backendDb: Bac
     const now = new Date().toISOString();
     const disposition = unsafeDb(backendDb).db.transaction((tx) => {
       const dedup = tx.select().from(alertDedup).where(eq(alertDedup.alertKey, key)).get();
-      const cooling = dedup?.lastSentAt && Date.now() - new Date(dedup.lastSentAt).getTime() < config.ALERT_COOLDOWN_SECONDS * 1000;
+      const cooling = dedup?.lastSentAt && Date.now() - new Date(dedup.lastSentAt).getTime() < ALERT_COOLDOWN_SECONDS * 1000;
       if (!cooling && !alertsPort.sendAlert) return "unavailable";
       const claimed = tx
         .update(postEvents)

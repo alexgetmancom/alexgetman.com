@@ -11,6 +11,9 @@ import { truncateUnicode } from "../../foundation/text.js";
 import { zonedDateTimeParts } from "../../foundation/time.js";
 import { settingsService } from "../../studio/services/settings.js";
 
+/** Moscow hour at which the editor receives one AI-generated opportunity inbox. */
+const EDITORIAL_INBOX_HOUR_MSK = 10;
+
 type Opportunity = { kind?: string; title?: string; reason?: string; posts?: number[] };
 type EditorialResponse = { items?: Opportunity[] };
 
@@ -34,7 +37,7 @@ export async function sendDailyEditorialInbox(
 ): Promise<boolean> {
   if (!bot || !config.DEEPSEEK_API_KEY || config.CONTROLLER_ADMIN_IDS.length === 0) return false;
   const date = zonedDateTimeParts(now, config.TIMEZONE);
-  if (date.hour < config.EDITORIAL_INBOX_HOUR_MSK) return false;
+  if (date.hour < EDITORIAL_INBOX_HOUR_MSK) return false;
   const key = `editorial_inbox:${date.day}`;
 
   const material = unsafeDb(backendDb)

@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { STUDIO_MEDIA_MAX_BYTES } from "../../content/assets.js";
 import { mcpStudioActor } from "../../foundation/http-auth.js";
 import { json, sse, text } from "../../foundation/http-response.js";
 import { trackUsageAsync } from "../../observability/usage.js";
@@ -55,9 +56,9 @@ export const studioRoutes: RouteModule = (app, { config, backendDb, engagement, 
       let asset: Awaited<ReturnType<typeof studio.media.importFile>>;
       try {
         const contentLength = Number(request.headers.get("content-length"));
-        if (Number.isFinite(contentLength) && contentLength > config.STUDIO_MEDIA_MAX_BYTES)
-          throw new MediaUploadTooLargeError(config.STUDIO_MEDIA_MAX_BYTES);
-        const byteSize = await streamUploadToFile(body, temporary, config.STUDIO_MEDIA_MAX_BYTES);
+        if (Number.isFinite(contentLength) && contentLength > STUDIO_MEDIA_MAX_BYTES)
+          throw new MediaUploadTooLargeError(STUDIO_MEDIA_MAX_BYTES);
+        const byteSize = await streamUploadToFile(body, temporary, STUDIO_MEDIA_MAX_BYTES);
         asset = await studio.media.importFile(actorId, {
           filename: request.headers.get("x-filename") ?? request.headers.get("x-file-name") ?? "upload",
           contentType,

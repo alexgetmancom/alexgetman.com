@@ -6,6 +6,10 @@ import { metricSchedule, posts, postTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { metricCheckpointAt } from "./metric-checkpoints.js";
 
+/** The public t.me page answers in about 90ms or not at all, and a failed
+ * check simply returns in 15 minutes. */
+export const MAX_METRIC_TASKS_PER_CYCLE = 30;
+
 /** How long a metric-collection lock outlives the worker holding it. */
 export const METRIC_LOCK_TIMEOUT_SECONDS = 900;
 
@@ -95,7 +99,7 @@ export function claimDueMetricTasks(
     // Oldest due work must win. Ordering by the post date starved historical
     // checkpoints indefinitely whenever newer posts kept becoming due.
     .orderBy(asc(metricSchedule.nextCheckAt), asc(metricSchedule.checkCount), asc(posts.dateUtc))
-    .limit(config.MAX_METRIC_TASKS_PER_CYCLE)
+    .limit(MAX_METRIC_TASKS_PER_CYCLE)
     .all();
   const claimed: MetricTask[] = [];
   unsafeDb(backendDb).db.transaction((tx) => {

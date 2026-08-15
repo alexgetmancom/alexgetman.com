@@ -10,7 +10,7 @@ import {
   publishJobs,
   siteJobs,
 } from "../src/db/schema.js";
-import { runPublicationReconciliation } from "../src/delivery/publication-reconciliation.js";
+import { RECONCILE_MAX_ATTEMPTS, runPublicationReconciliation } from "../src/delivery/publication-reconciliation.js";
 import { refreshPublicationStatus } from "../src/publishing/publication-status.js";
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
 import { withDb } from "./helpers/db.js";
@@ -167,7 +167,12 @@ describe("publication reconciliation", () => {
         payload: { text: "published" },
       });
       const now = new Date().toISOString();
-      backendDb.db.update(publishJobs).set({ status: "verification_required", updatedAt: now }).where(eq(publishJobs.jobId, jobId)).run();
+      // One attempt short of the budget, so this cycle is the one that exhausts it.
+      backendDb.db
+        .update(publishJobs)
+        .set({ status: "verification_required", reconcileAttemptCount: RECONCILE_MAX_ATTEMPTS - 1, updatedAt: now })
+        .where(eq(publishJobs.jobId, jobId))
+        .run();
       backendDb.db
         .insert(postTargets)
         .values({ postKey: "post:81", target: "threads_ru", status: "verification_required", externalId: "thread-81", updatedAt: now })
@@ -241,7 +246,12 @@ describe("publication reconciliation", () => {
         payload: { text: "unknown outcome" },
       });
       const now = new Date().toISOString();
-      backendDb.db.update(publishJobs).set({ status: "verification_required", updatedAt: now }).where(eq(publishJobs.jobId, jobId)).run();
+      // One attempt short of the budget, so this cycle is the one that exhausts it.
+      backendDb.db
+        .update(publishJobs)
+        .set({ status: "verification_required", reconcileAttemptCount: RECONCILE_MAX_ATTEMPTS - 1, updatedAt: now })
+        .where(eq(publishJobs.jobId, jobId))
+        .run();
       backendDb.db
         .insert(postTargets)
         .values({ postKey: "post:84", target: "threads_ru", status: "verification_required", externalId: "thread-84", updatedAt: now })
@@ -267,13 +277,18 @@ describe("publication reconciliation", () => {
         payload: { text: "unknown" },
       });
       const now = new Date().toISOString();
-      backendDb.db.update(publishJobs).set({ status: "verification_required", updatedAt: now }).where(eq(publishJobs.jobId, jobId)).run();
+      // One attempt short of the budget, so this cycle is the one that exhausts it.
+      backendDb.db
+        .update(publishJobs)
+        .set({ status: "verification_required", reconcileAttemptCount: RECONCILE_MAX_ATTEMPTS - 1, updatedAt: now })
+        .where(eq(publishJobs.jobId, jobId))
+        .run();
       backendDb.db
         .insert(postTargets)
         .values({ postKey: "post:82", target: "telegram", status: "verification_required", updatedAt: now })
         .run();
 
-      const config = loadTestConfig({ RECONCILE_MAX_ATTEMPTS: "1" });
+      const config = loadTestConfig();
       expect(await runPublicationReconciliation(backendDb, config)).toMatchObject({ checked: 1, resolved: 0, unresolved: 1 });
       expect(
         backendDb.db
@@ -281,7 +296,7 @@ describe("publication reconciliation", () => {
           .from(publishJobs)
           .where(eq(publishJobs.jobId, jobId))
           .get(),
-      ).toEqual({ reconcileAttemptCount: 1, nextAttemptAt: null });
+      ).toEqual({ reconcileAttemptCount: RECONCILE_MAX_ATTEMPTS, nextAttemptAt: null });
       expect(
         backendDb.db
           .select({ eventType: postEvents.eventType })
