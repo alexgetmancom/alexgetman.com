@@ -227,7 +227,7 @@ try {
 
   // In parallel: each of these spawns a fresh bun in the container, and this
   // step sits on the critical path between the image build and the deploy.
-  const opsCommands = ["doctor", "status", "audit", "capabilities"];
+  const opsCommands = ["doctor", "status", "audit", "format-support"];
   const opsResults = await Promise.all(
     opsCommands.map((command) => run(["docker", "exec", "-u", "bun", container, "bun", "/app/ops/cli.js", command])),
   );
