@@ -108,6 +108,33 @@ describe("answering a video publication that lost its worker", () => {
       expect(row?.lastError).toContain("download your video");
     }));
 
+  it("takes what the operator can see on the platform over what the provider recorded", () =>
+    withDb(async (backendDb) => {
+      const draftId = stuckReel(backendDb);
+      backendDb.sqlite.prepare("UPDATE video_targets SET provider_post_id='failed-post'").run();
+      // The provider can hold a publication as failed while the account shows it
+      // live — a later attempt landed, or it recovered on its own. The account is
+      // the fact, and recording it must not cost another call.
+      const { fetchImpl, calls } = transport({ _id: "failed-post", status: "failed" });
+
+      const result = await settleVideoTarget(
+        config,
+        backendDb,
+        {
+          videoDraftId: draftId,
+          target: "instagram_reels",
+          apply: true,
+          known: { providerPostId: "live-post", externalId: "DcEdQDZDCaq", url: "https://www.instagram.com/reel/DcEdQDZDCaq/" },
+        },
+        fetchImpl,
+      );
+
+      expect(result.status).toBe("published");
+      expect(calls).toEqual([]);
+      const row = backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, draftId)).get();
+      expect(row).toMatchObject({ status: "published", externalId: "DcEdQDZDCaq", providerPostId: "live-post" });
+    }));
+
   it("refuses a target that already carries its platform publication", () =>
     withDb(async (backendDb) => {
       const draftId = stuckReel(backendDb);

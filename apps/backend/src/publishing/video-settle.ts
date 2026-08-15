@@ -31,7 +31,12 @@ import type { InstagramMetadata } from "./video-types.js";
 export async function settleVideoTarget(
   config: BackendConfig,
   backendDb: BackendDb,
-  input: { videoDraftId: number; target: string; apply: boolean },
+  input: {
+    videoDraftId: number;
+    target: string;
+    apply: boolean;
+    known?: { providerPostId?: string | undefined; externalId?: string | undefined; url?: string | undefined };
+  },
   fetchImpl: typeof fetch = fetch,
 ): Promise<Record<string, unknown>> {
   const row = unsafeDb(backendDb)
@@ -50,6 +55,20 @@ export async function settleVideoTarget(
     throw new Error(`${input.target} is delivered natively, which has no idempotent replay: settle it from what the platform shows`);
   const accountId = row.providerAccountId;
   if (!accountId) throw new Error(`${input.target} has no provider account id`);
+
+  // What the operator can see on the platform outranks anything this Studio can
+  // work out from the provider: a publication the provider recorded as failed
+  // can still be live, and the account is the fact.
+  if (input.known?.externalId || input.known?.url) {
+    const observed = {
+      providerPostId: input.known.providerPostId ?? row.providerPostId,
+      externalId: input.known.externalId ?? null,
+      url: input.known.url ?? null,
+      failure: null,
+    };
+    if (!input.apply) return { ref: `video:${input.videoDraftId}`, target: input.target, observed, applied: false };
+    return { ...record(backendDb, config, row, input.videoDraftId, observed), observed };
+  }
 
   const publishJob = unsafeDb(backendDb)
     .db.select({ id: videoJobs.id, runAt: videoJobs.runAt })
@@ -81,32 +100,43 @@ export async function settleVideoTarget(
         failure: null as string | null,
       };
 
+  return { ...plan, ...record(backendDb, config, row, input.videoDraftId, result) };
+}
+
+type Outcome = { providerPostId: string | null; externalId: string | null; url: string | null; failure: string | null };
+
+function record(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  row: typeof videoTargets.$inferSelect,
+  videoDraftId: number,
+  outcome: Outcome,
+): Record<string, unknown> {
   const now = new Date().toISOString();
-  const landed = Boolean(result.externalId || result.url);
-  const status = landed ? "published" : result.failure ? "failed" : "verification_required";
+  const landed = Boolean(outcome.externalId || outcome.url);
+  const status = landed ? "published" : outcome.failure ? "failed" : "verification_required";
   unsafeDb(backendDb)
     .db.update(videoTargets)
     .set({
       status,
-      providerPostId: result.providerPostId,
-      externalId: result.externalId,
-      externalUrl: result.url,
+      providerPostId: outcome.providerPostId,
+      externalId: outcome.externalId,
+      externalUrl: outcome.url,
       publishedAt: landed ? (row.publishedAt ?? now) : null,
-      lastError: landed ? null : (result.failure ?? "awaiting the platform link from the provider"),
+      lastError: landed ? null : (outcome.failure ?? "awaiting the platform link from the provider"),
       confirmationSource: landed ? "provider_verify" : "idempotency_replay",
       verifiedAt: landed ? now : null,
       updatedAt: now,
     })
     .where(eq(videoTargets.id, row.id))
     .run();
-  refreshVideoDraftStatus(backendDb, input.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
+  refreshVideoDraftStatus(backendDb, videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
   return {
-    ...plan,
     applied: true,
-    providerPostId: result.providerPostId,
-    externalId: result.externalId,
-    url: result.url,
-    failure: result.failure,
+    providerPostId: outcome.providerPostId,
+    externalId: outcome.externalId,
+    url: outcome.url,
+    failure: outcome.failure,
     status,
   };
 }

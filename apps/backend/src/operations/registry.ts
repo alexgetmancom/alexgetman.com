@@ -463,10 +463,13 @@ const operationDefs = {
   }),
   "video-settle": operation({
     summary: "Answer a provider-delivered video target stuck awaiting verification.",
-    note: "Re-issues the publication with the same fenced request id, so the provider returns the post it already has instead of creating a second one, and the target is settled with whatever came back. Provider routes only: a native upload has no such fence.",
+    note: "Asks the provider what became of the publication and records the answer: a platform link means published, a provider-side failure sends the target back to `failed` where a retry can pick it up, anything else stays awaiting verification. Give `external_id`/`url` to record what you can see on the platform yourself, which outranks what the provider says. Provider routes only: a native upload has no idempotent replay to ask with.",
     schema: z.object({
       draft: example(z.coerce.number().int().positive(), "232").describe("video draft id"),
       target: example(z.string().trim().min(1), "instagram_reels").describe("video target"),
+      provider_post_id: example(z.string().trim().min(1), "6a80a5e0d45305ab4246ae2a").describe("the provider's own post id").optional(),
+      external_id: example(z.string().trim().min(1), "DcEdQDZDCaq").describe("what the platform shows, when you can see it").optional(),
+      url: example(z.string().trim().min(1), "https://www.instagram.com/reel/DcEdQDZDCaq/").describe("the live publication").optional(),
       apply: applyOption,
     }),
     mutates: true,
@@ -475,7 +478,12 @@ const operationDefs = {
       settleVideoTarget(
         context.config(),
         context.db(),
-        { videoDraftId: input.draft, target: input.target, apply: input.apply },
+        {
+          videoDraftId: input.draft,
+          target: input.target,
+          apply: input.apply,
+          known: { providerPostId: input.provider_post_id, externalId: input.external_id, url: input.url },
+        },
         context.fetchImpl,
       ),
   }),
