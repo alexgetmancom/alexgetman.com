@@ -13,6 +13,7 @@ import { log } from "../foundation/logger.js";
 import { checkDataDirectoriesWritable, requiredDataDirectories } from "../foundation/runtime/data-dirs.js";
 import { capabilityReport } from "../observability/capabilities.js";
 import { usageReport } from "../observability/usage.js";
+import { settleVideoTarget } from "../publishing/video-settle.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { channelReport, connectChannel, disableChannel } from "./channels.js";
 import { replacePublishedMedia } from "./commands/media-replacement.js";
@@ -443,6 +444,24 @@ const operationDefs = {
         actorType: context.actorType,
       });
     },
+  }),
+  "video-settle": operation({
+    summary: "Answer a provider-delivered video target stuck awaiting verification.",
+    note: "Re-issues the publication with the same fenced request id, so the provider returns the post it already has instead of creating a second one, and the target is settled with whatever came back. Provider routes only: a native upload has no such fence.",
+    schema: z.object({
+      draft: example(z.coerce.number().int().positive(), "232").describe("video draft id"),
+      target: example(z.string().trim().min(1), "instagram_reels").describe("video target"),
+      apply: applyOption,
+    }),
+    mutates: true,
+    agent: true,
+    handler: (context, input) =>
+      settleVideoTarget(
+        context.config(),
+        context.db(),
+        { videoDraftId: input.draft, target: input.target, apply: input.apply },
+        context.fetchImpl,
+      ),
   }),
   "refresh-site": operation({
     summary: "Re-render one locale's public page without touching social targets.",

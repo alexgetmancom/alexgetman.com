@@ -24,6 +24,7 @@ import {
   validateVideoDraft,
   validateVideoSource,
 } from "../../publishing/video-service.js";
+import { settleVideoTarget } from "../../publishing/video-settle.js";
 import type { VideoLocale, VideoMetadata, VideoTarget } from "../../publishing/video-types.js";
 import { accessibleStudioActorIds } from "../access.js";
 import { videoDeliveryProjections } from "../projections.js";
@@ -106,6 +107,14 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
           targets.map((target) => [target, new Date(backendDb.clock.now().getTime() + 60_000)]),
         ) as Partial<Record<VideoTarget, Date>>;
         return scheduleOwnedVideo(backendDb, config, actorId, publicationId, schedule);
+      });
+    },
+    /** Answers a provider-delivered target that lost its worker, by asking the
+     * provider with the request id that already fences the publication. */
+    settleTarget(actorId: number, publicationId: number, target: VideoTarget) {
+      return trackUsageAsync(backendDb, "studio.video.settle", async () => {
+        requireOwnedVideo(backendDb, config, actorId, publicationId);
+        return settleVideoTarget(config, backendDb, { videoDraftId: publicationId, target, apply: true });
       });
     },
     retryTarget(actorId: number, publicationId: number, target: VideoTarget) {

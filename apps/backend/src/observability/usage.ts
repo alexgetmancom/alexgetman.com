@@ -36,6 +36,7 @@ const TRACKED_FEATURES = [
   "studio.video.schedule",
   "studio.video.cancel",
   "studio.video.retry",
+  "studio.video.settle",
   "studio.media.import",
   "studio.channel.list",
   "studio.channel.connect",

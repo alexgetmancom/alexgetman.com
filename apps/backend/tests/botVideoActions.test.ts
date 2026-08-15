@@ -28,10 +28,10 @@ afterEach(() => {
 
 const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
 
-function draftCard(status: string) {
+function draftCard(status: string, target = "youtube_shorts", deliveryProvider: string | null = "native") {
   return {
     draft: { id: 7, label: "Clip", locale: "ru", status },
-    targets: [{ id: 1, target: "youtube_shorts", status, metadataJson: { title: "Clip" }, scheduledAt: null }],
+    targets: [{ id: 1, target, status, metadataJson: { title: "Clip" }, scheduledAt: null, deliveryProvider }],
   };
 }
 
@@ -57,6 +57,17 @@ describe("video card controls", () => {
     expect(preview.text).toContain("нужна проверка");
     expect(preview.text).not.toContain("verification_required");
     expect(JSON.stringify(preview.keyboard)).not.toContain("p:video:retry:7");
+  });
+
+  it("offers the provider answer only where the same request cannot publish twice", () => {
+    // A lost worker leaves nobody knowing whether the audience has it. Asking
+    // the provider is safe because the request id fences the publication; a
+    // native upload has no such fence and must not grow a button.
+    const throughProvider = videoPreview(draftCard("verification_required", "instagram_reels", "zernio"), config, "ru");
+    expect(JSON.stringify(throughProvider.keyboard)).toContain("p:video:settle:7:instagram_reels");
+
+    const native = videoPreview(draftCard("verification_required", "instagram_reels", "native"), config, "ru");
+    expect(JSON.stringify(native.keyboard)).not.toContain("p:video:settle:7");
   });
 
   it("offers Instagram metadata editing and a file replacement while a scheduled target is still waiting", async () => {

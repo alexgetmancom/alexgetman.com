@@ -83,6 +83,7 @@ export function defineVideoActionHandlers(define: typeof action): Record<string,
     edit_menu: define(handleEditMenu, { entity: "draft", freshCard: true, args: [] }),
     edit_field: define(handleEditField, { entity: "draft", freshCard: true, args: ["field"] }),
     edit_media: define(handleEditMedia, { entity: "draft", freshCard: true, args: [] }),
+    settle: define(handleSettle, { entity: "draft", freshCard: true, args: ["target"] }),
   };
 }
 
@@ -423,6 +424,15 @@ async function handleRemove({ backendDb, config, actorId, locale, args, draftId,
   return [
     ...showVideoCard(backendDb, config, actorId, draftId, locale),
     { type: "toast", text: t(locale, "video.removed", { label: videoTargetLabel(target) }) },
+  ];
+}
+
+async function handleSettle({ backendDb, config, actorId, locale, args, draftId, services }: VideoActionArgs): Promise<VideoActionResult> {
+  const target = requireVideoTarget(args.target ?? "");
+  const settled = await services.videos.settleTarget(actorId, draftId, target);
+  return [
+    ...showVideoCard(backendDb, config, actorId, draftId, locale),
+    { type: "toast", text: t(locale, settled.url ? "video.settled" : "video.settled-unconfirmed") },
   ];
 }
 

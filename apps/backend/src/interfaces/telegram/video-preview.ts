@@ -17,7 +17,16 @@ import { formatVideoTime } from "./video-time.js";
 
 type VideoPreviewData = {
   draft: { id: number; label: string; locale: string; status: string };
-  targets: Array<{ id: number; target: string; status: string; metadataJson: unknown; scheduledAt: string | null }>;
+  targets: Array<{
+    id: number;
+    target: string;
+    status: string;
+    metadataJson: unknown;
+    scheduledAt: string | null;
+    /** Required, not optional: the Story-of-a-lost-worker button exists only for
+     * a provider route, and a projection that dropped this would hide it. */
+    deliveryProvider: string | null;
+  }>;
 };
 
 type VideoPreviewView = "overview" | "confirm_now" | "confirm_cancel" | "confirm_remove";
@@ -77,6 +86,11 @@ export function videoPreview(
       keyboard.text(t(locale, "vpreview.ig-remove"), publicationCallback("video", "remove_ask", [draft.id, "instagram_reels"])).row();
     if (isAudienceMutationRetryable(igTarget.status))
       keyboard.text(t(locale, "vpreview.ig-retry"), publicationCallback("video", "retry", [draft.id, "instagram_reels", "card"])).row();
+    // A publication that lost its worker cannot be retried — nobody knows
+    // whether it landed — but a provider route can be asked, because the same
+    // fenced request returns the post it already has instead of a second one.
+    if (igTarget.status === "verification_required" && igTarget.deliveryProvider === "zernio")
+      keyboard.text(t(locale, "vpreview.ig-settle"), publicationCallback("video", "settle", [draft.id, "instagram_reels"])).row();
   }
   if (ytTarget && isAudienceMutationRetryable(ytTarget.status))
     keyboard.text(t(locale, "vpreview.yt-retry"), publicationCallback("video", "retry", [draft.id, "youtube_shorts", "card"])).row();
