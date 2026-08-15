@@ -94,7 +94,7 @@ export async function handleVideoConversationMessage(
  * they collect, and the flow already knows that. */
 async function acceptVideoMessage(args: VideoMessageArgs): Promise<PublicationEffect[]> {
   const { step } = args.session;
-  if (step === "asset") return acceptVideoAsset(args);
+  if (step === "asset") return args.session.data.is_single_edit ? replaceVideoAsset(args) : acceptVideoAsset(args);
   if (step === "label") return acceptVideoLabel(args);
   if (step === "schedule_common" || step === "schedule_target") return acceptVideoScheduleDate(args);
   if (!isVideoWizardStep(step)) throw new StudioError("err.video-restart");
@@ -120,6 +120,16 @@ async function acceptVideoAsset({ ctx, backendDb, config, actorId, session, serv
     "err.video-restart",
   );
   return videoStepEffects(backendDb, config, actorId, saved);
+}
+
+/** Swaps the file behind an existing draft ("🎬 Replace video" on the edit
+ * menu). The upload is stored the same way as the first one; only the draft it
+ * lands on already exists. */
+async function replaceVideoAsset({ ctx, backendDb, config, actorId, session, services }: VideoMessageArgs): Promise<PublicationEffect[]> {
+  if (session.draftId == null) throw new StudioError("err.video-reopen-edit");
+  const stored = await storeTelegramVideo(ctx, backendDb, config, actorId);
+  await services.videos.replaceSource(actorId, session.draftId, stored.assetId);
+  return videoCardEffects(backendDb, config, actorId, session.draftId, services);
 }
 
 async function acceptVideoLabel({ backendDb, config, actorId, session, text, services }: VideoMessageArgs): Promise<PublicationEffect[]> {

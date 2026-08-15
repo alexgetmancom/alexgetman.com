@@ -13,13 +13,16 @@ import { isVideoTargetMetadataEditable } from "../../publishing/state.js";
 import {
   cancelVideo,
   createVideoDraft,
+  isVideoSourceReplaceable,
   removeVideoTarget,
+  replaceVideoSource,
   replaceVideoTargets,
   retryVideoTarget,
   saveVideoMetadata,
   scheduleVideo,
   updateVideoLabel,
   validateVideoDraft,
+  validateVideoSource,
 } from "../../publishing/video-service.js";
 import type { VideoLocale, VideoMetadata, VideoTarget } from "../../publishing/video-types.js";
 import { accessibleStudioActorIds } from "../access.js";
@@ -43,6 +46,30 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     get(actorId: number, publicationId: number) {
       const draft = requireOwnedVideo(backendDb, config, actorId, publicationId);
       return { id: draft.id, status: draft.status, draft, targets: backendDb.studioVideos.targets(publicationId) };
+    },
+    /** Swaps the uploaded file behind an unprepared draft, for the case the
+     * operator attached the wrong one. The new file passes the same technical
+     * gate as the original before the draft points at it. */
+    async replaceSource(actorId: number, publicationId: number, studioMediaAssetId: number) {
+      return trackUsageAsync(backendDb, "studio.video.edit", async () => {
+        requireOwnedVideo(backendDb, config, actorId, publicationId);
+        const [asset] = requireStudioMediaAssets(backendDb, actorId, [studioMediaAssetId], accessibleStudioActorIds(config, actorId));
+        if (asset?.kind !== "video") throw new StudioError("err.video-needs-asset");
+        const technical = await validateVideoSource(asset.localPath);
+        replaceVideoSource(backendDb, publicationId, studioMediaAssetId, technical.seconds);
+        return technical;
+      });
+    },
+    sourceReplaceable(actorId: number, publicationId: number): boolean {
+      const draft = requireOwnedVideo(backendDb, config, actorId, publicationId);
+      const targets = backendDb.studioVideos.targets(publicationId);
+      return (
+        targets.length > 0 &&
+        isVideoSourceReplaceable(
+          draft.status,
+          targets.map((target) => target.status),
+        )
+      );
     },
     metadataEditableTargets(actorId: number, publicationId: number): VideoTarget[] {
       requireOwnedVideo(backendDb, config, actorId, publicationId);

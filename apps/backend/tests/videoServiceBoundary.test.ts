@@ -131,6 +131,63 @@ describe("video Studio service boundary", () => {
     });
   });
 
+  it("replaces the source file of an unprepared draft and refuses once a target is prepared", async () => {
+    await withFixture(async (backendDb, current) => {
+      const service = videoService(backendDb, current.config);
+      const publishAt = new Date(Date.now() + 90 * 60_000);
+      await service.schedule(42, current.draftId, { instagram_reels: publishAt });
+      expect(service.sourceReplaceable(42, current.draftId)).toBe(true);
+
+      const replacement = join(current.directory, "replacement.mp4");
+      const encoded = Bun.spawnSync([
+        "ffmpeg",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=black:s=320x180:d=3",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-an",
+        "-y",
+        replacement,
+      ]);
+      if (encoded.exitCode !== 0) throw new Error(`replacement encode failed: ${encoded.stderr.toString()}`);
+      const asset = backendDb.db
+        .insert(studioMediaAssets)
+        .values({
+          actorId: 42,
+          kind: "video",
+          mimeType: "video/mp4",
+          filename: "replacement.mp4",
+          localPath: replacement,
+          byteSize: 1,
+          sha256: `video-service-boundary-replacement-${fixtureSequence++}`,
+          source: "test_upload",
+          createdAt: new Date().toISOString(),
+        })
+        .returning({ id: studioMediaAssets.id })
+        .get();
+      if (!asset) throw new Error("replacement asset was not created");
+
+      const technical = await service.replaceSource(42, current.draftId, asset.id);
+      expect(technical.seconds).toBe(3);
+      expect(service.get(42, current.draftId).draft.studioMediaAssetId).toBe(asset.id);
+      // The duration recorded at scheduling time describes the old file and
+      // would otherwise survive the swap.
+      expect(backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, current.draftId)).get()).toMatchObject({
+        metadataJson: { videoDurationMs: 3_000 },
+      });
+
+      backendDb.db.update(videoTargets).set({ status: "prepared" }).where(eq(videoTargets.videoDraftId, current.draftId)).run();
+      expect(service.sourceReplaceable(42, current.draftId)).toBe(false);
+      await expect(service.replaceSource(42, current.draftId, asset.id)).rejects.toThrow("err.video-source-locked");
+    });
+  });
+
   it("exposes status, history, metadata commands, retry, manual scheduling, and target toggles", async () => {
     await withFixture(async (backendDb, current) => {
       const service = videoService(backendDb, current.config);

@@ -82,6 +82,7 @@ export function defineVideoActionHandlers(define: typeof action): Record<string,
     remove: define(handleRemove, { entity: "draft", freshCard: true, args: ["target"] }),
     edit_menu: define(handleEditMenu, { entity: "draft", freshCard: true, args: [] }),
     edit_field: define(handleEditField, { entity: "draft", freshCard: true, args: ["field"] }),
+    edit_media: define(handleEditMedia, { entity: "draft", freshCard: true, args: [] }),
   };
 }
 
@@ -435,6 +436,8 @@ async function handleEditMenu({ actorId, locale, draftId, services }: VideoActio
     const editable = "target" in definition ? targets.includes(definition.target) : canEditLabel;
     if (editable) keyboard.text(t(locale, definition.label), publicationCallback("video", "edit_field", [draftId, field])).row();
   }
+  if (videos.sourceReplaceable(actorId, draftId))
+    keyboard.text(t(locale, "video.edit-media"), publicationCallback("video", "edit_media", [draftId])).row();
   keyboard.text(t(locale, "common.back"), publicationCallback("video", "view", [draftId, "overview"]));
   return [
     {
@@ -463,6 +466,22 @@ async function handleEditField({ ctx, backendDb, actorId, locale, args, draftId,
   };
   saveVideoState(backendDb, actorId, session);
   return [videoPromptEffect(backendDb, actorId, t(locale, definition.prompt))];
+}
+
+/** Asks for a replacement upload. The answer is a file rather than text, so the
+ * session waits on the same `asset` step the wizard uses. */
+async function handleEditMedia({ ctx, backendDb, actorId, locale, draftId, services }: VideoActionArgs): Promise<VideoActionResult> {
+  if (!services.videos.sourceReplaceable(actorId, draftId)) throw new StudioError("err.video-source-locked");
+  const targets = services.videos.get(actorId, draftId).targets;
+  const session: VideoConversationInput = {
+    draftId,
+    step: "asset",
+    selected: targets.map((target) => requireVideoTarget(target.target)),
+    data: { is_single_edit: true },
+    controlMessageId: callbackMessageId(ctx),
+  };
+  saveVideoState(backendDb, actorId, session);
+  return [videoPromptEffect(backendDb, actorId, t(locale, "video.edit-media-prompt"))];
 }
 
 function scheduleValues(value: unknown): Record<string, string> | undefined {

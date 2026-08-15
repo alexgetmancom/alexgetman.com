@@ -59,7 +59,7 @@ describe("video card controls", () => {
     expect(JSON.stringify(preview.keyboard)).not.toContain("p:video:retry:7");
   });
 
-  it("offers Instagram metadata editing while a scheduled target is still waiting", async () => {
+  it("offers Instagram metadata editing and a file replacement while a scheduled target is still waiting", async () => {
     backendDb = openVideoDb();
     const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
     replaceVideoTargets(backendDb, draftId, ["instagram_reels"]);
@@ -85,6 +85,7 @@ describe("video card controls", () => {
     const keyboard = JSON.stringify(options?.reply_markup);
     expect(keyboard).toContain(`p:video:edit_field:${draftId}:instagram_caption`);
     expect(keyboard).not.toContain(`p:video:edit_field:${draftId}:label`);
+    expect(keyboard).toContain(`p:video:edit_media:${draftId}`);
   });
 });
 

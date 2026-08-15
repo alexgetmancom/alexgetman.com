@@ -148,6 +148,64 @@ export function saveVideoMetadata(backendDb: BackendDb, videoDraftId: number, ta
     .run();
 }
 
+/** The source file may still be swapped while every platform is only holding
+ * metadata. Preparation is the line: from "prepared" on, a platform already has
+ * the bytes, and replacing them here would leave the draft describing a file
+ * nobody is going to publish. */
+export function isVideoSourceReplaceable(draftStatus: string, targetStatuses: string[]): boolean {
+  return ["draft", "editing", "scheduled"].includes(draftStatus) && targetStatuses.every(isVideoTargetMetadataEditable);
+}
+
+/** Points the draft at a different uploaded file. The probed duration travels
+ * with it: it is recorded per target at scheduling time and describes the
+ * source, so a stale one would misreport completion rates in analytics. */
+export function replaceVideoSource(backendDb: BackendDb, videoDraftId: number, studioMediaAssetId: number, durationSeconds: number): void {
+  const now = new Date().toISOString();
+  unsafeDb(backendDb).db.transaction((tx) => {
+    const draft = tx.select().from(videoDrafts).where(eq(videoDrafts.id, videoDraftId)).get();
+    if (!draft) throw new Error("Video publication was not found.");
+    const targets = tx.select().from(videoTargets).where(eq(videoTargets.videoDraftId, videoDraftId)).all();
+    if (
+      !isVideoSourceReplaceable(
+        draft.status,
+        targets.map((target) => target.status),
+      )
+    )
+      throw new StudioError("err.video-source-locked");
+    const runningJob = tx
+      .select({ id: videoJobs.id })
+      .from(videoJobs)
+      .where(and(eq(videoJobs.videoDraftId, videoDraftId), eq(videoJobs.status, "running")))
+      .get();
+    if (runningJob) throw new StudioError("err.video-job-running");
+    for (const target of targets) {
+      const metadata = target.metadataJson as Record<string, unknown>;
+      // Fenced on the status the replaceability check above read: a prepare job
+      // can claim this target in that window and upload the old file, and the
+      // draft would then point at a source that platform never received.
+      const updated = tx
+        .update(videoTargets)
+        .set({
+          metadataJson: durationSeconds > 0 ? { ...metadata, videoDurationMs: Math.round(durationSeconds * 1_000) } : metadata,
+          updatedAt: now,
+        })
+        .where(and(eq(videoTargets.id, target.id), eq(videoTargets.status, target.status)))
+        .returning({ id: videoTargets.id })
+        .get();
+      if (!updated) throw new StudioError("err.video-source-locked");
+    }
+    const replaced = tx
+      .update(videoDrafts)
+      // The new file is present, so the draft is no longer one whose source has
+      // been reclaimed and the retention sweep has to see it again.
+      .set({ studioMediaAssetId, sourcePrunedAt: null, updatedAt: now })
+      .where(and(eq(videoDrafts.id, videoDraftId), eq(videoDrafts.status, draft.status)))
+      .returning({ id: videoDrafts.id })
+      .get();
+    if (!replaced) throw new StudioError("err.video-source-locked");
+  });
+}
+
 export function scheduleVideo(
   backendDb: BackendDb,
   videoDraftId: number,
@@ -271,14 +329,6 @@ export async function validateVideoDraft(config: BackendConfig, backendDb: Backe
   const locale = draft.locale === "en" ? "en" : "ru";
   const source = videoSourcePath(backendDb, draft);
   if (!source) throw new StudioError("err.source-missing");
-  if (path.extname(source).toLowerCase() !== ".mp4") throw new StudioError("err.need-mp4");
-  const size = (await fs.promises.stat(source)).size;
-  if (size <= 0) throw new StudioError("err.video-empty");
-  if (size > VIDEO_MAX_BYTES)
-    throw new StudioError("err.video-too-big", {
-      size: Math.ceil(size / 1024 / 1024),
-      limit: Math.floor(VIDEO_MAX_BYTES / 1024 / 1024),
-    });
   for (const target of listVideoTargets(backendDb, videoDraftId)) {
     if (target.target === "youtube_shorts") {
       const credentials = youtubeCredentials(config, locale);
@@ -293,6 +343,20 @@ export async function validateVideoDraft(config: BackendConfig, backendDb: Backe
         throw new StudioError("err.instagram-not-configured");
     }
   }
+  return validateVideoSource(source);
+}
+
+/** Everything the technical check can say about a file on its own, without a
+ * draft: the same gate a replacement source has to pass before it is adopted. */
+export async function validateVideoSource(source: string): Promise<VideoTechnicalCheck> {
+  if (path.extname(source).toLowerCase() !== ".mp4") throw new StudioError("err.need-mp4");
+  const size = (await fs.promises.stat(source)).size;
+  if (size <= 0) throw new StudioError("err.video-empty");
+  if (size > VIDEO_MAX_BYTES)
+    throw new StudioError("err.video-too-big", {
+      size: Math.ceil(size / 1024 / 1024),
+      limit: Math.floor(VIDEO_MAX_BYTES / 1024 / 1024),
+    });
   return probeVideo(source, size);
 }
 
