@@ -2,7 +2,6 @@ import { describe, expect, it, mock } from "bun:test";
 import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
 import { alertDedup, channelConnections, credentialChecks, postEvents, publishJobs, siteJobs, workerState } from "../src/db/schema.js";
-import type { BackendConfig } from "../src/foundation/config.js";
 import { expectedWorkerNames } from "../src/foundation/runtime/worker-state.js";
 import { renderDashboard } from "../src/interfaces/web/dashboard.js";
 import { deliverPendingAlerts } from "../src/observability/alerts.js";
@@ -308,10 +307,9 @@ function insertWorker(backendDb: ReturnType<typeof openBackendDb>, name: string,
 
 function insertExpectedWorkers(
   backendDb: ReturnType<typeof openBackendDb>,
-  config: BackendConfig,
   overrides: Record<string, Record<string, boolean | string>> = {},
 ): void {
-  for (const name of expectedWorkerNames(config)) insertWorker(backendDb, name, overrides[name] ?? { phase: "idle" });
+  for (const name of expectedWorkerNames()) insertWorker(backendDb, name, overrides[name] ?? { phase: "idle" });
 }
 
 function insertAlertEvent(backendDb: ReturnType<typeof openBackendDb>, severity: string, ackedAt: string | null): void {
@@ -343,7 +341,7 @@ describe("healthReport", () => {
       setHealthChannels(backendDb, ["telegram"]);
       insertCredential(backendDb, "telegram", "ready");
       insertCredential(backendDb, "threads_ru", "missing");
-      insertExpectedWorkers(backendDb, config);
+      insertExpectedWorkers(backendDb);
 
       const report = healthReport(config, backendDb);
       expect(report.ok).toBe(true);
@@ -366,7 +364,7 @@ describe("healthReport", () => {
       setHealthChannels(backendDb, ["x"]);
       insertCredential(backendDb, "x", "ready");
       const config = loadTestConfig(READY_ENV);
-      insertExpectedWorkers(backendDb, config);
+      insertExpectedWorkers(backendDb);
       const report = healthReport(config, backendDb);
 
       expect(report.ok).toBe(true);
@@ -398,7 +396,7 @@ describe("healthReport", () => {
       setHealthChannels(backendDb, ["x"]);
       insertCredential(backendDb, "x", "ready");
       const config = loadTestConfig(READY_ENV);
-      insertExpectedWorkers(backendDb, config, { queue: { ok: false, lastError: "stalled" } });
+      insertExpectedWorkers(backendDb, { queue: { ok: false, lastError: "stalled" } });
       expect(healthReport(config, backendDb).ok).toBe(false);
     } finally {
       backendDb.close();
@@ -409,7 +407,7 @@ describe("healthReport", () => {
       setHealthChannels(clean, ["x"]);
       insertCredential(clean, "x", "ready");
       const config = loadTestConfig(READY_ENV);
-      insertExpectedWorkers(clean, config);
+      insertExpectedWorkers(clean);
       expect(healthReport(config, clean).ok).toBe(true);
     } finally {
       clean.close();
@@ -476,7 +474,7 @@ describe("healthReport", () => {
       backendDb.db.delete(channelConnections).run();
       const report = healthReport(loadTestConfig(READY_ENV), backendDb);
       expect(report).toMatchObject({ ok: false, pendingAlerts: 0, credentials: [], workers: [] });
-      expect(report.missingWorkers).toEqual(expectedWorkerNames(loadTestConfig(READY_ENV)));
+      expect(report.missingWorkers).toEqual(expectedWorkerNames());
     } finally {
       backendDb.close();
     }

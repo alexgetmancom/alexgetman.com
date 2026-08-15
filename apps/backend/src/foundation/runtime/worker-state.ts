@@ -1,7 +1,6 @@
 import { eq } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { type JsonValue, workerState } from "../../db/schema.js";
-import type { BackendConfig } from "../config.js";
 
 /** Runtime heartbeat persistence shared by background cycles. */
 export function recordWorkerState(backendDb: BackendDb, name: string, state: Record<string, JsonValue>, error: string | null = null): void {
@@ -40,8 +39,11 @@ export function recordWorkerHeartbeat(
     .run();
 }
 
-/** Names expected once the corresponding runtime has started its workers. */
-export function expectedWorkerNames(config: BackendConfig): string[] {
+/** Names expected once the corresponding runtime has started its workers. The
+ * site loops are on this list whether or not the Studio serves a site: they are
+ * started either way and idle on the flag inside the tick, so leaving them off
+ * hid two running, healthy workers from `status` and from the health report. */
+export function expectedWorkerNames(): string[] {
   return [
     "story-cards",
     "queue",
@@ -52,7 +54,8 @@ export function expectedWorkerNames(config: BackendConfig): string[] {
     "metrics",
     "creator-analytics",
     "metric-retention",
-    ...(config.studio.siteEnabled ? ["site", "site-watchdog"] : []),
+    "site",
+    "site-watchdog",
     "media-cache",
     "operational-retention",
     "observability",
