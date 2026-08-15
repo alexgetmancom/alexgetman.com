@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createApiHandler } from "../src/api.js";
 import { connectLink } from "../src/channels/connect-link.js";
-import { exchangeInstagramCode, metaOauthAuthorizeUrl, metaOauthConnectUrl, verifyMetaOauthState } from "../src/channels/meta-oauth.js";
+import { exchangeMetaCode, metaOauthAuthorizeUrl, metaOauthConnectUrl, verifyMetaOauthState } from "../src/channels/meta-oauth.js";
 import { withDb } from "./helpers/db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
@@ -75,6 +75,23 @@ describe("Meta browser OAuth", () => {
     expect(() => connectLink(loadTestConfig({}), "instagram", "ru", now)).toThrow();
   });
 
+  it("walks both platforms through one flow, differing only in what the table says", () => {
+    // The two used to differ in five places across three layers, one of which
+    // had the HTTP route fetch a profile for Threads and not for Instagram.
+    // What is left of the difference is addresses and one word of a grant type.
+    for (const [platform, expected] of [
+      ["threads", { host: "threads.net", scope: "threads_basic,threads_content_publish,threads_manage_insights" }],
+      ["instagram", { host: "www.instagram.com", scope: "instagram_business_basic" }],
+    ] as const) {
+      const state = new URL(metaOauthConnectUrl(config, platform, "en", now)).searchParams.get("state") ?? "";
+      const authorize = new URL(metaOauthAuthorizeUrl(config, state, now));
+      expect(authorize.host).toBe(expected.host);
+      expect(authorize.searchParams.get("scope")).toContain(expected.scope);
+      expect(authorize.searchParams.get("redirect_uri")).toBe(`https://publisher.example.com/oauth/${platform}`);
+      expect(authorize.searchParams.get("state")).toBe(state);
+    }
+  });
+
   it("rejects tampered and expired links", () => {
     const state = new URL(metaOauthConnectUrl(config, "instagram", "en", now)).searchParams.get("state") ?? "";
     expect(() => verifyMetaOauthState(config, `${state}x`, now)).toThrow("invalid");
@@ -122,7 +139,7 @@ describe("Meta browser OAuth", () => {
       return new Response("{}", { status: 404 });
     }) as typeof fetch;
 
-    expect(await exchangeInstagramCode(config, "one-time-code", fetchImpl)).toEqual({
+    expect(await exchangeMetaCode(config, "instagram", "one-time-code", fetchImpl)).toEqual({
       accessToken: "long",
       userId: "ig-7",
       username: "publisher",

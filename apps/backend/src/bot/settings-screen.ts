@@ -3,6 +3,7 @@ import { Menu, type MenuFlavor } from "@grammyjs/menu";
 import type { Bot, Context } from "grammy";
 import { importManualAnalytics, manualThreadsFollowers } from "../analytics/import-manual-analytics.js";
 import { importXAnalyticsCsv } from "../analytics/import-x-csv.js";
+import { META_PROVIDERS, type MetaOauthPlatform } from "../channels/meta-providers.js";
 import { listChannels } from "../channels/registry.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -126,7 +127,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
           .row();
       }
     }
-    for (const platform of ["threads", "instagram"] as const) {
+    for (const platform of Object.keys(META_PROVIDERS) as MetaOauthPlatform[]) {
       const ru = studioChannels.nativeConnectUrl(platform, "ru");
       const en = studioChannels.nativeConnectUrl(platform, "en");
       if (ru) range.url(t(locale, "settings.connect-native", { platform: channelPlatformLabel(platform), locale: "RU" }), ru);

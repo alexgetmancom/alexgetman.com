@@ -1,4 +1,4 @@
-import { exchangeThreadsCode, metaOauthRedirectUri, threadsAuthorizeUrl } from "../channels/meta-oauth.js";
+import { exchangeMetaCode, metaAuthorizeUrl, metaOauthRedirectUri } from "../channels/meta-oauth.js";
 import type { BackendConfig } from "../foundation/config.js";
 import type { VideoLocale } from "../publishing/video-types.js";
 
@@ -65,10 +65,10 @@ export async function authorizeThreads(
     );
 
   const redirectUri = metaOauthRedirectUri(config, "threads");
-  options.onPrompt?.(threadsAuthorizeUrl(config, appId), redirectUri);
+  options.onPrompt?.(metaAuthorizeUrl(config, "threads"), redirectUri);
 
   const code = authorizationCode(await askForRedirect());
-  const authorization = await exchangeThreadsCode(config, code, fetchImpl);
+  const authorization = await exchangeMetaCode(config, "threads", code, fetchImpl);
 
   const suffix = locale === "en" ? "EN" : "RU";
   return {

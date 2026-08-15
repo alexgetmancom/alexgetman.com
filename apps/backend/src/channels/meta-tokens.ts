@@ -20,9 +20,12 @@ import { encryptionKey, fingerprint, open, seal } from "../foundation/secret-box
 const RENEW_AFTER_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** The publication target a Meta credential is stored under, which is also how
+ * it is named everywhere else. */
+export type MetaTokenTarget = "threads_ru" | "threads_en" | "instagram_ru" | "instagram_en";
+
 type MetaToken = {
-  /** The publication target, which is also how the credential is named. */
-  target: "threads_ru" | "threads_en" | "instagram_ru" | "instagram_en";
+  target: MetaTokenTarget;
   setting: keyof BackendConfig & string;
   refreshUrl: (token: string) => string;
 };

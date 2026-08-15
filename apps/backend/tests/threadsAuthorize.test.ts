@@ -1,16 +1,22 @@
 import { describe, expect, it } from "bun:test";
-import { threadsAuthorizeUrl } from "../src/channels/meta-oauth.js";
+import { metaAuthorizeUrl } from "../src/channels/meta-oauth.js";
 import { authorizationCode, authorizeThreads } from "../src/operations/threads-authorize.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
 const configured = { THREADS_APP_ID: "990602627938098", THREADS_APP_SECRET: "app-secret", PUBLIC_BASE_URL: "https://studio.example.com" };
 
-function threads(replies: { short?: unknown; long?: unknown }) {
+function threads(replies: { short?: unknown; long?: unknown; profile?: unknown }) {
   const requests: { url: string; body?: string }[] = [];
   const fetchImpl = (async (input: string | URL, init?: RequestInit) => {
     const url = String(input);
     requests.push(init?.body ? { url, body: String(init.body) } : { url });
-    const payload = url.includes("/oauth/access_token") ? replies.short : replies.long;
+    // The account behind the token is read in the same exchange for every Meta
+    // platform, so the terminal path answers it too.
+    const payload = url.includes("/me?")
+      ? (replies.profile ?? { id: "17841405793187218", username: "studio" })
+      : url.includes("/oauth/access_token")
+        ? replies.short
+        : replies.long;
     if (!payload) return new Response("{}", { status: 400 });
     return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
   }) as unknown as typeof fetch;
@@ -48,7 +54,7 @@ describe("threads authorization", () => {
 
     const sent = new URLSearchParams(requests[0]?.body ?? "");
     expect(sent.get("redirect_uri")).toBe("https://studio.example.com/oauth/threads");
-    expect(threadsAuthorizeUrl(config, "990602627938098")).toContain(encodeURIComponent("https://studio.example.com/oauth/threads"));
+    expect(metaAuthorizeUrl(config, "threads")).toContain(encodeURIComponent("https://studio.example.com/oauth/threads"));
     expect(sent.get("code")).toBe("code-pasted-bare");
   });
 
