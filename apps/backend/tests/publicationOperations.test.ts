@@ -231,3 +231,40 @@ it("keeps the identity of a live post it was told to publish again", async () =>
     backendDb.close();
   }
 });
+
+it("refuses to purge when a target changed while it was being verified", async () => {
+  const backendDb = openBackendDb(":memory:");
+  try {
+    connectThreads(backendDb);
+    const published = (await runOperation("publish", context(backendDb), {
+      locale: "ru",
+      targets: "threads_ru",
+      text: "Disposable test",
+    })) as { draft_id: number; post_id: number; ref: string };
+    const now = new Date().toISOString();
+    backendDb.sqlite
+      .query(
+        "INSERT INTO post_targets(post_key,target,status,url,updated_at) VALUES (?,'threads_ru','published','https://threads.example/deleted',?)",
+      )
+      .run(published.ref, now);
+
+    // The proof is gathered over HTTP, which takes long enough for a worker to
+    // finish publishing another target. Erasing the record then would leave a
+    // post live with nothing in the database that knows about it.
+    const publishesMidVerification = (async () => {
+      backendDb.sqlite
+        .query("INSERT INTO post_targets(post_key,target,status,url,updated_at) VALUES (?,'telegram','published','https://t.me/c/1/2',?)")
+        .run(published.ref, new Date().toISOString());
+      return new Response("gone", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    await expect(runOperation("purge", context(backendDb, publishesMidVerification), { ref: published.ref, apply: true })).rejects.toThrow(
+      "changed while it was being verified",
+    );
+    // Nothing may have been deleted: the whole cascade rolls back together.
+    expect(backendDb.sqlite.query("SELECT COUNT(*) AS count FROM drafts WHERE id=?").get(published.draft_id)).toEqual({ count: 1 });
+    expect(backendDb.sqlite.query("SELECT COUNT(*) AS count FROM post_targets WHERE post_key=?").get(published.ref)).toEqual({ count: 2 });
+  } finally {
+    backendDb.close();
+  }
+});

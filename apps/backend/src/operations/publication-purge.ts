@@ -5,6 +5,7 @@ import { resolvePublicationRef } from "./publication-ref.js";
 type PurgeInput = { ref: string; apply: boolean };
 type SqlArgs = Array<string | number>;
 type PurgeStatement = { name: string; countSql: string; deleteSql: string; args: SqlArgs };
+type TargetState = { target: string; status: string; url: string | null };
 
 export async function purgePublication(backendDb: BackendDb, input: PurgeInput, fetchImpl: typeof fetch) {
   const resolved = resolvePublicationRef(backendDb, input.ref);
@@ -32,9 +33,16 @@ export async function purgePublication(backendDb: BackendDb, input: PurgeInput, 
   ).map(({ path }) => path);
   if (!input.apply) return { ok: true, applied: false, action: "purge", ref: resolved.postKey, draft_id: draftId, rows, files };
 
-  await assertPublicationAbsent(sqlite, resolved.postKey, fetchImpl);
+  const verified = await assertPublicationAbsent(sqlite, resolved.postKey, fetchImpl);
   const deleted = sqlite
     .transaction(() => {
+      // The proof that nothing is live was gathered over HTTP and cannot travel
+      // in a WHERE clause, so it travels as this: the delete only proceeds
+      // while the targets still look exactly as they did when they were
+      // checked. A worker that published one in between rolls the whole purge
+      // back rather than erasing the record of a post that just went out.
+      if (targetSignature(targetStates(sqlite, resolved.postKey)) !== targetSignature(verified))
+        throw new Error(`targets for ${resolved.postKey} changed while it was being verified; nothing was deleted`);
       const result: Record<string, number> = {};
       for (const statement of statements) {
         const changes = sqlite.query(statement.deleteSql).run(...statement.args).changes;
@@ -68,16 +76,24 @@ export async function purgePublication(backendDb: BackendDb, input: PurgeInput, 
   };
 }
 
+function targetStates(sqlite: ReturnType<typeof unsafeDb>["sqlite"], postKey: string): TargetState[] {
+  return sqlite.query("SELECT target,status,url FROM post_targets WHERE post_key=? ORDER BY target").all(postKey) as TargetState[];
+}
+
+/** Compared instead of the rows themselves: a target appearing, changing status
+ * or gaining a URL all have to count as a change. */
+function targetSignature(states: TargetState[]): string {
+  return states.map((state) => `${state.target}|${state.status}|${state.url ?? ""}`).join("\n");
+}
+
+/** Returns exactly what it proved absent, so the delete can refuse to run
+ * against anything else. */
 async function assertPublicationAbsent(
   sqlite: ReturnType<typeof unsafeDb>["sqlite"],
   postKey: string,
   fetchImpl: typeof fetch,
-): Promise<void> {
-  const targets = sqlite.query("SELECT target,status,url FROM post_targets WHERE post_key=? ORDER BY target").all(postKey) as Array<{
-    target: string;
-    status: string;
-    url: string | null;
-  }>;
+): Promise<TargetState[]> {
+  const targets = targetStates(sqlite, postKey);
   for (const target of targets) {
     if (target.status !== "published") continue;
     if (!target.url) throw new Error(`cannot prove ${target.target} is absent: no public URL is stored`);
@@ -94,6 +110,7 @@ async function assertPublicationAbsent(
     if (response.status !== 404 && response.status !== 410)
       throw new Error(`${target.target} is still reachable at ${target.url} (HTTP ${response.status})`);
   }
+  return targets;
 }
 
 function purgeStatements(postId: number, draftId: number, postKey: string, messageId: number, refs: string[]): PurgeStatement[] {
