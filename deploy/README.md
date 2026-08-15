@@ -12,11 +12,9 @@ socket and can only request a rollback using a private bearer-authenticated rout
    ```text
    /home/deploy/alexgetman-runtime/compose.yaml
    /home/deploy/alexgetman-runtime/secrets.env
-   /home/deploy/alexgetman-runtime/site-feed.env
    /home/deploy/alexgetman-runtime/deploy-image.env
    /home/deploy/maru/maru.compose.yaml
    /home/deploy/maru/secrets.env
-   /home/deploy/maru/studio.yaml
    /home/deploy/maru/deploy-image.env
    ```
 
