@@ -164,7 +164,7 @@ export async function sendStudioCompletion(
     );
     const remaining = partialLocale ? remainingScheduleText(details, locale, timeConfig) : "";
     const text = `${headline}${videoLocale ? `\n${localeName(videoLocale, locale)}` : ""}${remaining ? `\n\n${remaining}` : ""}${lines.length ? `\n\n${lines.join("\n")}` : ""}`;
-    const replyMarkup = completionKeyboard(locale, event.postKey, draftId, retryableTargets, partialLocale != null);
+    const replyMarkup = completionKeyboard(locale, event.postKey, draftId, retryableTargets, failedTargets, partialLocale != null);
     await bot.api.sendMessage(actorId, text, replyMarkup ? { reply_markup: replyMarkup } : undefined);
   });
 }
@@ -174,6 +174,7 @@ function completionKeyboard(
   postKey: string | null,
   draftId: number | null,
   retryableTargets: Array<{ target: string; status: string; error: string | null }>,
+  failedTargets: Array<{ target: string; status: string; error: string | null }>,
   partial: boolean,
 ): InlineKeyboard | undefined {
   const keyboard = new InlineKeyboard();
@@ -183,15 +184,27 @@ function completionKeyboard(
   // Only a post can requeue every failed target in one call; a video is retried
   // per target because each upload carries its own metadata.
   const bulkRetry = kind === "post" && retryableTargets.length > 0;
-  if (kind && draftId != null && (retryableTargets.length || (kind === "post" && partial))) {
+  // Skipping is a post operation: a video target is given up on by cancelling
+  // the video, which the video card already offers.
+  const skippable = kind === "post" ? failedTargets : [];
+  if (kind && draftId != null && (retryableTargets.length || skippable.length || (kind === "post" && partial))) {
     hasButtons = true;
-    if (bulkRetry) keyboard.text(t(locale, "notif.retry-failed"), publicationCallback(kind, "retry", [draftId, "all", "notice"])).row();
+    if (bulkRetry) keyboard.text(t(locale, "notif.retry-failed"), publicationCallback(kind, "retry", [draftId, "all", "notice"]));
+    if (skippable.length) keyboard.text(t(locale, "notif.skip-failed"), publicationCallback("post", "skip", [draftId, "all", "notice"]));
+    if (bulkRetry || skippable.length) keyboard.row();
     keyboard.text(t(locale, "notif.open"), publicationCallback(kind, "view", [draftId, "overview"])).row();
     for (const target of retryableTargets)
       keyboard
         .text(
           t(locale, "notif.retry-target", { target: friendlyTarget(target.target) }),
           publicationCallback(kind, "retry", [draftId, target.target, "notice"]),
+        )
+        .row();
+    for (const target of skippable)
+      keyboard
+        .text(
+          t(locale, "notif.skip-target", { target: friendlyTarget(target.target) }),
+          publicationCallback("post", "skip", [draftId, target.target, "notice"]),
         )
         .row();
   }

@@ -14,13 +14,15 @@ import { StudioError } from "../../foundation/errors.js";
 import { truncateUnicode } from "../../foundation/text.js";
 import { cancelScheduledNotifications, scheduleReminder } from "../../notifications/jobs.js";
 import { trackUsageSync } from "../../observability/usage.js";
+import { abandonPublicationTargets } from "../../publishing/abandon.js";
 import { cancelDraft, cancelPendingPostJobs } from "../../publishing/draft-lifecycle.js";
 import { mediaPolicyForTarget } from "../../publishing/media-policy.js";
 import { publicationPreflight } from "../../publishing/preflight.js";
+import { refreshPublicationStatus } from "../../publishing/publication-status.js";
 import { publishDraftToQueue } from "../../publishing/publication-workflow.js";
 import { requeuePublicationTargets } from "../../publishing/requeue.js";
 import { assertFutureSchedule, assertValidScheduleDate, parseManualSchedule, publicationSlotTime } from "../../publishing/schedule.js";
-import { AUDIENCE_MUTATION_RETRYABLE_STATUSES } from "../../publishing/state.js";
+import { AUDIENCE_MUTATION_RETRYABLE_STATUSES, isPostTargetRetryable } from "../../publishing/state.js";
 import { parseTargets } from "../../publishing/targets.js";
 
 import { accessibleStudioActorIds } from "../access.js";
@@ -313,7 +315,9 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       return trackUsageSync(backendDb, "studio.post.retry", () => {
         const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
         if (draft.post_id == null) throw new StudioError("err.retry-only-failed");
-        const retryable = backendDb.studioPosts.retryablePublicationTargets(draft.post_id);
+        const retryable = backendDb.studioPosts
+          .failedPublicationTargets(draft.post_id)
+          .filter((item) => isPostTargetRetryable(item.target, item.status));
         const selected = target ? retryable.filter((item) => item.target === target) : retryable;
         if (selected.length === 0) throw new StudioError("err.retry-only-failed");
         const postId = draft.post_id;
@@ -327,6 +331,31 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
         const alreadyQueued = results.filter((item) => item.outcome === "already_queued").length;
         if (requeued === 0 && alreadyQueued === 0) throw new StudioError("err.retry-only-failed");
         return { results, requeued, alreadyQueued };
+      });
+    },
+    /** Gives up on a target that did not land: the publication is finished
+     * without it. Unlike a retry, an ambiguous `verification_required` target is
+     * included -- abandoning it sends nothing, and leaving it is what keeps the
+     * post asking for attention forever. */
+    skipTarget(actorId: number, draftId: number, target?: string) {
+      return trackUsageSync(backendDb, "studio.post.skip", () => {
+        const draft = requireOwnedDraft(backendDb, config, actorId, draftId);
+        if (draft.post_id == null) throw new StudioError("err.skip-only-failed");
+        const failed = backendDb.studioPosts.failedPublicationTargets(draft.post_id);
+        const selected = target ? failed.filter((item) => item.target === target) : failed;
+        if (selected.length === 0) throw new StudioError("err.skip-only-failed");
+        const postId = draft.post_id;
+        const results = abandonPublicationTargets(
+          backendDb,
+          { postId, postKey: publicationRef("post", postId), messageId: null },
+          selected.map((item) => item.target),
+        );
+        const abandoned = results.filter((item) => item.outcome === "abandoned").length;
+        if (abandoned === 0) throw new StudioError("err.skip-only-failed");
+        // The publication was held in `failed` by the very jobs just abandoned;
+        // this is what takes it, and the draft, out of the attention list.
+        refreshPublicationStatus(backendDb, postId);
+        return { results, abandoned };
       });
     },
     toggleTarget(actorId: number, draftId: number, target: string): void {

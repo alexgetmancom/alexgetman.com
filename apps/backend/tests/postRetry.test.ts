@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { drafts, postTargets, publishJobs, siteJobs } from "../src/db/schema.js";
+import { drafts, postEvents, postTargets, publications, publishJobs, siteJobs } from "../src/db/schema.js";
 import { loadConfig } from "../src/foundation/config.js";
 import { createStudioServices } from "../src/studio/services/index.js";
 import { withDb } from "./helpers/db.js";
@@ -66,7 +66,7 @@ describe("post publication retry", () => {
         .run();
 
       const posts = createStudioServices(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" })).posts;
-      expect(backendDb.studioPosts.retryablePublicationTargets(700).map((item) => item.target)).toEqual(["telegram", "site_en"]);
+      expect(backendDb.studioPosts.failedPublicationTargets(700).map((item) => item.target)).toEqual(["threads_en", "telegram", "site_en"]);
 
       expect(posts.retryTarget(42, 7)).toMatchObject({ requeued: 2, alreadyQueued: 0 });
       expect(
@@ -86,5 +86,70 @@ describe("post publication retry", () => {
         { target: "site_en", status: "queued" },
       ]);
       expect(() => posts.retryTarget(42, 7)).toThrow("err.retry-only-failed");
+    }));
+
+  it("abandons a target the operator skips and settles the publication without it", () =>
+    withDb((backendDb) => {
+      const now = new Date().toISOString();
+      backendDb.db.insert(publications).values({ postId: 800, draftId: 8, status: "failed", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(drafts)
+        .values({
+          id: 8,
+          actorId: 42,
+          status: "failed",
+          textRu: "Skippable post",
+          targetsJson: JSON.stringify({ telegram: true, threads_ru: true }),
+          postId: 800,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      for (const job of [
+        { target: "telegram", status: "published", lastError: null },
+        { target: "threads_ru", status: "failed", lastError: "Threads is unreachable" },
+      ])
+        backendDb.db
+          .insert(publishJobs)
+          .values({
+            postId: 800,
+            postKey: "post:800",
+            messageId: 800,
+            target: job.target,
+            status: job.status,
+            payloadJson: { text: "Skippable post" },
+            attemptCount: 4,
+            lastError: job.lastError,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
+      backendDb.db
+        .insert(postTargets)
+        .values([
+          { postKey: "post:800", target: "telegram", status: "published", updatedAt: now },
+          { postKey: "post:800", target: "threads_ru", status: "failed", updatedAt: now },
+        ])
+        .run();
+
+      const posts = createStudioServices(backendDb, loadConfig({ CONTROLLER_ADMIN_IDS: "42" })).posts;
+      expect(posts.skipTarget(42, 8, "threads_ru")).toMatchObject({ abandoned: 1 });
+
+      expect(backendDb.db.select({ target: publishJobs.target, status: publishJobs.status }).from(publishJobs).all()).toEqual([
+        { target: "telegram", status: "published" },
+        { target: "threads_ru", status: "cancelled" },
+      ]);
+      expect(backendDb.db.select({ target: postTargets.target, status: postTargets.status }).from(postTargets).all()).toEqual([
+        { target: "telegram", status: "published" },
+        { target: "threads_ru", status: "cancelled" },
+      ]);
+      // The publication no longer holds the draft in the attention list.
+      expect(backendDb.db.select({ status: publications.status }).from(publications).all()).toEqual([{ status: "published" }]);
+      expect(backendDb.studioQueue.failedPostIds([800])).toEqual([]);
+      expect(backendDb.db.select({ type: postEvents.eventType, target: postEvents.target }).from(postEvents).all()).toContainEqual({
+        type: "publish.target.abandoned",
+        target: "threads_ru",
+      });
+      expect(() => posts.skipTarget(42, 8, "threads_ru")).toThrow("err.skip-only-failed");
     }));
 });

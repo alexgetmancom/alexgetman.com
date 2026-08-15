@@ -52,6 +52,7 @@ export function definePostActionHandlers(define: typeof action): Record<string, 
     story_schedule_all: define(handleStoryChoice, { entity: "draft", freshCard: true, args: [] }),
     story_schedule_site: define(handleStoryChoice, { entity: "draft", freshCard: true, args: [] }),
     threads_chain: define(handleThreadsChain, { entity: "draft", freshCard: true, args: [] }),
+    skip: define(handleSkip, { entity: "draft", args: ["target", "origin"] }),
     publish: define(handlePublish, { entity: "draft", freshCard: true, args: [] }),
     publish_confirm: define(handlePublishConfirm, { entity: "draft", freshCard: true, args: [] }),
   };
@@ -81,6 +82,17 @@ async function handleToggle(args: PostActionArgs): Promise<PublicationActionResu
     view: "platforms",
   });
   return [{ type: "toast", text: t(args.locale, "action.target-updated", { target }) }, ...publicationCardEffect(card)];
+}
+
+/** The counterpart of retry on the same card: the operator says the publication
+ * is finished without the targets that did not land. */
+async function handleSkip(args: PostActionArgs): Promise<PublicationActionResult> {
+  const target = args.args.target === "all" ? undefined : args.args.target;
+  const result = args.services.posts.skipTarget(args.actorId, args.draftId, target);
+  const toast = { type: "toast" as const, text: t(args.locale, "action.skip-result", { abandoned: result.abandoned }) };
+  if (args.args.origin !== "card") return [toast];
+  const card = args.renderer.card({ actorId: args.actorId, publicationId: args.draftId, locale: args.locale });
+  return [toast, ...publicationCardEffect(card)];
 }
 
 async function handleCancel(args: PostActionArgs): Promise<PublicationActionResult> {

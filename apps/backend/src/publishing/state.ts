@@ -61,10 +61,13 @@ export function videoDraftStatus(targetStatuses: string[]): "scheduled" | "publi
   return targetStatuses.every((status) => status === "published") ? "published" : "partial";
 }
 
-export function publicationStatus(jobStatuses: string[]): "published" | "failed" | null {
+export function publicationStatus(jobStatuses: string[]): "published" | "failed" | "cancelled" | null {
   if (jobStatuses.length === 0) return null;
   if (jobStatuses.some((status) => ACTIVE_PUBLICATION_JOB_STATUSES.has(status))) return null;
-  return jobStatuses.some((status) => status === "failed" || status === "verification_required") ? "failed" : "published";
+  if (jobStatuses.some((status) => status === "failed" || status === "verification_required")) return "failed";
+  // Nothing reached an audience and nothing is left to try: a publication whose
+  // every target was cancelled or abandoned is not a published one.
+  return jobStatuses.every((status) => status === "cancelled") ? "cancelled" : "published";
 }
 
 /** A publication whose plan still has an enabled target in a locale with no date
@@ -79,7 +82,7 @@ export function publicationStatus(jobStatuses: string[]): "published" | "failed"
 export function effectivePublicationStatus(
   jobStatuses: string[],
   plan: Record<string, unknown> | null,
-): "published" | "failed" | "scheduled" | null {
+): "published" | "failed" | "scheduled" | "cancelled" | null {
   const status = publicationStatus(jobStatuses);
   if (!status) return null;
   return status === "published" && hasPendingLocaleSchedule(plan) ? "scheduled" : status;

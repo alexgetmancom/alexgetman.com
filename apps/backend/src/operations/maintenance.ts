@@ -229,7 +229,7 @@ type LatestPublishJob = {
 type PublicationConsistencyOptions = { ref?: string };
 type PublicationConsistencyScope = { kind: "post"; id: number; postKey: string } | { kind: "video"; id: number };
 type TargetStateMismatch = LatestPublishJob & { target_status: string; job_status: string };
-type PublicationStateMismatch = { post_id: number; status: string; expected: "published" | "failed" | "scheduled" };
+type PublicationStateMismatch = { post_id: number; status: string; expected: "published" | "failed" | "scheduled" | "cancelled" };
 type VideoTargetJobMismatch = {
   video_draft_id: number;
   video_target_id: number;

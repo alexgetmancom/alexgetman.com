@@ -79,7 +79,10 @@ export type PostEventRecord = {
   ackedAt: string | null;
 };
 
-export type RetryablePublicationTarget = {
+/** A delivery target that did not land: it either failed outright or reached a
+ * state only a human can settle. Whether it may be retried or only abandoned is
+ * a publishing rule, applied by the caller, not by the query. */
+export type FailedPublicationTarget = {
   target: string;
   status: "failed" | "verification_required";
   error: string | null;
@@ -100,7 +103,7 @@ export type StudioPostStore = {
   acceptEntityCandidates(draftId: number, now: string): void;
   history(draftId: number, postId: number | null, limit: number): PostEventRecord[];
   progress(draftId: number): StudioPostProgress | null;
-  retryablePublicationTargets(postId: number): RetryablePublicationTarget[];
+  failedPublicationTargets(postId: number): FailedPublicationTarget[];
   publicationSource(postId: number): Record<string, unknown>;
 };
 

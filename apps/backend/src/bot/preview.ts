@@ -242,16 +242,21 @@ export function draftPreview(
       .row();
     keyboard.text(t(locale, "post.delete-btn"), publicationCallback("post", "cancel", [draftId, "confirm_delete"]));
   } else {
-    const retryable = retryableTargets(backendDb, draftId);
-    if (retryable.length) {
-      keyboard.text(t(locale, "notif.retry-failed"), publicationCallback("post", "retry", [draftId, "all", "card"])).row();
-      for (const item of retryable)
-        keyboard
-          .text(
+    const unlanded = unlandedTargets(backendDb, draftId);
+    if (unlanded.length) {
+      if (unlanded.some((item) => isPostTargetRetryable(item.target, item.status)))
+        keyboard.text(t(locale, "notif.retry-failed"), publicationCallback("post", "retry", [draftId, "all", "card"]));
+      keyboard.text(t(locale, "notif.skip-failed"), publicationCallback("post", "skip", [draftId, "all", "card"])).row();
+      for (const item of unlanded) {
+        if (isPostTargetRetryable(item.target, item.status))
+          keyboard.text(
             t(locale, "notif.retry-target", { target: item.label }),
             publicationCallback("post", "retry", [draftId, item.target, "card"]),
-          )
+          );
+        keyboard
+          .text(t(locale, "notif.skip-target", { target: item.label }), publicationCallback("post", "skip", [draftId, item.target, "card"]))
           .row();
+      }
     }
     appendResultNavigation(keyboard, locale, "upcoming");
   }
@@ -272,11 +277,13 @@ export function draftPreview(
   };
 }
 
-function retryableTargets(backendDb: BackendDb, draftId: number): Array<{ target: string; label: string }> {
+/** Every target that did not land, retryable or not: each one can be skipped,
+ * and only some of them can be retried. */
+function unlandedTargets(backendDb: BackendDb, draftId: number): Array<{ target: string; label: string; status: string }> {
   try {
     return postProgressState(backendDb, draftId)
-      .targets.filter((item) => isPostTargetRetryable(item.target, item.status))
-      .map(({ target, label }) => ({ target, label }));
+      .targets.filter((item) => item.status === "failed" || item.status === "verification_required")
+      .map(({ target, label, status }) => ({ target, label, status }));
   } catch {
     return [];
   }

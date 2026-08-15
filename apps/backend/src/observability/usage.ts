@@ -29,6 +29,7 @@ const TRACKED_FEATURES = [
   "studio.post.schedule",
   "studio.post.cancel",
   "studio.post.retry",
+  "studio.post.skip",
   "studio.video.create",
   "studio.video.edit",
   "studio.video.publish",
