@@ -28,6 +28,19 @@ describe("Meta browser OAuth", () => {
     expect(authorize.searchParams.get("state")).toBe(state);
   });
 
+  it("asks for the permissions this Studio actually uses, insights included", () => {
+    // A Threads token minted without insights publishes fine and fails every
+    // metrics call for the life of the token, which reads as "analytics are
+    // broken" rather than "this token cannot read them".
+    const threadsState = new URL(metaOauthConnectUrl(config, "threads", "ru", now)).searchParams.get("state") ?? "";
+    const threads = new URL(metaOauthAuthorizeUrl(config, threadsState, now));
+    expect(threads.searchParams.get("scope")?.split(",")).toEqual(["threads_basic", "threads_content_publish", "threads_manage_insights"]);
+
+    const instagramState = new URL(metaOauthConnectUrl(config, "instagram", "ru", now)).searchParams.get("state") ?? "";
+    const instagram = new URL(metaOauthAuthorizeUrl(config, instagramState, now));
+    expect(instagram.searchParams.get("scope")?.split(",")).toContain("instagram_business_manage_insights");
+  });
+
   it("rejects tampered and expired links", () => {
     const state = new URL(metaOauthConnectUrl(config, "instagram", "en", now)).searchParams.get("state") ?? "";
     expect(() => verifyMetaOauthState(config, `${state}x`, now)).toThrow("invalid");

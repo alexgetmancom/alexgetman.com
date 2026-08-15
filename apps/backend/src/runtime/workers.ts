@@ -22,6 +22,7 @@ import { flushUsage } from "../observability/usage.js";
 import { pruneOperationalHistory, withMaintenanceLock } from "../operations/maintenance.js";
 import { recoverStalePublishJobs } from "../publishing/queue.js";
 import { recoverStoryCardJobs, runStoryCardCycle } from "../story-cards/worker.js";
+import { applyStoredCredentials } from "./config.js";
 
 const WORKER_HEARTBEAT_INTERVAL_SECONDS = 60;
 
@@ -105,6 +106,12 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
       const outcomes = await renewMetaTokens(config, backendDb);
       const renewed = outcomes.filter((outcome) => outcome.status === "renewed");
       if (renewed.length) log("info", "platform tokens renewed", { targets: renewed.map((outcome) => outcome.target) });
+    }),
+    // Cheap and frequent on purpose: three reads of one table, so a credential
+    // an operator stores reaches the workers within a minute instead of at the
+    // next restart.
+    startWorkerLoop("credentials", 60 * 1000, async () => {
+      applyStoredCredentials(config, backendDb);
     }),
     startWorkerLoop("x-token", 10 * 60 * 1000, async () => {
       const outcome = await refreshXToken(config, backendDb);

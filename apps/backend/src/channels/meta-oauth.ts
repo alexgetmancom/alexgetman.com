@@ -11,7 +11,10 @@ const STATE_TTL_MS = 10 * 60 * 1000;
 const THREADS_AUTHORIZE_URL = "https://threads.net/oauth/authorize";
 const THREADS_TOKEN_URL = "https://graph.threads.net/oauth/access_token";
 const THREADS_EXCHANGE_URL = "https://graph.threads.net/access_token";
-const THREADS_SCOPE = "threads_basic,threads_content_publish";
+// Insights is not optional here: this Studio collects the metrics of what it
+// publishes, and a token minted without it is accepted everywhere except the
+// insights call, which fails for the life of the token.
+const THREADS_SCOPE = "threads_basic,threads_content_publish,threads_manage_insights";
 const INSTAGRAM_AUTHORIZE_URL = "https://www.instagram.com/oauth/authorize";
 const INSTAGRAM_TOKEN_URL = "https://api.instagram.com/oauth/access_token";
 const INSTAGRAM_EXCHANGE_URL = "https://graph.instagram.com/access_token";

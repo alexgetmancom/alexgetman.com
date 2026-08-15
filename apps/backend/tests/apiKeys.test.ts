@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { applyStoredApiKeys, storeApiKey } from "../src/channels/api-keys.js";
+import { applyStoredCredentials } from "../src/runtime/config.js";
 import { withDb } from "./helpers/db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
@@ -65,6 +66,21 @@ describe("API keys the operator pastes", () => {
       await expect(storeApiKey(config, backendDb, "discord", "mistyped", fetchImpl, now)).rejects.toThrow();
       expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM platform_tokens").get()).toEqual({ count: 0 });
       expect(config.DISCORD_BOT_TOKEN).toBeUndefined();
+    }));
+
+  it("reaches a configuration that was built before the key was stored", () =>
+    withDb(async (backendDb) => {
+      // The publishing process builds its configuration once at startup, and an
+      // operator stores a key from another process entirely. Without this the
+      // server kept publishing without the credential while every check that
+      // read the database called it ready.
+      const running = loadTestConfig(base);
+      await storeApiKey(loadTestConfig(base), backendDb, "zernio", "pasted-key", transport().fetchImpl, now);
+      expect(running.ZERNIO_API_KEY).toBeUndefined();
+
+      applyStoredCredentials(running, backendDb);
+
+      expect(running.ZERNIO_API_KEY).toBe("pasted-key");
     }));
 
   it("ignores a key left behind in the environment", () => {

@@ -56,7 +56,7 @@ services:
       start_period: 20s
     networks:
       - agent_default
-    mem_limit: 192m
+    mem_limit: 384m
     cpus: 0.75
     cpu_shares: 256
     pids_limit: 96

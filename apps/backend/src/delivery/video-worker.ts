@@ -17,7 +17,7 @@ import { PUBLISH_CLAIM_LIMIT } from "../publishing/queue.js";
 import { isVideoTargetFinal } from "../publishing/state.js";
 import { getVideoDraft, refreshVideoDraftStatus, type VideoJob } from "../publishing/video-data.js";
 import type { InstagramMetadata, VideoMetadata, YouTubeMetadata } from "../publishing/video-types.js";
-import { isAmbiguousPublicationError } from "./ambiguous-publication.js";
+import { AmbiguousPublicationError, isAmbiguousPublicationError } from "./ambiguous-publication.js";
 import { verifyInstagramPublication } from "./social/instagram.js";
 
 const VIDEO_HEARTBEAT_INTERVAL_SECONDS = 30;
@@ -274,14 +274,26 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
       requestId: zernioPublishFence(job),
     });
     if (!ownsVideoJob(backendDb, job)) return;
+    // The provider takes a publication before the platform does, so a response
+    // with no platform link is not a published Reel — it is one nobody has
+    // confirmed. Recording it as published is how a card showed a live post the
+    // account did not have, and it left the row outside the reconciliation
+    // sweep, which is the only thing that could have filled the link in later.
+    if (!result.externalId && !result.url) {
+      updateVideoTarget(unsafeDb(backendDb).db, target.id, { providerPostId: result.providerPostId });
+      throw new AmbiguousPublicationError(
+        "zernio",
+        new Error("the provider accepted the publication and the platform has not confirmed it"),
+      );
+    }
     updateVideoTarget(unsafeDb(backendDb).db, target.id, {
       status: "published",
       providerPostId: result.providerPostId,
       externalId: result.externalId,
       externalUrl: result.url,
       publishedAt: new Date().toISOString(),
-      confirmationSource: result.externalId || result.url ? "provider_verify" : "idempotency_replay",
-      verifiedAt: result.externalId || result.url ? new Date().toISOString() : null,
+      confirmationSource: "provider_verify",
+      verifiedAt: new Date().toISOString(),
     });
   } else {
     if (!target.externalId) throw new Error("Instagram upload has not completed yet.");

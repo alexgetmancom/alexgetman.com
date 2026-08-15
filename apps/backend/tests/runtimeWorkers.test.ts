@@ -8,6 +8,7 @@ import { loadTestConfig, SITE_STUDIO_PROFILE } from "./helpers/studio-config.js"
 
 const EXPECTED_WORKERS = [
   "platform-tokens",
+  "credentials",
   "x-token",
   "story-cards",
   "queue",

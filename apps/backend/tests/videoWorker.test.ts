@@ -79,9 +79,17 @@ mock.module("../src/delivery/zernio.js", () => ({
   publishZernioInstagramReel: async (...args: Parameters<typeof real.publishZernioInstagramReel>) => {
     if (!intercepting) return real.publishZernioInstagramReel(...args);
     seen.push("publishZernioInstagramReel");
-    return { providerPostId: "z-1", externalId: "ig-2", url: "https://www.instagram.com/reel/ig-2/" };
+    return zernioReelResult;
   },
 }));
+
+/** What the provider answers a Reel publication with. It accepts before the
+ * platform does, so "no platform link yet" is a real answer, not a failure. */
+let zernioReelResult: { providerPostId: string; externalId: string | null; url: string | null } = {
+  providerPostId: "z-1",
+  externalId: "ig-2",
+  url: "https://www.instagram.com/reel/ig-2/",
+};
 
 const { runVideoCycle } = await import("../src/delivery/video-worker.js");
 const { cancelVideo } = await import("../src/publishing/video-service.js");
@@ -144,6 +152,7 @@ function withDirectory<T>(fn: (directory: string) => Promise<T>): Promise<T> {
 }
 
 function reset(): void {
+  zernioReelResult = { providerPostId: "z-1", externalId: "ig-2", url: "https://www.instagram.com/reel/ig-2/" };
   seen.length = 0;
   instagramCredentialsSeen.length = 0;
   containerReadyError = null;
@@ -314,6 +323,26 @@ describe("video job execution", () => {
       // the schedule the creator chose.
       expect(seen).toEqual(["publishZernioInstagramReel"]);
       expect(targetRow(backendDb, draftId)).toMatchObject({ status: "published", providerPostId: "z-1", externalId: "ig-2" });
+    });
+  });
+
+  it("does not call a Reel published while the platform has not confirmed it", async () => {
+    reset();
+    zernioReelResult = { providerPostId: "z-1", externalId: null, url: null };
+    await withDirectory(async (directory) => {
+      const backendDb = testDb.open();
+      const config = Object.assign(videoConfig(directory), { ZERNIO_API_KEY: "z".repeat(16) });
+      registerChannel(backendDb, { platform: "instagram", locale: "ru", provider: "zernio", providerAccountId: "maru-account" });
+      const draftId = dueDraft(backendDb, directory, ["instagram_reels"]);
+
+      await runVideoCycle(config, backendDb);
+
+      // The provider's id is kept — it is what the reconciliation sweep asks
+      // about — but the target waits for the platform instead of claiming a
+      // publication no one has seen.
+      expect(targetRow(backendDb, draftId)).toMatchObject({ status: "verification_required", providerPostId: "z-1", externalId: null });
+      const job = backendDb.db.select().from(videoJobs).where(eq(videoJobs.kind, "publish")).get();
+      expect(job?.status).toBe("verification_required");
     });
   });
 
