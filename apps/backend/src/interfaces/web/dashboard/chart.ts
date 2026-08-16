@@ -3,8 +3,17 @@ import { t } from "../../../foundation/i18n/index.js";
 import type { StudioLocale } from "../../../foundation/locale.js";
 import { formatMetricValue } from "./format.js";
 
-/** Compact daily bars for the editorial overview. */
-const OVERVIEW_SPARK_MAX = 50_000;
+/** Compact daily bars for the editorial overview.
+ *
+ * The ceiling follows the data: a fixed one drew a young studio's whole month as
+ * a flat line at the bottom, and clipped a grown one's best days. It is rounded
+ * up to a readable step so the dashed cap line can carry a number. */
+function sparkCeiling(peak: number): number {
+  if (!(peak > 0)) return 10;
+  const magnitude = 10 ** Math.floor(Math.log10(peak));
+  const step = [1, 1.5, 2, 2.5, 5, 10].find((candidate) => peak <= candidate * magnitude) ?? 10;
+  return step * magnitude;
+}
 
 /**
  * `fresh` is the part of `value` earned by publications of that same day, drawn

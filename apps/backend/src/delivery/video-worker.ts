@@ -155,7 +155,7 @@ export function recordVideoCompletionIfFinal(backendDb: BackendDb, videoDraftId:
 }
 
 /** How long the provider gets to confirm before the operator hears about it. */
-const PROVIDER_CONFIRMATION_GRACE_MS = 15 * 60 * 1000;
+export const PROVIDER_CONFIRMATION_GRACE_MS = 15 * 60 * 1000;
 
 function awaitingProviderConfirmation(target: { status: string; providerPostId: string | null; updatedAt: string }, now: Date): boolean {
   if (target.status !== "verification_required" || !target.providerPostId) return false;

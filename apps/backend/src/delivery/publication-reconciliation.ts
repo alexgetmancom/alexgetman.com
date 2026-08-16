@@ -15,7 +15,7 @@ import { PUBLISH_CLAIM_LIMIT, workerId } from "../publishing/queue.js";
 import { refreshVideoDraftStatus } from "../publishing/video-data.js";
 import { verifyPlatformPublication } from "./platform-adapters.js";
 import { verifyYouTubeVideo } from "./video-publishers.js";
-import { recordVideoCompletionIfFinal } from "./video-worker.js";
+import { PROVIDER_CONFIRMATION_GRACE_MS, recordVideoCompletionIfFinal } from "./video-worker.js";
 import { verifyZernioPost } from "./zernio.js";
 
 /** How many times reconciliation may ask a provider whether an ambiguous
@@ -42,6 +42,7 @@ export async function runPublicationReconciliation(
   // the metrics timeout is a different worker's setting and tuning that one
   // silently moved when reconciliation may steal a claim.
   const staleBefore = new Date(Date.now() - PUBLISH_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
+  const unansweredBefore = new Date(Date.now() - PROVIDER_CONFIRMATION_GRACE_MS).toISOString();
   const ordinary = unsafeDb(backendDb)
     .db.select({ job: publishJobs, target: postTargets })
     .from(publishJobs)
@@ -139,6 +140,18 @@ export async function runPublicationReconciliation(
     });
     resolved += 1;
   }
+
+  // A publication whose provider never answered stops being "in flight" at some
+  // point, and the operator has to hear about it. Nothing else re-reads these
+  // targets after the grace runs out: the outcome was withheld at publish time
+  // and the sweep only speaks when it gets an answer, so silence was the third
+  // possible ending. This is where it is broken.
+  for (const stranded of unsafeDb(backendDb)
+    .db.selectDistinct({ videoDraftId: videoTargets.videoDraftId })
+    .from(videoTargets)
+    .where(and(eq(videoTargets.status, "verification_required"), lt(videoTargets.updatedAt, unansweredBefore)))
+    .all())
+    recordVideoCompletionIfFinal(backendDb, stranded.videoDraftId);
 
   const videos = unsafeDb(backendDb)
     .db.select({ target: videoTargets, draft: videoDrafts, job: videoJobs })

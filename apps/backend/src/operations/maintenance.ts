@@ -307,6 +307,12 @@ export function publicationConsistencyReport(
        JOIN video_jobs j ON j.video_target_id=t.id AND j.kind='publish'
        WHERE (t.status='published' AND j.status NOT IN ('completed','cancelled'))
           OR (t.status='failed' AND j.status='completed')
+          -- A target awaiting verification is only ever answered through its
+          -- job: the reconciliation sweep joins the two and asks the provider
+          -- under the job's fence. A target left waiting without a job in the
+          -- same state is invisible to it and waits forever, which is the one
+          -- way a publication can go quiet with nobody watching.
+          OR (t.status='verification_required' AND j.status<>'verification_required')
        ORDER BY t.video_draft_id,t.id`,
       )
       .all() as VideoTargetJobMismatch[]

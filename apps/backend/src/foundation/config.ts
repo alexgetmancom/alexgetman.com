@@ -182,13 +182,16 @@ const envSchema = z
       if (Boolean(env[id]) !== Boolean(env[secret]))
         context.addIssue({ code: "custom", path: [id], message: `${id} and ${secret} must be configured together` });
     }
-    const englishYouTube = [env.YOUTUBE_EN_CLIENT_ID, env.YOUTUBE_EN_CLIENT_SECRET, env.YOUTUBE_EN_REFRESH_TOKEN];
-    if (englishYouTube.some(Boolean) && !englishYouTube.every(Boolean)) {
-      context.addIssue({
-        code: "custom",
-        path: ["YOUTUBE_EN_CLIENT_ID"],
-        message: "YOUTUBE_EN_CLIENT_ID, YOUTUBE_EN_CLIENT_SECRET and YOUTUBE_EN_REFRESH_TOKEN must be configured together",
-      });
+    // The client is a pair; the refresh token is not part of it. It used to be:
+    // a connected channel's token could only come from .env, so demanding all
+    // three together was how a half-configured YouTube was caught. A token now
+    // lives in the database, and keeping it in the rule made removing the dead
+    // .env line refuse to start the Studio that no longer needed it.
+    for (const suffix of ["RU", "EN"] as const) {
+      const id = `YOUTUBE_${suffix}_CLIENT_ID` as const;
+      const secret = `YOUTUBE_${suffix}_CLIENT_SECRET` as const;
+      if (Boolean(env[id]) !== Boolean(env[secret]))
+        context.addIssue({ code: "custom", path: [id], message: `${id} and ${secret} must be configured together` });
     }
     if (Boolean(env.DEPLOY_AGENT_URL) !== Boolean(env.DEPLOY_AGENT_TOKEN)) {
       context.addIssue({

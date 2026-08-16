@@ -76,6 +76,17 @@ describe("loadConfig", () => {
     ).toBe("http://host.docker.internal:9899");
   });
 
+  it("pairs a YouTube client with its secret, and lets the token live elsewhere", () => {
+    // The refresh token used to be part of this rule, from when .env was the
+    // only place it could come from. It comes from the database now, and
+    // removing the dead .env line refused to start the Studio that no longer
+    // needed it — a cleanup that took a production Studio down.
+    expect(() => loadTestConfig({ YOUTUBE_EN_CLIENT_ID: "id", YOUTUBE_EN_CLIENT_SECRET: "secret" })).not.toThrow();
+    expect(() => loadTestConfig({ YOUTUBE_RU_CLIENT_ID: "id", YOUTUBE_RU_CLIENT_SECRET: "secret" })).not.toThrow();
+    expect(() => loadTestConfig({ YOUTUBE_EN_CLIENT_ID: "id" })).toThrow("YOUTUBE_EN_CLIENT_SECRET");
+    expect(() => loadTestConfig({ YOUTUBE_RU_CLIENT_SECRET: "secret" })).toThrow("YOUTUBE_RU_CLIENT_ID");
+  });
+
   it("requires Studio MCP token and owner to be configured together", () => {
     expect(() => loadTestConfig({ MCP_STUDIO_TOKEN: "a".repeat(16) })).toThrow("MCP_STUDIO_TOKEN and MCP_STUDIO_ACTOR_ID");
     expect(() => loadTestConfig({ MCP_STUDIO_ACTOR_ID: "42" })).toThrow("MCP_STUDIO_TOKEN and MCP_STUDIO_ACTOR_ID");

@@ -2,7 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { videoTargets } from "../src/db/schema.js";
+import { postEvents, videoTargets } from "../src/db/schema.js";
+import { PROVIDER_CONFIRMATION_GRACE_MS, recordVideoCompletionIfFinal } from "../src/delivery/video-worker.js";
 import { replaceVideoTargets, saveVideoMetadata, scheduleVideo } from "../src/publishing/video-service.js";
 import { settleVideoTarget } from "../src/publishing/video-settle.js";
 import { withDb } from "./helpers/db.js";
@@ -147,3 +148,28 @@ describe("answering a video publication that lost its worker", () => {
       expect(calls).toEqual([]);
     }));
 });
+
+describe("a publication the provider never answers", () => {
+  it("stops being in flight and is reported once the grace runs out", () =>
+    withDb(async (backendDb) => {
+      const draftId = stuckReel(backendDb);
+      backendDb.sqlite.prepare("UPDATE video_targets SET provider_post_id='zernio-post'").run();
+      // Withholding the outcome while the provider still owes an answer left a
+      // third ending nobody had covered: no answer, no report, silence.
+      recordVideoCompletionIfFinal(backendDb, draftId);
+      expect(completionEvents(backendDb)).toEqual([]);
+
+      const later = new Date(Date.now() + PROVIDER_CONFIRMATION_GRACE_MS + 60_000);
+      recordVideoCompletionIfFinal(backendDb, draftId, later);
+
+      expect(completionEvents(backendDb)).toHaveLength(1);
+    }));
+});
+
+function completionEvents(backendDb: UnsafeBackendDb) {
+  return backendDb.db
+    .select()
+    .from(postEvents)
+    .all()
+    .filter((event) => event.eventType === "delivery.video.completed");
+}
