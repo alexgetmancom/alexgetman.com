@@ -1,4 +1,5 @@
 import type { ApplicationPorts, LocalizedProfiles, LocalizedText } from "../../application/ports.js";
+import { isKnownTarget, targetsRecord } from "../../botTargets.js";
 import { fixUrlSlashes } from "../../content/message.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { StudioError } from "../../foundation/errors.js";
@@ -235,6 +236,22 @@ export function settingsService(backendDb: SettingsDependencies) {
     },
     clearYoutubeSignature(actorId: number): void {
       writeYoutubeSignature(backendDb, actorId, "-");
+    },
+    /** The platforms a new draft starts with, as a full on/off record. */
+    defaultTargets(): Record<string, boolean> {
+      return targetsRecord(backendDb.studioSettings.profile().defaultTargetsJson);
+    },
+    toggleDefaultTarget(target: string): Record<string, boolean> {
+      if (!isKnownTarget(target)) throw new StudioError("err.unknown-target");
+      const current = targetsRecord(backendDb.studioSettings.profile().defaultTargetsJson);
+      const next = { ...current, [target]: !current[target] };
+      backendDb.studioSettings.saveProfile({
+        defaultTargetsJson: Object.entries(next)
+          .filter(([, enabled]) => enabled)
+          .map(([id]) => id),
+        updatedAt: backendDb.clock.now().toISOString(),
+      });
+      return next;
     },
     setLocale(actorId: number, locale: StudioLocale): void {
       backendDb.studioSettings.saveLocale({ actorId, locale, updatedAt: backendDb.clock.now().toISOString() });

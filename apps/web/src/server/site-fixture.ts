@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { SITE_MEDIA_URL_PREFIX, siteMediaVerticalFilename } from "../../../backend/src/content/site-media-naming.js";
 import { openBackendDb, unsafeDb } from "../../../backend/src/db/client.js";
-import { knowledgeEntities, postEntityLinks, postLocales, postSources, posts, publications } from "../../../backend/src/db/schema.js";
+import { knowledgeEntities, postEntityLinks, postLocales, posts, publications } from "../../../backend/src/db/schema.js";
 import { fixtureDayWindow } from "./fixture-utils.js";
 
 /**
@@ -33,7 +33,6 @@ export type FixturePost = {
   /** Publication date, defaulting to now. Backdated posts are what give the
    * dashboard a history to take a median and draw a sparkline over. */
   dateUtc?: string;
-  sources?: Array<{ url: string; labelRu: string; labelEn: string; displayKind?: "official" | "opinion" }>;
   entities?: Array<{ kind: "company" | "model" | "person" | "product" | "topic"; slug: string; titleRu: string; titleEn: string }>;
 };
 
@@ -52,7 +51,6 @@ const SMOKE_FIXTURE: FixturePost[] = [
     postId: 1,
     en: { slug: "smoke-test-post", text: "Smoke test post body.\nSecond paragraph.", images: 1 },
     ru: { slug: "dymovoy-test-post", text: "Тело дымового теста.\nВторой абзац." },
-    sources: [{ url: "https://example.com/official-announcement", labelRu: "Официально", labelEn: "Official", displayKind: "official" }],
     entities: [{ kind: "company", slug: "example-ai", titleRu: "Example AI", titleEn: "Example AI" }],
   },
 ];
@@ -68,7 +66,6 @@ export function devFixture(count: number, galleryImages: number): FixturePost[] 
       postId,
       en: { slug: `dev-post-${postId}`, text: `Dev post ${postId}.\nSecond paragraph of post ${postId}.`, images },
       ru: { slug: `dev-post-${postId}-ru`, text: `Тестовый пост ${postId}.\nВторой абзац поста ${postId}.`, images },
-      sources: [{ url: `https://example.com/post-${postId}`, labelRu: "Источник", labelEn: "Source", displayKind: "official" as const }],
     };
   });
 }
@@ -120,7 +117,6 @@ export function fullDevFixture(galleryImages: number, options: FullDevFixtureOpt
           text: `${russianTopic} · пост фикстуры ${number}${premiumMark ? " · премиальный охват" : ""}.\nВторой абзац для режима чтения.`,
           images,
         },
-        sources: [{ url: `https://example.com/full-dev-post-${number}`, labelRu: "Источник", labelEn: "Source", displayKind: "official" }],
       });
       postId += 1;
     }
@@ -227,19 +223,6 @@ export function seedSiteFixture(options: { dbPath: string; publicDir: string; po
           .run();
         for (let index = 0; index < images; index += 1) imagePaths.push(writeFixtureImage(options.publicDir, post.postId, locale, index));
       }
-      for (const source of post.sources ?? [])
-        rawDb.db
-          .insert(postSources)
-          .values({
-            postId: post.postId,
-            url: source.url,
-            labelRu: source.labelRu,
-            labelEn: source.labelEn,
-            displayKind: source.displayKind ?? null,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .run();
       for (const entity of post.entities ?? []) {
         const row = rawDb.db
           .insert(knowledgeEntities)

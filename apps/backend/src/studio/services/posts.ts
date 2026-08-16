@@ -176,7 +176,6 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
           { locale: "en" as const, ...enContent },
         ],
         targets,
-        sources: backendDb.studioPosts.sources(draftId),
         mediaPolicy: Object.entries(targets)
           .filter(([, enabled]) => enabled)
           .map(([target]) => mediaPolicyForTarget(target, targetLocale(target) === "ru" ? ruContent.media : enContent.media)),
@@ -272,12 +271,6 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
     setStoryPublishMode(actorId: number, draftId: number, mode: StoryPublishMode): void {
       requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now());
       backendDb.storyCards.setPublishMode(draftId, mode);
-      replanScheduledPostAfterMutation(backendDb, config, draftId);
-    },
-    replaceSources(actorId: number, draftId: number, urls: string[]): void {
-      requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now());
-      const uniqueUrls = [...new Set(urls)];
-      backendDb.studioPosts.replaceSources(draftId, uniqueUrls, backendDb.clock.now().toISOString());
       replanScheduledPostAfterMutation(backendDb, config, draftId);
     },
     replaceEntityCandidates(actorId: number, draftId: number, candidates: DraftEntityCandidate[]): void {

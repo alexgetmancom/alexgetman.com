@@ -112,7 +112,6 @@ describe("home page SSR smoke test", () => {
 
     expect(countRealTags(html, "h1")).toBe(1);
     expect(html).toContain('"@type":"NewsArticle"');
-    expect(html).toContain('"isBasedOn":["https://example.com/official-announcement"]');
     expect(html).toContain('"url":"https://alexgetman.com/entities/company/example-ai/"');
   });
 

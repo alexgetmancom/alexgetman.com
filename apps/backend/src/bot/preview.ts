@@ -100,7 +100,6 @@ export function draftPreview(
   // up waiting forever for a date in a language that can never publish.
   const locales = registeredPostLocales(backendDb);
   const servesEn = locales.has("en");
-  const sourceCount = backendDb.studioPosts.sources(draftId).length;
   const keyboard = new InlineKeyboard();
   const mode = presetName(targets);
   const mutable = isPostDraftMutable(draft.status);
@@ -231,14 +230,13 @@ export function draftPreview(
   if (mutable) {
     keyboard
       .text(`${modeEmoji} ${t(locale, "post.mode")}: ${modeLabel(mode, locale)}`, publicationCallback("post", "cycle_mode", [draftId]))
+      .text(t(locale, "post.choose-platforms"), publicationCallback("post", "view", [draftId, "platforms"]))
       .row();
-    keyboard.text(t(locale, "post.choose-platforms"), publicationCallback("post", "view", [draftId, "platforms"])).row();
     const canEditRu = canEditLocale(backendDb, config, draft.actor_id, draftId, "ru");
     const canEditEn = servesEn && canEditLocale(backendDb, config, draft.actor_id, draftId, "en");
     if (canEditRu) keyboard.text(t(locale, "post.edit-ru"), publicationCallback("post", "edit_ru", [draftId]));
     if (canEditEn) keyboard.text(t(locale, "post.edit-en"), publicationCallback("post", "edit_en", [draftId]));
     if (canEditRu || canEditEn) keyboard.row();
-    keyboard.text(`🔗 ${t(locale, "post.sources")}: ${sourceCount}`, publicationCallback("post", "sources", [draftId])).row();
     keyboard
       .text(t(locale, "post.publish-btn"), publicationCallback("post", "publish", [draftId]))
       .text(t(locale, "post.schedule-btn"), publicationCallback("post", "schedule", [draftId]))
@@ -273,7 +271,8 @@ export function draftPreview(
       : storyCards.every((card) => card.status === "ready")
         ? `\n${t(locale, "post.story-cards-status", { status: readyCardStatus })}`
         : `\n${t(locale, "post.story-cards-status", { status: storyCards.map((card) => `${card.locale.toUpperCase()} ${card.status}`).join(" · ") })}`;
-  const mediaLine = media.ru || media.en ? `\n${t(locale, "post.media")}: ${media.ru} RU${servesEn ? ` · ${media.enEffective} EN` : ""}` : "";
+  const mediaLine =
+    media.ru || media.en ? `\n${t(locale, "post.media")}: ${media.ru} RU${servesEn ? ` · ${media.enEffective} EN` : ""}` : "";
   const enMediaWarning = servesEn && media.ru > 0 && media.en === 0 ? `\n⚠️ ${t(locale, "post.en-uses-ru-media")}` : "";
   const enText = servesEn
     ? `\n\nEN:\n${escapeMarkdown(truncateUnicode(String(draft.text_en_approved || draft.text_en_machine || t(locale, "post.not-translated")), PREVIEW_TEXT_LIMIT))}`

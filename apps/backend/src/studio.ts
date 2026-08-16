@@ -1,4 +1,5 @@
 import type { ApplicationPorts, StudioProfileRecord, StudioSocialProfile } from "./application/ports.js";
+import { TARGETS } from "./botTargets.js";
 
 /**
  * A Studio nobody has configured yet: UTC, no public site, and an identity it
@@ -18,6 +19,9 @@ export const DEFAULT_STUDIO_PROFILE = {
   taglineJson: { en: "", ru: "" },
   aboutJson: { en: "", ru: "" },
   profilesJson: { en: [], ru: [] },
+  // X and Discord are published by hand, so a fresh install starts without
+  // them; every other target is on until an operator says otherwise.
+  defaultTargetsJson: TARGETS.filter(({ id }) => id !== "x" && id !== "discord").map(({ id }) => String(id)),
 } as const satisfies Omit<StudioProfileRecord, "id" | "updatedAt">;
 
 export type StudioConfig = {

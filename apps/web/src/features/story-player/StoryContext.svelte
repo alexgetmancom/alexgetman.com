@@ -75,20 +75,14 @@ const readingTimeMin = $derived(Math.max(1, Math.ceil(post.body.join(" ").split(
     <button class="read-more-button" type="button" hidden={!readMoreVisible} onclick={ontogglereadmore}>
       {expanded ? ui.collapse : ui.readMore}
     </button>
-    <!-- The footnote line: where this came from, and the one action the column
-         offers. Sharing used to be a full-width bordered button pinned to the
-         bottom of a full-height panel — the loudest object in the column, for
-         something the desktop address bar already does, with a gap above it
-         wherever the post was short. As a link at the same size and colour as
-         the source it stays available and stops competing. Phones keep the
-         real button: it lives on the stage's floating bar (StoryVisual), where
-         no URL is visible to copy. -->
+    <!-- The footnote line: the one action the column offers. Sharing used to be
+         a full-width bordered button pinned to the bottom of a full-height
+         panel — the loudest object in the column, for something the desktop
+         address bar already does, with a gap above it wherever the post was
+         short. As a plain link it stays available and stops competing. Phones
+         keep the real button: it lives on the stage's floating bar
+         (StoryVisual), where no URL is visible to copy. -->
     <footer class="story-footnote">
-      {#each post.sources as source}
-        <a href={source.url} target="_blank" rel="noopener noreferrer" class="story-footnote__link">
-          {source.label} ↗
-        </a>
-      {/each}
       <button class="story-footnote__link story-footnote__action" type="button" onclick={onshare}>
         {shareCopied ? ui.copied : ui.share}
       </button>

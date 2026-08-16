@@ -3,8 +3,9 @@ import { Menu, type MenuFlavor } from "@grammyjs/menu";
 import type { Bot, Context } from "grammy";
 import { importManualAnalytics, manualThreadsFollowers } from "../analytics/import-manual-analytics.js";
 import { importXAnalyticsCsv } from "../analytics/import-x-csv.js";
+import { TARGETS } from "../botTargets.js";
 import { META_PROVIDERS, type MetaOauthPlatform } from "../channels/meta-providers.js";
-import { listChannels } from "../channels/registry.js";
+import { listChannels, registeredPostTargetIds } from "../channels/registry.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { materializeTelegramFile } from "../foundation/external/telegram-files.js";
@@ -28,6 +29,7 @@ const WEEKLY_DIGEST_MENU_ID = "settings-weekly-digest";
 const BACKUP_MENU_ID = "settings-backup";
 const NEWS_DIGEST_MENU_ID = "settings-news-digest";
 const NEWS_DIGEST_TIME_MENU_ID = "settings-news-digest-time";
+const DEFAULT_TARGETS_MENU_ID = "settings-default-targets";
 const YOUTUBE_SIGNATURE_MENU_ID = "settings-youtube";
 const LANGUAGE_MENU_ID = "settings-language";
 const CHANNELS_MENU_ID = "settings-channels";
@@ -320,6 +322,30 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
       });
   });
 
+  // The same two-per-row toggle grid as a draft's platform screen, over the
+  // targets this Studio has actually connected: what it edits is where a new
+  // draft starts, not where this one goes.
+  const defaultTargets = new Menu<Context>(DEFAULT_TARGETS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const actorId = Number(ctx.from?.id);
+    const locale = settingsService(backendDb).locale(actorId);
+    const studioSettings = createStudioServices(backendDb, config).settings;
+    const selected = studioSettings.defaultTargets();
+    const rows = connectedTargets(backendDb);
+    rows.forEach(({ id, label }, index) => {
+      range.text(`${selected[id] ? "✓" : "□"} ${label}`, async (ctx) => {
+        studioSettings.toggleDefaultTarget(id);
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(defaultTargetsText(backendDb, config, locale), { parse_mode: "Markdown" });
+      });
+      if (index % 2 === 1) range.row();
+    });
+    if (rows.length % 2 === 1) range.row();
+    range.back(t(locale, "settings.back-to-publishing"), async (ctx) => {
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(t(locale, "settings.category-publishing-body"));
+    });
+  });
+
   const youtubeSignature = new Menu<Context>(YOUTUBE_SIGNATURE_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
     const locale = settingsService(backendDb).locale(actorId);
@@ -418,6 +444,12 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
       .submenu(t(locale, "settings.channels"), CHANNELS_MENU_ID, async (ctx) => {
         await ctx.answerCallbackQuery();
         await ctx.editMessageText(channelsText(backendDb, config, locale));
+      })
+      .row();
+    range
+      .submenu(t(locale, "settings.default-targets"), DEFAULT_TARGETS_MENU_ID, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(defaultTargetsText(backendDb, config, locale), { parse_mode: "Markdown" });
       })
       .row();
     if (listChannels(backendDb).some((channel) => channel.platform === "youtube"))
@@ -525,6 +557,7 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
       });
   });
   publishing.register(channels);
+  publishing.register(defaultTargets);
   publishing.register(youtubeSignature);
   notificationsCategory.register(notificationSettings);
   notificationsCategory.register(weeklyDigest);
@@ -833,6 +866,23 @@ function channelsText(
   const suffix = discoveredCount == null ? "" : `\n\n${t(locale, "settings.channels-pick", { count: discoveredCount })}`;
   const hidden = hiddenCount ? `\n${t(locale, "settings.channels-unsupported", { count: hiddenCount })}` : "";
   return `${t(locale, "settings.channels-title")}\n\n${rows.join("\n") || t(locale, "settings.channels-none")}${suffix}${hidden}`;
+}
+
+/** The targets this Studio can actually publish to, in catalogue order. Before
+ * the first channel is connected the registry is empty and the whole catalogue
+ * is offered, which is the same rule a draft's platform screen follows. */
+function connectedTargets(backendDb: BackendDb): (typeof TARGETS)[number][] {
+  const registered = registeredPostTargetIds(backendDb);
+  return registered.size ? TARGETS.filter(({ id }) => registered.has(id)) : [...TARGETS];
+}
+
+function defaultTargetsText(backendDb: BackendDb, config: BackendConfig, locale: StudioLocale): string {
+  const selected = createStudioServices(backendDb, config).settings.defaultTargets();
+  const active = connectedTargets(backendDb)
+    .filter(({ id }) => selected[id])
+    .map(({ label }) => label)
+    .join(", ");
+  return `${t(locale, "settings.default-targets-title")}\n\n${t(locale, "settings.default-targets-active")}: *${escapeMarkdown(active || t(locale, "settings.default-targets-none"))}*\n\n${t(locale, "settings.default-targets-hint")}`;
 }
 
 export async function showSettings(ctx: Context, backendDb: BackendDb, settingsMenu: Menu<Context>, edit = false): Promise<void> {

@@ -33,9 +33,13 @@ export const TARGET_GROUPS = {
 const targetById = new Map<string, (typeof TARGETS)[number]>(TARGETS.map((target) => [target.id, target]));
 const ALL_TARGETS = Object.fromEntries(TARGETS.map(({ id }) => [id, true])) as Record<TargetId, boolean>;
 
-// X and Discord are normally published by hand, but remain selectable on the
-// platform screen and in the explicit Full preset.
-export const DEFAULT_TARGETS = { ...ALL_TARGETS, x: false, discord: false } as Record<TargetId, boolean>;
+/** A selection of target ids as the on/off record every draft and preset uses.
+ * Ids the catalogue does not know are dropped, so a target retired after a
+ * Studio saved its defaults degrades to "off" instead of a broken record. */
+export function targetsRecord(selected: readonly string[]): Record<string, boolean> {
+  const unique = new Set(selected);
+  return Object.fromEntries(TARGETS.map(({ id }) => [id, unique.has(id)]));
+}
 
 export const PRESETS: Record<string, Record<TargetId, boolean>> = {
   full: { ...ALL_TARGETS },

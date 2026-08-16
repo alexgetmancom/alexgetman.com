@@ -23,7 +23,6 @@ export function buildPostSchema({ item, locale, pageTitle, description, canonica
   const ogImage = postSocialImagePath(item, locale);
   const visualMedia = postVisualMedia(item, locale);
   const primaryVideo = visualMedia?.type === "video" ? visualMedia : null;
-  const sourceUrls = item.sources.map((source) => source.url);
   const about = item.entities.map((entity) => ({
     "@type": "Thing",
     name: locale === "ru" ? entity.title_ru : entity.title_en || entity.title_ru,
@@ -46,7 +45,6 @@ export function buildPostSchema({ item, locale, pageTitle, description, canonica
         publisher: person,
         mainEntityOfPage: canonicalUrl,
         image: [`${siteUrlFromContext()}${ogImage}`],
-        ...(sourceUrls.length > 0 ? { isBasedOn: sourceUrls, citation: sourceUrls } : {}),
         ...(about.length > 0 ? { about } : {}),
       },
       ...(primaryVideo

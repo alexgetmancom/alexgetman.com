@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { channelConnections, drafts, postSources, publicationSources, publishJobs, siteJobs } from "../src/db/schema.js";
+import { channelConnections, drafts, publicationSources, publishJobs, siteJobs } from "../src/db/schema.js";
 import { postService } from "../src/studio/services/posts.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
@@ -174,20 +174,6 @@ describe("Studio post commands", () => {
       "err.post-too-close-to-publish",
     );
     expect(() => posts.toggleTarget(42, draftId, "telegram")).toThrow("err.post-too-close-to-publish");
-  });
-
-  it("replaces copied publication sources when a scheduled draft changes them", () => {
-    backendDb = openPostDb();
-    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
-    const draftId = posts.create(42, { text: "Sources", textEn: "Sources", entities: [], media: [] });
-    posts.replaceSources(42, draftId, ["https://before.example"]);
-    const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 5 * 60_000), enAt: null });
-
-    posts.replaceSources(42, draftId, ["https://after.example"]);
-
-    expect(backendDb.db.select({ url: postSources.url }).from(postSources).where(eq(postSources.postId, postId)).all()).toEqual([
-      { url: "https://after.example" },
-    ]);
   });
 
   it("blocks content mutations after the publication is settled but allows rescheduling", () => {

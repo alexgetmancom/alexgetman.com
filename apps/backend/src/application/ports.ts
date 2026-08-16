@@ -57,18 +57,6 @@ export type DraftPatch = Partial<{
   updatedAt: string;
 }>;
 
-export type DraftSource = {
-  id: number;
-  draftId: number;
-  url: string;
-  labelRu: string;
-  labelEn: string | null;
-  displayKind: string | null;
-  sortOrder: number;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type PostEventRecord = {
   id: number;
   postKey: string | null;
@@ -99,8 +87,6 @@ export type DraftEntityCandidate = {
 
 /** Post-specific persistence port used by Studio command and query use cases. */
 export type StudioPostStore = {
-  sources(draftId: number): DraftSource[];
-  replaceSources(draftId: number, urls: string[], now: string): void;
   replaceEntityCandidates(draftId: number, candidates: DraftEntityCandidate[], now: string): void;
   acceptEntityCandidates(draftId: number, now: string): void;
   history(draftId: number, postId: number | null, limit: number): PostEventRecord[];
@@ -247,6 +233,7 @@ export type StudioProfileRecord = {
   taglineJson: LocalizedText;
   aboutJson: LocalizedText;
   profilesJson: LocalizedProfiles;
+  defaultTargetsJson: string[];
   updatedAt: string;
 };
 

@@ -1,52 +1,14 @@
 import { desc, eq, or } from "drizzle-orm";
-import type {
-  DraftEntityCandidate,
-  DraftSource,
-  FailedPublicationTarget,
-  PostEventRecord,
-  StudioPostStore,
-} from "../../application/ports.js";
+import type { DraftEntityCandidate, FailedPublicationTarget, PostEventRecord, StudioPostStore } from "../../application/ports.js";
 import { publicationRef } from "../../application/publication-ref.js";
 import { isSiteTarget } from "../../botTargets.js";
 import { jsonObject } from "../../json.js";
-import {
-  draftEntityCandidates,
-  draftSources,
-  drafts,
-  postEvents,
-  posts,
-  publicationSources,
-  publishJobs,
-  siteJobs,
-  siteSourceItems,
-} from "../schema.js";
+import { draftEntityCandidates, drafts, postEvents, posts, publicationSources, publishJobs, siteJobs, siteSourceItems } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite adapter for Studio post-specific persistence operations. */
 export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
   return {
-    sources(draftId: number): DraftSource[] {
-      return db.select().from(draftSources).where(eq(draftSources.draftId, draftId)).orderBy(draftSources.sortOrder).all();
-    },
-
-    replaceSources(draftId: number, urls: string[], now: string): void {
-      db.delete(draftSources).where(eq(draftSources.draftId, draftId)).run();
-      if (urls.length === 0) return;
-      db.insert(draftSources)
-        .values(
-          urls.map((url, sortOrder) => ({
-            draftId,
-            url,
-            labelRu: sourceLabel(url),
-            labelEn: sourceLabel(url),
-            sortOrder,
-            createdAt: now,
-            updatedAt: now,
-          })),
-        )
-        .run();
-    },
-
     replaceEntityCandidates(draftId: number, candidates: DraftEntityCandidate[], now: string): void {
       db.delete(draftEntityCandidates).where(eq(draftEntityCandidates.draftId, draftId)).run();
       if (candidates.length === 0) return;
@@ -142,12 +104,4 @@ function publicationSource(db: BackendDatabase, postId: number): Record<string, 
       )
     : {};
   return Object.keys(siteSource).length > 0 ? siteSource : jsonObject(post?.rawJson);
-}
-
-function sourceLabel(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
 }

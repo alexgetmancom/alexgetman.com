@@ -5,7 +5,7 @@ import { getConversationState, saveConversationState } from "../src/bot/conversa
 import type { PostWizardStep } from "../src/bot/post-flow.js";
 import { draftPreview } from "../src/bot/preview.js";
 import { postProgress } from "../src/bot/progress.js";
-import { DEFAULT_TARGETS, TARGETS, targetLocale } from "../src/botTargets.js";
+import { TARGETS, targetLocale } from "../src/botTargets.js";
 import { createDraftFromMessage, requireDraft } from "../src/content/drafts.js";
 import { entitiesToHtml } from "../src/content/text.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
@@ -15,6 +15,7 @@ import { cancelDraft, scheduledDrafts } from "../src/publishing/draft-lifecycle.
 import { refreshPublicationStatus } from "../src/publishing/publication-status.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { postDeliveryProjections } from "../src/studio/projections.js";
+import { DEFAULT_STUDIO_PROFILE } from "../src/studio.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
@@ -59,7 +60,6 @@ describe("Telegram controller flow", () => {
     expect(JSON.stringify(preview.keyboard)).toContain(`edit_ru:${draftId}`);
     expect(JSON.stringify(preview.keyboard)).toContain(`edit_en:${draftId}`);
     expect(JSON.stringify(preview.keyboard)).not.toContain(`edit_menu:${draftId}`);
-    expect(JSON.stringify(preview.keyboard)).toContain(`sources:${draftId}`);
     expect(JSON.stringify(preview.keyboard)).not.toContain("use_ru_media");
   });
 
@@ -406,7 +406,9 @@ describe("Telegram controller flow", () => {
       expect(payload.text).toBe(locale === "ru" ? "Русский текст" : "English text");
       expect(payload.media).toEqual([{ type: "IMAGE", fileId: locale === "ru" ? "ru-image" : "en-image" }]);
     }
-    expect(jobs).toHaveLength(TARGETS.filter(({ id, kind }) => kind !== "site" && DEFAULT_TARGETS[id]).length);
+    expect(jobs).toHaveLength(
+      TARGETS.filter(({ id, kind }) => kind !== "site" && DEFAULT_STUDIO_PROFILE.defaultTargetsJson.includes(id)).length,
+    );
   });
 
   it("preserves Telegram entities in target payloads and site HTML", () => {

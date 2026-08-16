@@ -1,11 +1,11 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { publicationRef } from "../application/publication-ref.js";
 import { isStoryTarget } from "../botTargets.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
 import { requireDraft } from "../content/drafts.js";
 import { enrichPublishedPostEntities } from "../content/entity-enrichment.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
-import { draftEntityCandidates, draftSources, knowledgeEntities, postEntityLinks, postSources, publications } from "../db/schema.js";
+import { draftEntityCandidates, knowledgeEntities, postEntityLinks, publications } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import { trackUsageSync } from "../observability/usage.js";
 import { readyStoryCardMedia } from "../story-cards/store.js";
@@ -38,7 +38,6 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
   // retry path repairs. Every step below is synchronous, so this is free.
   const { postId, plan } = unsafeDb(backendDb).db.transaction((tx) => {
     const publicationId = ensurePublication(tx, draftId, now);
-    copyDraftSources(tx, draftId, publicationId, now);
     copyAcceptedEntities(tx, draftId, publicationId, now);
     const registeredTargets = registeredPostTargetIds(backendDb);
     const storyCards = readyStoryCardMedia(unsafeDb(backendDb).db, draftId);
@@ -110,25 +109,6 @@ function copyAcceptedEntities(db: UnsafeBackendDb["db"], draftId: number, postId
       .values(entities.map((entity) => ({ postId, entityId: entity.id, createdAt: now })))
       .onConflictDoNothing()
       .run();
-}
-
-function copyDraftSources(db: UnsafeBackendDb["db"], draftId: number, postId: number, now: string): void {
-  const sources = db.select().from(draftSources).where(eq(draftSources.draftId, draftId)).orderBy(asc(draftSources.sortOrder)).all();
-  db.delete(postSources).where(eq(postSources.postId, postId)).run();
-  for (const source of sources) {
-    db.insert(postSources)
-      .values({
-        postId,
-        url: source.url,
-        labelRu: source.labelRu,
-        labelEn: source.labelEn,
-        displayKind: source.displayKind,
-        sortOrder: source.sortOrder,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
-  }
 }
 
 function ensurePublication(db: UnsafeBackendDb["db"], draftId: number, now: string): number {

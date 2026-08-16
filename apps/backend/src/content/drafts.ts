@@ -1,6 +1,6 @@
 import type { ApplicationPorts } from "../application/ports.js";
 import { publicationRef } from "../application/publication-ref.js";
-import { DEFAULT_TARGETS } from "../botTargets.js";
+import { targetsRecord } from "../botTargets.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { DraftMessage } from "./message.js";
 
@@ -16,7 +16,7 @@ export function createDraftFromMessage(
     textRu: message.text,
     textEnMachine: message.textEn ?? null,
     textEnApproved: message.textEnApproved ?? null,
-    targetsJson: configured?.targetsJson ?? JSON.stringify(DEFAULT_TARGETS),
+    targetsJson: configured?.targetsJson ?? JSON.stringify(targetsRecord(ports.studioSettings.profile().defaultTargetsJson)),
     mediaRuJson: message.media.length ? JSON.stringify(message.media) : null,
     textRuEntitiesJson: JSON.stringify(message.entities),
     ...(configured?.storyPublishMode ? { storyPublishMode: configured.storyPublishMode } : {}),

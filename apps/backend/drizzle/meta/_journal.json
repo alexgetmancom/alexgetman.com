@@ -176,6 +176,13 @@
       "when": 1786893419621,
       "tag": "0024_split_publication_reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1786990000000,
+      "tag": "0025_default_targets_drop_sources",
+      "breakpoints": true
     }
   ]
 }

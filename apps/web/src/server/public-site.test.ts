@@ -1,14 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { type BackendDb, openBackendDb, unsafeDb } from "../../../backend/src/db/client.js";
-import {
-  knowledgeEntities,
-  postEntityLinks,
-  postLocales,
-  postMetrics,
-  postSources,
-  posts,
-  publications,
-} from "../../../backend/src/db/schema.js";
+import { knowledgeEntities, postEntityLinks, postLocales, postMetrics, posts, publications } from "../../../backend/src/db/schema.js";
 import { loadPublicSiteFeed, loadPublicSiteItem } from "../../../backend/src/public/site-read-model.js";
 
 let backendDb: BackendDb;
@@ -67,19 +59,6 @@ describe("Drizzle site feed", () => {
       ])
       .run();
     rawDb.db.insert(postMetrics).values({ postKey: "post:7", target: "telegram", metricName: "views", value: 321, unit: "count" }).run();
-    rawDb.db
-      .insert(postSources)
-      .values({
-        postId: 7,
-        url: "https://example.com/announcement",
-        labelRu: "Официальный анонс",
-        labelEn: "Official announcement",
-        displayKind: "official",
-        sortOrder: 0,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
     const entity = rawDb.db
       .insert(knowledgeEntities)
       .values({ kind: "company", slug: "example-ai", titleRu: "Example AI", titleEn: "Example AI", createdAt: now, updatedAt: now })
@@ -99,7 +78,6 @@ describe("Drizzle site feed", () => {
         image: "media/posts/7-ru.jpg",
         image_en: null,
         views: 321,
-        sources: [expect.objectContaining({ url: "https://example.com/announcement", display_kind: "official" })],
         entities: [expect.objectContaining({ kind: "company", slug: "example-ai" })],
       }),
     ]);

@@ -3,7 +3,7 @@ import { alias } from "drizzle-orm/sqlite-core";
 import * as z from "zod";
 import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { knowledgeEntities, postEntityLinks, postLocales, postMetrics, postSources, posts, publications } from "../db/schema.js";
+import { knowledgeEntities, postEntityLinks, postLocales, postMetrics, posts, publications } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 
 const siteMediaSchema = z
@@ -39,15 +39,6 @@ const feedItemSchema = z
     audio_url_en: z.string().nullable().optional(),
     spotify_url_ru: z.string().nullable().optional(),
     spotify_url_en: z.string().nullable().optional(),
-    sources: z.array(
-      z.object({
-        url: z.string().url(),
-        label_ru: z.string(),
-        label_en: z.string().nullable(),
-        display_kind: z.enum(["official", "opinion"]).nullable(),
-        published_at: z.string().nullable(),
-      }),
-    ),
     entities: z.array(
       z.object({
         kind: z.enum(["company", "model", "person", "product", "topic"]),
@@ -151,33 +142,8 @@ function buildPublicSiteFeed(backendDb: BackendDb, postId?: number): FeedItem[] 
     .all();
 
   const postIds = rows.flatMap((row) => (row.postId == null ? [] : [row.postId]));
-  const sourcesByPost = new Map<number, FeedSource[]>();
   const entitiesByPost = new Map<number, FeedEntity[]>();
   if (postIds.length > 0) {
-    const sourceRows = unsafeDb(backendDb)
-      .db.select({
-        postId: postSources.postId,
-        url: postSources.url,
-        labelRu: postSources.labelRu,
-        labelEn: postSources.labelEn,
-        displayKind: postSources.displayKind,
-        publishedAt: postSources.publishedAt,
-      })
-      .from(postSources)
-      .where(inArray(postSources.postId, postIds))
-      .orderBy(asc(postSources.postId), asc(postSources.sortOrder), asc(postSources.id))
-      .all();
-    for (const source of sourceRows) {
-      const list = sourcesByPost.get(source.postId) ?? [];
-      list.push({
-        url: source.url,
-        label_ru: source.labelRu,
-        label_en: source.labelEn,
-        display_kind: source.displayKind === "official" || source.displayKind === "opinion" ? source.displayKind : null,
-        published_at: source.publishedAt,
-      });
-      sourcesByPost.set(source.postId, list);
-    }
     const entityRows = unsafeDb(backendDb)
       .db.select({
         postId: postEntityLinks.postId,
@@ -231,7 +197,6 @@ function buildPublicSiteFeed(backendDb: BackendDb, postId?: number): FeedItem[] 
       media_en: mediaEn,
       image: firstImage(media),
       image_en: firstImage(mediaEn),
-      sources: sourcesByPost.get(row.postId) ?? [],
       entities: entitiesByPost.get(row.postId) ?? [],
       views: row.views ?? 0,
     });
@@ -251,14 +216,6 @@ function buildPublicSiteFeed(backendDb: BackendDb, postId?: number): FeedItem[] 
     return [parsed.data];
   });
 }
-
-type FeedSource = {
-  url: string;
-  label_ru: string;
-  label_en: string | null;
-  display_kind: "official" | "opinion" | null;
-  published_at: string | null;
-};
 
 type FeedEntity = {
   kind: "company" | "model" | "person" | "product" | "topic";

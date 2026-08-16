@@ -8,12 +8,11 @@ import type { ConversationState } from "./conversation-state.js";
 import type { PublicationEffect } from "./effects.js";
 
 type PostWizardLocale = "ru" | "en";
-export type PostSessionStep = "new_post" | "edit_sources" | "edit_text" | "replace_media" | "schedule_manual" | "schedule_confirm";
+export type PostSessionStep = "new_post" | "edit_text" | "replace_media" | "schedule_manual" | "schedule_confirm";
 type PostFlowStep = PostSessionStep | "completed";
 
 export type PostWizardStep =
   | { type: "new_post" }
-  | { type: "edit_sources" }
   | { type: "edit_text"; locale: PostWizardLocale }
   | { type: "replace_media"; locale: PostWizardLocale }
   | { type: "schedule_manual"; locale: PostWizardLocale }
@@ -44,7 +43,6 @@ const POST_STEPS: Record<PostFlowStep, FlowStep<PostFlowData, PostFlowInput, Pub
     next: () => "completed",
     accept: (input, data) => ({ ...data, input: input.message }),
   },
-  edit_sources: { name: "edit_sources", input: "text", next: () => "completed", accept: acceptPostSourceEdit },
   edit_text: { name: "edit_text", input: "text", next: () => "completed", accept: acceptPostTextEdit },
   replace_media: { name: "replace_media", input: "media", next: () => "completed", accept: acceptPostMediaReplacement },
   schedule_manual: { name: "schedule_manual", input: "text", next: () => "schedule_confirm", accept: acceptManualPostSchedule },
@@ -61,7 +59,6 @@ export const POST_FLOW: Flow<PostFlowData, PostFlowInput, PublicationEffect, Pos
 export function postStateStep(state: Pick<ConversationState, "step" | "data"> | null): PostWizardStep | null {
   if (!state) return null;
   if (state.step === "new_post") return { type: "new_post" };
-  if (state.step === "edit_sources") return { type: "edit_sources" };
   if (state.step === "edit_text") return localeStep("edit_text", state.data.locale);
   if (state.step === "replace_media") return localeStep("replace_media", state.data.locale);
   if (state.step === "schedule_manual") return localeStep("schedule_manual", state.data.locale);
@@ -107,14 +104,6 @@ function acceptPostMediaReplacement(input: PostFlowInput, data: PostFlowData): P
   return { ...data, input: input.message };
 }
 
-function acceptPostSourceEdit(input: PostFlowInput, data: PostFlowData): PostFlowData {
-  if (input.step.type !== "edit_sources") throw new StudioError("action.session-stale");
-  const urls = extractUrls(input.message.text);
-  if (urls.length === 0) throw new StudioError("err.no-valid-source-links");
-  createStudioServices(input.backendDb, input.config).posts.replaceSources(input.actorId, input.draftId, urls);
-  return { ...data, input: input.message };
-}
-
 function localeStep(type: "edit_text" | "replace_media" | "schedule_manual", value: unknown): PostWizardStep | null {
   const locale = parseLocale(value);
   return locale ? { type, locale } : null;
@@ -133,18 +122,4 @@ function parseDate(value: unknown): Date | null {
 function isClearMediaCommand(text: string): boolean {
   const clean = text.trim().toLowerCase();
   return clean === "/delmedia" || clean === "очистить" || clean === "без медиа" || clean === "clear media";
-}
-
-function extractUrls(value: string): string[] {
-  return value
-    .split(/\s+/)
-    .map((item) => item.trim())
-    .filter((item) => {
-      try {
-        const url = new URL(item);
-        return url.protocol === "https:" || url.protocol === "http:";
-      } catch {
-        return false;
-      }
-    });
 }

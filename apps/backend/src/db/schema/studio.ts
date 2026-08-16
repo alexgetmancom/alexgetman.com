@@ -20,6 +20,11 @@ export const studioProfile = sqliteTable("studio_profile", {
   taglineJson: json<LocalizedText>().notNull().default(DEFAULT_STUDIO_PROFILE.taglineJson),
   aboutJson: json<LocalizedText>().notNull().default(DEFAULT_STUDIO_PROFILE.aboutJson),
   profilesJson: json<LocalizedProfiles>().notNull().default(DEFAULT_STUDIO_PROFILE.profilesJson),
+  /** Which platforms a new draft starts with, as target ids. Every Studio
+   * publishes to its own subset of what it has connected — the hand-driven
+   * platforms are the ones an operator wants off by default — so this is a
+   * setting, not a constant. Targets no longer connected are ignored on read. */
+  defaultTargetsJson: json<string[]>().notNull().default(DEFAULT_STUDIO_PROFILE.defaultTargetsJson),
   updatedAt: text().notNull(),
 });
 

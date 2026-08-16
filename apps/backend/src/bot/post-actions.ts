@@ -42,7 +42,6 @@ export function definePostActionHandlers(define: typeof action): Record<string, 
     edit_en: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
     edit_media_ru: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
     edit_media_en: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
-    sources: define(handleSources, { entity: "draft", freshCard: true, args: [] }),
     schedule: define(handleSchedule, { entity: "draft", freshCard: true, args: [] }),
     sched_scope: define(handleScheduleScope, { entity: "draft", freshCard: true, args: ["scope"] }),
     sched_pick: define(handleSchedulePick, { entity: "draft", freshCard: true, args: ["axis", "clock"] }),
@@ -169,7 +168,6 @@ async function handleEditMenu({ backendDb, config, actorId, locale, draftId }: P
   addLocale("ru");
   addLocale("en");
   keyboard.text(t(locale, "post.edit-platforms"), publicationCallback("post", "view", [draftId, "platforms"])).row();
-  keyboard.text(t(locale, "post.edit-sources"), publicationCallback("post", "sources", [draftId])).row();
   keyboard.text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"]));
   return [
     {
@@ -180,17 +178,6 @@ async function handleEditMenu({ backendDb, config, actorId, locale, draftId }: P
       card: { kind: "post", draftId },
     },
   ];
-}
-
-async function handleSources({ ctx, backendDb, actorId, locale, draftId }: PostActionArgs): Promise<PublicationActionResult> {
-  openPublicationFlow(backendDb, actorId, {
-    kind: "post",
-    draftId,
-    step: "edit_sources",
-    data: {},
-    controlMessageId: callbackMessageId(ctx),
-  });
-  return [promptEffect(backendDb, actorId, t(locale, "post.sources-prompt"))];
 }
 
 async function handlePublish(args: PostActionArgs): Promise<PublicationActionResult> {
