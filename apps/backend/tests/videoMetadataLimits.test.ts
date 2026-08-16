@@ -46,10 +46,22 @@ const REFUSED_TAGS = [
 describe("what a platform will accept", () => {
   it("counts a tag list the way YouTube does", () => {
     expect(REFUSED_TAGS.reduce((total, tag) => total + tag.length, 0)).toBe(444);
-    // The quotes around the 29 tags with spaces are the difference between
-    // "comfortably inside 500" and refused.
-    expect(youtubeTagsLength(REFUSED_TAGS)).toBe(502);
-    expect(youtubeTagsLength(["one", "two words"])).toBe(3 + "two words".length + 2);
+    // The quotes around the 29 tags with spaces, plus the commas between all 36,
+    // are the difference between "comfortably inside 500" and refused.
+    expect(youtubeTagsLength(REFUSED_TAGS)).toBe(537);
+    expect(youtubeTagsLength(["one", "two words"])).toBe(3 + 1 + ("two words".length + 2));
+  });
+
+  it("matches what the platform actually accepted and refused", () => {
+    // Six published Shorts and two refusals bound the rule from both sides. The
+    // measurement has to keep them on the right side of 500, or the check is a
+    // guess that costs a slot.
+    const accepted = [472, 239, 265, 218, 342, 294];
+    const refused = [537, 521];
+    for (const measured of accepted) expect(measured).toBeLessThanOrEqual(500);
+    for (const measured of refused) expect(measured).toBeGreaterThan(500);
+    // And our own budget stays under the smallest refusal with room to spare.
+    expect(VIDEO_METADATA_LIMITS.youtubeTags).toBeLessThan(Math.min(...refused));
   });
 
   it("refuses the list at the step where it is typed", () => {

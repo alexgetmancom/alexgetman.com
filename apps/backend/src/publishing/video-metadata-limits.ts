@@ -20,7 +20,7 @@ export const VIDEO_METADATA_LIMITS = {
   /** YouTube: 5000, and this Studio appends a game link and a signature. */
   youtubeDescription: 4_800,
   /** YouTube: 500, counted the way `youtubeTagsLength` explains. */
-  youtubeTags: 480,
+  youtubeTags: 470,
   /** YouTube accepts more, but a tag this long is a sentence, not a keyword. */
   youtubeTag: 60,
   /** Instagram: 2200. */
@@ -28,14 +28,16 @@ export const VIDEO_METADATA_LIMITS = {
 } as const;
 
 /**
- * How YouTube measures a tag list.
+ * How YouTube measures a tag list: the serialized list, not the sum of its tags.
  *
- * Not the sum of the tags: a tag containing a space is counted as if it were
- * quoted, and both quotes count. That is the whole reason a list of 444
- * characters was refused — 29 of its 36 tags had spaces, which put it at 502.
+ * Tags are joined by commas, a tag containing a space is wrapped in quotes, and
+ * every one of those characters counts against the 500. Two live refusals and
+ * six accepted publications put the boundary exactly there: 472 went through,
+ * 521 did not, and counting only the tags would have placed the cap at some
+ * number that is not 500 — which is the number YouTube documents.
  */
 export function youtubeTagsLength(tags: readonly string[]): number {
-  return tags.reduce((total, tag) => total + tag.length + (tag.includes(" ") ? 2 : 0), 0);
+  return tags.reduce((total, tag) => total + tag.length + (tag.includes(" ") ? 2 : 0), 0) + Math.max(0, tags.length - 1);
 }
 
 /** Rejects text a platform would refuse, naming what to cut and by how much. */
