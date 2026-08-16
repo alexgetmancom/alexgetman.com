@@ -1,4 +1,4 @@
-import { channelTargets, listChannels } from "../channels/registry.js";
+import { listChannels } from "../channels/registry.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { PLATFORM_PROFILES } from "../publishing/platform-profiles.js";
@@ -44,13 +44,8 @@ function registeredRequirements(config: BackendConfig, backendDb: BackendDb): Ma
         channel.targetId,
         channel.provider === "zernio" ? ["ZERNIO_API_KEY"] : (PLATFORM_PROFILES[channel.targetId]?.requirements ?? []),
       );
-    else if (channel.platform === "youtube" || channel.platform === "instagram") {
-      const needed = videoChannelRequirements(channel.platform, channel.locale, channel.provider);
-      requirements.set(channel.id, needed);
-      // The Story an Instagram account also serves is the same account reached
-      // with the same credential, so it is ready exactly when the account is.
-      for (const target of channelTargets(channel)) requirements.set(target, needed);
-    }
+    else if (channel.platform === "youtube" || channel.platform === "instagram")
+      requirements.set(channel.id, videoChannelRequirements(channel.platform, channel.locale, channel.provider));
   }
   if (config.MEDIA_PROCESSOR_PROVIDER === "remote_http")
     requirements.set("media_processor", ["MEDIA_PROCESSOR_URL", "MEDIA_PROCESSOR_TOKEN"]);

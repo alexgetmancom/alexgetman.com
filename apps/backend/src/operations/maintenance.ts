@@ -6,6 +6,7 @@ import { freezeDisabledMetricSchedules } from "../analytics/collection/metric-sc
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { drafts, maintenanceLocks, metricSchedule, postEvents, posts, postTargets, videoDrafts, videoTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { registeredPostTargetIds } from "../channels/registry.js";
 import { effectivePublicationStatus, planObject } from "../publishing/state.js";
 
 /** Explicitly invoked operational maintenance routines. */
@@ -454,11 +455,13 @@ function publicationStateMismatches(backendDb: BackendDb): PublicationStateMisma
        ORDER BY p.post_id`,
     )
     .all() as Array<{ post_id: number; status: string; plan_json: string | null; statuses: string | null }>;
+  const registeredTargets = registeredPostTargetIds(backendDb);
   return rows.flatMap((row) => {
     if (row.status === "cancelled") return [];
     const expected = effectivePublicationStatus(
       (row.statuses ?? "").split(",").filter(Boolean).map(normalizeArchivedJobStatus),
       parsePlan(row.plan_json),
+      registeredTargets,
     );
     return expected && expected !== row.status ? [{ post_id: row.post_id, status: row.status, expected }] : [];
   });

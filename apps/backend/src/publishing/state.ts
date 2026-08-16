@@ -85,21 +85,35 @@ export function publicationStatus(jobStatuses: string[]): "published" | "failed"
 export function effectivePublicationStatus(
   jobStatuses: string[],
   plan: Record<string, unknown> | null,
+  registeredTargets: Set<string>,
 ): "published" | "failed" | "scheduled" | "cancelled" | null {
   const status = publicationStatus(jobStatuses);
   if (!status) return null;
-  return status === "published" && hasPendingLocaleSchedule(plan) ? "scheduled" : status;
+  return status === "published" && hasPendingLocaleSchedule(plan, registeredTargets) ? "scheduled" : status;
 }
 
-function hasPendingLocaleSchedule(plan: Record<string, unknown> | null): boolean {
+/** A target the Studio no longer publishes to cannot hold a publication open.
+ * The queue screen has always read the plan through the channel registry and
+ * this rule read the raw plan, so a plan naming a disconnected target showed as
+ * finished in the interface and stayed `scheduled` in the data. */
+function hasPendingLocaleSchedule(plan: Record<string, unknown> | null, registeredTargets: Set<string>): boolean {
   if (plan?.mode !== "scheduled") return false;
-  const targets = planObject(plan.targets);
-  return Object.entries(targets).some(([target, enabled]) => {
-    if (!enabled) return false;
-    const locale = targetLocale(target);
-    if (!locale) return false;
-    return !planScheduleAt(plan, locale);
-  });
+  const targets = Object.fromEntries(
+    Object.entries(planObject(plan.targets)).map(([target, enabled]) => [target, Boolean(enabled) && registeredTargets.has(target)]),
+  );
+  return hasUnscheduledLocale(targets, planScheduleAt(plan, "ru"), planScheduleAt(plan, "en"));
+}
+
+/** An enabled target in a language the operator has not dated yet. Such a
+ * publication is unfinished however its other jobs settled, and the queue and
+ * the publication status must agree on that: they were two copies of this rule
+ * and one of them ignored the channel registry.
+ *
+ * `targets` is expected to be registry-filtered already — an unconnected target
+ * is not enabled. */
+export function hasUnscheduledLocale(targets: Record<string, boolean>, ruAt: string | null, enAt: string | null): boolean {
+  const enabledLocales = new Set(Object.entries(targets).flatMap(([target, enabled]) => (enabled ? (targetLocale(target) ?? []) : [])));
+  return (enabledLocales.has("ru") && !ruAt) || (enabledLocales.has("en") && !enAt);
 }
 
 export function planScheduleAt(plan: Record<string, unknown>, locale: "ru" | "en"): string | null {

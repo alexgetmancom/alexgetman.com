@@ -1,4 +1,5 @@
 import type { ChannelConnectionRecord } from "../application/ports.js";
+import { targetLocale, type TargetLocale } from "../botTargets.js";
 import type { BackendDb } from "../db/client.js";
 import type { VideoLocale } from "../foundation/external/youtube.js";
 import { ACCOUNT_PLATFORMS, VIDEO_TARGET_PLATFORM, type VideoTarget } from "../publishing/video-types.js";
@@ -34,11 +35,6 @@ export function registerChannel(backendDb: BackendDb, input: ChannelInput): Chan
     const known = ACCOUNT_PLATFORMS.join(", ");
     throw new Error(`Unknown platform: ${input.platform}. Account platforms are ${known}; a text channel names its target instead.`);
   }
-  // Instagram's Story is served by the Instagram account, so connecting it
-  // separately would store the same account twice and let the two disagree
-  // about which provider carries it.
-  if (input.targetId && Object.values(INSTAGRAM_STORY_TARGET).includes(input.targetId))
-    throw new Error(`${input.targetId} is served by the Instagram account: connect the instagram platform for ${input.locale} instead`);
   const now = new Date().toISOString();
   const id = input.targetId ?? channelId(input.platform, input.locale);
   backendDb.channels.upsert(
@@ -71,30 +67,31 @@ export function registerChannel(backendDb: BackendDb, input: ChannelInput): Chan
 export function targetRouting(backendDb: BackendDb): Record<string, { provider: string; accountId: string | null }> {
   const routing: Record<string, { provider: string; accountId: string | null }> = {};
   for (const channel of listChannels(backendDb))
-    for (const target of channelTargets(channel)) routing[target] = { provider: channel.provider, accountId: channel.providerAccountId };
+    if (channel.targetId) routing[channel.targetId] = { provider: channel.provider, accountId: channel.providerAccountId };
   return routing;
 }
 
+/** Every publication target this Studio publishes text or Stories to.
+ *
+ * A channel names its target or it serves none: an account connected for video
+ * used to also register the Story its platform can technically serve, which put
+ * an EN Story target in front of a Studio that had connected Instagram purely to
+ * upload Reels. A Story is connected the way every other post target is. */
 export function registeredPostTargetIds(backendDb: BackendDb): Set<string> {
-  return new Set(listChannels(backendDb).flatMap(channelTargets));
+  return new Set(listChannels(backendDb).flatMap((channel) => (channel.targetId ? [channel.targetId] : [])));
 }
 
-/** The story target an Instagram account also serves, by the account's language.
+/** The languages this Studio publishes posts in, derived from what it has
+ * connected. A Studio with no post channels at all is a fresh install rather
+ * than a monolingual one, so it is offered both.
  *
- * Connecting Instagram is connecting the account, not one of the two things it
- * publishes: the Reel and the Story reach the same profile with the same
- * credential, native or through the provider. Kept as two target ids because
- * that is what a publication names, and the asymmetric spelling is the one
- * every publication in the database already uses. */
-const INSTAGRAM_STORY_TARGET: Record<string, string> = { ru: "instagram_stories_ru", en: "instagram_stories" };
-
-/** Every publication target one connected channel serves. A text or story route
- * names its own; an Instagram account brings its Story target with it. */
-export function channelTargets(channel: ChannelConnection): string[] {
-  if (channel.targetId) return [channel.targetId];
-  if (channel.platform !== "instagram") return [];
-  const story = INSTAGRAM_STORY_TARGET[channel.locale];
-  return story ? [story] : [];
+ * Interfaces gate their per-language surfaces on this. Delivery does not: it
+ * goes through `effectivePostTargets`, where an unconnected target is simply
+ * off. */
+export function registeredPostLocales(backendDb: BackendDb): Set<TargetLocale> {
+  const targets = registeredPostTargetIds(backendDb);
+  if (!targets.size) return new Set(["ru", "en"]);
+  return new Set([...targets].flatMap((target) => targetLocale(target) ?? []));
 }
 
 /** The registry is the only source of enabled publication targets. */

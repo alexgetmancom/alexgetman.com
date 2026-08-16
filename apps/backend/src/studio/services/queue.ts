@@ -1,10 +1,10 @@
-import { targetLocale } from "../../botTargets.js";
 import { effectivePostTargets } from "../../channels/registry.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { truncateUnicode } from "../../foundation/text.js";
 import { parseJsonValue } from "../../json.js";
 import { trackUsageSync } from "../../observability/usage.js";
+import { hasUnscheduledLocale } from "../../publishing/state.js";
 import { parseTargets } from "../../publishing/targets.js";
 import { accessibleStudioActorIds } from "../access.js";
 
@@ -71,7 +71,7 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
         for (const draft of postDrafts) {
           const label = shorten(draft.textRu.split("\n")[0]?.trim() || `Post #${draft.id}`);
           const scheduleGap =
-            draft.status === "scheduled" && hasUnscheduledLocale(backendDb, draft.targetsJson, draft.scheduledAt, draft.scheduledEnAt);
+            draft.status === "scheduled" && draftScheduleGap(backendDb, draft.targetsJson, draft.scheduledAt, draft.scheduledEnAt);
           if (draft.status === "scheduled" && !scheduleGap) {
             const scheduledAt = earliestFutureDate(nowMs, draft.scheduledAt, draft.scheduledEnAt);
             if (scheduledAt)
@@ -137,21 +137,14 @@ function earliestFutureDate(nowMs: number, ...values: Array<string | null>): Dat
   return dates.length ? new Date(Math.min(...dates.map((date) => date.getTime()))) : null;
 }
 
-function hasUnscheduledLocale(
-  backendDb: BackendDb,
-  targetsJson: string,
-  scheduledAt: string | null,
-  scheduledEnAt: string | null,
-): boolean {
+function draftScheduleGap(backendDb: BackendDb, targetsJson: string, scheduledAt: string | null, scheduledEnAt: string | null): boolean {
   const parsed = parseJsonValue(targetsJson);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
   const targets = effectivePostTargets(
     backendDb,
     Object.fromEntries(Object.entries(parsed as Record<string, unknown>).map(([target, enabled]) => [target, Boolean(enabled)])),
   );
-  const hasRu = Object.entries(targets).some(([target, enabled]) => enabled && targetLocale(target) === "ru");
-  const hasEn = Object.entries(targets).some(([target, enabled]) => enabled && targetLocale(target) === "en");
-  return (hasRu && !scheduledAt) || (hasEn && !scheduledEnAt);
+  return hasUnscheduledLocale(targets, scheduledAt, scheduledEnAt);
 }
 
 function shorten(value: string): string {

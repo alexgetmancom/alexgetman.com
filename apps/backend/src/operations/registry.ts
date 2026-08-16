@@ -4,7 +4,7 @@ import { importXAnalyticsCsv } from "../analytics/import-x-csv.js";
 import { attachXActivityToPosts } from "../analytics/x-activity-linking.js";
 import { xAnalyticsReport } from "../analytics/x-activity-report.js";
 import type { LocalizedProfiles, LocalizedText } from "../application/ports.js";
-import { targetDefinition } from "../botTargets.js";
+import { POST_TARGET_IDS, targetDefinition } from "../botTargets.js";
 import { API_KEY_TARGETS, storeApiKey } from "../channels/api-keys.js";
 import { CONNECT_PLATFORMS, type ConnectStart, startConnect } from "../channels/connect.js";
 import { type BackendDb, baselineDrizzleMigrations, migrationStatus, unsafeDb } from "../db/client.js";
@@ -670,12 +670,12 @@ const operationDefs = {
   }),
   "channel-connect": operation({
     summary: "Connect a publishing route.",
-    note: "A text or story route needs only `target`: it already names the platform and the language, and asking for them again is a way to store a channel that disagrees with itself. A video account needs `platform` with `locale`. Instagram is one connection: an account connected with platform `instagram` and a locale brings both its Reel and its Story with it.",
+    note: "A text or story route needs only `target`: it already names the platform and the language, and asking for them again is a way to store a channel that disagrees with itself. A video account needs `platform` with `locale`. An Instagram account connected for Reels does not carry the Story with it: connect `instagram_stories_ru` or `instagram_stories` when this Studio actually posts them, because a connected target is one the post screens offer and the queue waits for.",
     schema: z.object({
       platform: example(z.string().min(1), "youtube|instagram").describe("platform to connect").optional(),
       locale: z.enum(["ru", "en"]).optional(),
       provider: example(z.string().default("native"), "native|zernio").describe("delivery provider"),
-      target: z.enum(["telegram", "site_ru", "site_en", "threads_ru", "threads_en", "x", "discord", "telegram_stories"]).optional(),
+      target: z.enum(POST_TARGET_IDS).optional(),
       account_id: z.string().optional(),
       label: z.string().optional(),
     }),

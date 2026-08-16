@@ -1,5 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { channelForVideo, listChannels, registerChannel, registeredPostTargetIds, targetRouting } from "../src/channels/registry.js";
+import {
+  channelForVideo,
+  listChannels,
+  registerChannel,
+  registeredPostLocales,
+  registeredPostTargetIds,
+  targetRouting,
+} from "../src/channels/registry.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { channelConnections, publishJobs } from "../src/db/schema.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
@@ -34,25 +41,32 @@ describe("channel registry", () => {
       expect(channelForVideo(backendDb, "instagram_reels", "en")?.providerAccountId).toBe("new-account");
     }));
 
-  it("serves the Story target from the Instagram account, whichever way it is delivered", () =>
+  it("does not make an Instagram account a post target until its Story is connected", () =>
     withDb((backendDb) => {
       backendDb.db.delete(channelConnections).run();
       registerChannel(backendDb, { platform: "instagram", locale: "ru", provider: "zernio", providerAccountId: "maru-account" });
       registerChannel(backendDb, { platform: "instagram", locale: "en", provider: "native" });
 
-      // One account, both of the things it publishes: connecting Instagram used
-      // to leave Stories unconnected, and a Studio reaching Instagram only
-      // through the provider had no way to connect them at all.
-      expect(registeredPostTargetIds(backendDb)).toEqual(new Set(["instagram_stories_ru", "instagram_stories"]));
-      expect(targetRouting(backendDb).instagram_stories_ru).toEqual({ provider: "zernio", accountId: "maru-account" });
-      expect(targetRouting(backendDb).instagram_stories).toEqual({ provider: "native", accountId: null });
+      // An account connected to upload Reels publishes no posts. Deriving the
+      // Story from it put an EN post target in front of a Studio that had no EN
+      // audience, and every draft that enabled it waited forever for an EN date.
+      expect(registeredPostTargetIds(backendDb)).toEqual(new Set());
+      expect(registeredPostLocales(backendDb)).toEqual(new Set(["ru", "en"]));
       expect(channelForVideo(backendDb, "instagram_reels", "ru")?.providerAccountId).toBe("maru-account");
 
-      // And the account is the only place it can be connected: a second row for
-      // the Story is the same account able to disagree with itself.
-      expect(() =>
-        registerChannel(backendDb, { platform: "instagram_stories", locale: "ru", provider: "native", targetId: "instagram_stories_ru" }),
-      ).toThrow("served by the Instagram account");
+      // The Story is connected the way every other post target is, and carries
+      // its own delivery route.
+      registerChannel(backendDb, {
+        platform: "instagram_stories_ru",
+        locale: "ru",
+        provider: "zernio",
+        providerAccountId: "maru-account",
+        targetId: "instagram_stories_ru",
+      });
+      expect(registeredPostTargetIds(backendDb)).toEqual(new Set(["instagram_stories_ru"]));
+      expect(registeredPostLocales(backendDb)).toEqual(new Set(["ru"]));
+      expect(targetRouting(backendDb).instagram_stories_ru).toEqual({ provider: "zernio", accountId: "maru-account" });
+      expect(targetRouting(backendDb).instagram_stories).toBeUndefined();
     }));
 
   it("uses only registered targets when creating publication jobs", () =>

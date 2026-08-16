@@ -1,6 +1,6 @@
 import { InlineKeyboard } from "grammy";
 import { type PresetName, presetName, TARGETS } from "../botTargets.js";
-import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
+import { effectivePostTargets, registeredPostLocales, registeredPostTargetIds } from "../channels/registry.js";
 import { requireDraft } from "../content/drafts.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -95,6 +95,11 @@ export function draftPreview(
   const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
   const registered = registeredPostTargetIds(backendDb);
   const targetRows = registered.size ? TARGETS.filter(({ id }) => registered.has(id)) : TARGETS;
+  // A language this Studio has connected nothing for has no screens: no slot
+  // grid, no schedule line, no text to edit. Offering them is how a draft ends
+  // up waiting forever for a date in a language that can never publish.
+  const locales = registeredPostLocales(backendDb);
+  const servesEn = locales.has("en");
   const sourceCount = backendDb.studioPosts.sources(draftId).length;
   const keyboard = new InlineKeyboard();
   const mode = presetName(targets);
@@ -102,6 +107,7 @@ export function draftPreview(
 
   // Every view except the overview edits or acts on the draft, so a frozen draft only ever shows the overview.
   if (!mutable && view !== "overview") return draftPreview(backendDb, draftId, config, "overview");
+  if (!servesEn && view.startsWith("schedule_en")) return draftPreview(backendDb, draftId, config, "overview");
 
   if (view === "platforms") {
     for (let index = 0; index < targetRows.length; index += 2) {
@@ -119,25 +125,22 @@ export function draftPreview(
 
   if (view === "schedule") {
     if (draft.status === "scheduled") {
-      keyboard
-        .text(t(locale, "post.change-time-ru"), publicationCallback("post", "view", [draftId, "schedule_ru"]))
-        .row()
-        .text(t(locale, "post.change-time-en"), publicationCallback("post", "view", [draftId, "schedule_en"]))
-        .row()
-        .text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"]));
+      keyboard.text(t(locale, "post.change-time-ru"), publicationCallback("post", "view", [draftId, "schedule_ru"])).row();
+      if (servesEn) keyboard.text(t(locale, "post.change-time-en"), publicationCallback("post", "view", [draftId, "schedule_en"])).row();
+      keyboard.text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"]));
       return {
         text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, "post.change-time-title")}*\n${t(locale, "post.change-time-hint")}`,
         keyboard,
       };
     }
-    keyboard
-      .text(t(locale, "post.scope-ru-now"), publicationCallback("post", "sched_scope", [draftId, "ru_now"]))
-      .row()
-      .text(t(locale, "post.scope-en-now"), publicationCallback("post", "sched_scope", [draftId, "en_now"]))
-      .row()
-      .text(t(locale, "post.scope-both"), publicationCallback("post", "sched_scope", [draftId, "both"]))
-      .row()
-      .text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"]));
+    keyboard.text(t(locale, "post.scope-ru-now"), publicationCallback("post", "sched_scope", [draftId, "ru_now"])).row();
+    if (servesEn)
+      keyboard
+        .text(t(locale, "post.scope-en-now"), publicationCallback("post", "sched_scope", [draftId, "en_now"]))
+        .row()
+        .text(t(locale, "post.scope-both"), publicationCallback("post", "sched_scope", [draftId, "both"]))
+        .row();
+    keyboard.text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"]));
     return {
       text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, "post.schedule-title")}*\n${t(locale, "post.schedule-hint")}`,
       keyboard,
@@ -211,7 +214,7 @@ export function draftPreview(
 
   if (draft.status === "scheduled") {
     const canEditRu = canEditLocale(backendDb, config, draft.actor_id, draftId, "ru");
-    const canEditEn = canEditLocale(backendDb, config, draft.actor_id, draftId, "en");
+    const canEditEn = servesEn && canEditLocale(backendDb, config, draft.actor_id, draftId, "en");
     keyboard.text(t(locale, "post.change-time"), publicationCallback("post", "schedule", [draftId])).row();
     if (canEditRu || canEditEn) keyboard.text(t(locale, "post.edit-button"), publicationCallback("post", "edit_menu", [draftId])).row();
     keyboard
@@ -219,7 +222,7 @@ export function draftPreview(
       .row()
       .text(t(locale, "queue.back-btn"), "queue_home");
     return {
-      text: `${draftHeader(draftId, targets, locale)}\n\n${t(locale, "post.scheduled-ru")}: ${formatZonedDateTime(draft.scheduled_at ? String(draft.scheduled_at) : null, timeConfig.TIMEZONE, timeConfig.TIMEZONE_LABEL)}\n${t(locale, "post.scheduled-en")}: ${formatZonedDateTime(draft.scheduled_en_at ? String(draft.scheduled_en_at) : null, timeConfig.TIMEZONE, timeConfig.TIMEZONE_LABEL)}`,
+      text: `${draftHeader(draftId, targets, locale)}\n\n${t(locale, "post.scheduled-ru")}: ${formatZonedDateTime(draft.scheduled_at ? String(draft.scheduled_at) : null, timeConfig.TIMEZONE, timeConfig.TIMEZONE_LABEL)}${servesEn ? `\n${t(locale, "post.scheduled-en")}: ${formatZonedDateTime(draft.scheduled_en_at ? String(draft.scheduled_en_at) : null, timeConfig.TIMEZONE, timeConfig.TIMEZONE_LABEL)}` : ""}`,
       keyboard,
     };
   }
@@ -231,7 +234,7 @@ export function draftPreview(
       .row();
     keyboard.text(t(locale, "post.choose-platforms"), publicationCallback("post", "view", [draftId, "platforms"])).row();
     const canEditRu = canEditLocale(backendDb, config, draft.actor_id, draftId, "ru");
-    const canEditEn = canEditLocale(backendDb, config, draft.actor_id, draftId, "en");
+    const canEditEn = servesEn && canEditLocale(backendDb, config, draft.actor_id, draftId, "en");
     if (canEditRu) keyboard.text(t(locale, "post.edit-ru"), publicationCallback("post", "edit_ru", [draftId]));
     if (canEditEn) keyboard.text(t(locale, "post.edit-en"), publicationCallback("post", "edit_en", [draftId]));
     if (canEditRu || canEditEn) keyboard.row();
@@ -263,16 +266,20 @@ export function draftPreview(
 
   const media = mediaCounts(draft.media_ru_json, draft.media_en_json);
   const storyCards = storyCardsForDraft(unsafeDb(backendDb).db, draftId);
+  const readyCardStatus = servesEn ? "✓ RU · ✓ EN" : "✓ RU";
   const storyCardStatus =
     storyCards.length === 0
       ? ""
       : storyCards.every((card) => card.status === "ready")
-        ? `\n${t(locale, "post.story-cards-status", { status: "✓ RU · ✓ EN" })}`
+        ? `\n${t(locale, "post.story-cards-status", { status: readyCardStatus })}`
         : `\n${t(locale, "post.story-cards-status", { status: storyCards.map((card) => `${card.locale.toUpperCase()} ${card.status}`).join(" · ") })}`;
-  const mediaLine = media.ru || media.en ? `\n${t(locale, "post.media")}: ${media.ru} RU · ${media.enEffective} EN` : "";
-  const enMediaWarning = media.ru > 0 && media.en === 0 ? `\n⚠️ ${t(locale, "post.en-uses-ru-media")}` : "";
+  const mediaLine = media.ru || media.en ? `\n${t(locale, "post.media")}: ${media.ru} RU${servesEn ? ` · ${media.enEffective} EN` : ""}` : "";
+  const enMediaWarning = servesEn && media.ru > 0 && media.en === 0 ? `\n⚠️ ${t(locale, "post.en-uses-ru-media")}` : "";
+  const enText = servesEn
+    ? `\n\nEN:\n${escapeMarkdown(truncateUnicode(String(draft.text_en_approved || draft.text_en_machine || t(locale, "post.not-translated")), PREVIEW_TEXT_LIMIT))}`
+    : "";
   return {
-    text: `${draftHeader(draftId, targets, locale)}${mediaLine}${storyCardStatus}${enMediaWarning}\n\nRU:\n${escapeMarkdown(truncateUnicode(String(draft.text_ru || t(locale, "post.media-only")), PREVIEW_TEXT_LIMIT))}\n\nEN:\n${escapeMarkdown(truncateUnicode(String(draft.text_en_approved || draft.text_en_machine || t(locale, "post.not-translated")), PREVIEW_TEXT_LIMIT))}`,
+    text: `${draftHeader(draftId, targets, locale)}${mediaLine}${storyCardStatus}${enMediaWarning}\n\nRU:\n${escapeMarkdown(truncateUnicode(String(draft.text_ru || t(locale, "post.media-only")), PREVIEW_TEXT_LIMIT))}${enText}`,
     keyboard,
   };
 }

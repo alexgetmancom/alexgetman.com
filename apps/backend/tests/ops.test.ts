@@ -456,7 +456,24 @@ describe("TypeScript operations tooling", () => {
     try {
       const now = new Date().toISOString();
       // RU went out; EN is an enabled target the operator has not dated yet, so
-      // the publication is deliberately still scheduled.
+      // the publication is deliberately still scheduled. The channels are
+      // registered because only a target this Studio still publishes to can
+      // hold a publication open.
+      for (const target of ["telegram", "threads_en"])
+        backendDb.channels.upsert(
+          {
+            id: target,
+            platform: target,
+            locale: target === "telegram" ? "ru" : "en",
+            provider: "native",
+            providerAccountId: null,
+            targetId: target,
+            label: target,
+            enabled: 1,
+            source: "test",
+          },
+          now,
+        );
       backendDb.sqlite.query("INSERT INTO publications(post_id,status,created_at,updated_at) VALUES (70,'scheduled',?,?)").run(now, now);
       backendDb.sqlite
         .query("INSERT INTO publication_plans(post_id,plan_json,created_at,updated_at) VALUES (70,?,?,?)")

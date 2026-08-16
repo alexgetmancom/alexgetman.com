@@ -2,7 +2,7 @@ import type { DraftPatch, DraftRecord, StoryPublishMode } from "../../applicatio
 import type { PublicationPipeline, PublicationSchedule } from "../../application/publication-pipeline.js";
 import { publicationRef } from "../../application/publication-ref.js";
 import { isStoryTarget, PRESETS, presetName, TARGETS, targetLocale } from "../../botTargets.js";
-import { effectivePostTargets, registeredPostTargetIds } from "../../channels/registry.js";
+import { effectivePostTargets, registeredPostLocales, registeredPostTargetIds } from "../../channels/registry.js";
 import { listStudioMediaAssets, mediaItemsFromAssets, requireStudioMediaAssets } from "../../content/assets.js";
 import { draftLocaleContent } from "../../content/draft-content.js";
 import { createDraftFromMessage } from "../../content/drafts.js";
@@ -377,7 +377,12 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       const draft = requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now());
       const targets = parseTargets(draft.targets_json);
       const current = presetName(targets);
-      const next = current === "full" ? "ru" : current === "ru" ? "en" : current === "en" ? "tg" : "full";
+      // A preset for a language this Studio connected nothing for resolves to an
+      // empty target list, which is not a mode -- it is a draft that publishes
+      // nowhere. Such a preset is skipped rather than offered and then emptied.
+      const locales = registeredPostLocales(backendDb);
+      const order = (["full", "ru", "en", "tg"] as const).filter((name) => name !== "en" || locales.has("en"));
+      const next = order[(order.indexOf(current as (typeof order)[number]) + 1) % order.length] ?? "full";
       const nextPreset = PRESETS[next];
       if (!nextPreset) throw new StudioError("err.post-mode");
       const preset = effectivePostTargets(backendDb, nextPreset);

@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { publicationRef } from "../application/publication-ref.js";
 import { isSiteTarget, targetLocale } from "../botTargets.js";
+import { registeredPostTargetIds } from "../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { drafts, postEvents, publicationPlans, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
@@ -42,6 +43,7 @@ export function refreshPublicationStatus(backendDb: BackendDb, postId: number): 
   const effectiveStatus = effectivePublicationStatus(
     all.map((job) => job.status),
     plan,
+    registeredPostTargetIds(backendDb),
   );
   if (!effectiveStatus) return;
   const now = backendDb.clock.now().toISOString();

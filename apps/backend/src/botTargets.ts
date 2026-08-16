@@ -15,6 +15,10 @@ export const TARGETS = [
 
 type TargetId = (typeof TARGETS)[number]["id"];
 
+/** The target ids, for schemas that have to enumerate them. Spelling the list a
+ * second time is how a target ends up connectable but unpublishable. */
+export const POST_TARGET_IDS = TARGETS.map(({ id }) => id) as unknown as [TargetId, ...TargetId[]];
+
 export const AUDIENCE_VIEWS = ["threads_ru", "threads_en", "telegram", "x"] as const;
 export type AudienceView = (typeof AUDIENCE_VIEWS)[number];
 

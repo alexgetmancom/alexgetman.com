@@ -1,4 +1,5 @@
 import { InlineKeyboard } from "grammy";
+import { registeredPostLocales } from "../channels/registry.js";
 import type { BackendDb } from "../db/client.js";
 import { StudioError } from "../foundation/errors.js";
 import { plural, t } from "../foundation/i18n/index.js";
@@ -150,7 +151,9 @@ async function handleEdit({ ctx, backendDb, actorId, locale, action, draftId }: 
 
 async function handleEditMenu({ backendDb, config, actorId, locale, draftId }: PostActionArgs): Promise<PublicationActionResult> {
   const keyboard = new InlineKeyboard();
+  const locales = registeredPostLocales(backendDb);
   const addLocale = (targetLocale: "ru" | "en"): void => {
+    if (!locales.has(targetLocale)) return;
     if (!canEditLocale(backendDb, config, actorId, draftId, targetLocale)) return;
     if (targetLocale === "ru")
       keyboard

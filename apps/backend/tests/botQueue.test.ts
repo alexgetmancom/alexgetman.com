@@ -277,6 +277,39 @@ describe("Telegram work queue", () => {
     }
   });
 
+  it("does not park a draft on a language this Studio publishes nothing in", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      // Maru connected Telegram and Threads RU only. A draft left over from when
+      // an EN target was enabled must still go out on its RU date: waiting for an
+      // EN time nobody can give held two posts in the queue indefinitely.
+      registerTestChannels(backendDb, ["telegram", "threads_ru"]);
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(drafts)
+        .values({
+          actorId: 7,
+          status: "scheduled",
+          textRu: "RU only Studio",
+          targetsJson: JSON.stringify({ telegram: true, threads_ru: true, instagram_stories: true }),
+          scheduledAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+          scheduledEnAt: null,
+          postId: 203,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+
+      const snapshot = queueService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "7" })).snapshot(7);
+      expect(snapshot.drafts).toHaveLength(0);
+      expect(snapshot.upcoming.map((item) => ({ label: item.label, targets: item.targets }))).toEqual([
+        { label: "RU only Studio", targets: 2 },
+      ]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("keeps queue item details in buttons instead of duplicating them in the message", () => {
     const snapshot: StudioQueueSnapshot = {
       upcoming: [

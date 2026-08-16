@@ -180,6 +180,32 @@ describe("Telegram controller flow", () => {
     expect(JSON.stringify(schedule.keyboard)).not.toContain("sched_scope");
   });
 
+  it("offers no English surfaces to a Studio that publishes no English", () => {
+    backendDb = openBackendDb(":memory:");
+    registerTestChannels(backendDb, ["telegram", "threads_ru"]);
+    const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
+    const draftId = createDraftFromMessage(backendDb, 42, { text: "Только RU", textEn: "RU only", entities: [], media: [] });
+
+    const draft = draftPreview(backendDb, draftId, config);
+    expect(draft.text).not.toContain("EN:");
+    expect(JSON.stringify(draft.keyboard)).not.toContain("edit_en");
+
+    // A schedule screen that offers EN is what let a draft be dated in RU only
+    // and then wait forever for the EN date its language never gets.
+    const schedule = draftPreview(backendDb, draftId, config, "schedule");
+    expect(JSON.stringify(schedule.keyboard)).toContain(`sched_scope:${draftId}:ru_now`);
+    expect(JSON.stringify(schedule.keyboard)).not.toContain("en_now");
+    expect(JSON.stringify(schedule.keyboard)).not.toContain("both");
+
+    // And the EN slot grid is not reachable by callback either.
+    expect(draftPreview(backendDb, draftId, config, "schedule_en").text).toEqual(draft.text);
+
+    publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt: new Date(Date.now() + 60 * 60_000) });
+    const scheduled = draftPreview(backendDb, draftId, config);
+    expect(scheduled.text).toContain("Scheduled RU");
+    expect(scheduled.text).not.toContain("Scheduled EN");
+  });
+
   it("does not enqueue a duplicate target job after that target is already final", () => {
     backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Repeat", textEn: "Repeat", entities: [], media: [] });
