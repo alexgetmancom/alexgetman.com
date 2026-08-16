@@ -259,6 +259,7 @@ export function renderDashboardShell(body: string, locale: StudioLocale): string
     .overview-spark__cap { stroke:var(--text-muted); stroke-dasharray:2 4; stroke-width:1; opacity:.72; }
     .overview-spark__cap-label { fill:var(--text-muted); font-size:10px; font-variant-numeric:tabular-nums; }
     .overview-spark__average { stroke:var(--text-muted); stroke-dasharray:3 5; stroke-width:1; opacity:.72; }
+    .overview-spark__bar--over-cap { filter:brightness(1.25); }
     .overview-spark__bar--partial { stroke:var(--text-muted); stroke-dasharray:2 3; stroke-width:1; }
     .overview-spark__cohort { stroke:var(--surface); stroke-width:1; opacity:.85; }
     .overview-spark__footer { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-top:8px; color:var(--text-secondary); font-size:13px; font-variant-numeric:tabular-nums; }

@@ -123,7 +123,28 @@ describe("dashboard shell", () => {
     expect(html).not.toContain("dataset.bound");
   });
 
-  it("raises the overview ceiling above the busiest day instead of clipping it", () => {
+  it("puts the overview ceiling on the busiest day itself, so its bar fills the band", () => {
+    const html = renderOverviewSparkline(
+      [
+        { label: "normal", value: 30_000 },
+        { label: "best", value: 55_000 },
+      ],
+      "var(--series-views)",
+      "Просмотры",
+      "30 дней назад",
+      "сегодня",
+      "ru",
+    );
+
+    // The peak names the cap, so it reaches the line instead of being drawn
+    // against a rounder number the period never reached.
+    expect(html).toContain(`class="overview-spark__cap"`);
+    expect(html).toContain("55k");
+    expect(html).not.toContain("100k");
+    expect(html).toMatch(/height="58\.00" rx="2"/);
+  });
+
+  it("stops following the peak at the hard cap, and says which day was clipped", () => {
     const html = renderOverviewSparkline(
       [
         { label: "normal", value: 10_000 },
@@ -136,9 +157,10 @@ describe("dashboard shell", () => {
       "ru",
     );
 
-    expect(html).toContain(`class="overview-spark__cap"`);
+    expect(html).toContain("50k");
+    expect(html).toContain('class="overview-spark__bar overview-spark__bar--over-cap"');
+    // Clipping is about height only: the day still reports what it earned.
     expect(html).toContain('data-tooltip="viral · 75k"');
-    expect(html).toContain("100k");
     expect(html).not.toContain("логарифмическая");
   });
 
@@ -155,7 +177,7 @@ describe("dashboard shell", () => {
       "ru",
     );
 
-    expect(html).toContain("1.5k");
+    expect(html).toContain("1.4k");
     // The best day nearly fills the 58px band instead of drawing a 1px stub.
     expect(html).toMatch(/height="5[0-9]\.\d\d" rx="2"/);
   });

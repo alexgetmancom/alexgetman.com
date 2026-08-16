@@ -5,14 +5,19 @@ import { formatMetricValue } from "./format.js";
 
 /** Compact daily bars for the editorial overview.
  *
- * The ceiling follows the data: a fixed one drew a young studio's whole month as
- * a flat line at the bottom, and clipped a grown one's best days. It is rounded
- * up to a readable step so the dashed cap line can carry a number. */
+ * The ceiling is the period's best day itself, so that day's bar reaches the
+ * cap line and every other one is read against it. Rounding up to a tidy step
+ * cost the whole band: a 55k peak drew against 100k and spent half the height
+ * on numbers the period never reached.
+ *
+ * Above HARD_CAP the scale stops following the peak and stands still. A single
+ * viral day would otherwise flatten the month behind it, and comparing two
+ * periods means comparing bars drawn against the same height. Days over it are
+ * clipped and marked as clipped; the tooltip still reports what they earned. */
+const HARD_CAP = 50_000;
+
 function sparkCeiling(peak: number): number {
-  if (!(peak > 0)) return 10;
-  const magnitude = 10 ** Math.floor(Math.log10(peak));
-  const step = [1, 1.5, 2, 2.5, 5, 10].find((candidate) => peak <= candidate * magnitude) ?? 10;
-  return step * magnitude;
+  return Math.min(HARD_CAP, peak > 0 ? peak : 10);
 }
 
 /**
@@ -39,18 +44,23 @@ export function renderOverviewSparkline(
   const values = points.map((point) => Math.max(0, point.value));
   const average = values.reduce((total, value) => total + value, 0) / values.length;
   const ceiling = sparkCeiling(Math.max(...values));
-  const averageY = height - (average / ceiling) * height;
+  const averageY = height - (Math.min(average, ceiling) / ceiling) * height;
   const bars = points
     .map((point, index) => {
       const value = values[index] ?? 0;
-      const barHeight = Math.max(1, (value / ceiling) * height);
+      const overCap = value > ceiling;
+      const visibleValue = Math.min(value, ceiling);
+      const barHeight = Math.max(1, (visibleValue / ceiling) * height);
       const x = index * (barWidth + barGap);
       const y = height - barHeight;
       const opacity =
-        index === points.length - 1 ? 1 : Math.max(0.24, 0.72 - ((points.length - 1 - index) / Math.max(1, points.length)) * 0.35);
-      const barClass = `overview-spark__bar${point.partial ? " overview-spark__bar--partial" : ""}`;
+        overCap || index === points.length - 1
+          ? 1
+          : Math.max(0.24, 0.72 - ((points.length - 1 - index) / Math.max(1, points.length)) * 0.35);
+      const barClass = `overview-spark__bar${overCap ? " overview-spark__bar--over-cap" : ""}${point.partial ? " overview-spark__bar--partial" : ""}`;
       const fresh = Math.max(0, point.fresh ?? 0);
-      const freshHeight = fresh > 0 ? Math.min(barHeight, Math.max(1, (Math.min(fresh, value) / ceiling) * height)) : 0;
+      // The cap clips how tall the segment is drawn, never what it reports.
+      const freshHeight = fresh > 0 ? Math.min(barHeight, Math.max(1, (Math.min(fresh, visibleValue) / ceiling) * height)) : 0;
       const cohort =
         freshHeight > 0
           ? `<rect class="overview-spark__bar overview-spark__bar--fresh" x="${x.toFixed(2)}" y="${(height - freshHeight).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${freshHeight.toFixed(2)}" rx="2" fill="${color}" opacity="${Math.min(1, opacity + 0.34).toFixed(2)}"/>${
