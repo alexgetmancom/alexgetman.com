@@ -144,6 +144,31 @@ describe("dashboard shell", () => {
     expect(html).toMatch(/height="58\.00" rx="2"/);
   });
 
+  it("keeps an ordinary month readable when one day goes viral", () => {
+    // The shape this exists for: a Studio whose days run in the hundreds and one
+    // post that reached 55k. Scaled to the peak, the other 29 days are a 1px
+    // line — the strip stops saying anything about the month it covers.
+    const days = [...Array(29)].map((_, index) => ({ label: `day${index}`, value: 400 + (index % 5) * 120 }));
+    const html = renderOverviewSparkline(
+      [...days, { label: "viral", value: 55_000 }],
+      "var(--series-views)",
+      "Просмотры",
+      "30 дней назад",
+      "сегодня",
+      "ru",
+    );
+
+    // The ceiling sits just over the ninetieth percentile of the ordinary days,
+    // not on the outlier, which is clipped and marked instead.
+    expect(html).toContain("1k");
+    expect(html).not.toContain("55k</text>");
+    expect(html).toContain("overview-spark__bar--over-cap");
+    expect(html).toContain('data-tooltip="viral · 55k"');
+    // An ordinary day now uses a real part of the band instead of one pixel.
+    const ordinaryHeights = [...html.matchAll(/class="overview-spark__bar"[^>]*height="([\d.]+)"/gu)].map((match) => Number(match[1]));
+    expect(Math.max(...ordinaryHeights)).toBeGreaterThan(30);
+  });
+
   it("stops following the peak at the hard cap, and says which day was clipped", () => {
     const html = renderOverviewSparkline(
       [

@@ -5,19 +5,44 @@ import { formatMetricValue } from "./format.js";
 
 /** Compact daily bars for the editorial overview.
  *
- * The ceiling is the period's best day itself, so that day's bar reaches the
- * cap line and every other one is read against it. Rounding up to a tidy step
- * cost the whole band: a 55k peak drew against 100k and spent half the height
- * on numbers the period never reached.
+ * Each half of the overview scales to its own numbers: this runs once per track,
+ * over that track's days only, so text is never drawn against video's height.
  *
- * Above HARD_CAP the scale stops following the peak and stands still. A single
- * viral day would otherwise flatten the month behind it, and comparing two
- * periods means comparing bars drawn against the same height. Days over it are
- * clipped and marked as clipped; the tooltip still reports what they earned. */
+ * The ceiling is the best day, until one day stands so far above the rest that
+ * following it would flatten the month behind it — a single viral post against
+ * a typical day two orders of magnitude smaller. Past that the scale sits on the
+ * ninetieth percentile instead, which an outlier cannot drag with it the way the
+ * mean can, and the outlying days are clipped and marked as clipped. The tooltip
+ * always reports what a day earned, whatever height it was drawn at.
+ *
+ * HARD_CAP is the absolute lid: above it two periods stop being comparable at a
+ * glance, which is most of what this strip is for. */
 const HARD_CAP = 50_000;
+/** How far above the ninetieth percentile the best day has to stand before it
+ * counts as an outlier rather than as the top of the range. */
+const OUTLIER_RATIO = 1.5;
+/** Breathing room over the percentile, so the tallest kept bar is not welded to
+ * the cap line. */
+const HEADROOM = 1.15;
 
-function sparkCeiling(peak: number): number {
-  return Math.min(HARD_CAP, peak > 0 ? peak : 10);
+function sparkCeiling(values: number[]): number {
+  // A day with no reach says nothing about the scale the rest need, and a
+  // period that has not started yet is mostly those.
+  const active = values.filter((value) => value > 0).sort((left, right) => left - right);
+  if (!active.length) return 10;
+  const peak = active.at(-1) ?? 0;
+  const p90 = quantile(active, 0.9);
+  const ceiling = peak <= p90 * OUTLIER_RATIO ? peak : p90 * HEADROOM;
+  return Math.min(HARD_CAP, Math.max(10, Math.round(ceiling)));
+}
+
+function quantile(sorted: number[], fraction: number): number {
+  const position = (sorted.length - 1) * fraction;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  const lowerValue = sorted[lower] ?? 0;
+  if (lower === upper) return lowerValue;
+  return lowerValue + ((sorted[upper] ?? lowerValue) - lowerValue) * (position - lower);
 }
 
 /**
@@ -43,7 +68,7 @@ export function renderOverviewSparkline(
   const barWidth = (width - (points.length - 1) * barGap) / points.length;
   const values = points.map((point) => Math.max(0, point.value));
   const average = values.reduce((total, value) => total + value, 0) / values.length;
-  const ceiling = sparkCeiling(Math.max(...values));
+  const ceiling = sparkCeiling(values);
   const averageY = height - (Math.min(average, ceiling) / ceiling) * height;
   const bars = points
     .map((point, index) => {
