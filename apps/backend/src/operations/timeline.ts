@@ -56,6 +56,10 @@ function videoTimeline(backendDb: BackendDb, ref: string, videoDraftId: number):
       id: videoTargets.id,
       target: videoTargets.target,
       status: videoTargets.status,
+      // What the platform actually judged. Reading it used to mean going
+      // through MCP, which is a long way round when the question is "which tag
+      // did YouTube refuse".
+      metadata: videoTargets.metadataJson,
       deliveryProvider: videoTargets.deliveryProvider,
       externalId: videoTargets.externalId,
       url: videoTargets.externalUrl,

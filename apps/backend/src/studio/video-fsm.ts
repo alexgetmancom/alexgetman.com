@@ -1,6 +1,12 @@
 import type { Flow, FlowStep } from "../application/conversation-flow.js";
 import { fixUrlSlashes } from "../content/message.js";
 import { StudioError } from "../foundation/errors.js";
+import {
+  assertInstagramCaption,
+  assertYouTubeDescription,
+  assertYouTubeTags,
+  assertYouTubeTitle,
+} from "../publishing/video-metadata-limits.js";
 import { VIDEO_TARGETS, type VideoTarget } from "../publishing/video-types.js";
 
 type VideoFlowData = Record<string, unknown> & { selectedTargets?: VideoTarget[] };
@@ -126,8 +132,18 @@ export function firstVideoMetadataStep(selected: VideoTarget[]): VideoWizardStep
 
 /** Pure metadata transition used by the video Flow and non-Telegram callers. */
 export function advanceVideoMetadata(step: VideoWizardStep, text: string, data: VideoFlowData): VideoFlowData {
-  if (step === "youtube_title") return { ...data, youtube_title: text };
-  if (step === "youtube_description") return { ...data, youtube_description: text === "-" ? "" : text };
+  // Checked here, not at publication: this is the moment the operator can still
+  // decide what to cut. A rejection that arrives when the video is due is a
+  // slot missed for two characters.
+  if (step === "youtube_title") {
+    assertYouTubeTitle(text);
+    return { ...data, youtube_title: text };
+  }
+  if (step === "youtube_description") {
+    const description = text === "-" ? "" : text;
+    assertYouTubeDescription(description);
+    return { ...data, youtube_description: description };
+  }
   if (step === "youtube_game_url") return { ...data, youtube_game_url: text === "-" ? "" : fixUrlSlashes(text) };
   if (step === "youtube_tags") {
     const tags =
@@ -137,9 +153,12 @@ export function advanceVideoMetadata(step: VideoWizardStep, text: string, data: 
             .split(",")
             .map((tag) => tag.trim())
             .filter(Boolean);
+    assertYouTubeTags(tags);
     return { ...data, youtube_tags: tags };
   }
-  return { ...data, instagram_caption: text === "-" ? "" : text };
+  const caption = text === "-" ? "" : text;
+  assertInstagramCaption(caption);
+  return { ...data, instagram_caption: caption };
 }
 
 /** Adds one parsed target time and names the platform still waiting for one. */

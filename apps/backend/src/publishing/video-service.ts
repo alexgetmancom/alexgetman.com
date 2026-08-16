@@ -13,6 +13,7 @@ import { isZernioRouteReady, registeredVideoDeliveryRoute } from "./delivery-pro
 import { assertFutureSchedule } from "./schedule.js";
 import { isAudienceMutationRetryable, isVideoTargetEditable, isVideoTargetMetadataEditable, isVideoTargetSchedulable } from "./state.js";
 import { getVideoDraft, insertVideoJob, listVideoTargets, refreshVideoDraftStatus } from "./video-data.js";
+import { assertVideoMetadata } from "./video-metadata-limits.js";
 import type { VideoLocale, VideoMetadata, VideoTarget } from "./video-types.js";
 import { VIDEO_TARGETS } from "./video-types.js";
 
@@ -136,6 +137,9 @@ export function saveVideoMetadata(backendDb: BackendDb, videoDraftId: number, ta
     .where(and(eq(videoTargets.videoDraftId, videoDraftId), eq(videoTargets.target, target)))
     .get();
   if (!existing) throw new StudioError("err.video-target-missing");
+  // Every interface writes metadata through here, so this is where the
+  // platform's limits are enforced rather than in each of them.
+  assertVideoMetadata(target, metadata);
   if (!isVideoTargetMetadataEditable(existing.status)) throw new StudioError("err.video-metadata-locked");
   const runningJob = unsafeDb(backendDb)
     .db.select({ id: videoJobs.id })

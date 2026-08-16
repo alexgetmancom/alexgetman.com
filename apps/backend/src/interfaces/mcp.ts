@@ -60,7 +60,8 @@ function uniqueIntArray(min: number, max: number) {
 const youtubeMetadataSchema = z.object({
   title: trimmed(1, 100),
   description: trimmed(0, 5_000),
-  tags: z.array(trimmed(1, 100)).max(30),
+  // Length and budget are the shared limits' business (video-metadata-limits).
+  tags: z.array(trimmed(1, 100)),
   game_url: trimmed(1, 500).optional(),
 });
 const instagramMetadataSchema = z.object({ caption: trimmed(1, 2_200) });

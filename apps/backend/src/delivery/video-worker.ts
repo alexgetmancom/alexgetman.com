@@ -413,7 +413,19 @@ function failVideoJob(backendDb: BackendDb, job: VideoJob, cause: unknown, confi
     failed = true;
     if (job.videoTargetId && cause instanceof InstagramContainerInvalidError && job.kind === "publish" && retry) {
       requeueInstagramPreparation(tx, job, error, now, transition.attempt);
-    } else if (job.videoTargetId) updateVideoTarget(tx, job.videoTargetId, { status: retry ? "scheduled" : "failed", lastError: error });
+    } else if (job.videoTargetId) {
+      updateVideoTarget(tx, job.videoTargetId, { status: retry ? "scheduled" : "failed", lastError: error });
+      // Preparation is what produces the thing publication sends. When it fails
+      // for good, the publish job runs anyway and fails with "upload has not
+      // completed yet" — a consequence that replaces the cause on the card and
+      // sends the operator looking in the wrong place.
+      if (job.kind === "prepare" && !retry) {
+        tx.update(videoJobs)
+          .set({ status: "cancelled", lastError: error, lockedAt: null, lockedBy: null, updatedAt: now })
+          .where(and(eq(videoJobs.videoTargetId, job.videoTargetId), eq(videoJobs.kind, "publish"), eq(videoJobs.status, "queued")))
+          .run();
+      }
+    }
   });
   if (!failed) return false;
   refreshVideoDraftStatus(backendDb, job.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);

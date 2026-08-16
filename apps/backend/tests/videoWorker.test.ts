@@ -367,6 +367,27 @@ describe("video job execution", () => {
     });
   });
 
+  it("does not send a publication whose preparation failed for good", async () => {
+    reset();
+    await withDirectory(async (directory) => {
+      const backendDb = testDb.open();
+      const config = videoConfig(directory);
+      const draftId = dueDraft(backendDb, directory, ["youtube_shorts"]);
+      rmSync(path.join(directory, "clip-youtube_shorts.mp4"), { force: true });
+      backendDb.db.update(videoJobs).set({ attemptCount: 3 }).where(eq(videoJobs.kind, "prepare")).run();
+
+      await runVideoCycle(config, backendDb);
+
+      // The publish job used to run anyway and fail with "upload has not
+      // completed yet" — the consequence, which then replaced the real cause on
+      // the card and sent the operator looking in the wrong place.
+      const publish = backendDb.db.select().from(videoJobs).where(eq(videoJobs.kind, "publish")).get();
+      expect(publish?.status).toBe("cancelled");
+      expect(publish?.lastError).toContain("Video source was removed");
+      expect(targetRow(backendDb, draftId)?.lastError).toContain("Video source was removed");
+    });
+  });
+
   it("spends only the single safe retry on an unknown video failure", async () => {
     reset();
     await withDirectory(async (directory) => {
