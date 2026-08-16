@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { postLocales, postMetrics, posts, postTargets, publications } from "../db/schema.js";
+import { postLocales, postMetrics, posts, postTargets, publications, publishJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { zonedRollingPeriodBounds } from "../foundation/time.js";
 import {
@@ -146,6 +146,19 @@ type PublicationQueryRow = {
   slugEn?: string | null;
 };
 
+/**
+ * When a publication happened, as far as a period is concerned.
+ *
+ * The earliest target that went out, or — for one still ahead — when it is due,
+ * and only failing both the row's own creation. Written as one expression so
+ * the filter and the ordering cannot drift apart.
+ */
+const publicationMoment = sql`coalesce(
+  (select min(${postTargets.publishedAt}) from ${postTargets} where ${postTargets.postKey} = 'post:' || ${publications.postId}),
+  (select min(${publishJobs.publishAt}) from ${publishJobs} where ${publishJobs.postKey} = 'post:' || ${publications.postId}),
+  ${publications.createdAt}
+)`;
+
 function fetchPostRows(
   backendDb: BackendDb,
   start: string,
@@ -183,8 +196,12 @@ function fetchPostRows(
     .from(publications)
     .leftJoin(ru, and(eq(ru.postId, publications.postId), eq(ru.locale, "ru")))
     .leftJoin(en, and(eq(en.postId, publications.postId), eq(en.locale, "en")))
-    .where(and(gte(publications.createdAt, start), lte(publications.createdAt, end)))
-    .orderBy(desc(publications.createdAt))
+    // A publication belongs to the day it reached its audience, not the day its
+    // row was made. Filtering on creation hid a post scheduled yesterday and
+    // published this morning from today's dashboard, while it sat in the
+    // seven-day view — the delivery was fine and the period was lying.
+    .where(and(gte(publicationMoment, start), lte(publicationMoment, end)))
+    .orderBy(desc(publicationMoment))
     .limit(rowLimit)
     .all() as PublicationQueryRow[];
   if (boundedContent) {

@@ -5,6 +5,35 @@ import { openBackendDb } from "./helpers/open-db.js";
 import { loadTestConfig, MSK_STUDIO_PROFILE } from "./helpers/studio-config.js";
 
 describe("dashboard read model bounds", () => {
+  it("puts a publication in the period it reached its audience, not the one it was drafted in", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const [todayStart] = zonedRollingPeriodBounds(0, 1, "Europe/Moscow");
+      const publishedToday = new Date(Date.parse(todayStart) + 60_000).toISOString();
+      const draftedThreeDaysAgo = new Date(Date.parse(todayStart) - 3 * 86_400_000).toISOString();
+
+      backendDb.sqlite
+        .prepare("INSERT INTO publications(post_id,status,telegram_message_id,created_at,updated_at) VALUES (1,'published',1,?,?)")
+        .run(draftedThreeDaysAgo, publishedToday);
+      backendDb.sqlite
+        .prepare(
+          "INSERT INTO post_locales(post_id,locale,slug,text,media_json,site_enabled,updated_at) VALUES (1,'ru','post-1','Scheduled ahead','[]',1,?)",
+        )
+        .run(publishedToday);
+      backendDb.sqlite
+        .prepare("INSERT INTO post_targets(post_key,target,status,published_at,updated_at) VALUES ('post:1','telegram','published',?,?)")
+        .run(publishedToday, publishedToday);
+
+      // Scheduled on Friday, published on Monday: the dashboard's "today" used
+      // to ask when the row was made, so the post was live everywhere and
+      // missing from the only view its author was looking at.
+      const today = pipelineOverviewPayload(loadTestConfig({}, MSK_STUDIO_PROFILE), backendDb, 0, 1);
+      expect(today.posts.map((post) => post.post_id)).toEqual([1]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("filters samples, aggregates them into time buckets, and omits provider raw payloads", () => {
     const backendDb = openBackendDb(":memory:");
     try {
