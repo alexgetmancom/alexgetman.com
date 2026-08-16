@@ -353,7 +353,7 @@ describe("video job execution", () => {
       const backendDb = testDb.open();
       const config = Object.assign(videoConfig(directory), { ZERNIO_API_KEY: "z".repeat(16) });
       registerChannel(backendDb, { platform: "instagram", locale: "ru", provider: "zernio", providerAccountId: "maru-account" });
-      const draftId = dueDraft(backendDb, directory, ["instagram_reels"]);
+      dueDraft(backendDb, directory, ["instagram_reels"]);
 
       await runVideoCycle(config, backendDb);
 
