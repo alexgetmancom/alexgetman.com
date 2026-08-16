@@ -3,7 +3,10 @@ import { isSiteTarget, targetLocale } from "../botTargets.js";
 const VIDEO_FINAL_TARGET_STATUSES = new Set(["published", "failed", "cancelled", "verification_required"]);
 const POST_FINAL_JOB_STATUSES = new Set(["published", "failed", "cancelled", "skipped", "verification_required"]);
 const VIDEO_EDITABLE_TARGET_STATUSES = new Set(["editing", "draft"]);
-const VIDEO_METADATA_EDITABLE_TARGET_STATUSES = new Set(["editing", "draft", "scheduled"]);
+/** `failed` belongs here: nothing reached an audience, and the details are what
+ * the platform refused. Without it a target rejected for its own metadata could
+ * only be retried into the same rejection. */
+const VIDEO_METADATA_EDITABLE_TARGET_STATUSES = new Set(["editing", "draft", "scheduled", "failed"]);
 const VIDEO_SCHEDULABLE_TARGET_STATUSES = new Set(["editing", "draft", "scheduled"]);
 const ACTIVE_PUBLICATION_JOB_STATUSES = new Set(["queued", "publishing", "rendering"]);
 const POST_MUTABLE_STATUSES = new Set(["draft", "needs_review", "scheduled"]);

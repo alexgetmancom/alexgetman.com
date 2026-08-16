@@ -169,6 +169,13 @@
       "when": 1786807000000,
       "tag": "0023_device_authorizations",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1786893419621,
+      "tag": "0024_split_publication_reminders",
+      "breakpoints": true
     }
   ]
 }

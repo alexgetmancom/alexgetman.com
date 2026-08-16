@@ -26,7 +26,8 @@ export const studioProfile = sqliteTable("studio_profile", {
 /** Owner-level notification policy. It belongs to Studio, not to any interface. */
 export const studioNotificationSettings = sqliteTable("studio_notification_settings", {
   actorId: integer().primaryKey(),
-  remindersEnabled: integer().notNull().default(1),
+  videoRemindersEnabled: integer().notNull().default(1),
+  postRemindersEnabled: integer().notNull().default(1),
   reminderMinutes: integer().notNull().default(5),
   completionEnabled: integer().notNull().default(1),
   updatedAt: text().notNull(),

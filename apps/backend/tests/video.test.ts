@@ -262,6 +262,28 @@ describe("video publication queue", () => {
     });
   });
 
+  it("lets a refused target's details be fixed before it is retried", () => {
+    const backendDb = testDb.open();
+    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
+    replaceVideoTargets(backendDb, draftId, ["youtube_shorts", "instagram_reels"]);
+    saveVideoMetadata(backendDb, draftId, "youtube_shorts", { title: "Clip", description: "", tags: ["one"] });
+    saveVideoMetadata(backendDb, draftId, "instagram_reels", { caption: "Clip" });
+    // One platform took it, the other refused the details themselves — the
+    // publication is half-finished, not settled. Freezing the metadata here left
+    // the only fix out of reach and the retry able to reproduce the rejection.
+    backendDb.sqlite.prepare("UPDATE video_drafts SET status='partial'").run();
+    backendDb.sqlite.prepare("UPDATE video_targets SET status='failed' WHERE target='youtube_shorts'").run();
+    backendDb.sqlite.prepare("UPDATE video_targets SET status='published' WHERE target='instagram_reels'").run();
+
+    saveVideoMetadata(backendDb, draftId, "youtube_shorts", { title: "Clip", description: "", tags: ["shorter"] });
+
+    expect(listVideoTargets(backendDb, draftId).find((target) => target.target === "youtube_shorts")?.metadataJson).toMatchObject({
+      tags: ["shorter"],
+    });
+    // The published one stays untouchable: its details are what an audience has.
+    expect(() => saveVideoMetadata(backendDb, draftId, "instagram_reels", { caption: "Changed" })).toThrow();
+  });
+
   it("updates one video field through the Telegram message state machine", async () => {
     const backendDb = testDb.open();
     const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);

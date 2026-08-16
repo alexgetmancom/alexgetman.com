@@ -124,7 +124,12 @@ export function removeVideoTarget(backendDb: BackendDb, videoDraftId: number, ta
 
 export function saveVideoMetadata(backendDb: BackendDb, videoDraftId: number, target: VideoTarget, metadata: VideoMetadata): void {
   const draft = getVideoDraft(backendDb, videoDraftId);
-  if (!["draft", "editing", "scheduled"].includes(draft.status)) throw new StudioError("err.video-draft-locked");
+  // A partial publication is not locked, it is half-finished: one platform took
+  // it and another refused, and what a refused target usually needs before a
+  // retry is exactly the details it was refused for. YouTube rejecting a tag
+  // list left the target retryable and its metadata frozen — a retry that could
+  // only reproduce the same rejection.
+  if (!["draft", "editing", "scheduled", "partial"].includes(draft.status)) throw new StudioError("err.video-draft-locked");
   const existing = unsafeDb(backendDb)
     .db.select({ id: videoTargets.id, status: videoTargets.status })
     .from(videoTargets)
