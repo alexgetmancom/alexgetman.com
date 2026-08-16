@@ -10,7 +10,7 @@ import { resolvePublicationRef } from "./publication-ref.js";
 type PurgeInput = { ref: string; apply: boolean };
 type SqlArgs = Array<string | number>;
 type PurgeStatement = { name: string; countSql: string; deleteSql: string; args: SqlArgs };
-type TargetState = { target: string; status: string; url: string | null; externalId: string | null };
+type TargetState = { target: string; status: string; url: string | null; externalId: string | null; externalIdsJson: string | null };
 type VideoTargetState = TargetState & { deliveryProvider: string; providerPostId: string | null };
 
 export async function purgePublication(backendDb: BackendDb, config: BackendConfig, input: PurgeInput, fetchImpl: typeof fetch) {
@@ -219,8 +219,15 @@ function orphanedAssetFiles(backendDb: BackendDb, assetId: number, videoDraftId:
 
 function targetStates(sqlite: ReturnType<typeof unsafeDb>["sqlite"], postKey: string): TargetState[] {
   return sqlite
-    .query("SELECT target,status,url,external_id AS externalId FROM post_targets WHERE post_key=? ORDER BY target")
+    .query(
+      "SELECT target,status,url,external_id AS externalId,external_ids_json AS externalIdsJson FROM post_targets WHERE post_key=? ORDER BY target",
+    )
     .all(postKey) as TargetState[];
+}
+
+function storedExternalIds(target: TargetState): string[] {
+  const listed = target.externalIdsJson ? (JSON.parse(target.externalIdsJson) as string[] | null) : null;
+  return listed?.length ? listed : target.externalId ? [target.externalId] : [];
 }
 
 /** Compared instead of the rows themselves: a target appearing, changing status
@@ -248,10 +255,13 @@ async function assertPublicationAbsent(
 async function assertTargetsAbsent(targets: TargetState[], config: BackendConfig, fetchImpl: typeof fetch): Promise<TargetState[]> {
   for (const target of targets) {
     if (target.status !== "published") continue;
-    if (target.externalId) {
-      const absent = await textTargetIsAbsent(target.target, target.externalId, config, fetchImpl);
-      if (absent === true) continue;
-      if (absent === false) throw new Error(`${target.target} is still live on the platform`);
+    // A post split across several platform objects is gone only when every one
+    // of them is: the same list the removal path acts on, read the same way.
+    const ids = storedExternalIds(target);
+    if (ids.length) {
+      const answers = await Promise.all(ids.map((id) => textTargetIsAbsent(target.target, id, config, fetchImpl)));
+      if (answers.some((absent) => absent === false)) throw new Error(`${target.target} is still live on the platform`);
+      if (answers.every((absent) => absent === true)) continue;
     }
     if (!target.url) throw new Error(`cannot prove ${target.target} is absent: no public URL is stored`);
     let response: Response;
