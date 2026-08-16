@@ -124,24 +124,34 @@ export function draftPreview(
 
   if (view === "schedule") {
     if (draft.status === "scheduled") {
+      // One language means one time: the chooser would be a single button in front of the grid it opens.
+      if (!servesEn) return draftPreview(backendDb, draftId, config, "schedule_ru");
       keyboard.text(t(locale, "post.change-time-ru"), publicationCallback("post", "view", [draftId, "schedule_ru"])).row();
-      if (servesEn) keyboard.text(t(locale, "post.change-time-en"), publicationCallback("post", "view", [draftId, "schedule_en"])).row();
+      keyboard.text(t(locale, "post.change-time-en"), publicationCallback("post", "view", [draftId, "schedule_en"])).row();
       keyboard.text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"]));
       return {
         text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, "post.change-time-title")}*\n${t(locale, "post.change-time-hint")}`,
         keyboard,
       };
     }
-    keyboard.text(t(locale, "post.scope-ru-now"), publicationCallback("post", "sched_scope", [draftId, "ru_now"])).row();
+    // Without EN there is nothing to stagger against: the only choice left is now or a time.
     if (servesEn)
       keyboard
+        .text(t(locale, "post.scope-ru-now"), publicationCallback("post", "sched_scope", [draftId, "ru_now"]))
+        .row()
         .text(t(locale, "post.scope-en-now"), publicationCallback("post", "sched_scope", [draftId, "en_now"]))
         .row()
         .text(t(locale, "post.scope-both"), publicationCallback("post", "sched_scope", [draftId, "both"]))
         .row();
+    else
+      keyboard
+        .text(t(locale, "post.scope-ru-only-now"), publicationCallback("post", "sched_scope", [draftId, "ru_now"]))
+        .row()
+        .text(t(locale, "post.scope-ru-only-later"), publicationCallback("post", "view", [draftId, "schedule_ru"]))
+        .row();
     keyboard.text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"]));
     return {
-      text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, "post.schedule-title")}*\n${t(locale, "post.schedule-hint")}`,
+      text: `${draftHeader(draftId, targets, locale)}\n\n📅 *${t(locale, "post.schedule-title")}*\n${t(locale, servesEn ? "post.schedule-hint" : "post.schedule-hint-ru-only")}`,
       keyboard,
     };
   }

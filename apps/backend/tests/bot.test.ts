@@ -196,6 +196,8 @@ describe("Telegram controller flow", () => {
     expect(JSON.stringify(schedule.keyboard)).toContain(`sched_scope:${draftId}:ru_now`);
     expect(JSON.stringify(schedule.keyboard)).not.toContain("en_now");
     expect(JSON.stringify(schedule.keyboard)).not.toContain("both");
+    // Dropping the EN options must not drop the only way to pick a time: RU now or RU later.
+    expect(JSON.stringify(schedule.keyboard)).toContain(`view:${draftId}:schedule_ru`);
 
     // And the EN slot grid is not reachable by callback either.
     expect(draftPreview(backendDb, draftId, config, "schedule_en").text).toEqual(draft.text);
@@ -204,6 +206,11 @@ describe("Telegram controller flow", () => {
     const scheduled = draftPreview(backendDb, draftId, config);
     expect(scheduled.text).toContain("Scheduled RU");
     expect(scheduled.text).not.toContain("Scheduled EN");
+
+    // Changing the time of a one-language publication opens its grid, not a chooser of one.
+    const changeTime = draftPreview(backendDb, draftId, config, "schedule");
+    expect(changeTime).toEqual(draftPreview(backendDb, draftId, config, "schedule_ru"));
+    expect(JSON.stringify(changeTime.keyboard)).toContain(`sched_pick:${draftId}:ru`);
   });
 
   it("does not enqueue a duplicate target job after that target is already final", () => {
