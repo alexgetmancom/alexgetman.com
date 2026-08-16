@@ -38,25 +38,19 @@ export function renderOverviewSparkline(
   const barWidth = (width - (points.length - 1) * barGap) / points.length;
   const values = points.map((point) => Math.max(0, point.value));
   const average = values.reduce((total, value) => total + value, 0) / values.length;
-  const clippedAverage = Math.min(OVERVIEW_SPARK_MAX, average);
-  const averageY = height - (clippedAverage / OVERVIEW_SPARK_MAX) * height;
+  const ceiling = sparkCeiling(Math.max(...values));
+  const averageY = height - (average / ceiling) * height;
   const bars = points
     .map((point, index) => {
       const value = values[index] ?? 0;
-      const overCap = value > OVERVIEW_SPARK_MAX;
-      const visibleValue = Math.min(value, OVERVIEW_SPARK_MAX);
-      const barHeight = Math.max(1, (visibleValue / OVERVIEW_SPARK_MAX) * height);
+      const barHeight = Math.max(1, (value / ceiling) * height);
       const x = index * (barWidth + barGap);
       const y = height - barHeight;
-      const opacity = overCap
-        ? 1
-        : index === points.length - 1
-          ? 1
-          : Math.max(0.24, 0.72 - ((points.length - 1 - index) / Math.max(1, points.length)) * 0.35);
-      const barClass = `overview-spark__bar${overCap ? " overview-spark__bar--over-cap" : ""}${point.partial ? " overview-spark__bar--partial" : ""}`;
+      const opacity =
+        index === points.length - 1 ? 1 : Math.max(0.24, 0.72 - ((points.length - 1 - index) / Math.max(1, points.length)) * 0.35);
+      const barClass = `overview-spark__bar${point.partial ? " overview-spark__bar--partial" : ""}`;
       const fresh = Math.max(0, point.fresh ?? 0);
-      // The cap clips how tall the segment is drawn, never what it reports.
-      const freshHeight = fresh > 0 ? Math.min(barHeight, Math.max(1, (Math.min(fresh, visibleValue) / OVERVIEW_SPARK_MAX) * height)) : 0;
+      const freshHeight = fresh > 0 ? Math.min(barHeight, Math.max(1, (Math.min(fresh, value) / ceiling) * height)) : 0;
       const cohort =
         freshHeight > 0
           ? `<rect class="overview-spark__bar overview-spark__bar--fresh" x="${x.toFixed(2)}" y="${(height - freshHeight).toFixed(2)}" width="${barWidth.toFixed(2)}" height="${freshHeight.toFixed(2)}" rx="2" fill="${color}" opacity="${Math.min(1, opacity + 0.34).toFixed(2)}"/>${
@@ -81,7 +75,7 @@ export function renderOverviewSparkline(
   return `<div class="overview-spark">
     <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(ariaLabel)}">
       <line class="overview-spark__cap" x1="0" y1="0" x2="${width}" y2="0"/>
-      <text class="overview-spark__cap-label" x="${width}" y="9" text-anchor="end">50k</text>
+      <text class="overview-spark__cap-label" x="${width}" y="9" text-anchor="end">${formatMetricValue(ceiling)}</text>
       <line class="overview-spark__average" x1="0" y1="${averageY.toFixed(2)}" x2="${width}" y2="${averageY.toFixed(2)}"/>
       ${bars}
     </svg>

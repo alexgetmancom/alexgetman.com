@@ -114,7 +114,16 @@ describe("dashboard shell", () => {
     expect(html).not.toContain("chart-scale");
   });
 
-  it("clips overview bars at the fixed cap while keeping exact values in tooltips", () => {
+  it("tracks bound listeners off the DOM, so a cached fragment does not restore dead controls", () => {
+    // The fragment cache stores main.innerHTML. A marker written as an attribute
+    // is serialized into it and comes back on listener-less elements, which left
+    // "show more" and the chart tooltips inert on every cached navigation.
+    const html = renderDashboardShell("", "ru");
+    expect(html).toContain("const bound = new WeakSet()");
+    expect(html).not.toContain("dataset.bound");
+  });
+
+  it("raises the overview ceiling above the busiest day instead of clipping it", () => {
     const html = renderOverviewSparkline(
       [
         { label: "normal", value: 10_000 },
@@ -128,10 +137,27 @@ describe("dashboard shell", () => {
     );
 
     expect(html).toContain(`class="overview-spark__cap"`);
-    expect(html).toContain('class="overview-spark__bar overview-spark__bar--over-cap"');
     expect(html).toContain('data-tooltip="viral · 75k"');
-    expect(html).toContain("50k");
+    expect(html).toContain("100k");
     expect(html).not.toContain("логарифмическая");
+  });
+
+  it("scales the ceiling down to a young studio's numbers so its bars are readable", () => {
+    const html = renderOverviewSparkline(
+      [
+        { label: "quiet", value: 300 },
+        { label: "best", value: 1_400 },
+      ],
+      "var(--series-views)",
+      "Просмотры",
+      "30 дней назад",
+      "сегодня",
+      "ru",
+    );
+
+    expect(html).toContain("1.5k");
+    // The best day nearly fills the 58px band instead of drawing a 1px stub.
+    expect(html).toMatch(/height="5[0-9]\.\d\d" rx="2"/);
   });
 });
 

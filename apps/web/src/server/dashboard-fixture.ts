@@ -57,8 +57,8 @@ const SAMPLES_PER_DAY = 24 / HOURS_PER_SAMPLE;
 /**
  * Clips for the video half of the unified overview. Deliberately lopsided
  * against the text plan above: video reach is an order of magnitude larger than
- * text reach in production, so the fixed overview cap has a meaningful over-cap
- * case to render.
+ * text reach in production, so the two halves of the overview scale their bars
+ * to visibly different ceilings.
  *
  * The locales are mixed on purpose. The overview reads a video platform's
  * language off the drafts published there, so a single-locale fixture would

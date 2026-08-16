@@ -7,8 +7,8 @@
       "runtimeArgs": ["--bun", "astro", "dev"],
       "port": 4321,
       "env": {
-        "PIPELINE_DB": "/Users/alex/projects/alexgetman.com/.dev-fixture/pipeline.db",
-        "SITE_PUBLIC_DIR": "/Users/alex/projects/alexgetman.com/.dev-fixture/site",
+        "PIPELINE_DB": "/Users/alex/projects/solo-publisher/.dev-fixture/pipeline.db",
+        "SITE_PUBLIC_DIR": "/Users/alex/projects/solo-publisher/.dev-fixture/site",
         "COMMAND_CENTER_TOKEN": "dev",
         "PUBLIC_BASE_URL": "http://localhost:4321"
       }
@@ -19,8 +19,8 @@
       "runtimeArgs": ["--bun", "astro", "dev"],
       "port": 4321,
       "env": {
-        "PIPELINE_DB": "/Users/alex/projects/alexgetman.com/.dev-fixture/pipeline.db",
-        "SITE_PUBLIC_DIR": "/Users/alex/projects/alexgetman.com/.dev-fixture/site",
+        "PIPELINE_DB": "/Users/alex/projects/solo-publisher/.dev-fixture/pipeline.db",
+        "SITE_PUBLIC_DIR": "/Users/alex/projects/solo-publisher/.dev-fixture/site",
         "COMMAND_CENTER_TOKEN": "dev",
         "PUBLIC_BASE_URL": "http://localhost:4321"
       }
