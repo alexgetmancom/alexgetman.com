@@ -12,7 +12,8 @@ type SettingsDependencies = Pick<ApplicationPorts, "clock" | "studioSettings">;
 function readNotifications(backendDb: SettingsDependencies, actorId: number) {
   const row = backendDb.studioSettings.notifications(actorId);
   return {
-    remindersEnabled: row?.remindersEnabled !== 0,
+    videoRemindersEnabled: row?.videoRemindersEnabled !== 0,
+    postRemindersEnabled: row?.postRemindersEnabled !== 0,
     reminderMinutes: row?.reminderMinutes ?? 5,
     completionEnabled: row?.completionEnabled !== 0,
   };
@@ -191,7 +192,15 @@ export function settingsService(backendDb: SettingsDependencies) {
       });
       return next;
     },
-    setNotifications(actorId: number, input: Partial<{ remindersEnabled: boolean; reminderMinutes: number; completionEnabled: boolean }>) {
+    setNotifications(
+      actorId: number,
+      input: Partial<{
+        videoRemindersEnabled: boolean;
+        postRemindersEnabled: boolean;
+        reminderMinutes: number;
+        completionEnabled: boolean;
+      }>,
+    ) {
       if (
         input.reminderMinutes != null &&
         (!Number.isInteger(input.reminderMinutes) || input.reminderMinutes < 1 || input.reminderMinutes > 60)
@@ -200,18 +209,22 @@ export function settingsService(backendDb: SettingsDependencies) {
       const current = readNotifications(backendDb, actorId);
       const now = backendDb.clock.now().toISOString();
       const next = {
-        remindersEnabled: input.remindersEnabled ?? current.remindersEnabled,
+        videoRemindersEnabled: input.videoRemindersEnabled ?? current.videoRemindersEnabled,
+        postRemindersEnabled: input.postRemindersEnabled ?? current.postRemindersEnabled,
         reminderMinutes: input.reminderMinutes ?? current.reminderMinutes,
         completionEnabled: input.completionEnabled ?? current.completionEnabled,
       };
       backendDb.studioSettings.saveNotifications({
         actorId,
-        remindersEnabled: Number(next.remindersEnabled),
+        videoRemindersEnabled: Number(next.videoRemindersEnabled),
+        postRemindersEnabled: Number(next.postRemindersEnabled),
         reminderMinutes: next.reminderMinutes,
         completionEnabled: Number(next.completionEnabled),
         updatedAt: now,
       });
-      if (current.remindersEnabled && !next.remindersEnabled) backendDb.studioSettings.cancelQueuedReminders(actorId, now);
+      if (current.videoRemindersEnabled && !next.videoRemindersEnabled)
+        backendDb.studioSettings.cancelQueuedReminders(actorId, "video", now);
+      if (current.postRemindersEnabled && !next.postRemindersEnabled) backendDb.studioSettings.cancelQueuedReminders(actorId, "post", now);
       return next;
     },
     youtubeSignature(actorId: number): string {

@@ -545,7 +545,8 @@ function schedulePost(backendDb: BackendDb, config: BackendConfig, actorId: numb
 }
 
 function rescheduleReminders(backendDb: BackendDb, actorId: number, postId: number, draft: DraftRecord, scheduled: DraftRecord): void {
-  const preference = settingsService(backendDb).notifications(actorId);
+  const notifications = settingsService(backendDb).notifications(actorId);
+  const reminders = { enabled: notifications.postRemindersEnabled, minutes: notifications.reminderMinutes };
   const title = truncateUnicode(draft.text_ru.trim().split("\n")[0] ?? "", 100) || `Post #${postId}`;
   cancelScheduledNotifications(backendDb, publicationRef("post", postId));
   for (const [locale, scheduledAt] of [
@@ -562,7 +563,7 @@ function rescheduleReminders(backendDb: BackendDb, actorId: number, postId: numb
       publishAt: new Date(scheduledAt),
       title,
       targets,
-      preference,
+      reminders,
     });
   }
 }

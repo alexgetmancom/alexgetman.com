@@ -1,3 +1,5 @@
+import type { PublicationKind } from "./conversation-flow.js";
+
 export type DomainEventInput = {
   ref?: string | null;
   type: string;
@@ -215,12 +217,13 @@ export type StudioSettingsStore = {
   saveNewsDigest(input: { enabled: number; hour: number; minute: number; prompt: string; updatedAt: string }): void;
   saveNotifications(input: {
     actorId: number;
-    remindersEnabled: number;
+    videoRemindersEnabled: number;
+    postRemindersEnabled: number;
     reminderMinutes: number;
     completionEnabled: number;
     updatedAt: string;
   }): void;
-  cancelQueuedReminders(actorId: number, now: string): number;
+  cancelQueuedReminders(actorId: number, publicationKind: PublicationKind, now: string): number;
   botSettings(actorId: number): StudioBotSettingsRecord | null;
   saveBotSettings(input: { actorId: number; youtubeSignature: string; updatedAt: string }): void;
   saveLocale(input: { actorId: number; locale: string; updatedAt: string }): void;
@@ -249,7 +252,8 @@ export type StudioProfileRecord = {
 
 type StudioNotificationSettingsRecord = {
   actorId: number;
-  remindersEnabled: number;
+  videoRemindersEnabled: number;
+  postRemindersEnabled: number;
   reminderMinutes: number;
   completionEnabled: number;
   updatedAt: string;

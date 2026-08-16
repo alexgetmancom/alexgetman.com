@@ -58,14 +58,16 @@ describe("application persistence ports", () => {
       prompt: "news",
     });
     expect(newsDigest).toEqual({ enabled: 1, hour: 8, minute: 30, prompt: "news", updatedAt: "2026-01-02T03:04:05.000Z" });
-    expect(settings.setNotifications(42, { remindersEnabled: false, reminderMinutes: 15 })).toEqual({
-      remindersEnabled: false,
+    expect(settings.setNotifications(42, { videoRemindersEnabled: false, reminderMinutes: 15 })).toEqual({
+      videoRemindersEnabled: false,
+      postRemindersEnabled: true,
       reminderMinutes: 15,
       completionEnabled: true,
     });
     expect(notifications).toEqual({
       actorId: 42,
-      remindersEnabled: 0,
+      videoRemindersEnabled: 0,
+      postRemindersEnabled: 1,
       reminderMinutes: 15,
       completionEnabled: 1,
       updatedAt: "2026-01-02T03:04:05.000Z",

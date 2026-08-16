@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, like } from "drizzle-orm";
 import type { StudioSettingsStore } from "../../application/ports.js";
 import {
   botSettings,
@@ -87,7 +87,8 @@ export function createStudioSettingsStore(db: BackendDatabase): StudioSettingsSt
         .onConflictDoUpdate({
           target: studioNotificationSettings.actorId,
           set: {
-            remindersEnabled: input.remindersEnabled,
+            videoRemindersEnabled: input.videoRemindersEnabled,
+            postRemindersEnabled: input.postRemindersEnabled,
             reminderMinutes: input.reminderMinutes,
             completionEnabled: input.completionEnabled,
             updatedAt: input.updatedAt,
@@ -96,11 +97,17 @@ export function createStudioSettingsStore(db: BackendDatabase): StudioSettingsSt
         .run();
     },
 
-    cancelQueuedReminders(actorId, now) {
+    cancelQueuedReminders(actorId, publicationKind, now) {
       return db
         .update(studioNotificationJobs)
         .set({ status: "cancelled", updatedAt: now })
-        .where(and(eq(studioNotificationJobs.actorId, actorId), eq(studioNotificationJobs.status, "queued")))
+        .where(
+          and(
+            eq(studioNotificationJobs.actorId, actorId),
+            eq(studioNotificationJobs.status, "queued"),
+            like(studioNotificationJobs.kind, `${publicationKind}.%`),
+          ),
+        )
         .returning({ id: studioNotificationJobs.id })
         .all().length;
     },

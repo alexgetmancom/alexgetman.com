@@ -240,8 +240,9 @@ const en = {
   "settings.on": "On",
   "settings.off": "Off",
   "settings.notif-body":
-    "🔔 *Publication notifications*\n\nReminder before scheduled publishing: *{reminders}* · *{minutes} min*\nCompletion notification: *{completion}*\n\nThese are Studio settings. Telegram only delivers them.",
-  "settings.reminder-label": "Reminder",
+    "🔔 *Publication notifications*\n\nReminder before a scheduled video: *{videoReminders}*\nReminder before a scheduled text: *{postReminders}*\nHow early: *{minutes} min*\nCompletion notification: *{completion}*\n\nThese are Studio settings. Telegram only delivers them.",
+  "settings.video-reminder-label": "Video reminder",
+  "settings.post-reminder-label": "Text reminder",
   "settings.completion-label": "Completion",
   "settings.weekly-digest-enabled": "Weekly digest",
   "settings.weekly-digest-day-set": "Digest day: {day}",
@@ -929,8 +930,9 @@ const ru = {
   "settings.on": "Вкл",
   "settings.off": "Выкл",
   "settings.notif-body":
-    "🔔 *Уведомления о публикациях*\n\nНапоминание перед отложенной публикацией: *{reminders}* · *{minutes} мин.*\nУведомление о завершении: *{completion}*\n\nЭто настройки Studio. Telegram только доставляет их.",
-  "settings.reminder-label": "Напоминание",
+    "🔔 *Уведомления о публикациях*\n\nНапоминание перед отложенным видео: *{videoReminders}*\nНапоминание перед отложенным текстом: *{postReminders}*\nЗа сколько: *{minutes} мин.*\nУведомление о завершении: *{completion}*\n\nЭто настройки Studio. Telegram только доставляет их.",
+  "settings.video-reminder-label": "Напоминание о видео",
+  "settings.post-reminder-label": "Напоминание о тексте",
   "settings.completion-label": "Завершение",
   "settings.weekly-digest-enabled": "Недельный дайджест",
   "settings.weekly-digest-day-set": "День дайджеста: {day}",

@@ -171,14 +171,16 @@ const studioToolDefs = {
   studio_notification_settings_update: tool({
     description: "Update notification policy. These settings apply to every connected interface; Telegram is only one delivery adapter.",
     schema: z.object({
-      reminders_enabled: z.boolean().optional(),
+      video_reminders_enabled: z.boolean().optional(),
+      post_reminders_enabled: z.boolean().optional(),
       reminder_minutes: z.number().int().min(1).max(60).optional(),
       completion_enabled: z.boolean().optional(),
     }),
     mutates: true,
     handler: (studio, actorId, input) =>
       studio.settings.setNotifications(actorId, {
-        ...(input.reminders_enabled === undefined ? {} : { remindersEnabled: input.reminders_enabled }),
+        ...(input.video_reminders_enabled === undefined ? {} : { videoRemindersEnabled: input.video_reminders_enabled }),
+        ...(input.post_reminders_enabled === undefined ? {} : { postRemindersEnabled: input.post_reminders_enabled }),
         ...(input.reminder_minutes === undefined ? {} : { reminderMinutes: input.reminder_minutes }),
         ...(input.completion_enabled === undefined ? {} : { completionEnabled: input.completion_enabled }),
       }),

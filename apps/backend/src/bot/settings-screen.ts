@@ -174,11 +174,21 @@ export function buildSettingsMenu(config: BackendConfig, backendDb: BackendDb, b
     const settings = createStudioServices(backendDb, config).settings.notifications(actorId);
     const locale = settingsService(backendDb).locale(actorId);
     range
-      .text(`${settings.remindersEnabled ? "✅" : "◻️"} ${t(locale, "settings.reminder-label")}`, async (ctx) => {
-        createStudioServices(backendDb, config).settings.setNotifications(actorId, { remindersEnabled: !settings.remindersEnabled });
+      .text(`${settings.videoRemindersEnabled ? "✅" : "◻️"} ${t(locale, "settings.video-reminder-label")}`, async (ctx) => {
+        createStudioServices(backendDb, config).settings.setNotifications(actorId, {
+          videoRemindersEnabled: !settings.videoRemindersEnabled,
+        });
         await ctx.answerCallbackQuery();
         await ctx.editMessageText(notificationSettingsText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
       })
+      .text(`${settings.postRemindersEnabled ? "✅" : "◻️"} ${t(locale, "settings.post-reminder-label")}`, async (ctx) => {
+        createStudioServices(backendDb, config).settings.setNotifications(actorId, {
+          postRemindersEnabled: !settings.postRemindersEnabled,
+        });
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(notificationSettingsText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
+      })
+      .row()
       .text(`${settings.completionEnabled ? "✅" : "◻️"} ${t(locale, "settings.completion-label")}`, async (ctx) => {
         createStudioServices(backendDb, config).settings.setNotifications(actorId, { completionEnabled: !settings.completionEnabled });
         await ctx.answerCallbackQuery();
@@ -837,7 +847,8 @@ function notificationSettingsText(backendDb: BackendDb, config: BackendConfig, a
   const settings = createStudioServices(backendDb, config).settings.notifications(actorId);
   const on = (value: boolean) => (value ? t(locale, "settings.on") : t(locale, "settings.off"));
   return t(locale, "settings.notif-body", {
-    reminders: on(settings.remindersEnabled),
+    videoReminders: on(settings.videoRemindersEnabled),
+    postReminders: on(settings.postRemindersEnabled),
     minutes: settings.reminderMinutes,
     completion: on(settings.completionEnabled),
   });

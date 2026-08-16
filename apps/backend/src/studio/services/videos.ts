@@ -317,7 +317,8 @@ async function scheduleOwnedVideo(
 
 function scheduleVideoReminders(backendDb: BackendDb, ownerId: number, publicationId: number, label: string): void {
   cancelScheduledNotifications(backendDb, publicationRef("video", publicationId));
-  const preference = settingsService(backendDb).notifications(ownerId);
+  const notifications = settingsService(backendDb).notifications(ownerId);
+  const reminders = { enabled: notifications.videoRemindersEnabled, minutes: notifications.reminderMinutes };
   const grouped = new Map<string, VideoTarget[]>();
   for (const target of backendDb.studioVideos.targets(publicationId)) {
     if (!target.scheduledAt || ["published", "cancelled", "failed", "verification_required"].includes(target.status)) continue;
@@ -333,7 +334,7 @@ function scheduleVideoReminders(backendDb: BackendDb, ownerId: number, publicati
       publishAt: new Date(publishAt),
       title: label || `Video #${publicationId}`,
       targets,
-      preference,
+      reminders,
     });
   }
 }

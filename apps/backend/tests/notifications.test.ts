@@ -28,7 +28,7 @@ describe("Studio notifications", () => {
         publishAt: new Date(Date.now() + 30_000),
         title: "Launch",
         targets: ["youtube_shorts"],
-        preference: { remindersEnabled: true, reminderMinutes: 5, completionEnabled: true },
+        reminders: { enabled: true, minutes: 5 },
       });
       expect(runNotificationCycle(backendDb)).toBe(1);
       expect(
@@ -42,7 +42,7 @@ describe("Studio notifications", () => {
         publishAt: new Date(Date.now() + 60 * 60_000),
         title: "Launch",
         targets: ["instagram_reels"],
-        preference: { remindersEnabled: true, reminderMinutes: 5, completionEnabled: true },
+        reminders: { enabled: true, minutes: 5 },
       });
       cancelScheduledNotifications(backendDb, `video:${videoId}`);
       expect(runNotificationCycle(backendDb)).toBe(0);
@@ -61,7 +61,7 @@ describe("Studio notifications", () => {
         publishAt: new Date(Date.now() - 1_000),
         title: "Immediate publication",
         targets: ["threads_en"],
-        preference: { remindersEnabled: true, reminderMinutes: 5, completionEnabled: true },
+        reminders: { enabled: true, minutes: 5 },
       });
 
       expect(backendDb.db.select().from(studioNotificationJobs).all()).toHaveLength(0);
@@ -84,6 +84,19 @@ describe("Studio notifications", () => {
         .where(eq(studioNotificationJobs.ref, `post:${postId}`))
         .get();
       expect(job?.payloadJson).toMatchObject({ minutes: 17 });
+
+      // Text reminders off leaves video reminders alone, so scheduling a post
+      // queues nothing at all.
+      settingsService(backendDb).setNotifications(42, { postRemindersEnabled: false });
+      const secondDraftId = posts.create(42, { text: "Quiet", textEn: "Quiet", entities: [], media: [] });
+      const secondPostId = posts.schedule(42, secondDraftId, { ruAt: new Date(Date.now() + 60 * 60_000), enAt: null });
+      expect(
+        backendDb.db
+          .select()
+          .from(studioNotificationJobs)
+          .where(eq(studioNotificationJobs.ref, `post:${secondPostId}`))
+          .all(),
+      ).toHaveLength(0);
     } finally {
       backendDb.close();
     }
@@ -100,10 +113,41 @@ describe("Studio notifications", () => {
         publishAt: new Date(Date.now() + 60 * 60_000),
         title: "Launch",
         targets: ["youtube_shorts"],
-        preference: { remindersEnabled: true, reminderMinutes: 5, completionEnabled: true },
+        reminders: { enabled: true, minutes: 5 },
       });
 
-      settingsService(backendDb).setNotifications(42, { remindersEnabled: false });
+      settingsService(backendDb).setNotifications(42, { videoRemindersEnabled: false });
+
+      expect(backendDb.db.select({ status: studioNotificationJobs.status }).from(studioNotificationJobs).all()).toEqual([
+        { status: "cancelled" },
+      ]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("keeps text reminders when video reminders are switched off", () => {
+    const backendDb = openNotificationDb();
+    try {
+      scheduleReminder(backendDb, {
+        actorId: 42,
+        ref: "post:7",
+        kind: "post.ru",
+        publishAt: new Date(Date.now() + 60 * 60_000),
+        title: "Scheduled",
+        targets: ["telegram"],
+        reminders: { enabled: true, minutes: 5 },
+      });
+
+      settingsService(backendDb).setNotifications(42, { videoRemindersEnabled: false });
+
+      expect(backendDb.db.select({ status: studioNotificationJobs.status }).from(studioNotificationJobs).all()).toEqual([
+        { status: "queued" },
+      ]);
+
+      // The reverse switch settles the other half: one flag never reaches the
+      // other kind's queue.
+      settingsService(backendDb).setNotifications(42, { postRemindersEnabled: false });
 
       expect(backendDb.db.select({ status: studioNotificationJobs.status }).from(studioNotificationJobs).all()).toEqual([
         { status: "cancelled" },

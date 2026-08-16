@@ -100,8 +100,13 @@ export async function sendStudioReminder(
   const minutes = number(details.minutes) ?? 5;
   const publishAt = typeof details.publish_at === "string" ? details.publish_at : null;
   const videoLocale = videoLocaleForRef(backendDb, event.postKey);
+  // Reminders are enabled per publication kind, so the delivery gate reads the
+  // same flag the scheduler did. A video reference is the only one that means
+  // video; drafts and posts are both reminded about as text.
+  const isVideo = parsePublicationRef(event.postKey)?.kind === "video";
   await forEachAdmin(config.CONTROLLER_ADMIN_IDS, async (actorId) => {
-    if (!settingsService(backendDb).notifications(actorId).remindersEnabled) return;
+    const notifications = settingsService(backendDb).notifications(actorId);
+    if (!(isVideo ? notifications.videoRemindersEnabled : notifications.postRemindersEnabled)) return;
     const locale = settingsService(backendDb).locale(actorId);
     const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
     const title = typeof details.title === "string" ? details.title : (event.postKey ?? t(locale, "notif.publication"));

@@ -4,7 +4,10 @@ import { type BackendDb, unsafeDb } from "../db/client.js";
 import { recordEvent } from "../db/repositories/events.js";
 import { studioNotificationJobs } from "../db/schema.js";
 
-type NotificationPreference = { remindersEnabled: boolean; reminderMinutes: number; completionEnabled: boolean };
+/** Whether this publication kind is reminded about, and how early. The caller
+ * picks the flag: reminders are enabled per kind, and this scheduler serves
+ * both. */
+type ReminderPolicy = { enabled: boolean; minutes: number };
 
 export function scheduleReminder(
   backendDb: BackendDb,
@@ -15,18 +18,18 @@ export function scheduleReminder(
     publishAt: Date;
     title: string;
     targets: string[];
-    preference: NotificationPreference;
+    reminders: ReminderPolicy;
   },
 ): void {
-  if (!input.preference.remindersEnabled || input.publishAt.getTime() <= Date.now()) return;
+  if (!input.reminders.enabled || input.publishAt.getTime() <= Date.now()) return;
   const now = new Date();
-  const runAt = new Date(Math.max(now.getTime(), input.publishAt.getTime() - input.preference.reminderMinutes * 60_000)).toISOString();
+  const runAt = new Date(Math.max(now.getTime(), input.publishAt.getTime() - input.reminders.minutes * 60_000)).toISOString();
   const timestamp = now.toISOString();
   const payloadJson = {
     title: input.title,
     targets: input.targets,
     publish_at: input.publishAt.toISOString(),
-    minutes: input.preference.reminderMinutes,
+    minutes: input.reminders.minutes,
   };
   unsafeDb(backendDb)
     .db.insert(studioNotificationJobs)
