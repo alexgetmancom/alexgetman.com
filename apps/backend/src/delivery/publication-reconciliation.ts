@@ -15,6 +15,7 @@ import { PUBLISH_CLAIM_LIMIT, workerId } from "../publishing/queue.js";
 import { refreshVideoDraftStatus } from "../publishing/video-data.js";
 import { verifyPlatformPublication } from "./platform-adapters.js";
 import { verifyYouTubeVideo } from "./video-publishers.js";
+import { recordVideoCompletionIfFinal } from "./video-worker.js";
 import { verifyZernioPost } from "./zernio.js";
 
 /** How many times reconciliation may ask a provider whether an ambiguous
@@ -234,6 +235,9 @@ export async function runPublicationReconciliation(
     });
     if (!confirmedVideo) continue;
     refreshVideoDraftStatus(backendDb, row.target.videoDraftId, config.VIDEO_MEDIA_RETENTION_HOURS);
+    // The publication held its outcome until this answer, so this is where the
+    // operator finally hears it — once, and true.
+    recordVideoCompletionIfFinal(backendDb, row.target.videoDraftId);
     recordDomainEvent(backendDb.events, {
       ref: publicationRef("video", row.target.videoDraftId),
       target: row.target.target,

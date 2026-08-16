@@ -131,13 +131,18 @@ function updateVideoTarget(db: UnsafeBackendDb["db"], targetId: number, patch: P
     .run();
 }
 
-function recordVideoCompletionIfFinal(backendDb: BackendDb, videoDraftId: number): void {
+export function recordVideoCompletionIfFinal(backendDb: BackendDb, videoDraftId: number, now = new Date()): void {
   const targets = unsafeDb(backendDb)
-    .db.select({ status: videoTargets.status })
+    .db.select({ status: videoTargets.status, providerPostId: videoTargets.providerPostId, updatedAt: videoTargets.updatedAt })
     .from(videoTargets)
     .where(eq(videoTargets.videoDraftId, videoDraftId))
     .all();
   if (!targets.length || !targets.every((target) => isVideoTargetFinal(target.status))) return;
+  // A target the provider still owes an answer for is in flight, and saying how
+  // the publication went before that answer arrives is how one Reel reported
+  // itself as a failure and, a minute later, as published. Bounded, because a
+  // provider that never answers must not turn into silence.
+  if (targets.some((target) => awaitingProviderConfirmation(target, now))) return;
   const failed = targets.filter((target) => target.status === "failed" || target.status === "verification_required").length;
   recordDomainEvent(backendDb.events, {
     ref: publicationRef("video", videoDraftId),
@@ -147,6 +152,14 @@ function recordVideoCompletionIfFinal(backendDb: BackendDb, videoDraftId: number
     details: { videoDraftId, total: targets.length, failed, published: targets.filter((target) => target.status === "published").length },
     cooldownSeconds: 60 * 60,
   });
+}
+
+/** How long the provider gets to confirm before the operator hears about it. */
+const PROVIDER_CONFIRMATION_GRACE_MS = 15 * 60 * 1000;
+
+function awaitingProviderConfirmation(target: { status: string; providerPostId: string | null; updatedAt: string }, now: Date): boolean {
+  if (target.status !== "verification_required" || !target.providerPostId) return false;
+  return now.getTime() - new Date(target.updatedAt).getTime() < PROVIDER_CONFIRMATION_GRACE_MS;
 }
 
 function claimVideoJobs(backendDb: BackendDb, limit: number): VideoJob[] {
@@ -557,14 +570,18 @@ function recordVideoTargetOutcome(
     job.videoTargetId == null
       ? null
       : unsafeDb(backendDb)
-          .db.select({ target: videoTargets.target })
+          .db.select({ target: videoTargets.target, providerPostId: videoTargets.providerPostId })
           .from(videoTargets)
           .where(eq(videoTargets.id, job.videoTargetId))
           .get();
+  // A publication the provider already holds is waiting, not failing: the
+  // provider takes it before the platform does, and the sweep answers within
+  // the minute. Announcing that as an incident cried wolf on every Reel.
+  const awaitingProvider = outcome === "verification_required" && Boolean(target?.providerPostId);
   recordDomainEvent(backendDb.events, {
     ref: publicationRef("video", job.videoDraftId),
     type: `video.target.${outcome}`,
-    severity: outcome === "failed" ? "error" : "warn",
+    severity: outcome === "failed" ? "error" : awaitingProvider ? "info" : "warn",
     target: target?.target ?? "video",
     message: error,
     details: { videoDraftId: job.videoDraftId, videoTargetId: job.videoTargetId, jobId: job.id, kind: job.kind },

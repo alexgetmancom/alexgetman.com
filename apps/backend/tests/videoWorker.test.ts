@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
-import { videoJobs, videoTargets } from "../src/db/schema.js";
+import { postEvents, videoJobs, videoTargets } from "../src/db/schema.js";
 import { recordAuthFailure } from "../src/observability/auth-circuit.js";
 import { replaceVideoTargets, saveVideoMetadata, scheduleVideo } from "../src/publishing/video-service.js";
 import { VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
@@ -343,6 +343,27 @@ describe("video job execution", () => {
       expect(targetRow(backendDb, draftId)).toMatchObject({ status: "verification_required", providerPostId: "z-1", externalId: null });
       const job = backendDb.db.select().from(videoJobs).where(eq(videoJobs.kind, "publish")).get();
       expect(job?.status).toBe("verification_required");
+    });
+  });
+
+  it("holds the outcome back while the provider still owes an answer", async () => {
+    reset();
+    zernioReelResult = { providerPostId: "z-1", externalId: null, url: null };
+    await withDirectory(async (directory) => {
+      const backendDb = testDb.open();
+      const config = Object.assign(videoConfig(directory), { ZERNIO_API_KEY: "z".repeat(16) });
+      registerChannel(backendDb, { platform: "instagram", locale: "ru", provider: "zernio", providerAccountId: "maru-account" });
+      const draftId = dueDraft(backendDb, directory, ["instagram_reels"]);
+
+      await runVideoCycle(config, backendDb);
+
+      // The provider takes a publication before the platform does. Announcing
+      // the outcome here said "completed with 1 failed target" about a Reel the
+      // sweep confirmed a minute later, and the waiting itself was a warning.
+      const events = backendDb.db.select().from(postEvents).all();
+      expect(events.filter((event) => event.eventType === "delivery.video.completed")).toEqual([]);
+      const waiting = events.find((event) => event.eventType === "video.target.verification_required");
+      expect(waiting?.severity).toBe("info");
     });
   });
 
