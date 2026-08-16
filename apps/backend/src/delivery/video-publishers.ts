@@ -6,6 +6,7 @@ import { ExternalTransportError, externalFetch, formBody, requestJson } from "..
 import { httpPublishError } from "../publishing/errors.js";
 import type { InstagramMetadata, YouTubeMetadata } from "../publishing/video-types.js";
 import { AmbiguousPublicationError, ambiguousExternalMutation } from "./ambiguous-publication.js";
+import { absentIfMissing } from "./platform-absence.js";
 import { verifyZernioPost } from "./zernio.js";
 
 type YouTubeVideo = { id: string };
@@ -199,20 +200,6 @@ export async function videoTargetIsAbsent(
       `${instagramGraphBase(config, accessToken)}/${target.externalId}?fields=id&access_token=${encodeURIComponent(accessToken)}`,
     ),
   );
-}
-
-/** Only the platform saying the object is gone counts as absence. Anything
- * else — a timeout, a revoked token, a rate limit — leaves the question
- * unanswered, and an unanswered question must not erase a publication. */
-async function absentIfMissing(ask: () => Promise<unknown>): Promise<boolean> {
-  try {
-    await ask();
-    return false;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (/does not exist|error_subcode\D*33|\b404\b|did not find the expected video/i.test(message)) return true;
-    throw new Error(`cannot prove the video is absent: ${message}`);
-  }
 }
 
 function preservedStatusFields(status: YouTubeStatus): Partial<YouTubeStatus> {

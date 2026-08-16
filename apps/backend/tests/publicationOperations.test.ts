@@ -14,7 +14,13 @@ import { createTestVideoAsset, createTestVideoDraft } from "./helpers/video.js";
 function context(db: ReturnType<typeof openBackendDb>, fetchImpl: typeof fetch = fetch): OperationContext {
   return {
     dbPath: ":memory:",
-    config: () => loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", INSTAGRAM_RU_ACCESS_TOKEN: "ru-token", INSTAGRAM_RU_USER_ID: "ru-user" }),
+    config: () =>
+      loadTestConfig({
+        CONTROLLER_ADMIN_IDS: "42",
+        INSTAGRAM_RU_ACCESS_TOKEN: "ru-token",
+        INSTAGRAM_RU_USER_ID: "ru-user",
+        THREADS_RU_ACCESS_TOKEN: "ru-threads-token",
+      }),
     db: () => db,
     fetchImpl,
     actorType: "test",
@@ -212,7 +218,7 @@ it("purges a video publication whose reel is gone, and the source it was the las
     const unauthorized = (async () =>
       new Response('{"error":{"message":"Invalid OAuth token"}}', { status: 401 })) as unknown as typeof fetch;
     await expect(runOperation("purge", context(backendDb, unauthorized), { ref, apply: true })).rejects.toThrow(
-      "cannot prove the video is absent",
+      "cannot prove the publication is absent",
     );
 
     const notFound = (async () =>
@@ -357,6 +363,45 @@ it("refuses to purge when a target changed while it was being verified", async (
     // Nothing may have been deleted: the whole cascade rolls back together.
     expect(backendDb.sqlite.query("SELECT COUNT(*) AS count FROM drafts WHERE id=?").get(published.draft_id)).toEqual({ count: 1 });
     expect(backendDb.sqlite.query("SELECT COUNT(*) AS count FROM post_targets WHERE post_key=?").get(published.ref)).toEqual({ count: 2 });
+  } finally {
+    backendDb.close();
+  }
+});
+
+it("proves a Threads post absent by asking Threads, not by its login-walled permalink", async () => {
+  const backendDb = openBackendDb(":memory:");
+  try {
+    connectThreads(backendDb);
+    const published = (await runOperation("publish", context(backendDb), {
+      locale: "ru",
+      targets: "threads_ru",
+      text: "Disposable test",
+    })) as { ref: string };
+    const now = new Date().toISOString();
+    backendDb.sqlite
+      .query(
+        "INSERT INTO post_targets(post_key,target,status,url,external_id,updated_at) VALUES (?,'threads_ru','published','https://www.threads.com/@studio/post/A','18332651503276467',?)",
+      )
+      .run(published.ref, now);
+    // What Threads serves a logged-out reader either way: its login wall, HTTP
+    // 200. Left to the permalink alone the purge could never prove anything.
+    const loginWall = new Response("log in", { status: 200 });
+    const graph = (body: string, status: number) =>
+      (async (input: string | URL | Request) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (!url.includes("graph.threads.net")) return loginWall.clone();
+        return new Response(body, { status, headers: { "content-type": "application/json" } });
+      }) as unknown as typeof fetch;
+
+    const live = graph(JSON.stringify({ id: "18332651503276467", permalink: "https://www.threads.net/@studio/post/A" }), 200);
+    await expect(runOperation("purge", context(backendDb, live), { ref: published.ref, apply: true })).rejects.toThrow(
+      "threads_ru is still live on the platform",
+    );
+
+    const gone = graph(JSON.stringify({ error: { message: "Object with ID does not exist", code: 100 } }), 400);
+    const result = (await runOperation("purge", context(backendDb, gone), { ref: published.ref, apply: true })) as { applied: boolean };
+    expect(result.applied).toBe(true);
+    expect(publicationTimeline(backendDb, published.ref).targets).toEqual([]);
   } finally {
     backendDb.close();
   }

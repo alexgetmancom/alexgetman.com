@@ -7,6 +7,7 @@ import { isCapabilityReady } from "../observability/capabilities.js";
 import type { PublishResult } from "../publishing/errors.js";
 import { platformProfile } from "../publishing/platform-profiles.js";
 import type { ClaimedPublishJob } from "../publishing/queue.js";
+import { absentIfMissing } from "./platform-absence.js";
 import type { DeliveryAdapter, DeliveryPorts, DeliveryPublisher } from "./ports.js";
 import { deleteDiscordMessage, editDiscordMessage, publishToDiscord, verifyDiscordMessage } from "./social/discord.js";
 import { publishInstagramStory, verifyInstagramPublication } from "./social/instagram.js";
@@ -166,6 +167,34 @@ export async function verifyPlatformPublication(
       verification: { status: "unavailable", error: error instanceof Error ? error.message : String(error) },
     };
   }
+}
+
+/** Whether the platform still has a published text post, asked of the platform
+ * itself — the same question `videoTargetIsAbsent` answers for video, for the
+ * same reason: Threads and Instagram serve a login wall with HTTP 200 to a
+ * logged-out request whether or not the post is there, so a public permalink
+ * cannot tell a live post from a deleted one. `null` means this target has no
+ * such API to ask and the caller has to fall back to the public address. */
+export async function textTargetIsAbsent(
+  target: string,
+  externalId: string,
+  config: BackendConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<boolean | null> {
+  if (targetInGroup(TARGET_GROUPS.threads, target))
+    return absentIfMissing(() => verifyThreadsPost(externalId, config, fetchImpl, target as ThreadsTarget));
+  if (targetInGroup(TARGET_GROUPS.x, target)) return absentIfMissing(() => verifyXPost(externalId, config, fetchImpl));
+  if (targetInGroup(TARGET_GROUPS.discord, target)) return absentIfMissing(() => verifyDiscordMessage(externalId, config, fetchImpl));
+  if (targetInGroup(TARGET_GROUPS.instagramStory, target))
+    return absentIfMissing(() =>
+      verifyInstagramPublication(
+        externalId,
+        config,
+        instagramCredentialsForLocale(config, target === "instagram_stories" ? "en" : "ru"),
+        fetchImpl,
+      ),
+    );
+  return null;
 }
 
 function validatePlatformTarget(target: string, config: BackendConfig, throughProvider: boolean): void {

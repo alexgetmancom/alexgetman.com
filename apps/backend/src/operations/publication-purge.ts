@@ -1,6 +1,7 @@
 import { existsSync, unlinkSync } from "node:fs";
 import { parsePublicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
+import { textTargetIsAbsent } from "../delivery/platform-adapters.js";
 import { videoTargetIsAbsent } from "../delivery/video-publishers.js";
 import { postDraftReferencesAsset } from "../delivery/video-retention.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -9,8 +10,8 @@ import { resolvePublicationRef } from "./publication-ref.js";
 type PurgeInput = { ref: string; apply: boolean };
 type SqlArgs = Array<string | number>;
 type PurgeStatement = { name: string; countSql: string; deleteSql: string; args: SqlArgs };
-type TargetState = { target: string; status: string; url: string | null };
-type VideoTargetState = TargetState & { externalId: string | null; deliveryProvider: string; providerPostId: string | null };
+type TargetState = { target: string; status: string; url: string | null; externalId: string | null };
+type VideoTargetState = TargetState & { deliveryProvider: string; providerPostId: string | null };
 
 export async function purgePublication(backendDb: BackendDb, config: BackendConfig, input: PurgeInput, fetchImpl: typeof fetch) {
   const parsed = parsePublicationRef(input.ref);
@@ -40,7 +41,7 @@ export async function purgePublication(backendDb: BackendDb, config: BackendConf
   ).map(({ path }) => path);
   if (!input.apply) return { ok: true, applied: false, action: "purge", ref: resolved.postKey, draft_id: draftId, rows, files };
 
-  const verified = await assertPublicationAbsent(sqlite, resolved.postKey, fetchImpl);
+  const verified = await assertPublicationAbsent(sqlite, resolved.postKey, config, fetchImpl);
   const deleted = sqlite
     .transaction(() => {
       // The proof that nothing is live was gathered over HTTP and cannot travel
@@ -217,7 +218,9 @@ function orphanedAssetFiles(backendDb: BackendDb, assetId: number, videoDraftId:
 }
 
 function targetStates(sqlite: ReturnType<typeof unsafeDb>["sqlite"], postKey: string): TargetState[] {
-  return sqlite.query("SELECT target,status,url FROM post_targets WHERE post_key=? ORDER BY target").all(postKey) as TargetState[];
+  return sqlite
+    .query("SELECT target,status,url,external_id AS externalId FROM post_targets WHERE post_key=? ORDER BY target")
+    .all(postKey) as TargetState[];
 }
 
 /** Compared instead of the rows themselves: a target appearing, changing status
@@ -231,16 +234,25 @@ function targetSignature(states: TargetState[]): string {
 async function assertPublicationAbsent(
   sqlite: ReturnType<typeof unsafeDb>["sqlite"],
   postKey: string,
+  config: BackendConfig,
   fetchImpl: typeof fetch,
 ): Promise<TargetState[]> {
-  return assertTargetsAbsent(targetStates(sqlite, postKey), fetchImpl);
+  return assertTargetsAbsent(targetStates(sqlite, postKey), config, fetchImpl);
 }
 
-/** Text targets and video targets are proved absent the same way, over their
- * stored public address; only the table they are read from differs. */
-async function assertTargetsAbsent(targets: TargetState[], fetchImpl: typeof fetch): Promise<TargetState[]> {
+/** The platform is asked about the stored id wherever it can answer, and only a
+ * target with nowhere to ask — Telegram, whose channel post is readable to a
+ * stranger — is proved absent over its public address. Threads answers a
+ * logged-out request with its login wall and HTTP 200, so the open-web check
+ * alone could never prove one of its posts gone. */
+async function assertTargetsAbsent(targets: TargetState[], config: BackendConfig, fetchImpl: typeof fetch): Promise<TargetState[]> {
   for (const target of targets) {
     if (target.status !== "published") continue;
+    if (target.externalId) {
+      const absent = await textTargetIsAbsent(target.target, target.externalId, config, fetchImpl);
+      if (absent === true) continue;
+      if (absent === false) throw new Error(`${target.target} is still live on the platform`);
+    }
     if (!target.url) throw new Error(`cannot prove ${target.target} is absent: no public URL is stored`);
     let response: Response;
     try {
