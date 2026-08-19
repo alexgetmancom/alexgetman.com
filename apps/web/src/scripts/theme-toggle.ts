@@ -18,7 +18,7 @@ type Theme = "dark" | "light";
 type Mode = Theme | "system";
 
 const STORAGE_KEY = "theme";
-const CYCLE: Mode[] = ["system", "light", "dark"];
+const NEXT_MODE: Record<Mode, Mode> = { system: "light", light: "dark", dark: "system" };
 
 const systemTheme = (): Theme => (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
 
@@ -43,7 +43,7 @@ apply(currentMode());
 
 for (const button of document.querySelectorAll("[data-theme-toggle]")) {
   button.addEventListener("click", () => {
-    const next = CYCLE[(CYCLE.indexOf(currentMode()) + 1) % CYCLE.length]!;
+    const next = NEXT_MODE[currentMode()];
     try {
       if (next === "system") localStorage.removeItem(STORAGE_KEY);
       else localStorage.setItem(STORAGE_KEY, next);
