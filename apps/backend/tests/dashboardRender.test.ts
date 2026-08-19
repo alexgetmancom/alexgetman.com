@@ -341,7 +341,15 @@ describe("publication detail fragments", () => {
     expect(result.loaded).toBe(2);
     expect(result.remaining).toBe(2);
     expect(result.html.match(/<details class="post-detail">/g)?.length).toBe(2);
-    expect(result.html).toContain("post 5");
+    // Ordered by views, so offset 5 lands on the sixth and seventh best posts.
+    expect(result.html).toContain("post 3");
+    expect(result.html).toContain("post 2");
+  });
+
+  it("orders publications by views, best first, in every period", () => {
+    const result = renderPublicationDetails("ru", [viewed(4, "quiet"), viewed(90, "hit"), viewed(30, "middle")], undefined, [], 0, 10);
+    expect(result.html.indexOf("hit")).toBeLessThan(result.html.indexOf("middle"));
+    expect(result.html.indexOf("middle")).toBeLessThan(result.html.indexOf("quiet"));
   });
 });
 

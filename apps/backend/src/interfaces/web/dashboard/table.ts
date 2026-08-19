@@ -31,7 +31,7 @@ export function renderOverviewPublicationList(
   videos: VideoContentItem[] = [],
   options: TrackPublicationListOptions = {},
 ): string {
-  const recent = [...publicationEntries(posts, targetIds, videos)].sort((left, right) => right.date.localeCompare(left.date));
+  const recent = publicationEntries(posts, targetIds, videos);
   if (!recent.length) return empty(t(locale, "cc.publication.no-posts"));
   return `<div class="overview-publications__list">${renderRecentPublicationList(recent, Math.max(1, options.limit ?? 4), options.moreUrl, locale)}</div>`;
 }
@@ -65,7 +65,7 @@ export function renderPublicationDetails(
   offset = 0,
   limit = DETAIL_BATCH_SIZE,
 ): PublicationDetailsResult {
-  const entries = publicationEntries(posts, targetIds, videos).sort((left, right) => right.date.localeCompare(left.date));
+  const entries = publicationEntries(posts, targetIds, videos);
   const safeOffset = Math.max(0, Math.floor(offset));
   const safeLimit = Math.max(1, Math.min(DETAIL_BATCH_SIZE, Math.floor(limit)));
   const selected = entries.slice(safeOffset, safeOffset + safeLimit);
@@ -79,20 +79,25 @@ export function renderPublicationDetails(
 
 type PublicationEntry = {
   date: string;
+  views: number;
   recent: (hidden: boolean, locale: StudioLocale) => string;
 };
 
+/** The list answers "what worked", so it reads best-performing first in every
+ * period; the date only breaks ties between equally seen publications. */
 function publicationEntries(posts: PipelinePost[], targetIds: string[], videos: VideoContentItem[]): PublicationEntry[] {
   return [
     ...posts.map((post) => ({
       date: post.date ?? "",
+      views: postMetricTotals(post, targetIds).views,
       recent: (hidden: boolean, locale: StudioLocale) => renderRecentPost(post, targetIds, hidden, locale),
     })),
     ...videos.map((video) => ({
       date: video.publishedAt ?? "",
+      views: video.views,
       recent: (hidden: boolean, locale: StudioLocale) => renderRecentVideo(video, hidden, locale),
     })),
-  ];
+  ].sort((left, right) => right.views - left.views || right.date.localeCompare(left.date));
 }
 
 type PublicationPlatform = {
