@@ -81,8 +81,9 @@ a:hover {
 }
 
 /* The site has no header, so the theme switch is a standalone fixed control.
- * Only one of the two icons is shown: the one for the theme a click would
- * switch you TO, which is what the aria-pressed state also describes.
+ * It cycles system -> light -> dark, and shows the icon of the mode currently
+ * in force: with three states, "the one a click would switch you to" stopped
+ * being readable.
  *
  * It is deliberately quiet: a themed surface with a secondary-colour icon,
  * never a bright disc. */
@@ -129,8 +130,9 @@ body.immersive-home .theme-toggle {
   display: none;
 }
 
-html[data-theme="dark"] .theme-toggle__icon--sun,
-html[data-theme="light"] .theme-toggle__icon--moon {
+html[data-theme-mode="system"] .theme-toggle__icon--system,
+html[data-theme-mode="light"] .theme-toggle__icon--sun,
+html[data-theme-mode="dark"] .theme-toggle__icon--moon {
   display: block;
 }
 

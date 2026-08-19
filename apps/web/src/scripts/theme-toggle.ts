@@ -5,57 +5,55 @@ export {};
  *
  * The initial value is applied by an inline script in layouts/Layout.astro,
  * before first paint. This module only handles what happens afterwards: the
- * click, persistence, and following the OS setting while the user has not made
- * an explicit choice.
+ * click, persistence, and following the OS setting while the mode is system.
  *
- * Persistence rule: localStorage holds a value only after an explicit click.
- * As long as it is empty the page tracks prefers-color-scheme live, so a user
- * who never touched the button sees their system setting change take effect.
+ * Three modes, cycled by the button: system -> light -> dark -> system. The
+ * resolved theme lives in data-theme on <html>; the mode the user picked lives
+ * in data-theme-mode beside it, because "dark" chosen explicitly and "dark"
+ * resolved from the OS have to look the same to CSS and different to the
+ * button. localStorage holds the mode, and holds nothing while it is system.
  */
 
 type Theme = "dark" | "light";
+type Mode = Theme | "system";
 
 const STORAGE_KEY = "theme";
+const CYCLE: Mode[] = ["system", "light", "dark"];
 
-const readStored = (): Theme | null => {
-  try {
-    const value = localStorage.getItem(STORAGE_KEY);
-    return value === "light" || value === "dark" ? value : null;
-  } catch {
-    // Private mode and blocked storage: the switch still works for this page.
-    return null;
-  }
+const systemTheme = (): Theme => (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+
+const currentMode = (): Mode => {
+  const value = document.documentElement.getAttribute("data-theme-mode");
+  return value === "light" || value === "dark" ? value : "system";
 };
 
-const currentTheme = (): Theme => (document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
-
-const apply = (theme: Theme): void => {
+const apply = (mode: Mode): void => {
+  const theme = mode === "system" ? systemTheme() : mode;
   document.documentElement.setAttribute("data-theme", theme);
+  document.documentElement.setAttribute("data-theme-mode", mode);
 
   // The browser UI colour is a meta tag, not a CSS variable, so it cannot pick
   // the token up on its own — read the resolved value and copy it across.
   const meta = document.querySelector('meta[name="theme-color"]');
   const chrome = getComputedStyle(document.documentElement).getPropertyValue("--browser-chrome").trim();
   if (meta && chrome) meta.setAttribute("content", chrome);
-
-  for (const button of document.querySelectorAll("[data-theme-toggle]")) {
-    button.setAttribute("aria-pressed", theme === "light" ? "true" : "false");
-  }
 };
 
-apply(currentTheme());
+apply(currentMode());
 
 for (const button of document.querySelectorAll("[data-theme-toggle]")) {
   button.addEventListener("click", () => {
-    const next: Theme = currentTheme() === "light" ? "dark" : "light";
+    const next = CYCLE[(CYCLE.indexOf(currentMode()) + 1) % CYCLE.length]!;
     try {
-      localStorage.setItem(STORAGE_KEY, next);
-    } catch {}
+      if (next === "system") localStorage.removeItem(STORAGE_KEY);
+      else localStorage.setItem(STORAGE_KEY, next);
+    } catch {
+      // Private mode and blocked storage: the switch still works for this page.
+    }
     apply(next);
   });
 }
 
-matchMedia("(prefers-color-scheme: light)").addEventListener("change", (event) => {
-  if (readStored()) return;
-  apply(event.matches ? "light" : "dark");
+matchMedia("(prefers-color-scheme: light)").addEventListener("change", () => {
+  if (currentMode() === "system") apply("system");
 });

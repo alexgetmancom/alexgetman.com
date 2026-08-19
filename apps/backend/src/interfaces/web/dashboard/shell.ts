@@ -535,7 +535,7 @@ ${DASHBOARD_THEME_TOGGLE_SCRIPT}
       main.innerHTML = fragment;
       if (replace) history.replaceState({}, '', target.href);
       else history.pushState({}, '', target.href);
-      applyTheme(themeOf());
+      applyTheme(themeModeOf());
       bindDashboardInteractions(main);
       window.scrollTo(0, 0);
     } catch {

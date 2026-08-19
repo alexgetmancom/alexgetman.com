@@ -14,8 +14,9 @@
  * rather than silently leaving the other half unstyled.
  *
  * SWITCHING. Same as the site: a data-theme attribute on <html> set by an
- * inline script before first paint, system preference as the default, explicit
- * choice stored in localStorage.
+ * inline script before first paint, plus data-theme-mode holding which of the
+ * three modes (system, light, dark) the operator picked. System is the default
+ * and stores nothing; an explicit choice is stored in localStorage.
  *
  * On the palette: the values below collapse what used to be roughly twenty
  * near-identical greys (#d7dee8, #d8e0e9, #d6dee8, #dce4ed ...) into one text
@@ -154,51 +155,58 @@ export const DASHBOARD_THEME_BOOT_SCRIPT = `
 (() => {
   try {
     const stored = localStorage.getItem("theme");
-    const theme = stored === "light" || stored === "dark"
-      ? stored
-      : matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    const mode = stored === "light" || stored === "dark" ? stored : "system";
+    const theme = mode === "system"
+      ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
+      : mode;
     document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.setAttribute("data-theme-mode", mode);
   } catch {
     document.documentElement.setAttribute("data-theme", "dark");
+    document.documentElement.setAttribute("data-theme-mode", "system");
   }
 })();
 `;
 
 /**
- * Click handling. Mirrors apps/web/src/scripts/theme-toggle.ts: the OS setting
- * is followed live until the user makes an explicit choice, after which the
- * stored value wins.
+ * Click handling. Mirrors apps/web/src/scripts/theme-toggle.ts: the button
+ * cycles system -> light -> dark, and the OS setting is followed live while the
+ * mode is system.
  */
 export const DASHBOARD_THEME_TOGGLE_SCRIPT = `
-  const themeOf = () => document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
-  const storedTheme = () => {
-    try {
-      const value = localStorage.getItem('theme');
-      return value === 'light' || value === 'dark' ? value : null;
-    } catch { return null; }
+  const THEME_CYCLE = ['system', 'light', 'dark'];
+  const THEME_GLYPH = { system: '\\u25D0', light: '\\u2600', dark: '\\u263E' };
+  const themeModeOf = () => {
+    const value = document.documentElement.getAttribute('data-theme-mode');
+    return value === 'light' || value === 'dark' ? value : 'system';
   };
-  const applyTheme = (theme) => {
+  const applyTheme = (mode) => {
+    const theme = mode === 'system'
+      ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+      : mode;
     document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.setAttribute('data-theme-mode', mode);
     document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
-      button.setAttribute('aria-pressed', theme === 'light' ? 'true' : 'false');
-      button.textContent = theme === 'light' ? '\\u263E' : '\\u2600';
+      button.textContent = THEME_GLYPH[mode];
     });
   };
-  applyTheme(themeOf());
+  applyTheme(themeModeOf());
   document.addEventListener('click', (event) => {
     const button = event.target instanceof Element ? event.target.closest('[data-theme-toggle]') : null;
     if (!button) return;
-    const next = themeOf() === 'light' ? 'dark' : 'light';
-    try { localStorage.setItem('theme', next); } catch {}
+    const next = THEME_CYCLE[(THEME_CYCLE.indexOf(themeModeOf()) + 1) % THEME_CYCLE.length];
+    try {
+      if (next === 'system') localStorage.removeItem('theme');
+      else localStorage.setItem('theme', next);
+    } catch {}
     applyTheme(next);
   });
-  matchMedia('(prefers-color-scheme: light)').addEventListener('change', (event) => {
-    if (storedTheme()) return;
-    applyTheme(event.matches ? 'light' : 'dark');
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+    if (themeModeOf() === 'system') applyTheme('system');
   });
 `;
 
 /** Markup for the switch. Sits in the tab bar, next to the period controls. */
 export function dashboardThemeToggleHtml(label: string): string {
-  return `<button type="button" class="theme-toggle" data-theme-toggle aria-label="${label}" aria-pressed="false">☀</button>`;
+  return `<button type="button" class="theme-toggle" data-theme-toggle aria-label="${label}">\u25D0</button>`;
 }
