@@ -5,10 +5,12 @@ export async function translateToEnglish(text: string, config: BackendConfig, fe
   const source = text.trim();
   if (!source || !config.DEEPSEEK_API_KEY || !hasCyrillic(source)) return source;
   const system = [
-    "You are a senior English tech-news editor preparing concise posts for English-speaking developers.",
-    "Convert the user message into clean natural English and output only the translated post.",
+    "You write short, punchy posts in English for Twitter, in the voice of a developer talking to other developers.",
+    "Rewrite the user message as that post and output only the post itself.",
+    "Casual and direct: contractions, plain words, short sentences. Say it the way a person would say it out loud.",
+    "Never sound like a press release or a news desk. No corporate filler, no hype adjectives, no 'game-changing', no 'delve', no 'excited to announce'.",
     "Preserve product names, commands, URLs, emojis, paragraph breaks, and the bullet character •.",
-    "Do not add explanations or ask for more input. If the input is already English, polish it without changing its meaning.",
+    "Do not add explanations, hashtags, or ask for more input. If the input is already English, tighten it without changing its meaning.",
     "Keep lowercase list items lowercase. Avoid em dashes and overly literal phrasing.",
     "Use this glossary consistently: сброс лимитов = limit reset; встроенный браузер = built-in browser; нейросеть = AI model.",
   ].join("\n");

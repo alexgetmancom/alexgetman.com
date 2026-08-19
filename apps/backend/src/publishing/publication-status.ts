@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { publicationRef } from "../application/publication-ref.js";
 import { isSiteTarget, targetLocale } from "../botTargets.js";
 import { registeredPostTargetIds } from "../channels/registry.js";
@@ -47,11 +47,27 @@ export function refreshPublicationStatus(backendDb: BackendDb, postId: number): 
   );
   if (!effectiveStatus) return;
   const now = backendDb.clock.now().toISOString();
-  unsafeDb(backendDb).db.transaction((tx) => {
-    tx.update(publications).set({ status: effectiveStatus, updatedAt: now }).where(eq(publications.postId, postId)).run();
+  // The completion event is announced once per transition, so the transition
+  // itself has to be claimed atomically: the write carries the status this cycle
+  // read, and a concurrent refresh that already moved it wins and returns
+  // nothing. Announcing off the earlier read instead would send the card twice.
+  const moved = unsafeDb(backendDb).db.transaction((tx) => {
+    const claimed = tx
+      .update(publications)
+      .set({ status: effectiveStatus, updatedAt: now })
+      .where(
+        and(
+          eq(publications.postId, postId),
+          previousStatus == null ? isNull(publications.status) : eq(publications.status, previousStatus),
+        ),
+      )
+      .returning({ postId: publications.postId })
+      .get();
+    if (!claimed) return false;
     tx.update(drafts).set({ status: effectiveStatus, updatedAt: now }).where(eq(drafts.postId, postId)).run();
+    return true;
   });
-  if (effectiveStatus !== "scheduled" && previousStatus !== effectiveStatus && all.every((job) => isPostJobFinal(job.status))) {
+  if (moved && effectiveStatus !== "scheduled" && previousStatus !== effectiveStatus && all.every((job) => isPostJobFinal(job.status))) {
     const counts = postJobCounts(all);
     recordDomainEvent(backendDb.events, {
       ref: publicationRef("post", postId),
@@ -65,7 +81,6 @@ export function refreshPublicationStatus(backendDb: BackendDb, postId: number): 
         total: all.length,
         ...counts,
       },
-      cooldownSeconds: 60 * 60,
     });
   }
 }

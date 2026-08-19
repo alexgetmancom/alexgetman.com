@@ -157,6 +157,57 @@ describe("publication reconciliation", () => {
       expect(backendDb.db.select({ eventType: postEvents.eventType }).from(postEvents).all()).toHaveLength(1);
     }));
 
+  it("announces the completion again once a retried target lands", () =>
+    withDb((backendDb) => {
+      const now = new Date().toISOString();
+      backendDb.db
+        .insert(drafts)
+        .values({
+          id: 92,
+          actorId: 42,
+          status: "scheduled",
+          textRu: "Retried post",
+          targetsJson: JSON.stringify({ telegram_ru: true, instagram_stories: true }),
+          postId: 92,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      backendDb.db.insert(publications).values({ postId: 92, draftId: 92, status: "scheduled", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(publishJobs)
+        .values([
+          { postId: 92, postKey: "post:92", messageId: 92, target: "telegram_ru", status: "published", createdAt: now, updatedAt: now },
+          {
+            postId: 92,
+            postKey: "post:92",
+            messageId: 92,
+            target: "instagram_stories",
+            status: "failed",
+            createdAt: now,
+            updatedAt: now,
+          },
+        ])
+        .run();
+
+      refreshPublicationStatus(backendDb, 92);
+      expect(completionEvents(backendDb)).toHaveLength(1);
+
+      // The operator hits retry and the story lands minutes later: the second
+      // completion is a different outcome, not a duplicate of the first.
+      backendDb.db
+        .update(publishJobs)
+        .set({ status: "published" })
+        .where(and(eq(publishJobs.postId, 92), eq(publishJobs.target, "instagram_stories")))
+        .run();
+      refreshPublicationStatus(backendDb, 92);
+
+      const events = completionEvents(backendDb);
+      expect(events).toHaveLength(2);
+      expect(JSON.parse(events[1]?.detailsJson ?? "{}")).toMatchObject({ published: 2, failed: 0 });
+      expect(backendDb.db.select({ status: drafts.status }).from(drafts).where(eq(drafts.id, 92)).get()).toEqual({ status: "published" });
+    }));
+
   it("settles a publication that already has durable provider evidence", () =>
     withDb(async (backendDb) => {
       const jobId = enqueuePublishJobTx(backendDb.db, {
@@ -314,3 +365,7 @@ describe("publication reconciliation", () => {
       ).toHaveLength(1);
     }));
 });
+
+function completionEvents(backendDb: Parameters<Parameters<typeof withDb>[0]>[0]) {
+  return backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, "delivery.post.completed")).all();
+}

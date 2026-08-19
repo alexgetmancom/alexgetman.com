@@ -6,11 +6,13 @@ import { ExternalHttpError } from "../../foundation/http.js";
 export class InstagramContainerInvalidError extends Error {}
 
 // Meta reports a dead creation_id through several unrelated shapes: the numeric
-// subcode 2207027 and a handful of prose messages that differ per endpoint and
-// per API version. Keep the list in one place — the failure mode of splitting it
-// is silent: one publisher learns a new code, the other keeps retrying forever.
+// subcodes 2207027 and 2207006 and a handful of prose messages that differ per
+// endpoint and per API version. Keep the list in one place — the failure mode of
+// splitting it is silent: one publisher learns a new code, the other keeps
+// retrying forever.
 const EXPIRED_CONTAINER_MARKERS = [
   "2207027",
+  "2207006",
   "media id is not available",
   "invalid media id",
   "invalid container",

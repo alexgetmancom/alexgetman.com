@@ -9,6 +9,8 @@ describe("isExpiredInstagramContainer", () => {
       "Invalid media id",
       "The container expired",
       "invalid creation_id supplied",
+      // The Stories media_publish shape: code 24 with a localised user message.
+      '{"error":{"message":"The requested resource does not exist","code":24,"error_subcode":2207006}}',
     ])
       expect(isExpiredInstagramContainer(new Error(message))).toBe(true);
   });
