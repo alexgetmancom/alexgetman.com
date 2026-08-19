@@ -34,6 +34,7 @@ import {
   withMaintenanceLock,
 } from "./maintenance.js";
 import { diagnoseMediaProcessor, mediaJobReport, mediaProcessorStatus, reprocessPostMedia } from "./media-processor.js";
+import { formatPostText, postText } from "./post-text.js";
 import { purgePublication } from "./publication-purge.js";
 import { resolvePublicationRef } from "./publication-ref.js";
 import { publishText } from "./publish.js";
@@ -268,6 +269,15 @@ const operationDefs = {
     note: "start here for a delivery gap",
     handler: (context, input) => recentPublications(context.db(), input.limit),
     format: formatRecentPublications,
+  }),
+  "post-text": operation({
+    summary: "The full text of one publication, in both languages.",
+    schema: z.object({ ref: refOption }),
+    mutates: false,
+    agent: true,
+    note: "recent and find report a headline only; this is the whole copy",
+    handler: (context, input) => postText(context.db(), input.ref),
+    format: formatPostText,
   }),
   find: operation({
     summary: "Resolve a publication ref from a fragment of the post text.",
