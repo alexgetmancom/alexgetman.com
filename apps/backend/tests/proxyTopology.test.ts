@@ -46,6 +46,24 @@ describe("host proxy topology", () => {
     expect(maru).toContain("MARU_MEDIA_STAGING_DIR_HOST");
   });
 
+  it("lets the second Studio reach every Command Center endpoint its dashboard calls", () => {
+    // The allowlist named the endpoints one by one, so each new one was
+    // unreachable on Maru until someone edited this file too. The dashboard
+    // swallows the failure: "show more" fetched a Caddy 404 and simply did
+    // nothing, and the live refresh poll died the same way.
+    const caddy = read("deploy/caddy/Caddyfile");
+    const routes = read("apps/backend/src/interfaces/http/command-center.ts");
+
+    const allowed = (caddy.match(/@allowed path ([^\n]+)/)?.[1] ?? "").split(" ");
+    const endpoints = [...routes.matchAll(/"(\/api\/command-center\/[^"]+)"/g)].map((match) => match[1] ?? "");
+    expect(endpoints.length).toBeGreaterThan(0);
+    for (const endpoint of endpoints) {
+      expect(allowed.some((pattern) => (pattern.endsWith("*") ? endpoint.startsWith(pattern.slice(0, -1)) : endpoint === pattern))).toBe(
+        true,
+      );
+    }
+  });
+
   it("keeps the proxy free of anything the application decides", () => {
     // Cache lifetimes, retired URLs, the Markdown twin, the Link header and the
     // noindex on the first Studio's operator surfaces ship in the image so they
