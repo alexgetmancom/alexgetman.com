@@ -267,7 +267,6 @@ export function renderDashboardPublicationDetails(
     ? createOperationsService(backendDb, config).pipelineOverview(weekOffset, periodDays, 0, undefined, {
         includeSamples: false,
         includeContent: true,
-        contentLimit: offset + limit,
       })
     : null;
   const posts = targetIds ? (filterPipeline(data, targetIds)?.posts ?? []) : (data?.posts ?? []);

@@ -19,8 +19,6 @@ export type PipelineReadModelOptions = {
   includeContent?: boolean;
   /** Use narrow target/metric projections for dashboard summaries. */
   compact?: boolean;
-  /** Load full locale/media content only for the newest N publications. */
-  contentLimit?: number;
   /** Hard cap per (post, target, metric) series after time bucketing. */
   sampleLimitPerSeries?: number;
 };
@@ -29,7 +27,6 @@ type ResolvedPipelineReadModelOptions = {
   includeSamples: boolean;
   includeContent: boolean;
   compact: boolean;
-  contentLimit: number | null;
   sampleLimitPerSeries: number;
 };
 
@@ -51,7 +48,7 @@ export function pipelineOverviewPayload(
 
 /** One bounded history holding two adjacent dashboard periods, each capped at the public read model's 100 posts. */
 export function dashboardPipelineHistoryPayload(config: BackendConfig, backendDb: BackendDb, periodDays: number, offsetDays: number) {
-  const options = resolvePipelineReadModelOptions({ includeSamples: true, contentLimit: 4, compact: true });
+  const options = resolvePipelineReadModelOptions({ includeSamples: true, compact: true });
   return { posts: pipelinePosts(backendDb, config, 0, periodDays, 0, offsetDays, options, 200) };
 }
 
@@ -67,7 +64,7 @@ function pipelinePosts(
 ): Record<string, unknown>[] {
   const periodOffsetDays = offsetDays ?? (weekOffset + comparisonOffset) * periodDays;
   const [start, end] = zonedRollingPeriodBounds(periodOffsetDays / periodDays, periodDays, config.TIMEZONE);
-  const rows = fetchPostRows(backendDb, start, end, options.includeContent, options.contentLimit, rowLimit);
+  const rows = fetchPostRows(backendDb, start, end, options.includeContent, rowLimit);
   const postKeys = rows.map((row) => String(row.post_key ?? "")).filter(Boolean);
   const targetRows = (
     postKeys.length
@@ -159,17 +156,9 @@ const publicationMoment = sql`coalesce(
   ${publications.createdAt}
 )`;
 
-function fetchPostRows(
-  backendDb: BackendDb,
-  start: string,
-  end: string,
-  includeContent: boolean,
-  contentLimit: number | null = null,
-  rowLimit = 100,
-): PipelinePostRow[] {
+function fetchPostRows(backendDb: BackendDb, start: string, end: string, includeContent: boolean, rowLimit = 100): PipelinePostRow[] {
   const ru = alias(postLocales, "pipeline_ru");
   const en = alias(postLocales, "pipeline_en");
-  const boundedContent = includeContent && contentLimit !== null;
   const publicationRows = unsafeDb(backendDb)
     .db.select({
       postId: publications.postId,
@@ -184,7 +173,7 @@ function fetchPostRows(
             slugEn: en.slug,
           }
         : {}),
-      ...(includeContent && !boundedContent
+      ...(includeContent
         ? {
             textRu: ru.text,
             mediaRuJson: ru.mediaJson,
@@ -204,35 +193,6 @@ function fetchPostRows(
     .orderBy(desc(publicationMoment))
     .limit(rowLimit)
     .all() as PublicationQueryRow[];
-  if (boundedContent) {
-    const contentPostIds = publicationRows
-      .slice(0, Math.max(0, Math.min(rowLimit, Math.floor(contentLimit ?? 0))))
-      .map((row) => row.postId);
-    if (contentPostIds.length) {
-      const contentRows = unsafeDb(backendDb)
-        .db.select({ postId: postLocales.postId, locale: postLocales.locale, text: postLocales.text, mediaJson: postLocales.mediaJson })
-        .from(postLocales)
-        .where(inArray(postLocales.postId, contentPostIds))
-        .all();
-      const contentByPost = new Map<
-        number,
-        { ru?: { text: string | null; mediaJson: unknown }; en?: { text: string | null; mediaJson: unknown } }
-      >();
-      for (const content of contentRows) {
-        const entry = contentByPost.get(content.postId) ?? {};
-        if (content.locale === "ru") entry.ru = { text: content.text, mediaJson: content.mediaJson };
-        if (content.locale === "en") entry.en = { text: content.text, mediaJson: content.mediaJson };
-        contentByPost.set(content.postId, entry);
-      }
-      for (const row of publicationRows.slice(0, contentPostIds.length)) {
-        const content = contentByPost.get(row.postId);
-        row.textRu = content?.ru?.text ?? null;
-        row.mediaRuJson = content?.ru?.mediaJson ?? null;
-        row.textEn = content?.en?.text ?? null;
-        row.mediaEnJson = content?.en?.mediaJson ?? null;
-      }
-    }
-  }
   const publicationKeys = publicationRows.map((row) => `post:${row.postId}`);
   const publicationPosts = publicationKeys.length
     ? unsafeDb(backendDb)
@@ -270,10 +230,6 @@ function resolvePipelineReadModelOptions(options: PipelineReadModelOptions): Res
     includeSamples: options.includeSamples === true,
     includeContent: options.includeContent !== false,
     compact: options.compact === true,
-    contentLimit:
-      options.includeContent === false || options.contentLimit === undefined
-        ? null
-        : Math.max(0, Math.min(100, Math.floor(options.contentLimit))),
     sampleLimitPerSeries: Math.max(
       1,
       Math.min(MAX_SAMPLE_LIMIT_PER_SERIES, Math.floor(options.sampleLimitPerSeries ?? MAX_SAMPLE_LIMIT_PER_SERIES)),
