@@ -1,4 +1,4 @@
-import { type DailyReach, emptyDailyReach, latestAtOrBefore, type PeriodDay, type ReachSeries } from "./daily-reach.js";
+import { latestAtOrBefore, type PeriodDay, type ReachSeries } from "./daily-reach.js";
 
 export type VideoMetrics = {
   views: number;
@@ -41,18 +41,6 @@ export function videoReachSeries(publishedAt: string | null, target: string, his
       reposts: 0,
     })),
   };
-}
-
-export function periodMetrics(history: VideoSnapshot[], days: PeriodDay[]): { totals: DailyReach } {
-  const totals = emptyDailyReach();
-  for (const day of days) {
-    const before = latestAtOrBefore(history, day.start)?.metrics ?? emptyMetrics();
-    const atEnd = latestAtOrBefore(history, day.end)?.metrics ?? before;
-    totals.views += Math.max(0, atEnd.views - before.views);
-    totals.reactions += Math.max(0, atEnd.likes - before.likes);
-    totals.replies += Math.max(0, atEnd.comments - before.comments);
-  }
-  return { totals };
 }
 
 export function periodSubscriberDelta(history: VideoSnapshot[], days: PeriodDay[]): number | null {

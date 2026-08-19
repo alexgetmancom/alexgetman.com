@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { isCurrentCalendarDay } from "../src/foundation/time.js";
-import { calendarDays, calendarKey, latestAtOrBefore } from "../src/interfaces/web/dashboard/daily-reach.js";
+import { calendarDays, calendarKey, latestAtOrBefore, periodReach } from "../src/interfaces/web/dashboard/daily-reach.js";
 import {
-  periodMetrics,
   periodSubscriberDelta,
   type VideoMetrics,
   type VideoSnapshot,
+  videoReachSeries,
 } from "../src/interfaces/web/dashboard/video-overview-calendar.js";
 
 function metrics(overrides: Partial<VideoMetrics> = {}): VideoMetrics {
@@ -53,7 +53,13 @@ describe("video overview calendar helpers", () => {
 
     expect(latestAtOrBefore(history, new Date("2025-12-31T23:59:59.999Z"))).toBeUndefined();
     expect(latestAtOrBefore(history, new Date("2026-01-01T06:00:00.000Z"))).toBe(history[0]);
-    expect(periodMetrics(history, days).totals).toEqual({ views: 5, reactions: 2, replies: 3, reposts: 0, freshViews: 0 });
+    expect(periodReach(videoReachSeries(null, "youtube_shorts", history), days, "UTC")).toEqual({
+      views: 5,
+      reactions: 2,
+      replies: 3,
+      reposts: 0,
+      freshViews: 0,
+    });
     expect(periodSubscriberDelta(history, days)).toBe(3);
   });
 

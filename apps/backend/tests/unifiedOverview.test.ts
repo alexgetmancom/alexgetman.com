@@ -434,13 +434,15 @@ describe("unified overview video read model", () => {
       seedHistoricalVideo(backendDb);
       const overview = videoOverview(backendDb, new Date("2026-07-29T21:00:00.000Z"), new Date("2026-07-30T20:59:59.999Z"));
 
-      expect(overview.totals.views).toBe(800);
-      expect(overview.items[0]?.views).toBe(800);
+      // 800 by the last reading inside the period, plus the slice of the next
+      // interval that the growth curve places before the period closed.
+      expect(overview.totals.views).toBe(870);
+      expect(overview.items[0]?.views).toBe(870);
       expect(overview.items[0]?.lifetimeViews).toBe(2_300);
       expect(overview.items[0]?.afterPeriodViews).toBe(1_500);
       expect(overview.summary.subscribers).toBe(7);
       expect(overview.dailyByDay["2026-07-30"]?.subscribers).toBe(7);
-      expect(overview.dailyByDay["2026-07-30"]?.views).toBe(800);
+      expect(overview.dailyByDay["2026-07-30"]?.views).toBe(870);
       expect(overview.viewEvents.map((event) => event.value)).toEqual([100, 800]);
     } finally {
       backendDb.close();
@@ -453,9 +455,9 @@ describe("unified overview video read model", () => {
       seedHistoricalVideo(backendDb);
       const overview = videoOverview(backendDb, new Date("2026-07-29T21:00:00.000Z"), new Date("2026-07-31T20:59:59.999Z"));
 
-      expect(overview.totals.views).toBe(1_500);
-      expect(overview.dailyByDay["2026-07-30"]?.views).toBe(800);
-      expect(overview.dailyByDay["2026-07-31"]?.views).toBe(700);
+      expect(overview.totals.views).toBe(1_557);
+      expect(overview.dailyByDay["2026-07-30"]?.views).toBe(843);
+      expect(overview.dailyByDay["2026-07-31"]?.views).toBe(714);
       expect(overview.dailyByDay["2026-07-30"]?.subscribers).toBe(7);
       expect(overview.dailyByDay["2026-07-31"]?.subscribers).toBe(0);
       expect(overview.items[0]?.afterPeriodViews).toBe(800);
@@ -476,16 +478,16 @@ describe("unified overview video read model", () => {
       const day = (start: string, end: string) => videoOverview(backendDb, new Date(start), new Date(end), "Europe/Moscow", cache);
 
       const publicationDay = day("2026-07-29T21:00:00.000Z", "2026-07-30T20:59:59.999Z");
-      expect(publicationDay.totals.views).toBe(800);
-      expect(publicationDay.dailyByDay["2026-07-30"]?.freshViews).toBe(800);
+      expect(publicationDay.totals.views).toBe(843);
+      expect(publicationDay.dailyByDay["2026-07-30"]?.freshViews).toBe(843);
       expect(publicationDay.totals.posts).toBe(1);
 
       const quietDay = day("2026-07-30T21:00:00.000Z", "2026-07-31T20:59:59.999Z");
-      expect(quietDay.totals.views).toBe(700);
-      expect(quietDay.dailyByDay["2026-07-31"]?.views).toBe(700);
+      expect(quietDay.totals.views).toBe(714);
+      expect(quietDay.dailyByDay["2026-07-31"]?.views).toBe(714);
       expect(quietDay.dailyByDay["2026-07-31"]?.freshViews).toBe(0);
       expect(quietDay.totals.posts).toBe(0);
-      expect(quietDay.platforms.find((platform) => platform.label === "YouTube RU")?.views).toBe(700);
+      expect(quietDay.platforms.find((platform) => platform.label === "YouTube RU")?.views).toBe(714);
     } finally {
       backendDb.close();
     }
@@ -520,16 +522,21 @@ describe("text daily reach", () => {
     );
     const daily = textDailyReach(overview, ["telegram"]);
 
-    expect(daily["2026-07-30"]?.views).toBe(800);
-    expect(daily["2026-07-30"]?.freshViews).toBe(800);
-    expect(daily["2026-07-31"]?.views).toBe(700);
+    // The 700 gained between the two readings is spread along the growth curve
+    // over the day and a half they span: the post is young at the start of that
+    // stretch and nearly spent at its end, so most of it lands on the 30th.
+    expect(daily["2026-07-30"]?.views).toBe(967);
+    expect(daily["2026-07-30"]?.freshViews).toBe(967);
+    expect(daily["2026-07-31"]?.views).toBe(533);
     expect(daily["2026-07-31"]?.freshViews).toBe(0);
+    expect((daily["2026-07-30"]?.views ?? 0) + (daily["2026-07-31"]?.views ?? 0)).toBe(1_500);
   });
 
-  it("credits a publication first read a day later to the day it went out", () => {
+  it("spreads a publication first read a day later back over the days it earned", () => {
     // The X export is sent when the operator sends it, so a post that went out
     // on the 30th can be read for the first time on the 31st. That reading is
-    // its lifetime, not the 31st's earnings — and it used to count on neither.
+    // its lifetime, not the 31st's earnings — it used to count on neither, and
+    // then on the 31st alone.
     const overview = textOverviewOf(
       [sampled([["2026-07-31T20:00:00.000Z", 1_500_000]])],
       [],
@@ -538,9 +545,38 @@ describe("text daily reach", () => {
     );
     const daily = textDailyReach(overview, ["telegram"]);
 
-    expect(daily["2026-07-30"]?.views).toBe(1_500_000);
-    expect(daily["2026-07-30"]?.freshViews).toBe(1_500_000);
-    expect(daily["2026-07-31"]?.views).toBe(0);
+    expect(daily["2026-07-30"]?.views).toBe(689_362);
+    expect(daily["2026-07-30"]?.freshViews).toBe(689_362);
+    expect(daily["2026-07-31"]?.views).toBe(810_638);
+  });
+
+  // The shape itself, on the sampling this account actually has: one export,
+  // weeks after the fact, is the only reading a post ever gets.
+  it("lays a single late reading out along the growth curve", () => {
+    const days = calendarDays(new Date("2026-07-30T00:00:00.000Z"), new Date("2026-08-29T23:59:59.999Z"), "UTC");
+    const overview = textOverviewOf(
+      [
+        {
+          post_key: "post:3",
+          date: "2026-07-30T00:00:00.000Z",
+          targets: { telegram: { status: "published" } },
+          metrics: {
+            telegram: { views: { value: 1_000_000, samples: [{ sampled_at: "2026-08-29T00:00:00.000Z", value: 1_000_000 }] } },
+          },
+        },
+      ],
+      [],
+      days,
+      "UTC",
+    );
+    const daily = textDailyReach(overview, ["telegram"]);
+
+    expect(daily["2026-07-30"]?.views).toBe(551_330);
+    expect(daily["2026-07-31"]?.views).toBe(299_747);
+    expect(daily["2026-08-01"]?.views).toBe(91_247);
+    expect(daily["2026-08-02"]?.views).toBe(32_275);
+    // Nothing is lost on the way: the bars still sum to what was measured.
+    expect(days.reduce((total, day) => total + (daily[day.key]?.views ?? 0), 0)).toBe(1_000_002);
   });
 
   it("keeps an unsampled publication on its own day instead of dropping it", () => {

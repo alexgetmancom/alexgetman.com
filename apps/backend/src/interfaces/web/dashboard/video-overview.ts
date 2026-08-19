@@ -1,6 +1,6 @@
 import type { BackendDb } from "../../../db/client.js";
-import { calendarDays, emptyDailyReach, latestAtOrBefore } from "./daily-reach.js";
-import { emptyMetrics, periodMetrics, periodSubscriberDelta } from "./video-overview-calendar.js";
+import { calendarDays, emptyDailyReach, latestAtOrBefore, periodReach } from "./daily-reach.js";
+import { emptyMetrics, periodSubscriberDelta, videoReachSeries } from "./video-overview-calendar.js";
 import {
   aggregateDailyMetrics,
   destinationFor,
@@ -57,7 +57,12 @@ export function videoOverview(
   const rows = reachRows.filter((row) => Boolean(row.publishedAt && row.publishedAt >= startIso && row.publishedAt <= endIso));
   const snapshots = new Map(reachRows.map((row) => [row.id, bundle.snapshots.get(row.id) ?? []]));
   const periodDays = calendarDays(start, end, timeZone);
-  const reachViews = new Map(reachRows.map((row) => [row.id, periodMetrics(snapshots.get(row.id) ?? [], periodDays).totals]));
+  const reachViews = new Map(
+    reachRows.map((row) => [
+      row.id,
+      periodReach(videoReachSeries(row.publishedAt, row.target, snapshots.get(row.id) ?? []), periodDays, timeZone),
+    ]),
+  );
   const summary = videoSummaryMetrics(backendDb, reachRows, snapshots, reachViews, periodDays, end, timeZone, cache);
   // One row per clip, not per destination: the same clip on Shorts and on Reels
   // is one publication that went to two places, which is how the text side has
