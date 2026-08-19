@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { registerChannel } from "../apps/backend/src/channels/registry.js";
+import { openBackendDb } from "../apps/backend/src/db/client.js";
 import { seedDashboardFixture, seedOverviewParityFixture } from "../apps/web/src/server/dashboard-fixture.js";
 import {
   devFixture,
@@ -25,6 +27,7 @@ import {
  *   bun scripts/dev-seed.ts --db /tmp/x.db --public-dir /tmp/site
  *   bun scripts/dev-seed.ts --no-dashboard        # site rows only
  *   bun scripts/dev-seed.ts --mock                # reference-layout parity data
+ *   bun scripts/dev-seed.ts --one-language        # a Studio that publishes text in Russian only
  *
  * Then point the dev server at the same paths:
  *   PIPELINE_DB=<db> SITE_PUBLIC_DIR=<public-dir> bun run dev
@@ -51,6 +54,12 @@ const reset = process.argv.includes("--reset");
 const withDashboard = !process.argv.includes("--no-dashboard");
 const parity = process.argv.includes("--mock");
 const simple = process.argv.includes("--simple");
+// A Studio's connected channels decide which languages every screen is drawn
+// in, so the seed connects them: without this the local dashboard only ever
+// showed the fresh-install shape, where both languages are offered because
+// nothing is connected yet.
+const oneLanguage = process.argv.includes("--one-language");
+const textTargets = oneLanguage ? ["telegram"] : ["telegram", "site_ru", "site_en", "threads_en", "x"];
 
 if (reset) {
   fs.rmSync(dbPath, { force: true });
@@ -85,8 +94,33 @@ if (withDashboard) {
         postIds: posts.map((post) => post.postId),
         postDates: posts.map((post) => post.dateUtc),
         full: simple ? undefined : { days, minPostsPerDay, maxPostsPerDay },
+        targets: textTargets,
       });
   console.log(`Dashboard: ${targetRows} target row(s), ${sampleRows} metric sample(s).`);
+}
+
+connectChannels();
+
+function connectChannels(): void {
+  const backendDb = openBackendDb(dbPath);
+  try {
+    const platforms: Record<string, { platform: string; locale: "ru" | "en" }> = {
+      telegram: { platform: "telegram", locale: "ru" },
+      site_ru: { platform: "site", locale: "ru" },
+      site_en: { platform: "site", locale: "en" },
+      threads_en: { platform: "threads_en", locale: "en" },
+      x: { platform: "x", locale: "en" },
+    };
+    const text = textTargets.flatMap((targetId) => {
+      const platform = platforms[targetId];
+      return platform ? [{ ...platform, targetId }] : [];
+    });
+    for (const channel of [...text, { platform: "youtube", locale: "ru" as const }, { platform: "youtube", locale: "en" as const }])
+      registerChannel(backendDb, { provider: "native", source: "fixture", ...channel });
+    console.log(`Channels: ${oneLanguage ? "Russian text only" : "text in both languages"}, video in both.`);
+  } finally {
+    backendDb.close();
+  }
 }
 
 console.log(

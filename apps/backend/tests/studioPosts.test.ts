@@ -1,4 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import crypto from "node:crypto";
+import { rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
@@ -123,6 +127,44 @@ describe("Studio post commands", () => {
     expect(job?.payloadJson).toMatchObject({ locale: "ru", text: "After" });
   });
 
+  it("refuses English copy for a Studio that publishes no English", () => {
+    backendDb = openBackendDb(":memory:");
+    registerTestChannels(backendDb, ["telegram", "instagram_stories_ru"]);
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+
+    // Every transport creates drafts here, so MCP and the CLI are told the same
+    // thing the Telegram screens already stopped offering, instead of storing
+    // English nothing can publish.
+    expect(() => posts.create(42, { text: "RU", textEn: "EN", entities: [], media: [] })).toThrow("err.post-locale-not-served");
+    expect(() => posts.create(42, { text: "RU", textEnApproved: "EN", entities: [], media: [] })).toThrow("err.post-locale-not-served");
+    const draftId = posts.create(42, { text: "RU", entities: [], media: [] });
+    expect(draftId).toBeGreaterThan(0);
+    expect(() => posts.edit(42, draftId, { locale: "en", text: "EN", entities: [], media: [] })).toThrow("err.post-locale-not-served");
+    expect(() => posts.edit(42, draftId, { locale: "ru", text: "RU again", entities: [], media: [] })).not.toThrow();
+  });
+
+  it("counts Story cards ready when every card the draft has is rendered", () => {
+    backendDb = openBackendDb(":memory:");
+    registerTestChannels(backendDb, ["telegram", "instagram_stories_ru"]);
+    const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
+    const draftId = posts.create(42, { text: "Только RU", entities: [], media: [] });
+    const card = join(tmpdir(), `story-card-${crypto.randomUUID()}.png`);
+    writeFileSync(card, "ru");
+    try {
+      // A one-language draft has one card. Waiting for an EN card the queue
+      // never renders left the publication choice unsent forever.
+      expect(backendDb.storyCards.forDraft(draftId).map((entry) => entry.locale)).toEqual(["ru"]);
+      backendDb.sqlite
+        .query("UPDATE draft_story_cards SET status='ready',local_path=?,updated_at=? WHERE draft_id=?")
+        .run(card, new Date().toISOString(), draftId);
+      const projection = posts.preview(42, draftId).delivery.projections.find((item) => item.locale === "ru");
+      expect(projection?.unavailableTargets).not.toContain("instagram_stories_ru");
+      expect(projection?.targets).toContain("instagram_stories_ru");
+    } finally {
+      rmSync(card, { force: true });
+    }
+  });
+
   it("uses effective targets when deciding whether a Story-card replan must wait", () => {
     backendDb = openPostDb();
     backendDb.db.delete(channelConnections).run();
@@ -134,7 +176,7 @@ describe("Studio post commands", () => {
       source: "test",
     });
     const posts = postService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }));
-    const draftId = posts.create(42, { text: "Before", textEn: "Before", entities: [], media: [] });
+    const draftId = posts.create(42, { text: "Before", entities: [], media: [] });
     posts.setStoryPublishMode(42, draftId, "all");
     const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 5 * 60_000), enAt: null });
 

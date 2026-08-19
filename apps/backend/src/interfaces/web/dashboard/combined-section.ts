@@ -76,7 +76,23 @@ export type CombinedSectionInput = {
   textView?: string | undefined;
   /** The selected video destination, if that half is filtered. */
   videoView?: string | undefined;
+  /** The languages each half publishes in, so a Studio that has one is not
+   * drawn with an empty column for the language it never had. */
+  textLocales: readonly string[];
+  videoLocales: readonly string[];
 };
+
+/** The locale columns one half is drawn in: the languages it publishes, plus any
+ * language that still has something to report. The first half of that rule is
+ * what spares a one-language Studio a permanently empty column; the second
+ * keeps a since-disconnected channel's reach on screen instead of dropping it
+ * out of a legend whose bar still counts it. */
+function localeColumns(trackLocales: readonly string[], rows: OverviewPlatformRow[]): string[] {
+  const reporting = new Set(
+    rows.flatMap((row) => (row.locale && (row.views > 0 || row.followers !== null) ? [row.locale.toLowerCase()] : [])),
+  );
+  return ["ru", "en"].filter((locale) => trackLocales.includes(locale) || reporting.has(locale));
+}
 
 const TEXT_COLOR = "var(--series-text)";
 const VIDEO_COLOR = "var(--series-video)";
@@ -106,8 +122,11 @@ export function renderCombinedSection(input: CombinedSectionInput, locale: Studi
   // side padding out a fixed block of empty space.
   const platformRowCount = Math.max(
     1,
-    ...[overviewPlatformRows(input, "text", locale), overviewPlatformRows(input, "video", locale)].flatMap((rows) =>
-      ["ru", "en"].map(
+    ...[
+      { rows: overviewPlatformRows(input, "text", locale), locales: input.textLocales },
+      { rows: overviewPlatformRows(input, "video", locale), locales: input.videoLocales },
+    ].flatMap(({ rows, locales }) =>
+      localeColumns(locales, rows).map(
         (locale) => rows.filter((row) => row.locale?.toLowerCase() === locale && (row.views > 0 || row.followers !== null)).length,
       ),
     ),
@@ -174,11 +193,18 @@ function renderOverviewColumn(
   const moreUrl = `/api/command-center/publication-details?${moreParams.toString()}`;
   const publicationMarkup =
     kind === "text"
-      ? renderOverviewPublicationList(locale, input.textView === "x" ? [...posts, ...currentX] : posts, textTargetIds, [], {
-          limit: 4,
-          moreUrl,
-        })
-      : renderOverviewPublicationList(locale, [], [], input.video.items, { limit: 4, moreUrl });
+      ? renderOverviewPublicationList(
+          locale,
+          input.textLocales,
+          input.textView === "x" ? [...posts, ...currentX] : posts,
+          textTargetIds,
+          [],
+          {
+            limit: 4,
+            moreUrl,
+          },
+        )
+      : renderOverviewPublicationList(locale, input.textLocales, [], [], input.video.items, { limit: 4, moreUrl });
   const heroMarkup =
     kind === "text" ? renderHeroCard("text", hero as TextHeroMetrics, locale) : renderHeroCard("video", hero as VideoHeroMetrics, locale);
   const microMarkup =
@@ -199,7 +225,7 @@ function renderOverviewColumn(
     ${heroMarkup}
     ${renderOverviewSparkline(history, color, t(locale, "cc.overview.views-over-time", { track: title }), historyLabel, historyRightLabel, locale)}
     ${microMarkup}
-    ${renderOverviewPlatforms(input, kind, platformRows, showMetricFilter, locale)}
+    ${renderOverviewPlatforms(input, kind, platformRows, showMetricFilter, locale, kind === "text" ? input.textLocales : input.videoLocales)}
     <div class="overview-publications" id="overview-publications-${kind}">
       <div class="overview-kicker">${t(locale, "cc.overview.publications")}</div>
       ${publicationMarkup}
@@ -213,14 +239,14 @@ function renderOverviewPlatforms(
   rows: OverviewPlatformRow[],
   showMetricFilter: boolean,
   locale: StudioLocale,
+  trackLocales: readonly string[],
 ): string {
   const color = kind === "text" ? TEXT_COLOR : VIDEO_COLOR;
   const metricValue = (row: OverviewPlatformRow): number | null => (input.platformMetric === "reach" ? row.views : row.followers);
   const total = rows.reduce((sum, row) => sum + (metricValue(row) ?? 0), 0);
   const localeTotal = (locale: string) =>
     rows.reduce((sum, row) => sum + (row.locale?.toLowerCase() === locale ? (metricValue(row) ?? 0) : 0), 0);
-  const ru = localeTotal("ru");
-  const en = localeTotal("en");
+  const localeShare = (value: number) => (total > 0 ? Math.round((value / total) * 100) : 0);
   const segments =
     total > 0
       ? rows
@@ -239,6 +265,7 @@ function renderOverviewPlatforms(
   // locale badge that used to sit on every row is gone with it — the column it
   // stands in is the locale. Three per side is the whole legend; the bar keeps
   // naming every destination in its hover text.
+  const columns = localeColumns(trackLocales, rows);
   const ranked = input.platformMetric === "reach" ? rows : rows.filter((row) => !row.secondary);
   const renderRow = (row: OverviewPlatformRow): string => {
     const value = metricValue(row);
@@ -257,7 +284,7 @@ function renderOverviewPlatforms(
   const ofLocale = (locale: string) => ranked.filter((row) => row.locale?.toLowerCase() === locale);
   const live = (row: OverviewPlatformRow) => row.views > 0 || row.followers !== null;
   const shown = (locale: string) => ofLocale(locale).filter(live).slice(0, PLATFORM_SLOTS);
-  const platformRows = ["ru", "en"]
+  const platformRows = columns
     .map((locale) => `<div class="overview-platforms__column">${shown(locale).map(renderRow).join("")}</div>`)
     .join("");
   // Everything the two columns had no room for, on demand. Without it the
@@ -266,10 +293,10 @@ function renderOverviewPlatforms(
     const visible = new Set(shown(locale).map((row) => row.key));
     return ofLocale(locale).filter((row) => !visible.has(row.key));
   };
-  const restRows = ["ru", "en"]
+  const restRows = columns
     .map((locale) => `<div class="overview-platforms__column">${hidden(locale).map(renderRow).join("")}</div>`)
     .join("");
-  const rest = hidden("ru").length + hidden("en").length;
+  const rest = columns.reduce((sum, locale) => sum + hidden(locale).length, 0);
   const expand = rest
     ? `<details class="overview-platforms__all"><summary aria-label="${t(locale, "cc.overview.all-platforms")}" title="${t(locale, "cc.overview.all-platforms")}">+<span>${rest}</span></summary><div class="overview-platforms__all-list">${restRows}</div></details>`
     : "";
@@ -280,10 +307,21 @@ function renderOverviewPlatforms(
   // head the two columns of destinations as well: one label now names its half
   // of the bar and its half of the legend at once. The metric switch keeps the
   // middle of the top line — it is a real filter, not decoration.
-  return `<div class="overview-platforms">
-    <div class="overview-platforms__legend"><span><b>${formatMetricValue(ru)}</b> · ${total > 0 ? Math.round((ru / total) * 100) : 0}%</span>${filter}<span>${total > 0 ? Math.round((en / total) * 100) : 0}% · <b>${formatMetricValue(en)}</b></span></div>
+  // One language means one column: the figure, the label and the destinations
+  // under them all count once. A second, permanently empty half used to be
+  // drawn for a Studio that had never connected the language it stood for.
+  const legend = columns.map((key, index) => {
+    const value = localeTotal(key);
+    const share = `${localeShare(value)}%`;
+    const amount = `<b>${formatMetricValue(value)}</b>`;
+    return `<span>${index === 0 ? `${amount} · ${share}` : `${share} · ${amount}`}</span>`;
+  });
+  const legendBody = legend.length > 1 ? `${legend[0]}${filter}${legend[1]}` : `${legend[0] ?? ""}${filter}`;
+  const labels = columns.map((key) => `<span>${key.toUpperCase()}</span>`).join("");
+  return `<div class="overview-platforms" style="--locale-columns:${Math.max(1, columns.length)}">
+    <div class="overview-platforms__legend">${legendBody}</div>
     <div class="overview-platforms__bar">${segments}</div>
-    <div class="overview-platforms__bar-labels"><span>RU</span><span>EN</span>${expand}</div>
+    <div class="overview-platforms__bar-labels">${labels}${expand}</div>
     <div class="overview-platforms__rows">${platformRows}</div>
   </div>`;
 }

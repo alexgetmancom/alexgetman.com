@@ -331,6 +331,7 @@ describe("publication detail fragments", () => {
   it("renders bounded detail fragments for the lazy loader", () => {
     const result = renderPublicationDetails(
       "ru",
+      ["ru", "en"],
       Array.from({ length: 9 }, (_, index) => viewed(index, `post ${index}`)),
       undefined,
       [],
@@ -347,9 +348,48 @@ describe("publication detail fragments", () => {
   });
 
   it("orders publications by views, best first, in every period", () => {
-    const result = renderPublicationDetails("ru", [viewed(4, "quiet"), viewed(90, "hit"), viewed(30, "middle")], undefined, [], 0, 10);
+    const result = renderPublicationDetails(
+      "ru",
+      ["ru", "en"],
+      [viewed(4, "quiet"), viewed(90, "hit"), viewed(30, "middle")],
+      undefined,
+      [],
+      0,
+      10,
+    );
     expect(result.html.indexOf("hit")).toBeLessThan(result.html.indexOf("middle"));
     expect(result.html.indexOf("middle")).toBeLessThan(result.html.indexOf("quiet"));
+  });
+});
+
+describe("a Studio that publishes one language", () => {
+  const bilingual: PipelinePost = {
+    post_id: 7,
+    date: "2026-08-19T09:00:00.000Z",
+    text_ru: "Скидка 91% стала рекордной",
+    full_text_ru: "Скидка 91% стала рекордной",
+    text_en: "The 91% discount is the biggest",
+    full_text_en: "The 91% discount is the biggest",
+    ...published("telegram", { views: 12 }),
+  };
+
+  it("heads its publications with what it actually published, and shows that copy alone", () => {
+    // The row used to be titled by a machine translation the Studio never sent
+    // anywhere, over an ENGLISH / RU ORIGINAL pair that claimed it published both.
+    const html = renderOverviewPublicationList("ru", ["ru"], [bilingual], ["telegram"]);
+
+    expect(html).toContain("Скидка 91% стала рекордной");
+    expect(html).not.toContain("The 91% discount is the biggest");
+    expect(html).not.toContain("ENGLISH");
+    expect(html).not.toContain("RU ORIGINAL");
+  });
+
+  it("keeps both languages for a Studio that publishes both", () => {
+    const html = renderOverviewPublicationList("ru", ["ru", "en"], [bilingual], ["telegram"]);
+
+    expect(html).toContain("The 91% discount is the biggest");
+    expect(html).toContain("ENGLISH");
+    expect(html).toContain("RU ORIGINAL");
   });
 });
 
@@ -357,6 +397,7 @@ describe("renderOverviewPublicationList", () => {
   it("uses thin expandable rows and keeps the lower detail contract", () => {
     const html = renderOverviewPublicationList(
       "ru",
+      ["ru", "en"],
       [
         {
           post_id: 1,
@@ -402,7 +443,7 @@ describe("renderOverviewPublicationList", () => {
         x: { views: { value: 18 }, likes: { value: 2 }, replies: { value: 1 } },
       },
     };
-    const html = renderOverviewPublicationList("ru", [textPost], ["telegram", "x"]);
+    const html = renderOverviewPublicationList("ru", ["ru", "en"], [textPost], ["telegram", "x"]);
 
     expect(html).toContain("One two three four five six seven...");
     expect(html).toContain('class="post-detail__platform-summary post-detail__platform-summary--count"');
@@ -434,7 +475,7 @@ describe("renderOverviewPublicationList", () => {
       full_text_en: "Published everywhere",
       targets: Object.fromEntries(targetIds.map((target) => [target, { status: "published" }])),
     };
-    const html = renderOverviewPublicationList("ru", [post], targetIds);
+    const html = renderOverviewPublicationList("ru", ["ru", "en"], [post], targetIds);
 
     expect(html).toContain('<b class="post-detail__platform-count">8</b>');
     expect(html).toContain("<b>EN</b>");
@@ -448,6 +489,7 @@ describe("renderOverviewPublicationList", () => {
   it("renders a video row as icon plus locale without a source label", () => {
     const html = renderOverviewPublicationList(
       "ru",
+      ["ru", "en"],
       [],
       [],
       [

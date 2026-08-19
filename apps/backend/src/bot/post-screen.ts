@@ -1,5 +1,6 @@
 import type { Context } from "grammy";
 import { flowStepInput } from "../application/conversation-flow.js";
+import { translateDraftText } from "../content/translation.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
@@ -14,7 +15,6 @@ import { persistentKeyboard } from "./menu-render.js";
 import { extractMessage } from "./message.js";
 import { POST_FLOW, postStateStep } from "./post-flow.js";
 import { applyAdminState } from "./post-input-actions.js";
-import { translatePostText } from "./post-translation.js";
 import { parseSessionCallback, publicationCallback } from "./publication-callback.js";
 import { openPublicationFlow } from "./publication-flow.js";
 import { postPreviewCard } from "./publication-renderers.js";
@@ -109,7 +109,7 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       ],
     };
   }
-  const textEn = await translatePostText(message.text, config);
+  const textEn = await translateDraftText(backendDb, message.text, config);
   const draftId = createStudioServices(backendDb, config).posts.create(actorId, { ...message, textEn });
   clearConversationState(backendDb, actorId, "post");
   const preview = postPreviewCard(backendDb, config, actorId, draftId);

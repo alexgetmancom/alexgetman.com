@@ -186,7 +186,10 @@ function seedHistoricalVideo(backendDb: ReturnType<typeof openBackendDb>): void 
 
 /** The renderer reads daily reach, which the read model derives from these very
  * posts; the tests derive it the same way instead of restating the numbers. */
-function renderOverview(input: Omit<CombinedSectionInput, "textReach" | "videoReach">): string {
+function renderOverview(
+  input: Omit<CombinedSectionInput, "textReach" | "videoReach" | "textLocales" | "videoLocales"> &
+    Partial<Pick<CombinedSectionInput, "textLocales" | "videoLocales">>,
+): string {
   const start = new Date(input.rangeEnd);
   start.setUTCDate(start.getUTCDate() - (input.periodDays + 40));
   const days = calendarDays(start, new Date(input.rangeEnd.getTime() + 86_400_000 - 1), "UTC");
@@ -200,6 +203,8 @@ function renderOverview(input: Omit<CombinedSectionInput, "textReach" | "videoRe
   );
   return renderCombinedSection(
     {
+      textLocales: ["ru", "en"],
+      videoLocales: ["ru", "en"],
       ...input,
       videoReach: input.video.dailyByDay,
       textReach: textOverviewOf([...posts, ...items.map(xActivityPost)], [], days, "UTC"),
@@ -618,6 +623,30 @@ describe("unified overview rendering", () => {
     timeZone: "Europe/Moscow",
     platformMetric: "reach" as const,
   };
+
+  it("draws one locale column for a half that publishes one language", () => {
+    const backendDb = openOverviewDb();
+    try {
+      seedVideo(backendDb);
+      const video = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
+      // The text half of a Studio with only Russian channels used to carry a
+      // permanently empty EN column, an EN label and a "0% · 0" legend, while
+      // its video half genuinely publishes in both.
+      const html = renderOverview({ ...baseInput, video, textLocales: ["ru"] });
+      const textPlatforms = html.slice(
+        html.indexOf('class="overview-track overview-track--text'),
+        html.indexOf('class="overview-track overview-track--video'),
+      );
+      const videoPlatforms = html.slice(html.indexOf('class="overview-track overview-track--video'));
+
+      expect(textPlatforms).toContain("--locale-columns:1");
+      expect(textPlatforms).not.toContain("<span>EN</span>");
+      expect(videoPlatforms).toContain("--locale-columns:2");
+      expect(videoPlatforms).toContain("<span>EN</span>");
+    } finally {
+      backendDb.close();
+    }
+  });
 
   it("shows both halves separately and never their sum", () => {
     const backendDb = openOverviewDb();

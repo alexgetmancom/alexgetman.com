@@ -280,7 +280,7 @@ export function renderDashboardShell(body: string, locale: StudioLocale): string
     /* Under the bar and over the columns: the same two halves, one label each,
        centred on the column it heads. The expander sits where the EN label used
        to, clear of both. */
-    .overview-platforms__bar-labels { position:relative; display:grid; grid-template-columns:1fr 1fr; gap:0 28px; margin-top:9px; color:var(--text-secondary); font-size:13px; letter-spacing:.1em; text-transform:uppercase; }
+    .overview-platforms__bar-labels { position:relative; display:grid; grid-template-columns:repeat(var(--locale-columns,2),1fr); gap:0 28px; margin-top:9px; color:var(--text-secondary); font-size:13px; letter-spacing:.1em; text-transform:uppercase; }
     .overview-platforms__bar-labels > span { text-align:center; }
     .overview-platforms__all { position:absolute; top:50%; right:0; transform:translateY(-50%); }
     .overview-platforms__all > summary { display:inline-flex; align-items:center; gap:4px; width:auto; height:20px; padding:0 6px; border:1px solid var(--border-soft); border-radius:6px; color:var(--text-secondary); font-size:13px; line-height:1; list-style:none; cursor:pointer; }
@@ -300,7 +300,7 @@ export function renderDashboardShell(body: string, locale: StudioLocale): string
     /* Height comes from the rows actually drawn, not from a fixed reserve: the
        renderer sets --platform-rows to the tallest column of either half, so the
        two halves stay level and neither pads out empty space. */
-    .overview-platforms__rows { display:grid; grid-template-columns:1fr 1fr; gap:0 28px; min-height:calc(var(--platform-rows,3) * 40px); margin-top:6px; }
+    .overview-platforms__rows { display:grid; grid-template-columns:repeat(var(--locale-columns,2),1fr); gap:0 28px; min-height:calc(var(--platform-rows,3) * 40px); margin-top:6px; }
     .overview-platforms__column { display:flex; flex-direction:column; min-width:0; }
     /* A hairline between the halves, dashed so it separates without ruling. */
     .overview-platforms__column + .overview-platforms__column { margin-left:-14px; padding-left:14px; border-left:1px dashed var(--border-soft); }

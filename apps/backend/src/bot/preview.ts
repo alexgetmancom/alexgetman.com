@@ -1,6 +1,7 @@
 import { InlineKeyboard } from "grammy";
 import { type PresetName, presetName, TARGETS } from "../botTargets.js";
-import { effectivePostTargets, registeredPostLocales, registeredPostTargetIds } from "../channels/registry.js";
+import { postLocales } from "../channels/locales.js";
+import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
 import { requireDraft } from "../content/drafts.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -98,8 +99,7 @@ export function draftPreview(
   // A language this Studio has connected nothing for has no screens: no slot
   // grid, no schedule line, no text to edit. Offering them is how a draft ends
   // up waiting forever for a date in a language that can never publish.
-  const locales = registeredPostLocales(backendDb);
-  const servesEn = locales.has("en");
+  const servesEn = postLocales(backendDb).includes("en");
   const keyboard = new InlineKeyboard();
   const mode = presetName(targets);
   const mutable = isPostDraftMutable(draft.status);

@@ -26,12 +26,13 @@ type TrackPublicationListOptions = {
 /** Thin, recent rows for the overview. */
 export function renderOverviewPublicationList(
   locale: StudioLocale,
+  textLocales: readonly string[],
   posts: PipelinePost[],
   targetIds: string[] = ORDERED_TARGETS.map((target) => target.id),
   videos: VideoContentItem[] = [],
   options: TrackPublicationListOptions = {},
 ): string {
-  const recent = publicationEntries(posts, targetIds, videos);
+  const recent = publicationEntries(posts, targetIds, videos, textLocales);
   if (!recent.length) return empty(t(locale, "cc.publication.no-posts"));
   return `<div class="overview-publications__list">${renderRecentPublicationList(recent, Math.max(1, options.limit ?? 4), options.moreUrl, locale)}</div>`;
 }
@@ -59,13 +60,14 @@ function renderRecentPublicationList(
 /** Renders only a bounded fragment for the dashboard's read-only detail loader. */
 export function renderPublicationDetails(
   locale: StudioLocale,
+  textLocales: readonly string[],
   posts: PipelinePost[],
   targetIds: string[] = ORDERED_TARGETS.map((target) => target.id),
   videos: VideoContentItem[] = [],
   offset = 0,
   limit = DETAIL_BATCH_SIZE,
 ): PublicationDetailsResult {
-  const entries = publicationEntries(posts, targetIds, videos);
+  const entries = publicationEntries(posts, targetIds, videos, textLocales);
   const safeOffset = Math.max(0, Math.floor(offset));
   const safeLimit = Math.max(1, Math.min(DETAIL_BATCH_SIZE, Math.floor(limit)));
   const selected = entries.slice(safeOffset, safeOffset + safeLimit);
@@ -85,12 +87,17 @@ type PublicationEntry = {
 
 /** The list answers "what worked", so it reads best-performing first in every
  * period; the date only breaks ties between equally seen publications. */
-function publicationEntries(posts: PipelinePost[], targetIds: string[], videos: VideoContentItem[]): PublicationEntry[] {
+function publicationEntries(
+  posts: PipelinePost[],
+  targetIds: string[],
+  videos: VideoContentItem[],
+  textLocales: readonly string[],
+): PublicationEntry[] {
   return [
     ...posts.map((post) => ({
       date: post.date ?? "",
       views: postMetricTotals(post, targetIds).views,
-      recent: (hidden: boolean, locale: StudioLocale) => renderRecentPost(post, targetIds, hidden, locale),
+      recent: (hidden: boolean, locale: StudioLocale) => renderRecentPost(post, targetIds, hidden, locale, textLocales),
     })),
     ...videos.map((video) => ({
       date: video.publishedAt ?? "",
@@ -195,16 +202,27 @@ function renderRecentVideo(video: VideoContentItem, hidden: boolean, locale: Stu
   ].join("");
 }
 
-function renderRecentPost(post: PipelinePost, targetIds: string[], hidden: boolean, locale: StudioLocale): string {
+function renderRecentPost(
+  post: PipelinePost,
+  targetIds: string[],
+  hidden: boolean,
+  locale: StudioLocale,
+  textLocales: readonly string[],
+): string {
   const metrics = total(post, targetIds);
+  // A Studio that publishes no English has no English publication to read: its
+  // rows are headed by what actually went out, and the copy below them is the
+  // one language it wrote.
+  const servesEn = textLocales.includes("en");
   const english = post.full_text_en || post.text_en || t(locale, "cc.publication.no-english");
   const russian = post.full_text_ru || post.text_ru || "—";
+  const headline = servesEn ? english : russian;
   return [
     `<details class="post-detail${hidden ? " post-detail--more" : ""}">`,
     '<summary><span class="post-detail__summary">',
     '<span class="post-detail__headline">',
     '<span class="post-detail__chevron">›</span>',
-    `<span class="post-detail__title">${escapeHtml(shortPipelineText(english, 7))}</span>`,
+    `<span class="post-detail__title">${escapeHtml(shortPipelineText(headline, 7))}</span>`,
     "</span>",
     `<span class="post-detail__media">${publicationPlatformSummary(textPublicationPlatforms(post, targetIds), locale)}</span>`,
     `<span class="post-detail__metric"><span>${formatMetricValue(metrics.views)}</span></span>`,
@@ -214,8 +232,12 @@ function renderRecentPost(post: PipelinePost, targetIds: string[], hidden: boole
     '<div class="post-detail__body">',
     platformBreakdown(textPlatformResults(post, targetIds), locale),
     '<div class="post-detail__content"><div>',
-    `<span class="post-detail__label">${t(locale, "cc.publication.english")}</span><p>${escapeHtml(english)}</p>`,
-    `<span class="post-detail__label">${t(locale, "cc.publication.ru-original")}</span><p>${escapeHtml(russian)}</p>`,
+    ...(servesEn
+      ? [
+          `<span class="post-detail__label">${t(locale, "cc.publication.english")}</span><p>${escapeHtml(english)}</p>`,
+          `<span class="post-detail__label">${t(locale, "cc.publication.ru-original")}</span><p>${escapeHtml(russian)}</p>`,
+        ]
+      : [`<p>${escapeHtml(russian)}</p>`]),
     "</div>",
     "</div></div>",
     "</details>",

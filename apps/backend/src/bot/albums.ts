@@ -1,6 +1,7 @@
 import { and, asc, eq, lte } from "drizzle-orm";
 import type { Bot } from "grammy";
 import { parseArrayValue } from "../content/message.js";
+import { translateDraftText } from "../content/translation.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { pendingAlbums } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -12,7 +13,6 @@ import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
 import { clearConversationStateIfCurrent, getConversationState } from "./conversation-state.js";
 import { type PostSessionStep, type PostWizardStep, postStepData } from "./post-flow.js";
-import { translatePostText } from "./post-translation.js";
 import { postPreviewCard } from "./publication-renderers.js";
 
 /** Telegram delivers an album as separate messages; this is how long the
@@ -175,7 +175,7 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
         cardDraftId = draftId;
       } else {
         const text = row.textRu;
-        const textEn = await translatePostText(text, config);
+        const textEn = await translateDraftText(backendDb, text, config);
         cardDraftId = createStudioServices(backendDb, config).posts.create(row.actorId, {
           text,
           textEn,

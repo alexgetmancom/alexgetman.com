@@ -1,5 +1,4 @@
 import type { ChannelConnectionRecord } from "../application/ports.js";
-import { targetLocale, type TargetLocale } from "../botTargets.js";
 import type { BackendDb } from "../db/client.js";
 import type { VideoLocale } from "../foundation/external/youtube.js";
 import { ACCOUNT_PLATFORMS, VIDEO_TARGET_PLATFORM, type VideoTarget } from "../publishing/video-types.js";
@@ -79,19 +78,6 @@ export function targetRouting(backendDb: BackendDb): Record<string, { provider: 
  * upload Reels. A Story is connected the way every other post target is. */
 export function registeredPostTargetIds(backendDb: BackendDb): Set<string> {
   return new Set(listChannels(backendDb).flatMap((channel) => (channel.targetId ? [channel.targetId] : [])));
-}
-
-/** The languages this Studio publishes posts in, derived from what it has
- * connected. A Studio with no post channels at all is a fresh install rather
- * than a monolingual one, so it is offered both.
- *
- * Interfaces gate their per-language surfaces on this. Delivery does not: it
- * goes through `effectivePostTargets`, where an unconnected target is simply
- * off. */
-export function registeredPostLocales(backendDb: BackendDb): Set<TargetLocale> {
-  const targets = registeredPostTargetIds(backendDb);
-  if (!targets.size) return new Set(["ru", "en"]);
-  return new Set([...targets].flatMap((target) => targetLocale(target) ?? []));
 }
 
 /** The registry is the only source of enabled publication targets. */

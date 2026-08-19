@@ -75,7 +75,7 @@ it("publishes operator text to exactly the requested target in one operation", a
 
 it("does not require a Story decision when every Story target is disabled", () => {
   const backendDb = openBackendDb(":memory:");
-  registerTestChannels(backendDb, ["threads_ru"]);
+  registerTestChannels(backendDb, ["threads_ru", "threads_en"]);
   const ruCard = join(tmpdir(), `story-card-ru-${crypto.randomUUID()}.png`);
   const enCard = join(tmpdir(), `story-card-en-${crypto.randomUUID()}.png`);
   writeFileSync(ruCard, "ru");

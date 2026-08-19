@@ -505,6 +505,7 @@ const en = {
   "weekly.digest": "Weekly digest",
   // Domain error codes (thrown as StudioError, rendered by the adapter)
   "err.post-mode": "Post mode is not configured.",
+  "err.post-locale-not-served": "This Studio publishes no {locale} posts: connect a {locale} channel before writing {locale} text.",
   "err.unknown-target": "Unknown publication target.",
   "err.post-no-edit": "No text or media detected for editing.",
   "err.post-not-yours": "Draft is not available to this user.",
@@ -1207,6 +1208,7 @@ const ru = {
   "weekly.digest": "Итоги недели",
   // Domain error codes (thrown as StudioError, rendered by the adapter)
   "err.post-mode": "Режим поста не настроен.",
+  "err.post-locale-not-served": "Эта Студия не публикует посты на {locale}: сначала подключите {locale}-канал.",
   "err.unknown-target": "Неизвестная площадка публикации.",
   "err.post-no-edit": "Не обнаружено текста или медиа для редактирования.",
   "err.post-not-yours": "Черновик недоступен этому пользователю.",

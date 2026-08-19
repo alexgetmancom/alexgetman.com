@@ -1,7 +1,10 @@
+import { postLocales } from "../channels/locales.js";
+import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { deepSeekChat } from "../foundation/external/deepseek.js";
+import { log } from "../foundation/logger.js";
 
-export async function translateToEnglish(text: string, config: BackendConfig, fetchImpl: typeof fetch = fetch): Promise<string> {
+async function translateToEnglish(text: string, config: BackendConfig): Promise<string> {
   const source = text.trim();
   if (!source || !config.DEEPSEEK_API_KEY || !hasCyrillic(source)) return source;
   const system = [
@@ -19,7 +22,6 @@ export async function translateToEnglish(text: string, config: BackendConfig, fe
       { role: "user", content: source },
     ],
     { temperature: 0.1, timeoutMs: 40_000 },
-    fetchImpl,
   );
   if (!translated || /please provide|i'd be happy to help/i.test(translated)) throw new Error("translation returned an invalid response");
   return translated;
@@ -27,4 +29,26 @@ export async function translateToEnglish(text: string, config: BackendConfig, fe
 
 function hasCyrillic(value: string): boolean {
   return /[\u0400-\u04FF]/.test(value);
+}
+
+/** The English text for a new draft, or nothing when this Studio has no English
+ * to publish or the translator could not produce one.
+ *
+ * Both answers are "no English text", and that is deliberate: a draft with none
+ * says so, and preflight refuses to publish that locale until it has one. It
+ * used to answer with the Russian text it was given, which is the one answer
+ * that cannot be told apart from a real translation.
+ *
+ * The connected languages are checked before the model is called, not after: a
+ * Studio that publishes only Russian was still paying for a translation of
+ * every post it wrote, and the only place that text ever surfaced was a
+ * dashboard that showed English because nothing had told it not to. */
+export async function translateDraftText(backendDb: BackendDb, text: string, config: BackendConfig): Promise<string | undefined> {
+  if (!postLocales(backendDb).includes("en")) return undefined;
+  try {
+    return await translateToEnglish(text, config);
+  } catch (error) {
+    log("warn", "draft translation failed", { error: String(error) });
+    return undefined;
+  }
 }

@@ -104,6 +104,11 @@ export type DashboardFixtureOptions = {
   postIds: number[];
   postDates?: Array<string | undefined>;
   full?: FullDashboardFixtureOptions;
+  /** The text destinations this Studio publishes to. A fixture that seeds reach
+   * for a destination the Studio never connected reads as a Studio that lost a
+   * channel, which is a different screen from a Studio that only ever had one
+   * language. */
+  targets?: readonly string[];
 };
 
 type VideoFixtureTarget = {
@@ -237,7 +242,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
       // month) each select a different slice instead of all showing everything.
       const publishedAt = options.postDates?.[index] ?? iso(daysAgo(index));
 
-      for (const plan of TARGET_PLAN) {
+      for (const plan of options.targets ? TARGET_PLAN.filter((entry) => options.targets?.includes(entry.target)) : TARGET_PLAN) {
         const failed = options.full ? plan.target === "x" && index === 0 : plan.status === "failed";
         rawDb.db
           .insert(postTargets)
@@ -370,7 +375,10 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
       .values({ name: "metrics", stateJson: { lastRunAt: nowIso, status: "idle" }, updatedAt: nowIso })
       .run();
 
-    for (let index = 0; index < 8; index += 1) {
+    // X activity is its own feed, but it is still one of this Studio's text
+    // destinations: a Studio that has not connected X publishes nothing there.
+    const xActivityPosts = options.targets && !options.targets.includes("x") ? 0 : 8;
+    for (let index = 0; index < xActivityPosts; index += 1) {
       const xPostId = `fixture-x-${index + 1}`;
       const reply = index % 3 === 1;
       const publishedAt = iso(hoursAgo(index * 8));

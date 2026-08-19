@@ -2,7 +2,8 @@ import type { DraftPatch, DraftRecord, StoryPublishMode } from "../../applicatio
 import type { PublicationPipeline, PublicationSchedule } from "../../application/publication-pipeline.js";
 import { publicationRef } from "../../application/publication-ref.js";
 import { isStoryTarget, PRESETS, presetName, TARGETS, targetLocale } from "../../botTargets.js";
-import { effectivePostTargets, registeredPostLocales, registeredPostTargetIds } from "../../channels/registry.js";
+import { postLocales } from "../../channels/locales.js";
+import { effectivePostTargets, registeredPostTargetIds } from "../../channels/registry.js";
 import { listStudioMediaAssets, mediaItemsFromAssets, requireStudioMediaAssets } from "../../content/assets.js";
 import { draftLocaleContent } from "../../content/draft-content.js";
 import { createDraftFromMessage } from "../../content/drafts.js";
@@ -135,6 +136,13 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
     capabilities: { hasMetadataWizard: false, hasStoryCards: true, scheduleAxis: "locale" as const },
     create(actorId: number, message: DraftMessage, configured?: { targets: string[]; storyMode?: StoryPublishMode }): number {
       return trackUsageSync(backendDb, "studio.post.create", () => {
+        // Every transport creates drafts through here, so the languages this
+        // Studio publishes are checked once rather than by each of them: an
+        // operator handing MCP or the CLI English copy for a Studio that has no
+        // English channel is told so, instead of storing text nothing can
+        // publish and every reader then has to learn to hide.
+        if ((message.textEn || message.textEnApproved) && !postLocales(backendDb).includes("en"))
+          throw new StudioError("err.post-locale-not-served", { locale: "EN" });
         if (!configured) return createDraftFromMessage(backendDb, actorId, message);
         return createDraftFromMessage(backendDb, actorId, message, {
           targetsJson: JSON.stringify(exactTargets(backendDb, configured.targets)),
@@ -160,9 +168,11 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       const ruContent = draftLocaleContent(draft, "ru");
       const enContent = draftLocaleContent(draft, "en");
       const storyCards = backendDb.storyCards.forDraft(draftId);
-      const storyCardsReady = ["ru", "en"].every((locale) =>
-        storyCards.some((card) => card.locale === locale && card.status === "ready" && card.localPath),
-      );
+      // Ready means every card this draft actually has is rendered. The list
+      // used to be spelled out as RU and EN, which waited forever for a card
+      // the queue had already decided not to render: a locale with no text has
+      // none, and a Studio that publishes one language never has the other.
+      const storyCardsReady = storyCards.length > 0 && storyCards.every((card) => card.status === "ready" && card.localPath);
       const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
       return {
         id: draft.id,
@@ -373,8 +383,8 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
       // A preset for a language this Studio connected nothing for resolves to an
       // empty target list, which is not a mode -- it is a draft that publishes
       // nowhere. Such a preset is skipped rather than offered and then emptied.
-      const locales = registeredPostLocales(backendDb);
-      const order = (["full", "ru", "en", "tg"] as const).filter((name) => name !== "en" || locales.has("en"));
+      const locales = postLocales(backendDb);
+      const order = (["full", "ru", "en", "tg"] as const).filter((name) => name !== "en" || locales.includes("en"));
       const next = order[(order.indexOf(current as (typeof order)[number]) + 1) % order.length] ?? "full";
       const nextPreset = PRESETS[next];
       if (!nextPreset) throw new StudioError("err.post-mode");
@@ -384,6 +394,10 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
     },
     edit(actorId: number, draftId: number, input: EditInput): void {
       trackUsageSync(backendDb, "studio.post.edit", () => {
+        // Same rule as create: a language this Studio does not publish has no
+        // copy to write, whichever transport is asking.
+        if (!postLocales(backendDb).includes(input.locale))
+          throw new StudioError("err.post-locale-not-served", { locale: input.locale.toUpperCase() });
         const { draft, patch } = prepareDraftContentEdit(backendDb, config, actorId, draftId, input);
         withDraftRollback(
           backendDb,

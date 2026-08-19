@@ -432,7 +432,7 @@ describe("command center actions", () => {
     try {
       const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
       const posts = postService(backendDb, config);
-      registerTestChannels(backendDb, ["telegram"]);
+      registerTestChannels(backendDb, ["telegram", "threads_en"]);
       const draftId = posts.create(42, { text: "RU", textEn: "EN", entities: [], media: [] });
       const initialAt = new Date(Date.now() + 60 * 60_000);
       const postId = posts.schedule(42, draftId, { ruAt: initialAt, enAt: initialAt });

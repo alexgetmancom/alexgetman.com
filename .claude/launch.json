@@ -16,13 +16,13 @@
     {
       "name": "web-dev-maru",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["--bun", "astro", "dev"],
-      "port": 4321,
+      "runtimeArgs": ["--bun", "astro", "dev", "--port", "4323"],
+      "port": 4323,
       "env": {
-        "PIPELINE_DB": "/Users/alex/projects/solo-publisher/.dev-fixture/pipeline.db",
-        "SITE_PUBLIC_DIR": "/Users/alex/projects/solo-publisher/.dev-fixture/site",
+        "PIPELINE_DB": "/Users/alex/projects/solo-publisher/.dev-fixture/maru-pipeline.db",
+        "SITE_PUBLIC_DIR": "/Users/alex/projects/solo-publisher/.dev-fixture/maru-site",
         "COMMAND_CENTER_TOKEN": "dev",
-        "PUBLIC_BASE_URL": "http://localhost:4321"
+        "PUBLIC_BASE_URL": "http://localhost:4323"
       }
     },
     {

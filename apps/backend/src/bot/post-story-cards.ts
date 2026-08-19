@@ -80,10 +80,8 @@ function sendStoryCardChoice(
 ): PublicationEffect[] {
   const locale = settingsService(backendDb).locale(actorId);
   const effects: PublicationEffect[] = [];
-  for (const cardLocale of ["ru", "en"] as const) {
-    const card = cards.find((item) => item.locale === cardLocale);
-    if (card?.localPath) effects.push({ type: "photo", path: card.localPath, options: { caption: `Story · ${cardLocale.toUpperCase()}` } });
-  }
+  for (const card of cards)
+    if (card.localPath) effects.push({ type: "photo", path: card.localPath, options: { caption: `Story · ${card.locale.toUpperCase()}` } });
   const keyboard = new InlineKeyboard();
   if (intent === "publish") {
     keyboard
@@ -118,8 +116,11 @@ function logStoryCardChoiceFailure(error: unknown, actorId: number, draftId: num
   });
 }
 
+/** Every card this draft has, rendered. Naming RU and EN here waited for a card
+ * the queue never renders — a locale with no text, or a language this Studio
+ * does not publish — and the choice was then never sent. */
 function cardsReady(cards: StoryCard[]): boolean {
-  return ["ru", "en"].every((locale) => cards.some((card) => card.locale === locale && card.status === "ready" && card.localPath));
+  return cards.every((card) => card.status === "ready" && card.localPath);
 }
 
 function isStalePostCard(ctx: Context, backendDb: BackendDb, draftId: number): boolean {

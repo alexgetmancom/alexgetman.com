@@ -37,7 +37,10 @@ const HEADERS = [
 
 /** The renderer reads daily reach, which the read model derives from these very
  * posts; the tests derive it the same way instead of restating the numbers. */
-function renderOverview(input: Omit<CombinedSectionInput, "textReach" | "videoReach">): string {
+function renderOverview(
+  input: Omit<CombinedSectionInput, "textReach" | "videoReach" | "textLocales" | "videoLocales"> &
+    Partial<Pick<CombinedSectionInput, "textLocales" | "videoLocales">>,
+): string {
   const start = new Date(input.rangeEnd);
   start.setUTCDate(start.getUTCDate() - (input.periodDays + 40));
   const days = calendarDays(start, new Date(input.rangeEnd.getTime() + 86_400_000 - 1), "UTC");
@@ -51,6 +54,8 @@ function renderOverview(input: Omit<CombinedSectionInput, "textReach" | "videoRe
   );
   return renderCombinedSection(
     {
+      textLocales: ["ru", "en"],
+      videoLocales: ["ru", "en"],
       ...input,
       videoReach: input.video.dailyByDay,
       textReach: textOverviewOf([...posts, ...items.map(xActivityPost)], [], days, "UTC"),

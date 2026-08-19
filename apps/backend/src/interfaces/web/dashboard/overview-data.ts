@@ -1,6 +1,7 @@
 import type { XActivityDashboardItem } from "../../../analytics/x-activity-dashboard.js";
 import { xActivityDashboardRange } from "../../../analytics/x-activity-dashboard.js";
 import type { AudienceView } from "../../../botTargets.js";
+import { postLocales, videoLocales } from "../../../channels/locales.js";
 import type { BackendDb } from "../../../db/client.js";
 import type { BackendConfig } from "../../../foundation/config.js";
 import { log } from "../../../foundation/logger.js";
@@ -39,6 +40,9 @@ type DashboardReadModel = {
     median: VideoOverview;
   };
   text: TextOverview;
+  /** What this Studio publishes in, per half, read once for every surface of
+   * the page that is drawn per language. */
+  locales: { text: string[]; video: string[] };
   videoView: string | null;
   followers: Array<{ key: string; label: string; followers: number | null }>;
   rangeStart: Date;
@@ -137,6 +141,7 @@ export function loadDashboardReadModel(
     xActivity,
     video,
     text,
+    locales: { text: postLocales(backendDb), video: videoLocales(backendDb) },
     videoView: videoView ?? null,
     followers,
     rangeStart: start,
@@ -209,6 +214,8 @@ export function buildOverviewData(
     platformMetric,
     textTargetIds: selectedTargetIds,
     textView: activeView,
+    textLocales: readModel.locales.text,
+    videoLocales: readModel.locales.video,
   };
 }
 

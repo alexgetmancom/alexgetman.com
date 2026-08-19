@@ -1,12 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import {
-  channelForVideo,
-  listChannels,
-  registerChannel,
-  registeredPostLocales,
-  registeredPostTargetIds,
-  targetRouting,
-} from "../src/channels/registry.js";
+import { postLocales } from "../src/channels/locales.js";
+import { channelForVideo, listChannels, registerChannel, registeredPostTargetIds, targetRouting } from "../src/channels/registry.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import { channelConnections, publishJobs } from "../src/db/schema.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
@@ -51,7 +45,7 @@ describe("channel registry", () => {
       // Story from it put an EN post target in front of a Studio that had no EN
       // audience, and every draft that enabled it waited forever for an EN date.
       expect(registeredPostTargetIds(backendDb)).toEqual(new Set());
-      expect(registeredPostLocales(backendDb)).toEqual(new Set(["ru", "en"]));
+      expect(postLocales(backendDb)).toEqual(["ru", "en"]);
       expect(channelForVideo(backendDb, "instagram_reels", "ru")?.providerAccountId).toBe("maru-account");
 
       // The Story is connected the way every other post target is, and carries
@@ -64,7 +58,7 @@ describe("channel registry", () => {
         targetId: "instagram_stories_ru",
       });
       expect(registeredPostTargetIds(backendDb)).toEqual(new Set(["instagram_stories_ru"]));
-      expect(registeredPostLocales(backendDb)).toEqual(new Set(["ru"]));
+      expect(postLocales(backendDb)).toEqual(["ru"]);
       expect(targetRouting(backendDb).instagram_stories_ru).toEqual({ provider: "zernio", accountId: "maru-account" });
       expect(targetRouting(backendDb).instagram_stories).toBeUndefined();
     }));

@@ -1,5 +1,6 @@
 import { xActivityDashboard } from "../../analytics/x-activity-dashboard.js";
 import { AUDIENCE_VIEWS, type AudienceView } from "../../botTargets.js";
+import { postLocales } from "../../channels/locales.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { escapeHtml } from "../../foundation/html.js";
@@ -276,6 +277,7 @@ export function renderDashboardPublicationDetails(
   const locale = parseStudioLocale(requestedLocale);
   return renderPublicationDetails(
     locale,
+    postLocales(backendDb),
     [...posts, ...xPosts],
     targetIds ?? (requestedView === "x" ? ["x"] : undefined),
     videos,
