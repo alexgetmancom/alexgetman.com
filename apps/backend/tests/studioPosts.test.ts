@@ -87,19 +87,21 @@ describe("Studio post commands", () => {
     const postId = posts.schedule(42, draftId, { ruAt, enAt });
 
     expect(
-      backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE post_id=? AND target='threads_en'").get(postId),
+      backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE publication_id=? AND target='threads_en'").get(postId),
     ).toEqual({
       count: 0,
     });
 
     posts.toggleTarget(42, draftId, "threads_en");
-    expect(backendDb.sqlite.prepare("SELECT publish_at FROM publish_jobs WHERE post_id=? AND target='threads_en'").get(postId)).toEqual({
+    expect(
+      backendDb.sqlite.prepare("SELECT publish_at FROM publish_jobs WHERE publication_id=? AND target='threads_en'").get(postId),
+    ).toEqual({
       publish_at: enAt.toISOString(),
     });
 
     posts.toggleTarget(42, draftId, "threads_en");
     expect(
-      backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE post_id=? AND target='threads_en'").get(postId),
+      backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE publication_id=? AND target='threads_en'").get(postId),
     ).toEqual({
       count: 0,
     });
@@ -122,7 +124,7 @@ describe("Studio post commands", () => {
     posts.edit(42, draftId, { locale: "ru", text: "After", entities: [], media: [] });
 
     const source = backendDb.db.select().from(publicationSources).where(eq(publicationSources.postId, postId)).get();
-    const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.postId, postId)).get();
+    const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.publicationId, postId)).get();
     expect(source?.itemJson).toMatchObject({ text_ru: "After" });
     expect(job?.payloadJson).toMatchObject({ locale: "ru", text: "After" });
   });
@@ -238,16 +240,20 @@ describe("Studio post commands", () => {
     const draftId = posts.create(42, { text: "Settled", textEn: "Settled", entities: [], media: [] });
     const firstAt = new Date(Date.now() + 5 * 60_000);
     const postId = posts.schedule(42, draftId, { ruAt: firstAt, enAt: firstAt });
-    const socialBefore = backendDb.db.select({ jobId: publishJobs.jobId }).from(publishJobs).where(eq(publishJobs.postId, postId)).all();
+    const socialBefore = backendDb.db
+      .select({ jobId: publishJobs.jobId })
+      .from(publishJobs)
+      .where(eq(publishJobs.publicationId, postId))
+      .all();
     const siteBefore = backendDb.db.select({ jobId: siteJobs.jobId }).from(siteJobs).where(eq(siteJobs.postId, postId)).all();
 
-    backendDb.db.update(publishJobs).set({ status: "published" }).where(eq(publishJobs.postId, postId)).run();
+    backendDb.db.update(publishJobs).set({ status: "published" }).where(eq(publishJobs.publicationId, postId)).run();
     backendDb.db.update(siteJobs).set({ status: "published" }).where(eq(siteJobs.postId, postId)).run();
     backendDb.db.update(drafts).set({ status: "published" }).where(eq(drafts.id, draftId)).run();
 
     const nextAt = new Date(Date.now() + 10 * 60_000);
     posts.schedule(42, draftId, { ruAt: nextAt, enAt: nextAt });
-    expect(backendDb.db.select({ jobId: publishJobs.jobId }).from(publishJobs).where(eq(publishJobs.postId, postId)).all()).toEqual(
+    expect(backendDb.db.select({ jobId: publishJobs.jobId }).from(publishJobs).where(eq(publishJobs.publicationId, postId)).all()).toEqual(
       socialBefore,
     );
     expect(backendDb.db.select({ jobId: siteJobs.jobId }).from(siteJobs).where(eq(siteJobs.postId, postId)).all()).toEqual(siteBefore);
@@ -255,7 +261,7 @@ describe("Studio post commands", () => {
       backendDb.db
         .select({ status: publishJobs.status })
         .from(publishJobs)
-        .where(eq(publishJobs.postId, postId))
+        .where(eq(publishJobs.publicationId, postId))
         .all()
         .every((job) => job.status === "published"),
     ).toBe(true);

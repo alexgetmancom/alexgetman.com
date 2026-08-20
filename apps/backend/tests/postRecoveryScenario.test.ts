@@ -33,9 +33,8 @@ describe("post recovery scenario", () => {
       backendDb.db.insert(publications).values({ postId: 700, draftId: 7, status: "scheduled", createdAt: now, updatedAt: now }).run();
       for (const target of ["telegram", "threads_ru"])
         enqueuePublishJobTx(backendDb.db, {
-          postId: 700,
+          publicationId: 700,
           publicationKey: "post:700",
-          messageId: 700,
           target,
           payload: { text: "Night post" },
         });

@@ -25,7 +25,7 @@ export function refreshPublicationStatus(backendDb: BackendDb, postId: number): 
   const social = unsafeDb(backendDb)
     .db.select({ target: publishJobs.target, status: publishJobs.status, error: publishJobs.lastError })
     .from(publishJobs)
-    .where(eq(publishJobs.postId, postId))
+    .where(eq(publishJobs.publicationId, postId))
     .all();
   // Only the canonical site rows. A site job's reason is either a delivery
   // target (`site_ru`, `site_en`) or a repair (`edit_en`, `refresh_en_site`),

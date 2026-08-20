@@ -17,17 +17,13 @@ import { runPublishCycle, runPublishWatchdog } from "../src/runtime/workers.js";
 import { withDb } from "./helpers/db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
-/** Test-only convenience over enqueuePublishJobTx: derives a postId/publicationKey from
- * messageId so queue-mechanics tests don't need a real publication behind each job. */
+/** Test-only convenience over enqueuePublishJobTx: derives the publication key
+ * from the id so queue-mechanics tests don't need a real publication behind each job. */
 function enqueuePublishJob(
   backendDb: UnsafeBackendDb,
-  input: { messageId: number; target: string; payload: JsonObject; publishAt?: string | null },
+  input: { publicationId: number; target: string; payload: JsonObject; publishAt?: string | null },
 ): number {
-  return enqueuePublishJobTx(backendDb.db, {
-    ...input,
-    postId: input.messageId,
-    publicationKey: `post:${input.messageId}`,
-  });
+  return enqueuePublishJobTx(backendDb.db, { ...input, publicationKey: `post:${input.publicationId}` });
 }
 
 function testAdapter(publish: DeliveryPublisher, hooks: Partial<Pick<DeliveryAdapter, "prepare">> = {}): DeliveryAdapter {
@@ -59,7 +55,7 @@ describe("publish queue", () => {
   it("does not let a stale worker fail a job claimed by another worker", () =>
     withDb((backendDb) => {
       const id = enqueuePublishJob(backendDb, {
-        messageId: 90,
+        publicationId: 90,
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
@@ -83,7 +79,7 @@ describe("publish queue", () => {
   it("retries a transient failed job while preserving its published external id", () =>
     withDb((backendDb) => {
       const id = enqueuePublishJob(backendDb, {
-        messageId: 91,
+        publicationId: 91,
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
@@ -128,12 +124,12 @@ describe("publish queue", () => {
   it("claims queued publish jobs and marks target publishing", () =>
     withDb((backendDb) => {
       const id = enqueuePublishJob(backendDb, {
-        messageId: 100,
+        publicationId: 100,
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
       const [job] = claimDuePublishJobs(backendDb, 10, "test-worker");
-      expect(job).toMatchObject({ jobId: id, messageId: 100, target: "test_platform" });
+      expect(job).toMatchObject({ jobId: id, publicationId: 100, target: "test_platform" });
       const row = backendDb.db
         .select({ status: publishJobs.status, lockedBy: publishJobs.lockedBy })
         .from(publishJobs)
@@ -152,7 +148,7 @@ describe("publish queue", () => {
   it("does not claim a scheduled job before its publish time and executes it when due", () =>
     withDb(async (backendDb) => {
       const id = enqueuePublishJob(backendDb, {
-        messageId: 99,
+        publicationId: 99,
         target: "test_platform",
         publishAt: new Date(Date.now() + 60_000).toISOString(),
         payload: { title: "Scheduled", bodyMarkdown: "Body" },
@@ -168,7 +164,7 @@ describe("publish queue", () => {
   it("runs a successful generic publishing cycle", () =>
     withDb(async (backendDb) => {
       const id = enqueuePublishJob(backendDb, {
-        messageId: 101,
+        publicationId: 101,
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
@@ -215,7 +211,7 @@ describe("publish queue", () => {
 
   it("does not call a provider while its credential circuit is open", () =>
     withDb(async (backendDb) => {
-      const id = enqueuePublishJob(backendDb, { messageId: 1012, target: "blocked-target", payload: { title: "Queued" } });
+      const id = enqueuePublishJob(backendDb, { publicationId: 1012, target: "blocked-target", payload: { title: "Queued" } });
       recordAuthFailure(backendDb, "blocked-target");
       recordAuthFailure(backendDb, "blocked-target");
       recordAuthFailure(backendDb, "blocked-target");
@@ -247,7 +243,7 @@ describe("publish queue", () => {
 
   it("settles a claimed job whose target has no delivery port", () =>
     withDb(async (backendDb) => {
-      const id = enqueuePublishJob(backendDb, { messageId: 1013, target: "missing-target", payload: { title: "Queued" } });
+      const id = enqueuePublishJob(backendDb, { publicationId: 1013, target: "missing-target", payload: { title: "Queued" } });
 
       expect(await runPublishCycle(loadTestConfig({}), backendDb, {})).toBe(1);
       expect(
@@ -261,9 +257,9 @@ describe("publish queue", () => {
 
   it("serializes jobs for the same target but never lets one target block another", () =>
     withDb(async (backendDb) => {
-      enqueuePublishJob(backendDb, { messageId: 600, target: "slow-target", payload: { title: "Queued" } });
-      enqueuePublishJob(backendDb, { messageId: 601, target: "slow-target", payload: { title: "Queued" } });
-      enqueuePublishJob(backendDb, { messageId: 602, target: "fast-target", payload: { title: "Queued" } });
+      enqueuePublishJob(backendDb, { publicationId: 600, target: "slow-target", payload: { title: "Queued" } });
+      enqueuePublishJob(backendDb, { publicationId: 601, target: "slow-target", payload: { title: "Queued" } });
+      enqueuePublishJob(backendDb, { publicationId: 602, target: "fast-target", payload: { title: "Queued" } });
 
       let activeSlow = 0;
       let maxActiveSlow = 0;
@@ -308,7 +304,7 @@ describe("publish queue", () => {
   it("heartbeats a job's lock while a slow publish call is in flight", () =>
     withFakeTimers(() =>
       withDb(async (backendDb) => {
-        const id = enqueuePublishJob(backendDb, { messageId: 700, target: "slow-target", payload: { title: "Queued" } });
+        const id = enqueuePublishJob(backendDb, { publicationId: 700, target: "slow-target", payload: { title: "Queued" } });
         let lockedAtDuringPublish: string | null | undefined;
         let publishStarted: () => void = () => {};
         const publishHasStarted = new Promise<void>((resolve) => {
@@ -350,7 +346,7 @@ describe("publish queue", () => {
   it("retries transient publisher failures", () =>
     withDb(async (backendDb) => {
       const id = enqueuePublishJob(backendDb, {
-        messageId: 102,
+        publicationId: 102,
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
@@ -383,7 +379,7 @@ describe("publish queue", () => {
   it("requires verification when a provider may have published before transport failed", () =>
     withDb(async (backendDb) => {
       const id = enqueuePublishJob(backendDb, {
-        messageId: 1011,
+        publicationId: 1011,
         target: "ambiguous-provider",
         payload: { title: "Queued" },
       });
@@ -415,7 +411,7 @@ describe("publish queue", () => {
   it("retries an unknown failure once and then fails it", () =>
     withDb(async (backendDb) => {
       const id = enqueuePublishJob(backendDb, {
-        messageId: 104,
+        publicationId: 104,
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
@@ -449,7 +445,7 @@ describe("publish queue", () => {
     withFakeTimers(() =>
       withDb(async (backendDb) => {
         const id = enqueuePublishJob(backendDb, {
-          messageId: 105,
+          publicationId: 105,
           target: "slow-provider",
           payload: { title: "Queued" },
         });
@@ -490,7 +486,7 @@ describe("publish queue", () => {
     withFakeTimers(() =>
       withDb(async (backendDb) => {
         const id = enqueuePublishJob(backendDb, {
-          messageId: 1051,
+          publicationId: 1051,
           target: "slow-prepare",
           payload: { title: "Queued" },
         });
@@ -538,7 +534,7 @@ describe("publish queue", () => {
   it("holds a stale publishing lock for verification instead of risking a duplicate", () =>
     withDb((backendDb) => {
       const id = enqueuePublishJob(backendDb, {
-        messageId: 103,
+        publicationId: 103,
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
@@ -576,7 +572,7 @@ describe("publish queue", () => {
     setSystemTime(new Date("2026-08-03T12:00:00.000Z"));
     return withDb((backendDb) => {
       const id = enqueuePublishJob(backendDb, {
-        messageId: 1033,
+        publicationId: 1033,
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
@@ -597,7 +593,7 @@ describe("publish queue", () => {
       // persisted until the job settles — so this phase is the only trace that
       // the audience has already seen it. Requeuing it published a second post.
       const id = enqueuePublishJob(backendDb, {
-        messageId: 1034,
+        publicationId: 1034,
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
@@ -622,7 +618,7 @@ describe("publish queue", () => {
   it("requeues a stale preparation lock because no public mutation started", () =>
     withDb((backendDb) => {
       const id = enqueuePublishJob(backendDb, {
-        messageId: 1032,
+        publicationId: 1032,
         target: "test_platform",
         payload: { title: "Queued" },
       });
@@ -651,7 +647,7 @@ describe("publish queue", () => {
   it("keeps stale lock recovery available when the delivery loop is still awaiting a provider", () =>
     withDb((backendDb) => {
       const id = enqueuePublishJob(backendDb, {
-        messageId: 1031,
+        publicationId: 1031,
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
@@ -676,7 +672,7 @@ describe("publish queue", () => {
   it("does not let a stale worker overwrite a recovered job", () =>
     withDb((backendDb) => {
       const id = enqueuePublishJob(backendDb, {
-        messageId: 104,
+        publicationId: 104,
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
@@ -698,7 +694,7 @@ describe("publish queue", () => {
 
   it("requeues a retryable result with an external ID as reconciliation, not a new publication", () =>
     withDb((backendDb) => {
-      const id = enqueuePublishJob(backendDb, { messageId: 106, target: "test_platform", payload: { text_en: "Queued" } });
+      const id = enqueuePublishJob(backendDb, { publicationId: 106, target: "test_platform", payload: { text_en: "Queued" } });
       claimDuePublishJobs(backendDb, 1, "test-worker");
       completePublishJob(backendDb, loadTestConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }), id, {
         ok: false,
@@ -723,7 +719,7 @@ describe("publish queue", () => {
   it("does not leave a job publishing when result finalization fails", () =>
     withDb(async (backendDb) => {
       const id = enqueuePublishJob(backendDb, {
-        messageId: 105,
+        publicationId: 105,
         target: "test_platform",
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
@@ -757,8 +753,8 @@ describe("publish queue", () => {
 
   it("does not delete another legacy post while deduplicating a completed target", () =>
     withDb((backendDb) => {
-      const first = enqueuePublishJob(backendDb, { messageId: 201, target: "test_platform", payload: { title: "One" } });
-      const second = enqueuePublishJob(backendDb, { messageId: 202, target: "test_platform", payload: { title: "Two" } });
+      const first = enqueuePublishJob(backendDb, { publicationId: 201, target: "test_platform", payload: { title: "One" } });
+      const second = enqueuePublishJob(backendDb, { publicationId: 202, target: "test_platform", payload: { title: "Two" } });
       claimDuePublishJobs(backendDb, 1, "test-worker");
       completePublishJob(backendDb, loadTestConfig({}), first, { ok: true, id: "first" });
       expect(backendDb.db.select({ status: publishJobs.status }).from(publishJobs).where(eq(publishJobs.jobId, second)).get()).toEqual({
@@ -768,7 +764,7 @@ describe("publish queue", () => {
 
   it("persists a partial publication under the key its adapter named, and requeues only the unfinished tail", () =>
     withDb((backendDb) => {
-      const id = enqueuePublishJob(backendDb, { messageId: 301, target: "threads_en", payload: { text_en: "One\n\nTwo" } });
+      const id = enqueuePublishJob(backendDb, { publicationId: 301, target: "threads_en", payload: { text_en: "One\n\nTwo" } });
       claimDuePublishJobs(backendDb, 1, "test-worker");
       completePublishJob(backendDb, loadTestConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }), id, {
         partial: true,

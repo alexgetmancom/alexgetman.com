@@ -30,7 +30,10 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
         .select({ count: count() })
         .from(publishJobs)
         .where(
-          and(eq(publishJobs.postId, postId), inArray(publishJobs.status, ["publishing", "published", "skipped", "verification_required"])),
+          and(
+            eq(publishJobs.publicationId, postId),
+            inArray(publishJobs.status, ["publishing", "published", "skipped", "verification_required"]),
+          ),
         )
         .get()?.count ?? 0;
     const finalSiteCount =
@@ -43,7 +46,7 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
     if (finalCount > 0) {
       tx.update(publishJobs)
         .set({ status: "cancelled", updatedAt: now })
-        .where(and(eq(publishJobs.postId, postId), inArray(publishJobs.status, ["queued", "failed"])))
+        .where(and(eq(publishJobs.publicationId, postId), inArray(publishJobs.status, ["queued", "failed"])))
         .run();
       tx.update(siteJobs)
         .set({ status: "cancelled", updatedAt: now })
@@ -51,7 +54,7 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
         .run();
       return;
     }
-    tx.delete(publishJobs).where(eq(publishJobs.postId, postId)).run();
+    tx.delete(publishJobs).where(eq(publishJobs.publicationId, postId)).run();
     tx.delete(siteJobs).where(eq(siteJobs.postId, postId)).run();
     tx.delete(publicationPlans).where(eq(publicationPlans.postId, postId)).run();
     tx.delete(publicationSources).where(eq(publicationSources.postId, postId)).run();
@@ -82,7 +85,7 @@ export function cancelPendingPostJobs(backendDb: BackendDb, draftId: number): vo
   unsafeDb(backendDb).db.transaction((tx) => {
     tx.update(publishJobs)
       .set({ status: "cancelled", updatedAt: now })
-      .where(and(eq(publishJobs.postId, postId), inArray(publishJobs.status, ["queued", "failed"])))
+      .where(and(eq(publishJobs.publicationId, postId), inArray(publishJobs.status, ["queued", "failed"])))
       .run();
     tx.update(siteJobs)
       .set({ status: "cancelled", updatedAt: now })

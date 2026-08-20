@@ -29,7 +29,7 @@ export function recordPublicationFailures(config: BackendConfig, backendDb: Back
     .all();
   for (const job of stale)
     recordDomainEvent(backendDb.events, {
-      ref: publicationRef("post", job.postId),
+      ref: job.publicationKey,
       type: "queue.stale",
       severity: "error",
       target: job.target,

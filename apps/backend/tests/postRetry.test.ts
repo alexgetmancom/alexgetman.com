@@ -24,9 +24,8 @@ describe("post publication retry", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
-          postId: 700,
+          publicationId: 700,
           publicationKey: "post:700",
-          messageId: 700,
           target: "telegram",
           status: "failed",
           payloadJson: { text: "Retryable post" },
@@ -39,9 +38,8 @@ describe("post publication retry", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
-          postId: 700,
+          publicationId: 700,
           publicationKey: "post:700",
-          messageId: 700,
           target: "threads_en",
           status: "verification_required",
           payloadJson: { text: "Retryable post" },
@@ -114,9 +112,8 @@ describe("post publication retry", () => {
         backendDb.db
           .insert(publishJobs)
           .values({
-            postId: 800,
+            publicationId: 800,
             publicationKey: "post:800",
-            messageId: 800,
             target: job.target,
             status: job.status,
             payloadJson: { text: "Skippable post" },

@@ -5,9 +5,9 @@ export const publishJobs = sqliteTable(
   "publish_jobs",
   {
     jobId: autoId(),
-    postId: integer().notNull(),
+    /** The id inside the kind its key names: post 12 is `post:12`. */
+    publicationId: integer().notNull(),
     publicationKey: text().notNull(),
-    messageId: integer().notNull(),
     target: text().notNull(),
     status: text().notNull().default("queued"),
     currentPhase: text(),
@@ -21,14 +21,12 @@ export const publishJobs = sqliteTable(
     ...timestamps(),
   },
   (table) => [
-    // Deduplication key matches what every write path actually keys on. It was
-    // (message_id, target, status), which two posts sharing one Telegram
-    // message could collide on while neither cleanup path looked at message_id.
+    // Deduplication key matches what every write path actually keys on: one
+    // queued job per target of one publication.
     uniqueIndex("idx_publish_jobs_publication_target_status").on(table.publicationKey, table.target, table.status),
-    index("idx_publish_jobs_message").on(table.messageId, table.target),
     index("idx_publish_jobs_due").on(table.status, table.publishAt, table.nextAttemptAt, table.createdAt),
     index("idx_publish_jobs_lock").on(table.lockedBy, table.lockedAt),
-    index("idx_publish_jobs_post").on(table.postId, table.target, table.status),
+    index("idx_publish_jobs_publication").on(table.publicationId, table.target, table.status),
     index("idx_publish_jobs_updated_at").on(table.updatedAt),
   ],
 );

@@ -309,7 +309,7 @@ function purgeStatements(postId: number, draftId: number, publicationKey: string
     direct("publication_targets", "publication_targets", "publication_key=?", [publicationKey]),
     direct("site_jobs", "site_jobs", "post_id=?", [postId]),
     direct("site_source_items", "site_source_items", "message_id=? AND json_extract(item_json,'$.post_id')=?", [messageId, postId]),
-    direct("publish_jobs", "publish_jobs", "post_id=? OR publication_key=?", [postId, publicationKey]),
+    direct("publish_jobs", "publish_jobs", "publication_id=? OR publication_key=?", [postId, publicationKey]),
     direct("publication_plans", "publication_plans", "post_id=?", [postId]),
     direct("publication_sources", "publication_sources", "post_id=?", [postId]),
     direct("posts", "posts", "post_id=? OR publication_key=?", [postId, publicationKey]),

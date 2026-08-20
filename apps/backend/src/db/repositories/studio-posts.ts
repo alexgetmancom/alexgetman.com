@@ -62,7 +62,7 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
             : db
                 .select({ target: publishJobs.target, status: publishJobs.status, lastError: publishJobs.lastError })
                 .from(publishJobs)
-                .where(eq(publishJobs.postId, draft.postId))
+                .where(eq(publishJobs.publicationId, draft.postId))
                 .all(),
         siteJobs:
           draft.postId == null
@@ -83,7 +83,7 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
       const social = db
         .select({ target: publishJobs.target, status: publishJobs.status, error: publishJobs.lastError, jobId: publishJobs.jobId })
         .from(publishJobs)
-        .where(eq(publishJobs.postId, postId))
+        .where(eq(publishJobs.publicationId, postId))
         .orderBy(desc(publishJobs.jobId))
         .all();
       const latestSocial = new Map<string, (typeof social)[number]>();

@@ -53,7 +53,8 @@ function abandonSiteTarget(tx: AbandonDb, scope: RequeueScope, target: string, n
 }
 
 function abandonSocialTarget(tx: AbandonDb, scope: RequeueScope, target: string, now: string): AbandonResult {
-  const whereRef = scope.postId != null ? eq(publishJobs.postId, scope.postId) : eq(publishJobs.publicationKey, scope.publicationKey);
+  const whereRef =
+    scope.postId != null ? eq(publishJobs.publicationId, scope.postId) : eq(publishJobs.publicationKey, scope.publicationKey);
   const row = tx
     .select({ jobId: publishJobs.jobId, status: publishJobs.status, publicationKey: publishJobs.publicationKey })
     .from(publishJobs)

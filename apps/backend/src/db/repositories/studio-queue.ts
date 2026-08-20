@@ -85,9 +85,9 @@ export function createStudioQueueStore(db: BackendDatabase): StudioQueueStore {
     failedPostIds(postIds: number[]): number[] {
       if (postIds.length === 0) return [];
       const failed = db
-        .select({ postId: publishJobs.postId })
+        .select({ postId: publishJobs.publicationId })
         .from(publishJobs)
-        .where(and(inArray(publishJobs.postId, postIds), inArray(publishJobs.status, ["failed", "verification_required"])))
+        .where(and(inArray(publishJobs.publicationId, postIds), inArray(publishJobs.status, ["failed", "verification_required"])))
         .all();
       const failedSite = db
         .select({ postId: siteJobs.postId })

@@ -129,9 +129,8 @@ describe("Telegram work queue", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
-          postId: 101,
+          publicationId: 101,
           publicationKey: "post:101",
-          messageId: 101,
           target: "telegram_ru",
           status: "failed",
           createdAt: now,

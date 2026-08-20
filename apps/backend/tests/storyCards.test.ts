@@ -269,7 +269,7 @@ describe("text Story cards", () => {
       backendDb.db
         .select()
         .from(publishJobs)
-        .where(eq(publishJobs.postId, postId))
+        .where(eq(publishJobs.publicationId, postId))
         .all()
         .some((job) => job.target.includes("stories")),
     ).toBe(false);

@@ -139,7 +139,8 @@ function requeueSocialTarget(
   source: () => Record<string, unknown>,
   now: string,
 ): RequeueResult {
-  const whereRef = scope.postId != null ? eq(publishJobs.postId, scope.postId) : eq(publishJobs.publicationKey, scope.publicationKey);
+  const whereRef =
+    scope.postId != null ? eq(publishJobs.publicationId, scope.postId) : eq(publishJobs.publicationKey, scope.publicationKey);
   const row = tx
     .select()
     .from(publishJobs)
@@ -169,7 +170,7 @@ function requeueSocialTarget(
 
 function createPublishJob(tx: RequeueDb, scope: RequeueScope, target: string, source: Record<string, unknown>, now: string): RequeueResult {
   const payload = localizeTargetPayload(source, target);
-  if (scope.postId == null || scope.messageId == null) return { target, outcome: "not_retryable", status: null };
+  if (scope.postId == null) return { target, outcome: "not_retryable", status: null };
   // `localizeTargetPayload` always returns its keys, so the `Object.keys(...)
   // === 0` this used to test was never the empty case, and a target whose
   // language the publication has nothing in got a job all the same.
@@ -177,9 +178,8 @@ function createPublishJob(tx: RequeueDb, scope: RequeueScope, target: string, so
   if (refused) return { target, outcome: "not_retryable", status: null, reason: refused };
   tx.insert(publishJobs)
     .values({
-      postId: scope.postId,
+      publicationId: scope.postId,
       publicationKey: scope.publicationKey,
-      messageId: scope.messageId,
       target,
       status: "queued",
       attemptCount: 0,

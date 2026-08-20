@@ -274,18 +274,16 @@ describe("Telegram event consumer", () => {
         .insert(publishJobs)
         .values([
           {
-            postId: 113,
+            publicationId: 113,
             publicationKey: "post:113",
-            messageId: 113,
             target: "threads_en",
             status: "published",
             createdAt: now,
             updatedAt: now,
           },
           {
-            postId: 113,
+            publicationId: 113,
             publicationKey: "post:113",
-            messageId: 113,
             target: "telegram",
             status: "queued",
             publishAt: later,
@@ -355,9 +353,8 @@ describe("Telegram event consumer", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
-          postId: 110,
+          publicationId: 110,
           publicationKey: "post:110",
-          messageId: 110,
           target: "telegram_ru",
           status: "failed",
           lastError: "Telegram timed out",

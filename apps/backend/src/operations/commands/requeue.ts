@@ -42,7 +42,7 @@ function requeuePublicationTx(
 
 /** Targets this publication has ever delivered to, newest job per target. */
 function jobbedTargets(db: UnsafeBackendDb["db"], ref: ResolvedPublicationRef): string[] {
-  const whereRef = ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.publicationKey, ref.publicationKey);
+  const whereRef = ref.postId != null ? eq(publishJobs.publicationId, ref.postId) : eq(publishJobs.publicationKey, ref.publicationKey);
   return [
     ...new Set(
       db

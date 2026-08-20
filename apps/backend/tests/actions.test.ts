@@ -44,9 +44,8 @@ describe("command center actions", () => {
 
       for (const target of ["threads_ru", "threads_en"]) {
         const id = enqueuePublishJobTx(backendDb.db, {
-          postId: 52,
+          publicationId: 52,
           publicationKey: "post:52",
-          messageId: 52,
           target,
           payload: source,
         });
@@ -65,7 +64,7 @@ describe("command center actions", () => {
           payloadJson: publishJobs.payloadJson,
         })
         .from(publishJobs)
-        .where(eq(publishJobs.postId, 52))
+        .where(eq(publishJobs.publicationId, 52))
         .orderBy(asc(publishJobs.target))
         .all();
       const payloads = Object.fromEntries(jobs.map((job) => [job.target, job.payloadJson ?? {}]));
@@ -79,7 +78,7 @@ describe("command center actions", () => {
         text: "English text",
         media: [{ type: "IMAGE", fileId: "en-photo" }],
       });
-      expect(backendDb.db.select({ count: count() }).from(publishJobs).where(eq(publishJobs.postId, 52)).get()?.count).toBe(2);
+      expect(backendDb.db.select({ count: count() }).from(publishJobs).where(eq(publishJobs.publicationId, 52)).get()?.count).toBe(2);
     } finally {
       backendDb.close();
     }
@@ -152,9 +151,8 @@ describe("command center actions", () => {
         .run();
       backendDb.db.insert(publicationSources).values({ postId: 9, itemJson: source, createdAt: now, updatedAt: now }).run();
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        postId: 9,
+        publicationId: 9,
         publicationKey: "post:9",
-        messageId: 9,
         target: "threads_en",
         payload: source,
       });
@@ -205,9 +203,8 @@ describe("command center actions", () => {
         .run();
       backendDb.db.insert(publicationSources).values({ postId: 19, itemJson: source, createdAt: now, updatedAt: now }).run();
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        postId: 19,
+        publicationId: 19,
         publicationKey: "post:19",
-        messageId: 19,
         target: "threads_en",
         payload: source,
       });
@@ -274,9 +271,8 @@ describe("command center actions", () => {
         .run();
       backendDb.db.insert(publicationSources).values({ postId: 21, itemJson: source, createdAt: now, updatedAt: now }).run();
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        postId: 21,
+        publicationId: 21,
         publicationKey: "post:21",
-        messageId: 21,
         target: "threads_en",
         payload: source,
       });
@@ -313,9 +309,8 @@ describe("command center actions", () => {
         .values({ postId: 20, itemJson: { text: "RU", text_en: "EN" }, createdAt: now, updatedAt: now })
         .run();
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        postId: 20,
+        publicationId: 20,
         publicationKey: "post:20",
-        messageId: 20,
         target: "threads_en",
         payload: { text: "RU", text_en: "EN" },
       });
@@ -474,9 +469,8 @@ describe("command center actions", () => {
         .values({ postId: 61, itemJson: { text: "RU", text_en: "EN" }, createdAt: now, updatedAt: now })
         .run();
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        postId: 61,
+        publicationId: 61,
         publicationKey: "post:61",
-        messageId: 61,
         target: "threads_en",
         payload: { text: "RU", text_en: "EN" },
       });
@@ -509,9 +503,8 @@ describe("command center actions", () => {
         .values({ postId: 62, itemJson: { text: "RU", text_en: "EN" }, createdAt: now, updatedAt: now })
         .run();
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        postId: 62,
+        publicationId: 62,
         publicationKey: "post:62",
-        messageId: 62,
         target: "threads_en",
         payload: { text: "RU", text_en: "EN" },
       });

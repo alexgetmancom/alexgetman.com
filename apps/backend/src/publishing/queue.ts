@@ -12,7 +12,7 @@ import { log } from "../foundation/logger.js";
 import { recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
 import { classifyPublishError, normalizePublishResult, type PublishResult } from "./errors.js";
 import { failedJobTransition, mayHaveReachedAudience, reconciliationTransition } from "./job-policy.js";
-import { refreshPublicationStatus } from "./publication-status.js";
+import { refreshPublicationOwner } from "./publication-owner.js";
 import {
   deleteSupersededJobs,
   durationSince,
@@ -31,9 +31,8 @@ export const PUBLISH_CLAIM_LIMIT = 20;
 
 export type ClaimedPublishJob = {
   jobId: number;
-  postId: number;
+  publicationId: number;
   publicationKey: string;
-  messageId: number;
   target: string;
   payload: JsonObject;
   attemptCount: number;
@@ -126,9 +125,8 @@ export function claimPublishJob(
     );
     return {
       jobId: row.jobId,
-      postId: row.postId,
+      publicationId: row.publicationId,
       publicationKey,
-      messageId: row.messageId,
       target: row.target,
       payload: parsePayload(row.payloadJson),
       attemptCount: row.attemptCount,
@@ -217,7 +215,7 @@ export function recoverStalePublishJobs(backendDb: BackendDb, maxLockAgeSeconds 
       );
     }
   });
-  for (const job of stale) refreshPublicationStatus(backendDb, job.postId);
+  for (const job of stale) refreshPublicationOwner(backendDb, job.publicationKey);
   return stale.length;
 }
 
@@ -253,7 +251,7 @@ export function completePublishJob(
       now,
       lockId,
     );
-    if (!retry) refreshPublicationStatus(backendDb, job.postId);
+    if (!retry) refreshPublicationOwner(backendDb, job.publicationKey);
     return;
   }
   const reconciliationIds = externalIds(result);
@@ -272,7 +270,7 @@ export function completePublishJob(
       now,
       lockId,
     );
-    if (!retry) refreshPublicationStatus(backendDb, job.postId);
+    if (!retry) refreshPublicationOwner(backendDb, job.publicationKey);
     return;
   }
   const normalized = normalizePublishResult(result);
@@ -335,7 +333,7 @@ export function completePublishJob(
       url: normalized.url,
       publishedAt: now,
     });
-  refreshPublicationStatus(backendDb, job.postId);
+  refreshPublicationOwner(backendDb, job.publicationKey);
 }
 
 function settleRetryableIds(
@@ -450,7 +448,7 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
   });
   if (!settled) return;
   if (errorClass === "auth") recordAuthFailure(backendDb, job.target);
-  if (!shouldRetry) refreshPublicationStatus(backendDb, job.postId);
+  if (!shouldRetry) refreshPublicationOwner(backendDb, job.publicationKey);
 }
 
 export function requirePublishVerification(backendDb: BackendDb, jobId: number, error: unknown, lockId?: string): boolean {
@@ -493,7 +491,7 @@ export function requirePublishVerification(backendDb: BackendDb, jobId: number, 
     );
     updated = true;
   });
-  if (updated) refreshPublicationStatus(backendDb, job.postId);
+  if (updated) refreshPublicationOwner(backendDb, job.publicationKey);
   return updated;
 }
 
@@ -556,16 +554,15 @@ export function forcePublishJobVerification(
     });
     return true;
   });
-  if (updated) refreshPublicationStatus(backendDb, job.postId);
+  if (updated) refreshPublicationOwner(backendDb, job.publicationKey);
   return updated;
 }
 
 export function enqueuePublishJobTx(db: UnsafeBackendDb["db"], input: EnqueuePublishJobInput): number {
   const now = new Date().toISOString();
   const inputRecord = {
-    postId: input.postId,
+    publicationId: input.publicationId,
     publicationKey: input.publicationKey,
-    messageId: input.messageId,
     target: input.target,
     status: "queued",
     publishAt: input.publishAt ?? null,
@@ -582,7 +579,7 @@ export function enqueuePublishJobTx(db: UnsafeBackendDb["db"], input: EnqueuePub
     .values(inputRecord)
     .onConflictDoUpdate({
       target: [publishJobs.publicationKey, publishJobs.target, publishJobs.status],
-      set: { messageId: inputRecord.messageId, publishAt: inputRecord.publishAt, payloadJson: inputRecord.payloadJson, updatedAt: now },
+      set: { publishAt: inputRecord.publishAt, payloadJson: inputRecord.payloadJson, updatedAt: now },
     })
     .returning({ jobId: publishJobs.jobId })
     .get();
@@ -591,10 +588,9 @@ export function enqueuePublishJobTx(db: UnsafeBackendDb["db"], input: EnqueuePub
 }
 
 type EnqueuePublishJobInput = {
-  messageId: number;
   target: string;
   payload: JsonObject;
-  postId: number;
+  publicationId: number;
   publicationKey: string;
   publishAt?: string | null;
 };

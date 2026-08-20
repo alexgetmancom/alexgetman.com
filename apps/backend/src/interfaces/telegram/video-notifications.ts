@@ -241,7 +241,7 @@ function completionTargets(backendDb: BackendDb, ref: string | null): Array<{ ta
   const jobs = unsafeDb(backendDb)
     .db.select({ target: publishJobs.target, status: publishJobs.status, error: publishJobs.lastError, jobId: publishJobs.jobId })
     .from(publishJobs)
-    .where(eq(publishJobs.postId, publication.id))
+    .where(eq(publishJobs.publicationId, publication.id))
     .orderBy(desc(publishJobs.jobId))
     .all();
   const latest = new Map<string, (typeof jobs)[number]>();

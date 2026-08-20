@@ -25,7 +25,7 @@ describe("site parity", () => {
     try {
       const draft = createDraftFromMessage(backendDb, 1, { text: "Русский заголовок", textEn: "English title", media: [], entities: [] });
       const postId = publishDraftToQueue(backendDb, draft);
-      backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
+      backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE publication_id=?").run(postId);
       backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
       refreshPublicationStatus(backendDb, postId);
       const urls = publishContentIndex(config, backendDb);

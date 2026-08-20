@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { publicationTargets, publishJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
-import { refreshPublicationStatus } from "../publishing/publication-status.js";
+import { refreshPublicationOwner } from "../publishing/publication-owner.js";
 import type { ResolvedPublicationRef } from "./publication-ref.js";
 
 type SettleInput = {
@@ -97,6 +97,6 @@ export function settleAmbiguousTarget(backendDb: BackendDb, input: SettleInput):
     return true;
   });
   if (!settled) throw new Error(`${input.target} left verification_required before this could settle it; read its state again`);
-  refreshPublicationStatus(backendDb, input.ref.postId ?? job.postId);
+  refreshPublicationOwner(backendDb, job.publicationKey);
   return { ...plan, applied: true };
 }

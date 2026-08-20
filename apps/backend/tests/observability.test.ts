@@ -104,9 +104,8 @@ describe("observability", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
-          postId: 1,
+          publicationId: 1,
           publicationKey: "post:stale",
-          messageId: 1,
           target: "threads_ru",
           status: "publishing",
           lockedAt: "2000-01-01T00:00:00.000Z",
@@ -156,9 +155,8 @@ describe("observability", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
-          postId: 8,
+          publicationId: 8,
           publicationKey: "post:terminal",
-          messageId: 8,
           target: "telegram_stories",
           status: "failed",
           lastError: "MEDIA_FILE_INVALID",

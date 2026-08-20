@@ -145,22 +145,23 @@ export async function runDeliveryPublishCycle(
     }
   }
   const jobs = claimedByIndex.filter((job): job is ClaimedPublishJob => job != null);
-  const postIds = [...new Set(jobs.map((job) => job.postId).filter((id): id is number => id != null))];
-  for (const postId of postIds) {
+  // The job already carries the publication's ref. Rebuilding one as `post:{id}`
+  // would journal an article's settlement against a post that does not exist.
+  for (const publicationKey of new Set(jobs.map((job) => job.publicationKey).filter(Boolean))) {
     try {
       recordDomainEvent(backendDb.events, {
-        ref: publicationRef("post", postId),
-        type: "delivery.post.settled",
+        ref: publicationKey,
+        type: "delivery.publication.settled",
         severity: "info",
-        message: `Delivery cycle settled post #${postId}`,
-        details: { post_id: postId },
+        message: `Delivery cycle settled ${publicationKey}`,
+        details: { publication_key: publicationKey },
         cooldownSeconds: 10,
       });
     } catch (eventError) {
       // A domain-event write failure here must not stop the loop from settling
-      // the remaining posts in this cycle; see the finalization-failure event
-      // above, which is defensive for the same reason.
-      log("warn", "delivery post-settlement event journal failed", { postId, error: String(eventError) });
+      // the rest of this cycle; see the finalization-failure event above, which
+      // is defensive for the same reason.
+      log("warn", "delivery settlement event journal failed", { publicationKey, error: String(eventError) });
     }
   }
   recordWorkerState(backendDb, "queue", { claimed: jobs.length });
@@ -190,7 +191,7 @@ type DeliveryPhase = "validate" | "prepare" | "provider.publish" | "provider.ver
 
 async function timedDeliveryPhase<T>(
   backendDb: BackendDb,
-  job: { jobId: number; postId: number; publicationKey: string; target: string; attemptCount: number; lockId: string },
+  job: { jobId: number; publicationId: number; publicationKey: string; target: string; attemptCount: number; lockId: string },
   phase: DeliveryPhase,
   timings: Record<string, number>,
   work: () => Promise<T>,
@@ -225,7 +226,7 @@ async function timedDeliveryPhase<T>(
     timings[timingKey] = durationMs;
     try {
       recordDomainEvent(backendDb.events, {
-        ref: publicationRef("post", job.postId),
+        ref: publicationRef("post", job.publicationId),
         target: job.target,
         type: "publish.job.phase",
         severity: "info",
@@ -247,7 +248,7 @@ async function timedDeliveryPhase<T>(
     timings[timingKey] = Date.now() - startedAt;
     try {
       recordDomainEvent(backendDb.events, {
-        ref: publicationRef("post", job.postId),
+        ref: publicationRef("post", job.publicationId),
         target: job.target,
         type: "publish.job.phase",
         severity: "error",

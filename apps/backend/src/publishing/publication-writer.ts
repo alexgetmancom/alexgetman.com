@@ -85,7 +85,7 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
     .onConflictDoUpdate({ target: siteSourceItems.messageId, set: { itemJson: plan.payload, updatedAt: plan.now } })
     .run();
   tx.delete(publishJobs)
-    .where(and(eq(publishJobs.postId, plan.postId), inArray(publishJobs.status, ["queued", "failed"])))
+    .where(and(eq(publishJobs.publicationId, plan.postId), inArray(publishJobs.status, ["queued", "failed"])))
     .run();
   tx.delete(siteJobs)
     .where(and(eq(siteJobs.postId, plan.postId), inArray(siteJobs.status, ["queued", "failed"])))
@@ -101,7 +101,7 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
       .from(publishJobs)
       .where(
         and(
-          eq(publishJobs.postId, plan.postId),
+          eq(publishJobs.publicationId, plan.postId),
           inArray(publishJobs.status, ["publishing", "published", "skipped", "verification_required"]),
         ),
       )
@@ -121,9 +121,8 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
     const publishAt = publishAtForTarget(plan, target);
     if (enabled && publishAt != null && !isSiteTarget(target) && !finalTargets.has(target))
       enqueuePublishJobTx(tx, {
-        postId: plan.postId,
+        publicationId: plan.postId,
         publicationKey: plan.publicationKey,
-        messageId: plan.messageId,
         target,
         payload: localizeTargetPayload(plan.payload, target),
         publishAt,

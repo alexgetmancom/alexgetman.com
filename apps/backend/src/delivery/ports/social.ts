@@ -88,7 +88,7 @@ async function createStoryMedia(job: ClaimedPublishJob, media: ReturnType<typeof
   // re-downloading or re-transcoding an unchanged source video.
   if (source.storyLocalPath) return [source];
   const locale = job.payload.locale === "ru" ? "ru" : "en";
-  const draftId = Number(job.payload.draftId ?? job.postId ?? job.jobId);
+  const draftId = Number(job.payload.draftId ?? job.publicationId ?? job.jobId);
   return generateStoryMedia([source], Number.isSafeInteger(draftId) ? draftId : job.jobId, locale, config);
 }
 
@@ -107,7 +107,7 @@ function mediaCacheKey(job: ClaimedPublishJob, media: ReturnType<typeof payloadM
 
 function storyMediaCacheKey(job: ClaimedPublishJob, media: ReturnType<typeof payloadMedia>): string {
   return JSON.stringify({
-    draft: job.payload.draftId ?? job.postId,
+    draft: job.payload.draftId ?? job.publicationId,
     locale: job.payload.locale ?? "en",
     media: media.map((item) => [item.fileId, item.localPath, item.type]),
   });

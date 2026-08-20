@@ -69,8 +69,7 @@ describe("auth circuit breaker", () => {
     try {
       const enqueue = (messageId: number) =>
         enqueuePublishJobTx(backendDb.db, {
-          messageId,
-          postId: messageId,
+          publicationId: messageId,
           publicationKey: `post:${messageId}`,
           target: "test_platform",
           payload: { text: "hi" } as JsonObject,

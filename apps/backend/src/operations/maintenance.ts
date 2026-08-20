@@ -460,7 +460,7 @@ function publicationStateMismatches(backendDb: BackendDb): PublicationStateMisma
        FROM publications p
        LEFT JOIN publication_plans pp ON pp.post_id=p.post_id
        LEFT JOIN (
-         SELECT post_id,status FROM publish_jobs
+         SELECT publication_id AS post_id,status FROM publish_jobs
          UNION ALL
          SELECT post_id,status FROM site_jobs
        ) x ON x.post_id=p.post_id

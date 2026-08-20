@@ -10,7 +10,7 @@ import { PUBLISH_BACKOFF_BASE_SECONDS, PUBLISH_BACKOFF_MAX_SECONDS, PUBLISH_LOCK
 import { ALERT_COOLDOWN_SECONDS } from "../observability/alerts.js";
 import { isTargetAuthBlocked, recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
 import { classifyPublishError, nextRetryAt } from "../publishing/errors.js";
-import { refreshPublicationStatus } from "../publishing/publication-status.js";
+import { refreshPublicationOwner } from "../publishing/publication-owner.js";
 import { PUBLISH_CLAIM_LIMIT, workerId } from "../publishing/queue.js";
 import { refreshVideoDraftStatus } from "../publishing/video-data.js";
 import { verifyPlatformPublication } from "./platform-adapters.js";
@@ -132,7 +132,7 @@ export async function runPublicationReconciliation(
       return true;
     });
     if (!confirmed) continue;
-    refreshPublicationStatus(backendDb, row.job.postId);
+    refreshPublicationOwner(backendDb, row.target.publicationKey);
     recordDomainEvent(backendDb.events, {
       ref: row.target.publicationKey,
       target: row.target.target,

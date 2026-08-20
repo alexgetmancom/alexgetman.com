@@ -30,7 +30,7 @@ export function publicationScope(backendDb: BackendDb, ref: ResolvedPublicationR
 
 /** The publication's own jobs, by whichever identity it has. */
 function jobsOf(ref: ResolvedPublicationRef) {
-  return ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.publicationKey, ref.publicationKey);
+  return ref.postId != null ? eq(publishJobs.publicationId, ref.postId) : eq(publishJobs.publicationKey, ref.publicationKey);
 }
 
 export function scopePlan(

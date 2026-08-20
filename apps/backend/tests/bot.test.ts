@@ -144,7 +144,7 @@ describe("Telegram controller flow", () => {
       scheduled_at: ruAt.toISOString(),
       scheduled_en_at: enAt.toISOString(),
     });
-    const jobs = backendDb.sqlite.prepare("SELECT target, publish_at FROM publish_jobs WHERE post_id=?").all(postId) as Array<{
+    const jobs = backendDb.sqlite.prepare("SELECT target, publish_at FROM publish_jobs WHERE publication_id=?").all(postId) as Array<{
       target: string;
       publish_at: string;
     }>;
@@ -217,12 +217,12 @@ describe("Telegram controller flow", () => {
     backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Repeat", textEn: "Repeat", entities: [], media: [] });
     const postId = publishDraftToQueue(backendDb, draftId);
-    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=? AND target='threads_en'").run(postId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE publication_id=? AND target='threads_en'").run(postId);
 
     publishDraftToQueue(backendDb, draftId);
 
     expect(
-      backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE post_id=? AND target='threads_en'").get(postId),
+      backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE publication_id=? AND target='threads_en'").get(postId),
     ).toEqual({ count: 1 });
   });
 
@@ -270,7 +270,7 @@ describe("Telegram controller flow", () => {
       enAt: null,
     });
     const jobs = backendDb.sqlite
-      .prepare("SELECT target, publish_at FROM publish_jobs WHERE post_id=? ORDER BY target")
+      .prepare("SELECT target, publish_at FROM publish_jobs WHERE publication_id=? ORDER BY target")
       .all(postId) as Array<{
       target: string;
       publish_at: string;
@@ -297,7 +297,7 @@ describe("Telegram controller flow", () => {
     const ruAt = new Date(Date.now() + 60_000);
     const postId = publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt, enAt: null });
 
-    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE publication_id=?").run(postId);
     backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
     refreshPublicationStatus(backendDb, postId);
 
@@ -306,7 +306,9 @@ describe("Telegram controller flow", () => {
 
     const enAt = new Date(Date.now() + 120_000);
     publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt, enAt });
-    expect(backendDb.sqlite.prepare("SELECT publish_at FROM publish_jobs WHERE post_id=? AND target='threads_en'").get(postId)).toEqual({
+    expect(
+      backendDb.sqlite.prepare("SELECT publish_at FROM publish_jobs WHERE publication_id=? AND target='threads_en'").get(postId),
+    ).toEqual({
       publish_at: enAt.toISOString(),
     });
   });
@@ -317,7 +319,7 @@ describe("Telegram controller flow", () => {
     const postId = publishDraftToQueue(backendDb, draftId);
     expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "scheduled" });
 
-    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE publication_id=?").run(postId);
     backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
     refreshPublicationStatus(backendDb, postId);
 
@@ -329,14 +331,14 @@ describe("Telegram controller flow", () => {
     backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Failure", textEn: "Failure", entities: [], media: [] });
     const postId = publishDraftToQueue(backendDb, draftId);
-    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
-    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='failed' WHERE post_id=? AND target='threads_ru'").run(postId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE publication_id=?").run(postId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='failed' WHERE publication_id=? AND target='threads_ru'").run(postId);
     backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
     refreshPublicationStatus(backendDb, postId);
     expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "failed" });
 
     cancelDraft(backendDb, draftId);
-    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=?").run(postId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE publication_id=?").run(postId);
     refreshPublicationStatus(backendDb, postId);
     expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "cancelled" });
   });
@@ -352,7 +354,7 @@ describe("Telegram controller flow", () => {
     cancelDraft(backendDb, draftId);
     expect(backendDb.sqlite.prepare("SELECT post_id FROM drafts WHERE id=?").get(draftId)).toEqual({ post_id: null });
     expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publications WHERE post_id=?").get(postId)).toEqual({ count: 0 });
-    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE post_id=?").get(postId)).toEqual({ count: 0 });
+    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE publication_id=?").get(postId)).toEqual({ count: 0 });
     expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM post_locales WHERE post_id=?").get(postId)).toEqual({ count: 0 });
   });
 
@@ -402,7 +404,7 @@ describe("Telegram controller flow", () => {
       .prepare("UPDATE drafts SET media_en_json=? WHERE id=?")
       .run(JSON.stringify([{ type: "photo", file_id: "en-image" }]), draftId);
     const postId = publishDraftToQueue(backendDb, draftId);
-    const jobs = backendDb.sqlite.prepare("SELECT target,payload_json FROM publish_jobs WHERE post_id=?").all(postId) as Array<{
+    const jobs = backendDb.sqlite.prepare("SELECT target,payload_json FROM publish_jobs WHERE publication_id=?").all(postId) as Array<{
       target: string;
       payload_json: string;
     }>;
@@ -506,10 +508,10 @@ describe("Telegram controller flow", () => {
     backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Progress", textEn: "Progress", entities: [], media: [] });
     const postId = publishDraftToQueue(backendDb, draftId);
-    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE post_id=? AND target='telegram'").run(postId);
-    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='publishing' WHERE post_id=? AND target='threads_en'").run(postId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE publication_id=? AND target='telegram'").run(postId);
+    backendDb.sqlite.prepare("UPDATE publish_jobs SET status='publishing' WHERE publication_id=? AND target='threads_en'").run(postId);
     backendDb.sqlite
-      .prepare("UPDATE publish_jobs SET status='failed', last_error='rate limit' WHERE post_id=? AND target='threads_ru'")
+      .prepare("UPDATE publish_jobs SET status='failed', last_error='rate limit' WHERE publication_id=? AND target='threads_ru'")
       .run(postId);
 
     const progress = postProgress(backendDb, draftId, true);

@@ -16,9 +16,8 @@ describe("dashboard render cache", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
-          postId: 1,
+          publicationId: 1,
           publicationKey: "post:cache",
-          messageId: 1,
           target: "telegram",
           status: "failed",
           payloadJson: {},
