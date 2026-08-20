@@ -37,11 +37,22 @@ async function capture(backendDb: ReturnType<typeof openBackendDb>, message: Rec
 }
 
 describe("bot intake", () => {
-  it("captures the material first and asks what it is, without choosing", async () => {
+  it("makes a short text a post without asking, and leaves the way back on the card", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const result = await capture(backendDb, { text: "A long enough thought." });
-      expect(result.handled).toBe(true);
+      const result = await capture(backendDb, { text: "Short enough to be obvious." });
+      expect(result.effects[0]).toMatchObject({ card: { kind: "post" } });
+      expect(buttonRows(result.effects[0] as never)).toContain("📄 Actually, this is an article");
+      expect(backendDb.sqlite.query("SELECT count(*) AS count FROM drafts").get()).toEqual({ count: 1 });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("asks once the text is long enough for both readings to be live", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const result = await capture(backendDb, { text: "x".repeat(901) });
       expect(getConversationState(backendDb, 42, "intake")?.step).toBe("choose");
       expect(buttonRows(result.effects[0] as never)).toEqual(["📝 Post", "📄 Article", "← Cancel"]);
     } finally {
@@ -49,39 +60,53 @@ describe("bot intake", () => {
     }
   });
 
-  it("shows the size rather than deciding by it: a short text still offers both kinds", async () => {
+  it("takes a captioned video as an open question and a bare one as a video publication", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const short = await capture(backendDb, { text: "Tiny." });
-      expect((short.effects[0] as { text: string }).text).toContain("5 characters");
-      expect(buttonRows(short.effects[0] as never)).toContain("📄 Article");
-      const long = await capture(backendDb, { text: "x".repeat(4000) });
-      expect(buttonRows(long.effects[0] as never)).toContain("📝 Post");
+      const captioned = await capture(backendDb, {
+        document: { file_id: "v1", file_name: "clip.mp4", mime_type: "video/mp4" },
+        caption: "look",
+      });
+      expect(buttonRows(captioned.effects[0] as never)).toEqual(["📝 Post", "🎬 Video publication", "← Cancel"]);
+      const bare = await capture(backendDb, { document: { file_id: "v2", file_name: "clip.mp4", mime_type: "video/mp4" } });
+      expect(getConversationState(backendDb, 42, "intake")?.step).toBe("video_locale");
+      expect(buttonRows(bare.effects[0] as never)).toContain("📝 Actually, this is a post");
     } finally {
       backendDb.close();
     }
   });
 
-  it("offers a video publication only when a video actually arrived, and never an Article for it", async () => {
+  it("does not download a bare video until the language is answered", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      const withVideo = await capture(backendDb, { video: { file_id: "v1", width: 1, height: 1, duration: 1 }, caption: "clip" });
-      expect(buttonRows(withVideo.effects[0] as never)).toEqual(["📝 Post", "🎬 Video publication", "← Cancel"]);
-      const withoutVideo = await capture(backendDb, { text: "no file here" });
-      expect(buttonRows(withoutVideo.effects[0] as never)).not.toContain("🎬 Video publication");
+      await capture(backendDb, { document: { file_id: "v3", file_name: "clip.mp4", mime_type: "video/mp4" } });
+      expect(backendDb.sqlite.query("SELECT count(*) AS count FROM studio_media_assets").get()).toEqual({ count: 0 });
     } finally {
       backendDb.close();
     }
   });
 
-  it("offers both kinds for a markdown file, because a file can be a long post", async () => {
+  it("makes a markdown file an article without asking, and offers the post reading back", async () => {
     const backendDb = openBackendDb(":memory:");
     const restore = stubDownload(article);
     try {
       const result = await capture(backendDb, { document: { file_id: "f1", file_name: "post.md" } });
-      expect(buttonRows(result.effects[0] as never)).toEqual(["📝 Post", "📄 Article", "← Cancel"]);
+      expect(getConversationState(backendDb, 42, "intake")?.step).toBe("article_review");
+      expect(buttonRows(result.effects[0] as never)).toContain("📝 Actually, this is a post");
     } finally {
       restore();
+      backendDb.close();
+    }
+  });
+
+  it("cancels the guessed post draft when the material turns out to be an article", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      await capture(backendDb, { text: "A title line\n\nand a body." });
+      await applyIntakeKind(ctxWith({}), backendDb, config, "article");
+      expect(backendDb.sqlite.query("SELECT status FROM drafts").all()).toEqual([{ status: "cancelled" }]);
+      expect(getConversationState(backendDb, 42, "intake")?.step).toBe("article_review");
+    } finally {
       backendDb.close();
     }
   });
@@ -89,7 +114,7 @@ describe("bot intake", () => {
   it("takes the first line as the title when the material has no heading, and shows it", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      await capture(backendDb, { text: "Why delivery settles\n\nThe body of it." });
+      await capture(backendDb, { text: `Why delivery settles\n\n${"x".repeat(901)}` });
       const [review] = await applyIntakeKind(ctxWith({}), backendDb, config, "article");
       expect((review as { text: string }).text).toContain("Why delivery settles");
       expect(getConversationState(backendDb, 42, "intake")?.step).toBe("article_review");
@@ -117,11 +142,11 @@ describe("bot intake", () => {
   it("turns the captured material into a post draft and closes the intake", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      await capture(backendDb, { text: "an ordinary post" });
+      await capture(backendDb, { text: "x".repeat(901) });
       const effects = await applyIntakeKind(ctxWith({}), backendDb, config, "post");
       expect(effects[0]).toMatchObject({ card: { kind: "post" } });
       expect(getConversationState(backendDb, 42, "intake")).toBeNull();
-      expect(backendDb.sqlite.query("SELECT text_ru FROM drafts").all()).toEqual([{ text_ru: "an ordinary post" }]);
+      expect(backendDb.sqlite.query("SELECT text_ru FROM drafts").all()).toEqual([{ text_ru: "x".repeat(901) }]);
     } finally {
       backendDb.close();
     }

@@ -8,6 +8,7 @@ import { t } from "../foundation/i18n/index.js";
 import type { StudioLocale } from "../foundation/locale.js";
 import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
 import { publishArticle } from "../publishing/article-publish.js";
+import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
 import { clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
 import { cancelPromptKeyboard } from "./dialog-ui.js";
@@ -18,6 +19,14 @@ import { attachVideoAsset } from "./video-conversation.js";
 import { saveVideoState } from "./video-ui.js";
 
 const MARKDOWN_EXTENSIONS = [".md", ".markdown", ".mdx"];
+
+/** Text this short is a post here. Not a theory about writing -- the operator's
+ * own posts run under this, and their articles run well over it. Above it the
+ * two are equally likely, so the question is asked instead of guessed.
+ *
+ * Every guess below is undone by one button on the card it produced, which is
+ * what makes guessing acceptable at all: nothing decided here is silent. */
+const POST_WITHOUT_ASKING = 900;
 
 export const INTAKE_CANCEL = "intake_cancel";
 export const INTAKE_KIND_PREFIX = "intake_kind:";
@@ -65,7 +74,19 @@ export async function handleIntakeMessage(ctx: Context, backendDb: BackendDb, co
     data: captured as unknown as Record<string, unknown>,
     controlMessageId: null,
   });
+  const decided = decideKind(captured);
+  if (decided) return { handled: true, effects: await applyIntakeKind(ctx, backendDb, config, decided, "reply") };
   return { handled: true, effects: [chooseKindScreen(locale, captured)] };
+}
+
+/** The kind the material plainly is, or null when both readings are live.
+ * Every rule here reads something the material carries, never how it reads. */
+function decideKind(captured: Captured): MaterialKind | null {
+  if (captured.markdown !== null) return "article";
+  // A video file the operator sent without a caption: the caption is a post's
+  // text, and a video publication gets its title and description in the wizard.
+  if (captured.video) return captured.message.text.trim() ? null : "video";
+  return captured.message.text.length <= POST_WITHOUT_ASKING ? "post" : null;
 }
 
 /** Acts on the kind the operator chose for the captured material. */
@@ -74,14 +95,36 @@ export async function applyIntakeKind(
   backendDb: BackendDb,
   config: BackendConfig,
   kind: MaterialKind,
+  mode: "reply" | "edit" = "edit",
 ): Promise<PublicationEffect[]> {
   const actorId = Number(ctx.from?.id);
   const locale = settingsService(backendDb).locale(actorId);
   const captured = capturedFrom(backendDb, actorId);
+  const asked = mode === "edit";
+  // Correcting a guessed post takes its draft with it: the material is about to
+  // become something else, and two records of one thing is the defect.
+  const madePost = getConversationState(backendDb, actorId, "intake");
+  if (kind !== "post" && madePost?.step === "post_made" && madePost.draftId != null)
+    createStudioServices(backendDb, config).posts.cancel(actorId, madePost.draftId);
 
   if (kind === "post") {
-    clearConversationState(backendDb, actorId, "intake");
-    return createPostFromMessage(backendDb, config, actorId, captured.message);
+    const effects = await createPostFromMessage(backendDb, config, actorId, captured.message);
+    if (asked) {
+      clearConversationState(backendDb, actorId, "intake");
+      return effects;
+    }
+    // Guessed, so the card carries its own correction, and the material stays
+    // captured until it is used or the next intake replaces it.
+    const draftId = (effects[0] as { card?: { draftId?: number } }).card?.draftId ?? null;
+    saveConversationState(backendDb, actorId, {
+      kind: "intake",
+      draftId,
+      step: "post_made",
+      data: captured as unknown as Record<string, unknown>,
+      controlMessageId: null,
+    });
+    appendEscape(effects[0], t(locale, "intake.rather-article"), `${INTAKE_KIND_PREFIX}article`);
+    return effects;
   }
 
   if (kind === "article") {
@@ -93,59 +136,57 @@ export async function applyIntakeKind(
       data: { ...(captured as unknown as Record<string, unknown>) },
       controlMessageId: null,
     });
+    const keyboard = new InlineKeyboard().text(t(locale, "intake.article-publish"), `${INTAKE_KIND_PREFIX}article_confirm`).row();
+    if (!asked) keyboard.text(t(locale, "intake.rather-post"), `${INTAKE_KIND_PREFIX}post`).row();
+    keyboard.text(t(locale, "common.cancel"), INTAKE_CANCEL);
     return [
       {
         type: "screen",
-        mode: "edit",
+        mode,
         text: t(locale, "intake.article-review", { title, characters: String(characters) }),
-        options: {
-          reply_markup: new InlineKeyboard()
-            .text(t(locale, "intake.article-publish"), `${INTAKE_KIND_PREFIX}article_confirm`)
-            .row()
-            .text(t(locale, "common.cancel"), INTAKE_CANCEL),
-        },
+        options: { reply_markup: keyboard },
       },
     ];
   }
 
-  // A video publication needs the file itself, which is fetched now rather than
-  // when it arrived: nothing is downloaded for material that turns out to be a
-  // post carrying the same clip.
   if (!captured.video) throw new Error("no video was captured for a video publication");
-  const stored = await storeTelegramVideo(ctx, backendDb, config, actorId, captured.video);
   saveConversationState(backendDb, actorId, {
     kind: "intake",
     draftId: null,
     step: "video_locale",
-    data: { ...(captured as unknown as Record<string, unknown>), assetId: stored.assetId },
+    data: captured as unknown as Record<string, unknown>,
     controlMessageId: null,
   });
-  return [
-    {
-      type: "screen",
-      mode: "edit",
-      text: t(locale, "video.choose-language"),
-      options: {
-        reply_markup: new InlineKeyboard()
-          .text(t(locale, "video.language-ru"), `${INTAKE_LOCALE_PREFIX}ru`)
-          .text(t(locale, "video.language-en"), `${INTAKE_LOCALE_PREFIX}en`)
-          .row()
-          .text(t(locale, "common.cancel"), INTAKE_CANCEL),
-      },
-    },
-  ];
+  const keyboard = new InlineKeyboard()
+    .text(t(locale, "video.language-ru"), `${INTAKE_LOCALE_PREFIX}ru`)
+    .text(t(locale, "video.language-en"), `${INTAKE_LOCALE_PREFIX}en`)
+    .row();
+  if (!asked) keyboard.text(t(locale, "intake.rather-post"), `${INTAKE_KIND_PREFIX}post`).row();
+  keyboard.text(t(locale, "common.cancel"), INTAKE_CANCEL);
+  return [{ type: "screen", mode, text: t(locale, "video.choose-language"), options: { reply_markup: keyboard } }];
 }
 
-/** Hands the stored video to the video wizard in the chosen language. */
+/** Adds a correction button to the card a guess produced. */
+function appendEscape(effect: PublicationEffect | undefined, label: string, callback: string): void {
+  const markup = (effect as { options?: { reply_markup?: InlineKeyboard } } | undefined)?.options?.reply_markup;
+  markup?.row().text(label, callback);
+}
+
+/** Stores the video and hands it to the wizard in the chosen language. The file
+ * is fetched only here: material corrected back to a post before this point
+ * costs no download and leaves no asset behind. */
 export async function applyIntakeVideoLocale(
+  ctx: Context,
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,
   videoLocale: "ru" | "en",
 ): Promise<PublicationEffect[]> {
   const state = getConversationState(backendDb, actorId, "intake");
-  const assetId = Number(state?.data.assetId);
-  if (state?.step !== "video_locale" || !Number.isSafeInteger(assetId)) throw new Error("no stored video is waiting for a language");
+  if (state?.step !== "video_locale") throw new Error("no video is waiting for a language");
+  const captured = capturedFrom(backendDb, actorId);
+  if (!captured.video) throw new Error("no video was captured for a video publication");
+  const { assetId } = await storeTelegramVideo(ctx, backendDb, config, actorId, captured.video);
   clearConversationState(backendDb, actorId, "intake");
   const session = saveVideoState(backendDb, actorId, {
     draftId: null,

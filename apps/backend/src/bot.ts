@@ -154,7 +154,7 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
         const choice = callbackData(ctx).slice(INTAKE_LOCALE_PREFIX.length);
         await ctx.answerCallbackQuery();
         if (choice !== "ru" && choice !== "en") return true;
-        const effects = await applyIntakeVideoLocale(backendDb, config, Number(ctx.from?.id), choice);
+        const effects = await applyIntakeVideoLocale(ctx, backendDb, config, Number(ctx.from?.id), choice);
         await executePublicationEffects(ctx, backendDb, effects);
         return true;
       },
