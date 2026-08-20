@@ -18,7 +18,6 @@ afterEach(() => {
  * it is the one thing about the registry worth failing a build over. */
 const HOST_ONLY = [
   "guide",
-  "migrations-baseline",
   "backup",
   "restore",
   "import-x-analytics",

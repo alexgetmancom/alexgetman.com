@@ -111,6 +111,21 @@ export const creatorProfileSnapshots = sqliteTable(
   ],
 );
 
+export const xActivityImports = sqliteTable(
+  "x_activity_imports",
+  {
+    id: autoId(),
+    checksum: text().notNull(),
+    sourceFile: text().notNull(),
+    periodStart: text(),
+    periodEnd: text(),
+    sampledAt: text().notNull(),
+    importedAt: text().notNull(),
+    rowCount: integer().notNull(),
+  },
+  (table) => [uniqueIndex("idx_x_activity_imports_checksum").on(table.checksum)],
+);
+
 /** Account-wide X activity is deliberately separate from editorial posts.
  * linkedPublicationKey is optional: replies and posts written directly in X remain
  * analytics-only, while Studio publications can still share one identity. */

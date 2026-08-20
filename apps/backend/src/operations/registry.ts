@@ -9,7 +9,7 @@ import { targetIdsFor } from "../botTargets.js";
 import { API_KEY_TARGETS, storeApiKey } from "../channels/api-keys.js";
 import { CONNECT_PLATFORMS, type ConnectStart, startConnect } from "../channels/connect.js";
 import { registerTargetChannel } from "../channels/registry.js";
-import { type BackendDb, baselineDrizzleMigrations, migrationStatus, unsafeDb } from "../db/client.js";
+import type { BackendDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
@@ -53,9 +53,9 @@ import { authorizeThreads } from "./threads-authorize.js";
 import { publicationTimeline } from "./timeline.js";
 import { verifyPostTargets } from "./verify.js";
 
-/** Config and the database are resolved on demand: `restore` and
- * `migrations-baseline` operate on the file itself and must not have it opened
- * underneath them, and `guide` runs when there is no usable database at all. */
+/** Config and the database are resolved on demand: `restore` operates on the
+ * file itself and must not have it opened underneath it, and `guide` runs when
+ * there is no usable database at all. */
 export type OperationContext = {
   dbPath: string;
   config: () => BackendConfig;
@@ -163,26 +163,6 @@ const operationDefs = {
     note: "start here for any worker, queue, configuration or publication question",
     handler: (context) => buildOperationsGuide(context.dbPath, operationCatalog()),
     format: formatOperationsGuide,
-  }),
-  "migrations-baseline": operation({
-    summary: "Mark this database's existing schema as migrated, without applying anything.",
-    schema: z.object({}),
-    mutates: true,
-    // Writes migration bookkeeping through a raw handle on a host path.
-    agent: false,
-    handler: async (context) => {
-      // Baselining precedes the application schema this process would otherwise
-      // expect to already exist, so it opens the file itself rather than taking
-      // the handle `context.db()` would migrate on the way out.
-      const sqlite = new (await import("bun:sqlite")).Database(context.dbPath, { strict: true }) as Parameters<
-        typeof baselineDrizzleMigrations
-      >[0];
-      try {
-        return { migrations: baselineDrizzleMigrations(sqlite) };
-      } finally {
-        sqlite.close();
-      }
-    },
   }),
   "studio-profile": operation({
     summary: "What this Studio publishes as, its time zone, whether it serves a public site, and video timing.",
@@ -352,15 +332,6 @@ const operationDefs = {
         ...(input.days === undefined ? {} : { days: input.days }),
         ...(input.unused_days === undefined ? {} : { unusedDays: input.unused_days }),
       }),
-  }),
-  migrations: operation({
-    // Pending is not a state this can report: opening the database migrates it,
-    // so by the time the handler runs there is nothing left to apply.
-    summary: "Schema migrations this database has applied.",
-    schema: z.object({}),
-    mutates: false,
-    agent: true,
-    handler: (context) => ({ migrations: migrationStatus(unsafeDb(context.db()).sqlite) }),
   }),
   "x-analytics": operation({
     summary:

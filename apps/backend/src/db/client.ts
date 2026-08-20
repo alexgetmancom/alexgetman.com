@@ -1,6 +1,5 @@
 import { Database } from "bun:sqlite";
-import crypto from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { drizzle } from "drizzle-orm/bun-sqlite";
@@ -35,8 +34,6 @@ export type UnsafeBackendDb = BackendDb & {
   sqlite: RawBackendDb["sqlite"];
   db: RawBackendDb["db"];
 };
-
-type MigrationStatus = { hash: string; createdAt: number };
 
 type SqliteCompat = RawSqlite;
 
@@ -95,47 +92,6 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
   return backendDb;
 }
 
-export function migrationStatus(sqlite: SqliteCompat): MigrationStatus[] {
-  return sqlite.prepare("SELECT hash, created_at AS createdAt FROM __drizzle_migrations ORDER BY created_at").all() as MigrationStatus[];
-}
-
-/** Declares a database that already carries the schema as migrated, so Drizzle
- * skips the baseline instead of recreating tables that exist. */
-export function baselineDrizzleMigrations(sqlite: SqliteCompat): MigrationStatus[] {
-  const tables = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as Array<{
-    name: string;
-  }>;
-  const names = new Set(tables.map((table) => table.name));
-  const missing = ["publish_jobs", "drafts", "publications", "posts", "publication_targets", "site_jobs"].filter(
-    (name) => !names.has(name),
-  );
-  if (missing.length > 0) throw new Error(`baseline requires a complete database; missing: ${missing.join(", ")}`);
-  sqlite.exec(
-    "CREATE TABLE IF NOT EXISTS __drizzle_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, hash text NOT NULL, created_at numeric)",
-  );
-  sqlite.transaction(() => {
-    sqlite.run("DELETE FROM __drizzle_migrations");
-    const insert = sqlite.prepare("INSERT INTO __drizzle_migrations(hash, created_at) VALUES (?, ?)");
-    for (const migration of drizzleMigrationMetadata()) insert.run(migration.hash, migration.createdAt);
-  })();
-  return migrationStatus(sqlite);
-}
-
 function migrationsFolder(): string {
   return process.env.DRIZZLE_MIGRATIONS_DIR ?? join(dirname(fileURLToPath(import.meta.url)), "../../drizzle");
-}
-
-/** Hash + timestamp of every migration on disk, in journal order. This is the
- * expected end state of `__drizzle_migrations` once a database is fully
- * migrated, so tests assert against it instead of a hand-maintained count. */
-export function drizzleMigrationMetadata(): MigrationStatus[] {
-  const folder = migrationsFolder();
-  const journal = JSON.parse(readFileSync(join(folder, "meta/_journal.json"), "utf8")) as { entries: Array<{ tag: string; when: number }> };
-  return journal.entries.map((entry) => ({
-    hash: crypto
-      .createHash("sha256")
-      .update(readFileSync(join(folder, `${entry.tag}.sql`), "utf8"))
-      .digest("hex"),
-    createdAt: entry.when,
-  }));
 }

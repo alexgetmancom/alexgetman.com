@@ -36,6 +36,7 @@ export const knowledgeEntities = sqliteTable(
   (table) => [
     uniqueIndex("idx_knowledge_entities_kind_slug").on(table.kind, table.slug),
     index("idx_knowledge_entities_kind").on(table.kind),
+    index("idx_knowledge_entities_parent").on(table.parentEntityId),
   ],
 );
 

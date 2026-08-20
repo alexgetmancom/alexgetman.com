@@ -27,6 +27,7 @@ export const videoDrafts = sqliteTable(
   },
   (table) => [
     index("idx_video_drafts_status_schedule").on(table.status, table.scheduledAt),
+    index("idx_video_drafts_studio_media_asset").on(table.studioMediaAssetId),
     index("idx_video_drafts_updated_at").on(table.updatedAt),
   ],
 );

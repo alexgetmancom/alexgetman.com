@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq } from "drizzle-orm";
 import { createDraftFromMessage } from "../src/content/drafts.js";
-import { baselineDrizzleMigrations, drizzleMigrationMetadata, migrationStatus } from "../src/db/client.js";
 import { knowledgeEntities, postEntityLinks } from "../src/db/schema.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { registerTestChannels } from "./helpers/channels.js";
@@ -37,24 +36,21 @@ describe("openBackendDb", () => {
     }
   });
 
-  it("leaves a baselined database alone instead of recreating its schema", () => {
-    // How production is adopted: the schema is already there and the baseline
-    // must be recorded as applied, not replayed. Getting this wrong throws
-    // "table already exists" on the next boot.
-    const dir = mkdtempSync(join(tmpdir(), "alexgetman-baseline-"));
+  it("does not replay the squashed baseline on a database that passed the old chain", () => {
+    const dir = mkdtempSync(join(tmpdir(), "alexgetman-squashed-baseline-"));
     const dbPath = join(dir, "pipeline.db");
-    const initial = openBackendDb(dbPath);
-    initial.close();
-
-    const raw = new Database(dbPath) as unknown as Parameters<typeof baselineDrizzleMigrations>[0];
-    raw.run("DELETE FROM __drizzle_migrations");
-    expect(baselineDrizzleMigrations(raw)).toEqual(drizzleMigrationMetadata());
-    raw.close();
+    const sqlite = new Database(dbPath);
+    sqlite.exec(`
+      CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, hash text NOT NULL, created_at numeric);
+      INSERT INTO __drizzle_migrations(hash, created_at) VALUES ('old-chain', 1787280000000);
+      CREATE TABLE old_chain_marker (id integer PRIMARY KEY);
+    `);
+    sqlite.close();
 
     const backendDb = openBackendDb(dbPath);
     try {
-      expect(migrationStatus(backendDb.sqlite)).toEqual(drizzleMigrationMetadata());
-      expect(backendDb.db.select().from(knowledgeEntities).all().length).toBeGreaterThan(0);
+      expect(backendDb.sqlite.query("SELECT name FROM sqlite_master WHERE name='old_chain_marker'").get()).toBeDefined();
+      expect(backendDb.sqlite.query("SELECT name FROM sqlite_master WHERE name='posts'").get()).toBeNull();
     } finally {
       backendDb.close();
     }
@@ -103,6 +99,15 @@ describe("openBackendDb", () => {
         "x_activity_metric_snapshots",
       ])
         expect(tables, table).toContain(table);
+
+      const indexes = new Set(
+        backendDb.sqlite
+          .prepare("SELECT name FROM sqlite_master WHERE type='index'")
+          .all()
+          .map((row: { name: string }) => row.name),
+      );
+      for (const index of ["idx_knowledge_entities_parent", "idx_video_drafts_studio_media_asset", "idx_x_activity_imports_checksum"])
+        expect(indexes, index).toContain(index);
     } finally {
       backendDb.close();
     }
