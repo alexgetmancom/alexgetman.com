@@ -8,7 +8,6 @@ import { t } from "../foundation/i18n/index.js";
 import type { StudioLocale } from "../foundation/locale.js";
 import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
 import { publishArticle } from "../publishing/article-publish.js";
-import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
 import { clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
 import { cancelPromptKeyboard } from "./dialog-ui.js";
@@ -24,8 +23,9 @@ const MARKDOWN_EXTENSIONS = [".md", ".markdown", ".mdx"];
  * own posts run under this, and their articles run well over it. Above it the
  * two are equally likely, so the question is asked instead of guessed.
  *
- * Every guess below is undone by one button on the card it produced, which is
- * what makes guessing acceptable at all: nothing decided here is silent. */
+ * An article is written long or written in a file; nothing else is one. That is
+ * the whole rule, which is why the short-text and bare-video readings need no
+ * way back: they are not close calls. */
 const POST_WITHOUT_ASKING = 900;
 
 export const INTAKE_CANCEL = "intake_cancel";
@@ -101,30 +101,10 @@ export async function applyIntakeKind(
   const locale = settingsService(backendDb).locale(actorId);
   const captured = capturedFrom(backendDb, actorId);
   const asked = mode === "edit";
-  // Correcting a guessed post takes its draft with it: the material is about to
-  // become something else, and two records of one thing is the defect.
-  const madePost = getConversationState(backendDb, actorId, "intake");
-  if (kind !== "post" && madePost?.step === "post_made" && madePost.draftId != null)
-    createStudioServices(backendDb, config).posts.cancel(actorId, madePost.draftId);
 
   if (kind === "post") {
-    const effects = await createPostFromMessage(backendDb, config, actorId, captured.message);
-    if (asked) {
-      clearConversationState(backendDb, actorId, "intake");
-      return effects;
-    }
-    // Guessed, so the card carries its own correction, and the material stays
-    // captured until it is used or the next intake replaces it.
-    const draftId = (effects[0] as { card?: { draftId?: number } }).card?.draftId ?? null;
-    saveConversationState(backendDb, actorId, {
-      kind: "intake",
-      draftId,
-      step: "post_made",
-      data: captured as unknown as Record<string, unknown>,
-      controlMessageId: null,
-    });
-    appendEscape(effects[0], t(locale, "intake.rather-article"), `${INTAKE_KIND_PREFIX}article`);
-    return effects;
+    clearConversationState(backendDb, actorId, "intake");
+    return createPostFromMessage(backendDb, config, actorId, captured.message);
   }
 
   if (kind === "article") {
@@ -160,16 +140,9 @@ export async function applyIntakeKind(
   const keyboard = new InlineKeyboard()
     .text(t(locale, "video.language-ru"), `${INTAKE_LOCALE_PREFIX}ru`)
     .text(t(locale, "video.language-en"), `${INTAKE_LOCALE_PREFIX}en`)
-    .row();
-  if (!asked) keyboard.text(t(locale, "intake.rather-post"), `${INTAKE_KIND_PREFIX}post`).row();
-  keyboard.text(t(locale, "common.cancel"), INTAKE_CANCEL);
+    .row()
+    .text(t(locale, "common.cancel"), INTAKE_CANCEL);
   return [{ type: "screen", mode, text: t(locale, "video.choose-language"), options: { reply_markup: keyboard } }];
-}
-
-/** Adds a correction button to the card a guess produced. */
-function appendEscape(effect: PublicationEffect | undefined, label: string, callback: string): void {
-  const markup = (effect as { options?: { reply_markup?: InlineKeyboard } } | undefined)?.options?.reply_markup;
-  markup?.row().text(label, callback);
 }
 
 /** Stores the video and hands it to the wizard in the chosen language. The file

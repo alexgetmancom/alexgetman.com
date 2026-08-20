@@ -37,12 +37,15 @@ async function capture(backendDb: ReturnType<typeof openBackendDb>, message: Rec
 }
 
 describe("bot intake", () => {
-  it("makes a short text a post without asking, and leaves the way back on the card", async () => {
+  it("makes a short text a post without asking and without offering to undo it", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const result = await capture(backendDb, { text: "Short enough to be obvious." });
       expect(result.effects[0]).toMatchObject({ card: { kind: "post" } });
-      expect(buttonRows(result.effects[0] as never)).toContain("📄 Actually, this is an article");
+      // An article is written long or written in a file. Neither is true here,
+      // so this is not a close call and carries no way back.
+      expect(buttonRows(result.effects[0] as never)).not.toContain("📄 Actually, this is an article");
+      expect(getConversationState(backendDb, 42, "intake")).toBeNull();
       expect(backendDb.sqlite.query("SELECT count(*) AS count FROM drafts").get()).toEqual({ count: 1 });
     } finally {
       backendDb.close();
@@ -70,7 +73,8 @@ describe("bot intake", () => {
       expect(buttonRows(captioned.effects[0] as never)).toEqual(["📝 Post", "🎬 Video publication", "← Cancel"]);
       const bare = await capture(backendDb, { document: { file_id: "v2", file_name: "clip.mp4", mime_type: "video/mp4" } });
       expect(getConversationState(backendDb, 42, "intake")?.step).toBe("video_locale");
-      expect(buttonRows(bare.effects[0] as never)).toContain("📝 Actually, this is a post");
+      // A post always carries its text; a video sent without any is not one.
+      expect(buttonRows(bare.effects[0] as never)).not.toContain("📝 Actually, this is a post");
     } finally {
       backendDb.close();
     }
@@ -95,18 +99,6 @@ describe("bot intake", () => {
       expect(buttonRows(result.effects[0] as never)).toContain("📝 Actually, this is a post");
     } finally {
       restore();
-      backendDb.close();
-    }
-  });
-
-  it("cancels the guessed post draft when the material turns out to be an article", async () => {
-    const backendDb = openBackendDb(":memory:");
-    try {
-      await capture(backendDb, { text: "A title line\n\nand a body." });
-      await applyIntakeKind(ctxWith({}), backendDb, config, "article");
-      expect(backendDb.sqlite.query("SELECT status FROM drafts").all()).toEqual([{ status: "cancelled" }]);
-      expect(getConversationState(backendDb, 42, "intake")?.step).toBe("article_review");
-    } finally {
       backendDb.close();
     }
   });
