@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Context } from "grammy";
 import { extractMessage } from "../src/bot/message.js";
+import { mediaSizeAdvice, RECOMMENDED_MEDIA_BYTES } from "../src/publishing/media-size-advice.js";
 
 /** extractMessage only ever reads ctx.message, so a literal is a truer stand-in
  * than a full grammy Context: it keeps each case's shape visible. */
@@ -57,5 +58,35 @@ describe("extractMessage", () => {
 
   it("returns an empty draft when the update carries no message at all", () => {
     expect(extractMessage(ctx(undefined))).toEqual({ text: "", media: [], entities: [] });
+  });
+});
+
+describe("mediaSizeAdvice", () => {
+  it("says nothing about a file within the recommendation", () => {
+    expect(mediaSizeAdvice([{ type: "video", file_size: RECOMMENDED_MEDIA_BYTES }])).toBeNull();
+  });
+
+  it("reports the largest oversized item in megabytes", () => {
+    expect(
+      mediaSizeAdvice([
+        { type: "video", file_size: 60_000_000 },
+        { type: "video", file_size: 1_000_000_000 },
+      ]),
+    ).toEqual({
+      megabytes: 1000,
+      recommendedMegabytes: 50,
+    });
+  });
+
+  it("ignores items Telegram sent no size for", () => {
+    expect(mediaSizeAdvice([{ type: "photo" }, { type: "video", file_size: "huge" }])).toBeNull();
+  });
+
+  it("reads the size extractMessage captures from a video message", () => {
+    const video = { file_id: "vid", file_unique_id: "v", width: 1080, height: 1920, duration: 42, file_size: 1_000_000_000 };
+    expect(mediaSizeAdvice(extractMessage(ctx({ caption: "clip", video })).media)).toEqual({
+      megabytes: 1000,
+      recommendedMegabytes: 50,
+    });
   });
 });

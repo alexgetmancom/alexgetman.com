@@ -6,6 +6,7 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { describeError, t } from "../foundation/i18n/index.js";
+import { mediaSizeAdvice } from "../publishing/media-size-advice.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
 import { appendPendingAlbum } from "./albums.js";
@@ -98,7 +99,20 @@ export async function createPostFromMessage(
   const draftId = createStudioServices(backendDb, config).posts.create(actorId, { ...message, textEn });
   clearConversationState(backendDb, actorId, "post");
   const preview = postPreviewCard(backendDb, config, actorId, draftId);
+  // Advice ahead of the card, never after it: the card carries the buttons the
+  // advice points at, and it stays the last thing in the chat.
+  const advice = mediaSizeAdvice(message.media);
+  const locale = settingsService(backendDb).locale(actorId);
   return [
+    ...(advice
+      ? [
+          {
+            type: "screen" as const,
+            mode: "reply" as const,
+            text: t(locale, "post.media-large", { megabytes: advice.megabytes, recommended: advice.recommendedMegabytes }),
+          },
+        ]
+      : []),
     {
       type: "screen",
       mode: "reply",

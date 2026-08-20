@@ -189,6 +189,8 @@ const en = {
   "post.album-need-action": "Choose 📝 New post or an edit action before sending an album.",
   "post.album-received": "Album received. I will create or update the draft in a few seconds.",
   "post.album-failed": "I could not build a draft from that album. Please send it again.",
+  "post.media-large":
+    "⚠️ This file is {megabytes} MB. We recommend up to {recommended} MB: large files take a long time to prepare and Threads can reject them outright. You can publish it as it is — or use «Replace image / video» on the card below.",
   "post.value-error": "I couldn't use that value: {error}\n\nPlease try again or tap Cancel.",
   "post.need-new-post": "Choose 📥 New material from the menu before sending anything.",
   // Video conversation + scheduling
@@ -899,6 +901,8 @@ const ru = {
   "post.album-need-action": "Сначала выберите «📝 Новый пост» или действие редактирования.",
   "post.album-received": "Альбом получен. Создам или обновлю черновик через несколько секунд.",
   "post.album-failed": "Не удалось собрать черновик из этого альбома. Пришлите его ещё раз.",
+  "post.media-large":
+    "⚠️ Файл весит {megabytes} МБ. Рекомендуем до {recommended} МБ: большие файлы долго готовятся к отправке, а Threads может их вообще отклонить. Опубликовать можно и так — или нажмите «Заменить изображение / видео» на карточке ниже.",
   "post.value-error": "Не удалось обработать значение: {error}\n\nПопробуйте ещё раз или нажмите «Отмена».",
   "post.need-new-post": "Сначала выберите «📥 Новый материал» в меню.",
   // Video conversation + scheduling
