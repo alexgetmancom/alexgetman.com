@@ -9,7 +9,6 @@ import { showAnalyticsDashboard } from "./analytics-screen.js";
 import { openIntake } from "./intake.js";
 import { showQueue } from "./queue.js";
 import { SETTINGS_MENU_ID } from "./settings-screen.js";
-import { startVideoConversation } from "./video-conversation.js";
 
 const MAIN_MENU_ID = "main-menu";
 
@@ -19,10 +18,6 @@ export function buildMainMenu(config: BackendConfig, backendDb: BackendDb, setti
     .text(
       (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.new-material"),
       (ctx) => openIntake(ctx, backendDb, "edit"),
-    )
-    .text(
-      (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.new-video"),
-      (ctx) => startVideoConversation(ctx, backendDb),
     )
     .row();
   menu.text(

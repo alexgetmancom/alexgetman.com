@@ -63,7 +63,6 @@ const VIDEO_METADATA_STEPS = {
 } satisfies Record<VideoWizardStep, FlowStep<VideoFlowData, unknown, never, VideoWizardStep | "schedule_choice">>;
 
 const VIDEO_STEPS = defineVideoSteps({
-  locale: { name: "locale" as const, next: () => "asset" as const, accept: (input, data) => ({ ...data, videoLocale: input }) },
   asset: {
     name: "asset" as const,
     input: "media",

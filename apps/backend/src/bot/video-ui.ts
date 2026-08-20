@@ -39,23 +39,6 @@ export function targetKeyboard(backendDb: BackendDb, selected: VideoTarget[], lo
   return appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), revision);
 }
 
-export function startVideoEffects(ctx: Context, backendDb: BackendDb, actorId: number, locale: StudioLocale): PublicationEffect[] {
-  const session = saveVideoState(backendDb, actorId, { draftId: null, step: "locale", selected: [], data: {}, controlMessageId: null });
-  const keyboard = new InlineKeyboard()
-    .text(t(locale, "video.language-ru"), publicationCallback("video", "locale", ["ru"], session.revision))
-    .text(t(locale, "video.language-en"), publicationCallback("video", "locale", ["en"], session.revision))
-    .row();
-  appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), session.revision);
-  return [
-    {
-      type: "screen",
-      mode: ctx.callbackQuery?.message ? "edit" : "reply",
-      text: t(locale, "video.choose-language"),
-      options: { reply_markup: keyboard },
-    },
-  ];
-}
-
 export function connectedVideoTargets(backendDb: BackendDb): VideoTarget[] {
   const connected = new Set(videoDestinations(backendDb).map((destination) => destination.target));
   return VIDEO_TARGETS.filter((target) => connected.has(target));

@@ -57,20 +57,6 @@ function videoContext(input: { text?: string; callback?: string } = {}) {
 }
 
 describe("video publication queue", () => {
-  it("selects the video locale before asking for the MP4", async () => {
-    const backendDb = testDb.open();
-    const session = saveVideoState(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
-
-    expect(
-      await handlePublicationCallback(
-        videoContext({ callback: versionedCallback(publicationCallback("video", "locale", ["en"]), session.revision) }).context,
-        backendDb,
-        videoConfig(),
-      ),
-    ).toBe(true);
-    expect(getVideoState(backendDb, 42)).toMatchObject({ step: "asset", data: { videoLocale: "en" } });
-  });
-
   it("persists the selected locale and resolves the matching Zernio account", () => {
     const backendDb = testDb.open();
     const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24, "en");

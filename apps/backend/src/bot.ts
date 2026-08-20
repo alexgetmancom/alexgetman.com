@@ -4,7 +4,17 @@ import { handleAnalyticsCallback } from "./bot/analytics-screen.js";
 import { runCallbackBoundary } from "./bot/callback-boundary.js";
 import { handlePublicationCallback, handlePublicationMessage } from "./bot/callback-router.js";
 import { executePublicationEffects } from "./bot/effects.js";
-import { cancelIntake, handleIntakeMessage, INTAKE_ARTICLE_PUBLISH, openIntake, publishReviewedArticle } from "./bot/intake.js";
+import {
+  applyIntakeKind,
+  applyIntakeVideoLocale,
+  cancelIntake,
+  handleIntakeMessage,
+  INTAKE_CANCEL,
+  INTAKE_KIND_PREFIX,
+  INTAKE_LOCALE_PREFIX,
+  openIntake,
+  publishReviewedArticle,
+} from "./bot/intake.js";
 import { persistentKeyboard, showMainMenu } from "./bot/menu-render.js";
 import { buildMainMenu } from "./bot/navigation.js";
 import { handleOperationsCallback } from "./bot/operations-screen.js";
@@ -12,7 +22,6 @@ import { handleProgressCallback } from "./bot/progress-screen.js";
 import { parseSessionCallback } from "./bot/publication-callback.js";
 import { showQueue, showQueueAttention } from "./bot/queue.js";
 import { buildSettingsMenu, handleSettingsMessage, showSettings } from "./bot/settings-screen.js";
-import { startVideoConversation } from "./bot/video-conversation.js";
 import type { BackendDb } from "./db/client.js";
 import { actorFromTelegramUser } from "./foundation/actors.js";
 import type { BackendConfig } from "./foundation/config.js";
@@ -108,10 +117,6 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     if (!isAdmin(config, ctx.from?.id)) return;
     await openIntake(ctx, backendDb);
   });
-  bot.hears(localizedTextVariants(["menu.new-video"]), async (ctx) => {
-    if (!isAdmin(config, ctx.from?.id)) return;
-    await startVideoConversation(ctx, backendDb);
-  });
   bot.on("message", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return;
     if (await handleSettingsMessage(ctx, backendDb, config, settingsMenu)) return;
@@ -125,20 +130,38 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
 
   const callbackRoutes: CallbackRoute[] = [
     {
-      name: "intake-article-publish",
-      matches: (data) => data === INTAKE_ARTICLE_PUBLISH,
+      name: "intake-kind",
+      matches: (data) => data.startsWith(INTAKE_KIND_PREFIX),
       handle: async (ctx) => {
-        const actorId = Number(ctx.from?.id);
-        const locale = settingsService(backendDb).locale(actorId);
-        const { title } = publishReviewedArticle(backendDb, config, actorId);
+        const choice = callbackData(ctx).slice(INTAKE_KIND_PREFIX.length);
         await ctx.answerCallbackQuery();
-        await ctx.reply(t(locale, "intake.article-published", { title }));
+        if (choice === "article_confirm") {
+          const actorId = Number(ctx.from?.id);
+          const locale = settingsService(backendDb).locale(actorId);
+          const { title } = publishReviewedArticle(backendDb, config, actorId);
+          await ctx.reply(t(locale, "intake.article-published", { title }));
+          return true;
+        }
+        if (choice !== "post" && choice !== "article" && choice !== "video") return true;
+        await executePublicationEffects(ctx, backendDb, await applyIntakeKind(ctx, backendDb, config, choice));
+        return true;
+      },
+    },
+    {
+      name: "intake-video-locale",
+      matches: (data) => data.startsWith(INTAKE_LOCALE_PREFIX),
+      handle: async (ctx) => {
+        const choice = callbackData(ctx).slice(INTAKE_LOCALE_PREFIX.length);
+        await ctx.answerCallbackQuery();
+        if (choice !== "ru" && choice !== "en") return true;
+        const effects = await applyIntakeVideoLocale(backendDb, config, Number(ctx.from?.id), choice);
+        await executePublicationEffects(ctx, backendDb, effects);
         return true;
       },
     },
     {
       name: "intake-cancel",
-      matches: (data) => data === "intake_cancel",
+      matches: (data) => data === INTAKE_CANCEL,
       handle: async (ctx) => {
         cancelIntake(backendDb, Number(ctx.from?.id));
         await ctx.answerCallbackQuery();

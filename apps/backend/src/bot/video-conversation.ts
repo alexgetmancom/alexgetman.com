@@ -11,7 +11,7 @@ import type { StudioServices } from "../studio/services/index.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
 import { advanceVideoMetadata, isVideoWizardStep, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
-import { executePublicationEffects, type PublicationEffect, type PublicationMessageResult } from "./effects.js";
+import type { PublicationEffect, PublicationMessageResult } from "./effects.js";
 import { advancePublicationFlow } from "./publication-flow.js";
 import { publicationCardEffect, publicationRenderers } from "./publication-renderers.js";
 import { applyVideoScheduleDate } from "./video-scheduling.js";
@@ -19,7 +19,6 @@ import {
   clearVideoState,
   connectedVideoTargets,
   getVideoState,
-  startVideoEffects,
   targetKeyboard,
   type VideoConversationState,
   videoControlEffects,
@@ -37,15 +36,8 @@ type VideoMessageArgs = {
   services: StudioServices;
 };
 
-/** Starts and advances the MP4 → metadata → schedule conversation. */
-export async function startVideoConversation(ctx: Context, backendDb: BackendDb): Promise<void> {
-  const actorId = Number(ctx.from?.id);
-  const locale = settingsService(backendDb).locale(actorId);
-  // Reached via a menu button, this is pure navigation: turn that same
-  // message into the prompt instead of leaving it and adding a new one.
-  await executePublicationEffects(ctx, backendDb, startVideoEffects(ctx, backendDb, actorId, locale));
-}
-
+/** Advances the MP4 → metadata → schedule conversation. It is entered from the
+ * intake, which has already captured the file and asked for its language. */
 export async function handleVideoConversationMessage(
   ctx: Context,
   backendDb: BackendDb,
@@ -104,18 +96,33 @@ async function acceptVideoMessage(args: VideoMessageArgs): Promise<PublicationEf
 async function acceptVideoAsset({ ctx, backendDb, config, actorId, session, services }: VideoMessageArgs): Promise<PublicationEffect[]> {
   // Nothing about this depends on the upload, so fail before spending a
   // Telegram download and before a draft row exists to be orphaned.
+  if (!connectedVideoTargets(backendDb).length) throw new StudioError("err.no-video-platforms-connected");
+  const stored = await storeTelegramVideo(ctx, backendDb, config, actorId);
+  return attachVideoAsset(backendDb, config, actorId, session, stored.assetId, services);
+}
+
+/** Puts a stored video behind a fresh draft and advances the wizard past the
+ * upload step. The intake reaches this with a file it already stored from a
+ * button press; the conversation reaches it with the message it just read. */
+export async function attachVideoAsset(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  session: VideoConversationState,
+  assetId: number,
+  services: StudioServices = createStudioServices(backendDb, config),
+): Promise<PublicationEffect[]> {
   const selected = connectedVideoTargets(backendDb);
   if (!selected.length) throw new StudioError("err.no-video-platforms-connected");
-  const stored = await storeTelegramVideo(ctx, backendDb, config, actorId);
   const videos = services.videos;
-  const draftId = videos.create(actorId, stored.assetId, session.data.videoLocale === "en" ? "en" : "ru");
+  const draftId = videos.create(actorId, assetId, session.data.videoLocale === "en" ? "en" : "ru");
   videos.replaceTargets(actorId, draftId, selected);
   const saved = await advancePublicationFlow(
     backendDb,
     actorId,
     VIDEO_FLOW,
     { ...session, draftId, selected },
-    stored.assetId,
+    assetId,
     { ...session.data, selectedTargets: selected },
     "err.video-restart",
   );

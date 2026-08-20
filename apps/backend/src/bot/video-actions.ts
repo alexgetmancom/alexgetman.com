@@ -58,7 +58,6 @@ function requireFlowStep(current: string | undefined, allowed: readonly string[]
 /** Declares the video-only portion of the publication action registry. */
 export function defineVideoActionHandlers(define: typeof action): Record<string, PublicationActionDefinition> {
   return {
-    locale: define(handleLocale, { entity: "session", sessionRevision: true, args: ["locale"] }),
     cancel_dialog: define(handleCancelDialog, { entity: "session", sessionRevision: true, args: [] }),
     wizard_toggle: define(handleToggle, { entity: "session", sessionRevision: true, args: ["target"] }),
     targets_done: define(handleTargetsDone, { entity: "session", sessionRevision: true, args: [] }),
@@ -149,30 +148,6 @@ function videoConfirmationEffect(
     target,
   });
   return publicationCardEffect(card);
-}
-
-async function handleLocale({ backendDb, actorId, locale, args }: VideoActionArgs): Promise<VideoActionResult> {
-  const videoLocale = args.locale ?? "";
-  const session = getVideoState(backendDb, actorId);
-  requireFlowStep(session?.step, ["locale"], "err.video-restart");
-  if (!session || !["ru", "en"].includes(videoLocale)) throw new StudioError("err.video-restart");
-  const next = await advancePublicationFlow(
-    backendDb,
-    actorId,
-    VIDEO_FLOW,
-    session,
-    videoLocale,
-    { ...session.data, selectedTargets: session.selected },
-    "err.video-restart",
-  );
-  return [
-    {
-      type: "screen",
-      mode: "edit",
-      text: t(locale, "video.dialog-prompt"),
-      options: { reply_markup: cancelPromptKeyboard(locale, publicationCallback("video", "cancel_dialog"), next.revision) },
-    },
-  ];
 }
 
 async function handleCancelDialog({ backendDb, config, actorId, locale, mainMenu }: VideoActionArgs): Promise<VideoActionResult> {

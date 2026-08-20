@@ -104,12 +104,12 @@ describe("Telegram dialog state", () => {
   it("increments video revisions and rejects writes from an older wizard", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      const first = saveVideoState(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
-      const second = saveVideoState(backendDb, 42, { ...first, step: "asset" });
+      const first = saveVideoState(backendDb, 42, { draftId: null, step: "asset", selected: [], data: {} });
+      const second = saveVideoState(backendDb, 42, { ...first, step: "targets" });
 
       expect(second.revision).toBe(first.revision + 1);
       expect(() => saveVideoState(backendDb, 42, first)).toThrow("action.session-stale");
-      expect(getVideoState(backendDb, 42)).toMatchObject({ step: "asset", revision: second.revision });
+      expect(getVideoState(backendDb, 42)).toMatchObject({ step: "targets", revision: second.revision });
     } finally {
       backendDb.close();
     }
@@ -162,12 +162,12 @@ describe("Telegram dialog state", () => {
   it("does not reuse a video revision after a session is cleared", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
-      const first = saveVideoState(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
+      const first = saveVideoState(backendDb, 42, { draftId: null, step: "asset", selected: [], data: {} });
       clearVideoState(backendDb, 42);
-      const second = saveVideoState(backendDb, 42, { draftId: null, step: "locale", selected: [], data: {} });
+      const second = saveVideoState(backendDb, 42, { draftId: null, step: "asset", selected: [], data: {} });
 
       expect(second.revision).toBeGreaterThan(first.revision);
-      expect(getVideoState(backendDb, 42)).toMatchObject({ revision: second.revision, step: "locale" });
+      expect(getVideoState(backendDb, 42)).toMatchObject({ revision: second.revision, step: "asset" });
     } finally {
       backendDb.close();
     }

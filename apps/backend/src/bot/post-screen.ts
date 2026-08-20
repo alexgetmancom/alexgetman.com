@@ -1,5 +1,6 @@
 import type { Context } from "grammy";
 import { flowStepInput } from "../application/conversation-flow.js";
+import type { DraftMessage } from "../content/message.js";
 import { translateDraftText } from "../content/translation.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -9,7 +10,7 @@ import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
 import { appendPendingAlbum } from "./albums.js";
 import { clearConversationState, getConversationState } from "./conversation-state.js";
-import type { PublicationMessageResult } from "./effects.js";
+import type { PublicationEffect, PublicationMessageResult } from "./effects.js";
 import { persistentKeyboard } from "./menu-render.js";
 import { extractMessage } from "./message.js";
 import { POST_FLOW, postStateStep } from "./post-flow.js";
@@ -81,20 +82,29 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       ],
     };
   }
+  return { handled: true, effects: await createPostFromMessage(backendDb, config, actorId, message) };
+}
+
+/** Turns captured material into a post draft and its preview card. The intake
+ * calls this from a button press and the post screen from the message itself;
+ * one implementation, so a post made either way is the same post. */
+export async function createPostFromMessage(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  message: DraftMessage,
+): Promise<PublicationEffect[]> {
   const textEn = await translateDraftText(backendDb, message.text, config);
   const draftId = createStudioServices(backendDb, config).posts.create(actorId, { ...message, textEn });
   clearConversationState(backendDb, actorId, "post");
   const preview = postPreviewCard(backendDb, config, actorId, draftId);
-  return {
-    handled: true,
-    effects: [
-      {
-        type: "screen",
-        mode: "reply",
-        text: preview.text,
-        options: { parse_mode: "Markdown", reply_markup: preview.keyboard },
-        card: { kind: "post", draftId },
-      },
-    ],
-  };
+  return [
+    {
+      type: "screen",
+      mode: "reply",
+      text: preview.text,
+      options: { parse_mode: "Markdown", reply_markup: preview.keyboard },
+      card: { kind: "post", draftId },
+    },
+  ];
 }
