@@ -14,6 +14,7 @@ import { log } from "../foundation/logger.js";
 import { checkDataDirectoriesWritable, requiredDataDirectories } from "../foundation/runtime/data-dirs.js";
 import { capabilityReport } from "../observability/capabilities.js";
 import { usageReport } from "../observability/usage.js";
+import { publishArticle } from "../publishing/article-publish.js";
 import { retryVideoTarget } from "../publishing/video-service.js";
 import { settleVideoTarget } from "../publishing/video-settle.js";
 import type { VideoTarget } from "../publishing/video-types.js";
@@ -304,6 +305,18 @@ const operationDefs = {
     mutates: true,
     agent: true,
     handler: (context, input) => publishText(context.db(), context.config(), input),
+  }),
+  "article-publish": operation({
+    summary: "Create and queue one long-form article from Markdown for an exact target list.",
+    note: "The `# Title` heading becomes the article title and leaves the body; targets must be ones that carry articles.",
+    schema: z.object({
+      locale: z.enum(["ru", "en"]),
+      targets: targetList,
+      markdown: example(z.string().trim().min(1).max(200_000), '"# Title\n\nBody"'),
+    }),
+    mutates: true,
+    agent: true,
+    handler: (context, input) => publishArticle(context.db(), context.config(), input),
   }),
   timeline: operation({
     summary: "Jobs, targets and the full event log of one publication, in order.",

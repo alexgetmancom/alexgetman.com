@@ -13,7 +13,7 @@ export const TARGETS = [
   { id: "threads_ru", label: "Threads RU", locale: "ru", kind: "social", carries: ["post"] },
   { id: "threads_en", label: "Threads EN", locale: "en", kind: "social", carries: ["post"] },
   { id: "x", label: "X (Twitter)", locale: "en", kind: "social", carries: ["post"] },
-  { id: "x_article", label: "X Article", locale: "en", kind: "social", carries: ["article"] },
+  { id: "x_article", label: "X Article", locale: "en", kind: "social", carries: ["article"], connectedAs: "x" },
   { id: "discord", label: "Discord", locale: "en", kind: "social", carries: ["post"] },
   { id: "telegram_stories", label: "Telegram Stories", locale: "ru", kind: "social", carries: ["post"] },
   { id: "instagram_stories_ru", label: "Instagram Stories RU", locale: "ru", kind: "social", carries: ["post"] },
@@ -21,6 +21,15 @@ export const TARGETS = [
 ] as const;
 
 type TargetId = (typeof TARGETS)[number]["id"];
+
+/** The connection that delivers a target. A target is its own connection
+ * unless it says otherwise: `x_article` rides the X account already connected
+ * at `x`, and connecting the same account twice to serve one more of its
+ * surfaces is exactly the duplicate this avoids. */
+export function targetConnection(target: string): string {
+  const definition = targetById.get(target);
+  return (definition && "connectedAs" in definition ? definition.connectedAs : definition?.id) ?? target;
+}
 
 /** The targets that carry one form of publication. Post flows and article flows
  * read this instead of the whole catalogue, so a target only ever appears where

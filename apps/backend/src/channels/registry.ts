@@ -1,4 +1,5 @@
 import type { ChannelConnectionRecord } from "../application/ports.js";
+import { TARGETS, targetConnection } from "../botTargets.js";
 import type { BackendDb } from "../db/client.js";
 import type { VideoLocale } from "../foundation/external/youtube.js";
 import { ACCOUNT_PLATFORMS, VIDEO_TARGET_PLATFORM, type VideoTarget } from "../publishing/video-types.js";
@@ -77,7 +78,11 @@ export function targetRouting(backendDb: BackendDb): Record<string, { provider: 
  * an EN Story target in front of a Studio that had connected Instagram purely to
  * upload Reels. A Story is connected the way every other post target is. */
 export function registeredPostTargetIds(backendDb: BackendDb): Set<string> {
-  return new Set(listChannels(backendDb).flatMap((channel) => (channel.targetId ? [channel.targetId] : [])));
+  const connections = new Set(listChannels(backendDb).flatMap((channel) => (channel.targetId ? [channel.targetId] : [])));
+  // A connection delivers every target that names it. One connected X account
+  // serves both the post target and the Article target; it is not connected
+  // twice to say so.
+  return new Set(TARGETS.map(({ id }) => String(id)).filter((target) => connections.has(targetConnection(target))));
 }
 
 /** The registry is the only source of enabled publication targets. */
