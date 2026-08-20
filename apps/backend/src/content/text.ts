@@ -45,6 +45,16 @@ export function entitiesToHtml(text: string, entities: Record<string, unknown>[]
 }
 
 function entityWrapper(type: string, entity: Record<string, unknown>, raw: string): Wrapper | null {
+  // Block entities an article body carries. Telegram cannot express them, so
+  // they only ever arrive from a Markdown file -- but they render here, beside
+  // every inline style, because the site must show the same document the X
+  // Article renderer builds from the same text and entities.
+  if (type === "heading") {
+    const level = Math.min(Math.max(Number(entity.level ?? 2), 1), 6);
+    return { open: `<h${level}>`, close: `</h${level}>` };
+  }
+  if (type === "quote") return { open: "<blockquote>", close: "</blockquote>" };
+  if (type === "list_item") return { open: "<li>", close: "</li>" };
   if (type === "bold") return { open: "<strong>", close: "</strong>" };
   if (type === "italic") return { open: "<em>", close: "</em>" };
   if (type === "underline") return { open: "<u>", close: "</u>" };
