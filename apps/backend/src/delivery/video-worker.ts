@@ -212,127 +212,166 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
   const instagramConfig = config;
   const instagramCredentials = instagramCredentialsForLocale(instagramConfig, locale);
   if (job.kind === "prepare") {
-    if (target.target === "youtube_shorts") {
-      const result = await prepareYouTubeVideo(
-        youtubeConfig,
-        filePath,
-        {
-          ...(metadata as YouTubeMetadata),
-          description: composeYouTubeDescription(backendDb, draft.actorId, metadata as YouTubeMetadata),
-        },
-        target.scheduledAt ?? new Date().toISOString(),
-        locale,
-      );
-      if (!ownsVideoJob(backendDb, job)) {
-        // Cancellation can happen while the resumable upload is in flight. The
-        // ID exists only in this response, so fence its future public release
-        // before discarding it from local state.
-        try {
-          await keepYouTubeUploadPrivate(youtubeConfig, result.id, locale);
-        } catch (error) {
-          recordDomainEvent(backendDb.events, {
-            ref: publicationRef("video", job.videoDraftId),
-            type: "studio.notification.video_cancelled",
-            severity: "warn",
-            target: "youtube_shorts",
-            message: "A cancelled YouTube upload could not be kept private; check it manually.",
-            details: { videoDraftId: job.videoDraftId, videoId: result.id, error: error instanceof Error ? error.message : String(error) },
-          });
-        }
-        return;
-      }
-      updateVideoTarget(unsafeDb(backendDb).db, target.id, {
-        status: "prepared",
-        externalId: result.id,
-        externalUrl: result.url,
-        preparedAt: new Date().toISOString(),
-        confirmationSource: "publish_response",
-      });
-    } else if (target.deliveryProvider === "zernio") {
-      // Zernio accepts the public video at its publish time, so prepare is a
-      // local checkpoint only. Publishing early would violate the schedule.
-      if (!target.providerAccountId) throw new Error("Zernio Instagram account is missing");
-      updateVideoTarget(unsafeDb(backendDb).db, target.id, { status: "prepared", preparedAt: new Date().toISOString() });
-    } else {
-      const result = await prepareInstagramReel(
-        instagramConfig,
-        instagramCredentials,
-        videoPublicUrl(backendDb, config, draft),
-        metadata as InstagramMetadata,
-      );
-      if (!ownsVideoJob(backendDb, job)) return;
-      updateVideoTarget(unsafeDb(backendDb).db, target.id, {
-        status: "prepared",
-        externalId: result.id,
-        preparedAt: new Date().toISOString(),
+    if (target.target === "youtube_shorts") await prepareYouTube(youtubeConfig, backendDb, job, target, draft, filePath, locale);
+    else if (target.deliveryProvider === "zernio") prepareZernio(backendDb, target);
+    else await prepareInstagram(instagramConfig, backendDb, job, target, draft, metadata, instagramCredentials);
+    return;
+  }
+  if (target.target === "youtube_shorts") publishYouTube(backendDb, job, target);
+  else if (target.deliveryProvider === "zernio") await publishZernio(instagramConfig, backendDb, job, target, draft, metadata);
+  else await publishInstagram(instagramConfig, backendDb, job, target, instagramCredentials);
+  refreshVideoDraftStatus(backendDb, draft.id, config.VIDEO_MEDIA_RETENTION_HOURS);
+}
+
+type VideoTarget = typeof videoTargets.$inferSelect;
+type VideoDraft = ReturnType<typeof getVideoDraft>;
+type InstagramCredentials = ReturnType<typeof instagramCredentialsForLocale>;
+
+async function prepareYouTube(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  job: VideoJob,
+  target: VideoTarget,
+  draft: VideoDraft,
+  filePath: string,
+  locale: "en" | "ru",
+): Promise<void> {
+  const metadata = target.metadataJson as YouTubeMetadata;
+  const result = await prepareYouTubeVideo(
+    config,
+    filePath,
+    { ...metadata, description: composeYouTubeDescription(backendDb, draft.actorId, metadata) },
+    target.scheduledAt ?? new Date().toISOString(),
+    locale,
+  );
+  if (!ownsVideoJob(backendDb, job)) {
+    // Cancellation can happen while the resumable upload is in flight. The
+    // ID exists only in this response, so fence its future public release
+    // before discarding it from local state.
+    try {
+      await keepYouTubeUploadPrivate(config, result.id, locale);
+    } catch (error) {
+      recordDomainEvent(backendDb.events, {
+        ref: publicationRef("video", job.videoDraftId),
+        type: "studio.notification.video_cancelled",
+        severity: "warn",
+        target: "youtube_shorts",
+        message: "A cancelled YouTube upload could not be kept private; check it manually.",
+        details: { videoDraftId: job.videoDraftId, videoId: result.id, error: error instanceof Error ? error.message : String(error) },
       });
     }
     return;
   }
-  if (target.target === "youtube_shorts") {
-    if (!target.externalId) throw new Error("YouTube upload has not completed yet.");
-    if (!ownsVideoJob(backendDb, job)) return;
-    updateVideoTarget(unsafeDb(backendDb).db, target.id, {
-      status: "published",
-      publishedAt: new Date().toISOString(),
-      confirmationSource: target.confirmationSource ?? "publish_response",
-    });
-  } else if (target.deliveryProvider === "zernio") {
-    const accountId = target.providerAccountId;
-    if (!accountId) throw new Error("Zernio Instagram account is missing");
-    const result = await publishZernioInstagramReel(instagramConfig, {
-      accountId,
-      publicUrl: videoPublicUrl(backendDb, config, draft),
-      metadata: metadata as InstagramMetadata,
-      requestId: zernioPublishFence(job),
-    });
-    if (!ownsVideoJob(backendDb, job)) return;
-    // The provider takes a publication before the platform does, so a response
-    // with no platform link is not a published Reel — it is one nobody has
-    // confirmed. Recording it as published is how a card showed a live post the
-    // account did not have, and it left the row outside the reconciliation
-    // sweep, which is the only thing that could have filled the link in later.
-    if (!result.externalId && !result.url) {
-      updateVideoTarget(unsafeDb(backendDb).db, target.id, { providerPostId: result.providerPostId });
-      throw new AmbiguousPublicationError(
-        "zernio",
-        new Error("the provider accepted the publication and the platform has not confirmed it"),
-      );
-    }
-    updateVideoTarget(unsafeDb(backendDb).db, target.id, {
-      status: "published",
-      providerPostId: result.providerPostId,
-      externalId: result.externalId,
-      externalUrl: result.url,
-      publishedAt: new Date().toISOString(),
-      confirmationSource: "provider_verify",
-      verifiedAt: new Date().toISOString(),
-    });
-  } else {
-    if (!target.externalId) throw new Error("Instagram upload has not completed yet.");
-    await instagramContainerReady(instagramConfig, instagramCredentials, target.externalId);
-    if (!ownsVideoJob(backendDb, job)) return;
-    const result = await publishInstagramReel(instagramConfig, instagramCredentials, target.externalId);
-    if (!ownsVideoJob(backendDb, job)) return;
-    let externalUrl = result.url;
-    let verifiedAt: string | null = null;
-    try {
-      externalUrl = (await verifyInstagramPublication(result.id, instagramConfig, instagramCredentials)).url ?? externalUrl;
-      verifiedAt = new Date().toISOString();
-    } catch {
-      // The publish response already returned the media ID. Verification
-      // failure is diagnostic and must not replay media_publish.
-    }
-    updateVideoTarget(unsafeDb(backendDb).db, target.id, {
-      status: "published",
-      externalId: result.id,
-      externalUrl,
-      publishedAt: new Date().toISOString(),
-      confirmationSource: verifiedAt ? "provider_verify" : "publish_response",
-      verifiedAt,
-    });
+  updateVideoTarget(unsafeDb(backendDb).db, target.id, {
+    status: "prepared",
+    externalId: result.id,
+    externalUrl: result.url,
+    preparedAt: new Date().toISOString(),
+    confirmationSource: "publish_response",
+  });
+}
+
+function prepareZernio(backendDb: BackendDb, target: VideoTarget): void {
+  // Zernio accepts the public video at its publish time, so prepare is a
+  // local checkpoint only. Publishing early would violate the schedule.
+  if (!target.providerAccountId) throw new Error("Zernio Instagram account is missing");
+  updateVideoTarget(unsafeDb(backendDb).db, target.id, { status: "prepared", preparedAt: new Date().toISOString() });
+}
+
+async function prepareInstagram(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  job: VideoJob,
+  target: VideoTarget,
+  draft: VideoDraft,
+  metadata: VideoMetadata,
+  credentials: InstagramCredentials,
+): Promise<void> {
+  const result = await prepareInstagramReel(config, credentials, videoPublicUrl(backendDb, config, draft), metadata as InstagramMetadata);
+  if (!ownsVideoJob(backendDb, job)) return;
+  updateVideoTarget(unsafeDb(backendDb).db, target.id, {
+    status: "prepared",
+    externalId: result.id,
+    preparedAt: new Date().toISOString(),
+  });
+}
+
+function publishYouTube(backendDb: BackendDb, job: VideoJob, target: VideoTarget): void {
+  if (!target.externalId) throw new Error("YouTube upload has not completed yet.");
+  if (!ownsVideoJob(backendDb, job)) return;
+  updateVideoTarget(unsafeDb(backendDb).db, target.id, {
+    status: "published",
+    publishedAt: new Date().toISOString(),
+    confirmationSource: target.confirmationSource ?? "publish_response",
+  });
+}
+
+async function publishZernio(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  job: VideoJob,
+  target: VideoTarget,
+  draft: VideoDraft,
+  metadata: VideoMetadata,
+): Promise<void> {
+  const accountId = target.providerAccountId;
+  if (!accountId) throw new Error("Zernio Instagram account is missing");
+  const result = await publishZernioInstagramReel(config, {
+    accountId,
+    publicUrl: videoPublicUrl(backendDb, config, draft),
+    metadata: metadata as InstagramMetadata,
+    requestId: zernioPublishFence(job),
+  });
+  if (!ownsVideoJob(backendDb, job)) return;
+  // The provider takes a publication before the platform does, so a response
+  // with no platform link is not a published Reel — it is one nobody has
+  // confirmed. Recording it as published is how a card showed a live post the
+  // account did not have, and it left the row outside the reconciliation
+  // sweep, which is the only thing that could have filled the link in later.
+  if (!result.externalId && !result.url) {
+    updateVideoTarget(unsafeDb(backendDb).db, target.id, { providerPostId: result.providerPostId });
+    throw new AmbiguousPublicationError("zernio", new Error("the provider accepted the publication and the platform has not confirmed it"));
   }
-  refreshVideoDraftStatus(backendDb, draft.id, config.VIDEO_MEDIA_RETENTION_HOURS);
+  updateVideoTarget(unsafeDb(backendDb).db, target.id, {
+    status: "published",
+    providerPostId: result.providerPostId,
+    externalId: result.externalId,
+    externalUrl: result.url,
+    publishedAt: new Date().toISOString(),
+    confirmationSource: "provider_verify",
+    verifiedAt: new Date().toISOString(),
+  });
+}
+
+async function publishInstagram(
+  config: BackendConfig,
+  backendDb: BackendDb,
+  job: VideoJob,
+  target: VideoTarget,
+  credentials: InstagramCredentials,
+): Promise<void> {
+  if (!target.externalId) throw new Error("Instagram upload has not completed yet.");
+  await instagramContainerReady(config, credentials, target.externalId);
+  if (!ownsVideoJob(backendDb, job)) return;
+  const result = await publishInstagramReel(config, credentials, target.externalId);
+  if (!ownsVideoJob(backendDb, job)) return;
+  let externalUrl = result.url;
+  let verifiedAt: string | null = null;
+  try {
+    externalUrl = (await verifyInstagramPublication(result.id, config, credentials)).url ?? externalUrl;
+    verifiedAt = new Date().toISOString();
+  } catch {
+    // The publish response already returned the media ID. Verification
+    // failure is diagnostic and must not replay media_publish.
+  }
+  updateVideoTarget(unsafeDb(backendDb).db, target.id, {
+    status: "published",
+    externalId: result.id,
+    externalUrl,
+    publishedAt: new Date().toISOString(),
+    confirmationSource: verifiedAt ? "provider_verify" : "publish_response",
+    verifiedAt,
+  });
 }
 
 function recordVideoProgressEvent(backendDb: BackendDb, job: VideoJob, type: string): void {
