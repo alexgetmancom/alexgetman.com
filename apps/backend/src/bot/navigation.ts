@@ -6,7 +6,7 @@ import { t } from "../foundation/i18n/index.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
 import { showAnalyticsDashboard } from "./analytics-screen.js";
-import { openPostScreen } from "./post-screen.js";
+import { openIntake } from "./intake.js";
 import { showQueue } from "./queue.js";
 import { SETTINGS_MENU_ID } from "./settings-screen.js";
 import { startVideoConversation } from "./video-conversation.js";
@@ -17,8 +17,8 @@ export function buildMainMenu(config: BackendConfig, backendDb: BackendDb, setti
   const menu = new Menu<Context>(MAIN_MENU_ID);
   menu
     .text(
-      (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.new-post"),
-      (ctx) => openPostScreen(ctx, backendDb),
+      (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.new-material"),
+      (ctx) => openIntake(ctx, backendDb, "edit"),
     )
     .text(
       (ctx) => t(settingsService(backendDb).locale(Number(ctx.from?.id)), "menu.new-video"),

@@ -9,44 +9,16 @@ import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
 import { appendPendingAlbum } from "./albums.js";
 import { clearConversationState, getConversationState } from "./conversation-state.js";
-import { cancelPromptKeyboard } from "./dialog-ui.js";
-import { executePublicationEffects, type PublicationMessageResult } from "./effects.js";
+import type { PublicationMessageResult } from "./effects.js";
 import { persistentKeyboard } from "./menu-render.js";
 import { extractMessage } from "./message.js";
 import { POST_FLOW, postStateStep } from "./post-flow.js";
 import { applyAdminState } from "./post-input-actions.js";
-import { parseSessionCallback, publicationCallback } from "./publication-callback.js";
-import { openPublicationFlow } from "./publication-flow.js";
 import { postPreviewCard } from "./publication-renderers.js";
 
-/** The conversational text-post screen. It owns user input and keeps the
- * root bot router limited to authorization and screen dispatch.
- *
- * `reply` opens the screen as a new message; `edit` turns the message the
- * operator just tapped into it, which is what a callback should do. */
-async function renderPostScreen(ctx: Context, backendDb: BackendDb, mode: "reply" | "edit"): Promise<void> {
-  const actorId = Number(ctx.from?.id);
-  const revision = openPublicationFlow(backendDb, actorId, {
-    kind: "post",
-    draftId: null,
-    step: "new_post",
-    data: {},
-    controlMessageId: null,
-  }).revision;
-  const locale = settingsService(backendDb).locale(actorId);
-  const prompt = t(locale, "post.dialog-prompt");
-  const options = { reply_markup: cancelPromptKeyboard(locale, publicationCallback("post", "cancel_dialog", [], revision)) };
-  await executePublicationEffects(ctx, backendDb, [{ type: "screen", mode, text: prompt, options }]);
-}
-
-export async function startPostScreen(ctx: Context, backendDb: BackendDb): Promise<void> {
-  await renderPostScreen(ctx, backendDb, "reply");
-}
-
-export async function openPostScreen(ctx: Context, backendDb: BackendDb): Promise<void> {
-  await renderPostScreen(ctx, backendDb, "edit");
-}
-
+/** The conversational text-post screen. It owns operator input from the moment
+ * the intake decides the material is a post, and keeps the root bot router
+ * limited to authorization and screen dispatch. */
 export async function handlePostMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<PublicationMessageResult> {
   const actorId = Number(ctx.from?.id);
   const locale = settingsService(backendDb).locale(actorId);
@@ -125,12 +97,4 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       },
     ],
   };
-}
-
-export async function handlePostScreenCallback(ctx: Context, backendDb: BackendDb): Promise<boolean> {
-  const rawData = ctx.callbackQuery?.data;
-  if (!rawData || parseSessionCallback(rawData).data !== "menu_text") return false;
-  await executePublicationEffects(ctx, backendDb, [{ type: "answer-callback" }]);
-  await openPostScreen(ctx, backendDb);
-  return true;
 }

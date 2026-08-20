@@ -46,7 +46,8 @@ export function saveConversationState(backendDb: BackendDb, actorId: number, inp
   const data = { ...input.data };
   // A person can have one active conversation. Starting another workflow
   // retires every other kind before the new state is written.
-  for (const kind of ["post", "video", "settings"] as const) if (kind !== input.kind) retireConversationSession(backendDb, actorId, kind);
+  for (const kind of ["intake", "post", "video", "settings"] as const)
+    if (kind !== input.kind) retireConversationSession(backendDb, actorId, kind);
   const revision = saveConversationSession(backendDb, {
     actorId,
     kind: input.kind,

@@ -1,15 +1,19 @@
 export type TargetLocale = "ru" | "en";
 
-/** What a target can carry. The site renders both a short post and a long
- * article, X carries a post at `x` and an Article at `x_article`; nothing
- * branches on the distinction, callers ask the catalogue for the kind they
- * are publishing. */
+/** What a target can carry. X carries a post at `x` and an Article at
+ * `x_article`; nothing branches on the distinction, callers ask the catalogue
+ * for the kind they are publishing.
+ *
+ * The site carries posts only. It renders long form perfectly well, but its
+ * delivery reads `posts`/`post_locales` through its own build, and until that
+ * build knows about articles, saying the site carries them here would queue a
+ * job no adapter can execute. */
 export type PublicationForm = "post" | "article";
 
 export const TARGETS = [
   { id: "telegram", label: "Telegram", locale: "ru", kind: "telegram", carries: ["post"] },
-  { id: "site_ru", label: "Site RU", locale: "ru", kind: "site", carries: ["post", "article"] },
-  { id: "site_en", label: "Site EN", locale: "en", kind: "site", carries: ["post", "article"] },
+  { id: "site_ru", label: "Site RU", locale: "ru", kind: "site", carries: ["post"] },
+  { id: "site_en", label: "Site EN", locale: "en", kind: "site", carries: ["post"] },
   { id: "threads_ru", label: "Threads RU", locale: "ru", kind: "social", carries: ["post"] },
   { id: "threads_en", label: "Threads EN", locale: "en", kind: "social", carries: ["post"] },
   { id: "x", label: "X (Twitter)", locale: "en", kind: "social", carries: ["post"] },

@@ -3,10 +3,11 @@ import { Bot, type Context } from "grammy";
 import { handleAnalyticsCallback } from "./bot/analytics-screen.js";
 import { runCallbackBoundary } from "./bot/callback-boundary.js";
 import { handlePublicationCallback, handlePublicationMessage } from "./bot/callback-router.js";
+import { executePublicationEffects } from "./bot/effects.js";
+import { cancelIntake, handleIntakeMessage, INTAKE_ARTICLE_PUBLISH, openIntake, publishReviewedArticle } from "./bot/intake.js";
 import { persistentKeyboard, showMainMenu } from "./bot/menu-render.js";
 import { buildMainMenu } from "./bot/navigation.js";
 import { handleOperationsCallback } from "./bot/operations-screen.js";
-import { handlePostScreenCallback, startPostScreen } from "./bot/post-screen.js";
 import { handleProgressCallback } from "./bot/progress-screen.js";
 import { parseSessionCallback } from "./bot/publication-callback.js";
 import { showQueue, showQueueAttention } from "./bot/queue.js";
@@ -103,25 +104,47 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
     if (!isAdmin(config, ctx.from?.id)) return;
     await showSettings(ctx, backendDb, settingsMenu);
   });
+  bot.hears(localizedTextVariants(["menu.new-material"]), async (ctx) => {
+    if (!isAdmin(config, ctx.from?.id)) return;
+    await openIntake(ctx, backendDb);
+  });
   bot.hears(localizedTextVariants(["menu.new-video"]), async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return;
     await startVideoConversation(ctx, backendDb);
   });
-  bot.hears(localizedTextVariants(["menu.new-post"]), async (ctx) => {
-    if (!isAdmin(config, ctx.from?.id)) return;
-    await startPostScreen(ctx, backendDb);
-  });
   bot.on("message", async (ctx) => {
     if (!isAdmin(config, ctx.from?.id)) return;
     if (await handleSettingsMessage(ctx, backendDb, config, settingsMenu)) return;
+    // The intake owns the first message only while it is still deciding what
+    // that message is; anything it declines falls through unchanged.
+    const intake = await handleIntakeMessage(ctx, backendDb, config);
+    if (intake.effects.length) await executePublicationEffects(ctx, backendDb, intake.effects);
+    if (intake.handled) return;
     await handlePublicationMessage(ctx, backendDb, config);
   });
 
   const callbackRoutes: CallbackRoute[] = [
     {
-      name: "post-screen",
-      matches: (data) => data === "menu_text",
-      handle: async (ctx) => handlePostScreenCallback(ctx, backendDb),
+      name: "intake-article-publish",
+      matches: (data) => data === INTAKE_ARTICLE_PUBLISH,
+      handle: async (ctx) => {
+        const actorId = Number(ctx.from?.id);
+        const locale = settingsService(backendDb).locale(actorId);
+        const { title } = publishReviewedArticle(backendDb, config, actorId);
+        await ctx.answerCallbackQuery();
+        await ctx.reply(t(locale, "intake.article-published", { title }));
+        return true;
+      },
+    },
+    {
+      name: "intake-cancel",
+      matches: (data) => data === "intake_cancel",
+      handle: async (ctx) => {
+        cancelIntake(backendDb, Number(ctx.from?.id));
+        await ctx.answerCallbackQuery();
+        await showMainMenu(ctx, backendDb, config, mainMenu, true);
+        return true;
+      },
     },
     {
       name: "queue",

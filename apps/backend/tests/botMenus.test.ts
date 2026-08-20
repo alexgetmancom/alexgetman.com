@@ -99,16 +99,16 @@ describe("buildMainMenu", () => {
     );
   });
 
-  it("offers post creation, video creation and analytics", async () => {
+  it("offers the material intake, video creation and analytics", async () => {
     backendDb = openBackendDb(":memory:");
     const config = loadTestConfig({});
     const labels = await mainMenuLabels(config, backendDb);
-    expect(labels.some((text) => /new post/i.test(text))).toBe(true);
+    expect(labels.some((text) => /new material/i.test(text))).toBe(true);
     expect(labels.some((text) => /new video/i.test(text))).toBe(true);
     expect(labels.some((text) => /analytics/i.test(text))).toBe(true);
   });
 
-  it("puts post and video creation on the same row", async () => {
+  it("puts the intake and video creation on the same row", async () => {
     backendDb = openBackendDb(":memory:");
     const config = loadTestConfig({});
     const settingsMenu = buildSettingsMenu(config, backendDb);
@@ -116,7 +116,7 @@ describe("buildMainMenu", () => {
     const rows: Array<Array<{ text: string }>> = await (
       mainMenu as unknown as { render: (ctx: Context) => Promise<Array<Array<{ text: string }>>> }
     ).render(fakeCtx);
-    expect(rows[0]?.map((button) => button.text)).toEqual(["📝 New post", "🎬 New video"]);
+    expect(rows[0]?.map((button) => button.text)).toEqual(["📥 New material", "🎬 New video"]);
   });
 });
 
