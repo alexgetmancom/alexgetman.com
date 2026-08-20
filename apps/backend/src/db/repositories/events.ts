@@ -1,6 +1,6 @@
 import { and, eq, gte, isNull } from "drizzle-orm";
 import type { Clock, DomainEventInput, EventStore } from "../../application/ports.js";
-import { postEvents } from "../schema.js";
+import { publicationEvents } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** Durable SQLite implementation of the application event port. */
@@ -17,18 +17,18 @@ export function recordEvent(db: Pick<BackendDatabase, "select" | "insert">, cloc
   const target = input.target ?? null;
   if (input.cooldownSeconds) {
     const cutoff = new Date(clock.now().getTime() - input.cooldownSeconds * 1000).toISOString();
-    const refCondition = ref == null ? isNull(postEvents.postKey) : eq(postEvents.postKey, ref);
-    const targetCondition = target == null ? isNull(postEvents.target) : eq(postEvents.target, target);
+    const refCondition = ref == null ? isNull(publicationEvents.publicationKey) : eq(publicationEvents.publicationKey, ref);
+    const targetCondition = target == null ? isNull(publicationEvents.target) : eq(publicationEvents.target, target);
     const duplicate = db
-      .select({ id: postEvents.id })
-      .from(postEvents)
-      .where(and(refCondition, eq(postEvents.eventType, input.type), targetCondition, gte(postEvents.createdAt, cutoff)))
+      .select({ id: publicationEvents.id })
+      .from(publicationEvents)
+      .where(and(refCondition, eq(publicationEvents.eventType, input.type), targetCondition, gte(publicationEvents.createdAt, cutoff)))
       .get();
     if (duplicate) return false;
   }
-  db.insert(postEvents)
+  db.insert(publicationEvents)
     .values({
-      postKey: ref,
+      publicationKey: ref,
       eventType: input.type,
       severity: input.severity,
       target,

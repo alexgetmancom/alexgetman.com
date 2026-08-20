@@ -190,7 +190,7 @@ type DeliveryPhase = "validate" | "prepare" | "provider.publish" | "provider.ver
 
 async function timedDeliveryPhase<T>(
   backendDb: BackendDb,
-  job: { jobId: number; postId: number; postKey: string; target: string; attemptCount: number; lockId: string },
+  job: { jobId: number; postId: number; publicationKey: string; target: string; attemptCount: number; lockId: string },
   phase: DeliveryPhase,
   timings: Record<string, number>,
   work: () => Promise<T>,

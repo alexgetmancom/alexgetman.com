@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { postLocales, postMetrics, posts, postTargets, publications, publishJobs } from "../db/schema.js";
+import { postLocales, postMetrics, posts, publications, publicationTargets, publishJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { zonedRollingPeriodBounds } from "../foundation/time.js";
 import {
@@ -65,49 +65,49 @@ function pipelinePosts(
   const periodOffsetDays = offsetDays ?? (weekOffset + comparisonOffset) * periodDays;
   const [start, end] = zonedRollingPeriodBounds(periodOffsetDays / periodDays, periodDays, config.TIMEZONE);
   const rows = fetchPostRows(backendDb, start, end, options.includeContent, rowLimit);
-  const postKeys = rows.map((row) => String(row.post_key ?? "")).filter(Boolean);
+  const publicationKeys = rows.map((row) => String(row.publication_key ?? "")).filter(Boolean);
   const targetRows = (
-    postKeys.length
+    publicationKeys.length
       ? unsafeDb(backendDb)
           .db.select(
             options.compact
               ? {
-                  postKey: postTargets.postKey,
-                  target: postTargets.target,
-                  status: postTargets.status,
-                  url: postTargets.url,
+                  publicationKey: publicationTargets.publicationKey,
+                  target: publicationTargets.target,
+                  status: publicationTargets.status,
+                  url: publicationTargets.url,
                 }
               : {
-                  postKey: postTargets.postKey,
-                  target: postTargets.target,
-                  status: postTargets.status,
-                  externalId: postTargets.externalId,
-                  externalIdsJson: postTargets.externalIdsJson,
-                  url: postTargets.url,
-                  error: postTargets.error,
-                  skipped: postTargets.skipped,
-                  updatedAt: postTargets.updatedAt,
+                  publicationKey: publicationTargets.publicationKey,
+                  target: publicationTargets.target,
+                  status: publicationTargets.status,
+                  externalId: publicationTargets.externalId,
+                  externalIdsJson: publicationTargets.externalIdsJson,
+                  url: publicationTargets.url,
+                  error: publicationTargets.error,
+                  skipped: publicationTargets.skipped,
+                  updatedAt: publicationTargets.updatedAt,
                 },
           )
-          .from(postTargets)
-          .where(inArray(postTargets.postKey, postKeys))
-          .orderBy(asc(postTargets.target))
+          .from(publicationTargets)
+          .where(inArray(publicationTargets.publicationKey, publicationKeys))
+          .orderBy(asc(publicationTargets.target))
           .all()
       : []
   ) as PipelineTargetRow[];
   const metricRows = (
-    postKeys.length
+    publicationKeys.length
       ? unsafeDb(backendDb)
           .db.select(
             options.compact
               ? {
-                  postKey: postMetrics.postKey,
+                  publicationKey: postMetrics.publicationKey,
                   target: postMetrics.target,
                   metricName: postMetrics.metricName,
                   value: postMetrics.value,
                 }
               : {
-                  postKey: postMetrics.postKey,
+                  publicationKey: postMetrics.publicationKey,
                   target: postMetrics.target,
                   metricName: postMetrics.metricName,
                   value: postMetrics.value,
@@ -117,13 +117,13 @@ function pipelinePosts(
                 },
           )
           .from(postMetrics)
-          .where(inArray(postMetrics.postKey, postKeys))
+          .where(inArray(postMetrics.publicationKey, publicationKeys))
           .orderBy(asc(postMetrics.target), asc(postMetrics.metricName))
           .all()
       : []
   ) as PipelineMetricRow[];
   const sampleRows = options.includeSamples
-    ? fetchMetricSamples(backendDb, postKeys, start, end, periodDays, options.sampleLimitPerSeries)
+    ? fetchMetricSamples(backendDb, publicationKeys, start, end, periodDays, options.sampleLimitPerSeries)
     : [];
   return formatPipelinePosts(config, rows, targetRows, metricRows, sampleRows, options.includeContent, options.compact);
 }
@@ -151,8 +151,8 @@ type PublicationQueryRow = {
  * the filter and the ordering cannot drift apart.
  */
 const publicationMoment = sql`coalesce(
-  (select min(${postTargets.publishedAt}) from ${postTargets} where ${postTargets.postKey} = 'post:' || ${publications.postId}),
-  (select min(${publishJobs.publishAt}) from ${publishJobs} where ${publishJobs.postKey} = 'post:' || ${publications.postId}),
+  (select min(${publicationTargets.publishedAt}) from ${publicationTargets} where ${publicationTargets.publicationKey} = 'post:' || ${publications.postId}),
+  (select min(${publishJobs.publishAt}) from ${publishJobs} where ${publishJobs.publicationKey} = 'post:' || ${publications.postId}),
   ${publications.createdAt}
 )`;
 
@@ -196,16 +196,21 @@ function fetchPostRows(backendDb: BackendDb, start: string, end: string, include
   const publicationKeys = publicationRows.map((row) => `post:${row.postId}`);
   const publicationPosts = publicationKeys.length
     ? unsafeDb(backendDb)
-        .db.select({ postKey: posts.postKey, messageId: posts.messageId, dateMsk: posts.dateMsk, telegramUrl: posts.telegramUrl })
+        .db.select({
+          publicationKey: posts.publicationKey,
+          messageId: posts.messageId,
+          dateMsk: posts.dateMsk,
+          telegramUrl: posts.telegramUrl,
+        })
         .from(posts)
-        .where(inArray(posts.postKey, publicationKeys))
+        .where(inArray(posts.publicationKey, publicationKeys))
         .all()
     : [];
-  const postByKey = new Map(publicationPosts.map((post) => [post.postKey, post]));
+  const postByKey = new Map(publicationPosts.map((post) => [post.publicationKey, post]));
   return publicationRows.map((row) => {
     const post = postByKey.get(`post:${row.postId}`);
     return {
-      post_key: `post:${row.postId}`,
+      publication_key: `post:${row.postId}`,
       post_id: row.postId,
       telegram_message_id: row.telegramMessageId,
       created_at: row.createdAt,
@@ -239,14 +244,14 @@ function resolvePipelineReadModelOptions(options: PipelineReadModelOptions): Res
 
 function fetchMetricSamples(
   backendDb: BackendDb,
-  postKeys: string[],
+  publicationKeys: string[],
   start: string,
   end: string,
   periodDays: number,
   limitPerSeries: number,
 ): PipelineSampleRow[] {
-  if (postKeys.length === 0) return [];
-  const placeholders = postKeys.map(() => "?").join(",");
+  if (publicationKeys.length === 0) return [];
+  const placeholders = publicationKeys.map(() => "?").join(",");
   const bucketSeconds = periodDays <= 7 ? 60 * 60 : 24 * 60 * 60;
   // The cap keeps the newest buckets, not the oldest: a series longer than the
   // cap is one whose recent days are the point of asking.
@@ -257,18 +262,18 @@ function fetchMetricSamples(
   // what a window function was doing here at twice the cost.
   return unsafeDb(backendDb)
     .sqlite.prepare(
-      `SELECT post_key AS postKey, target, metric_name AS metricName, value, max(sampled_at) AS sampledAt, bucket
+      `SELECT publication_key AS publicationKey, target, metric_name AS metricName, value, max(sampled_at) AS sampledAt, bucket
          FROM (
-           SELECT post_key, target, metric_name, value, sampled_at,
+           SELECT publication_key, target, metric_name, value, sampled_at,
                   CAST((unixepoch(sampled_at) - unixepoch(?)) / ? AS INTEGER) AS bucket
              FROM metric_samples
-            WHERE post_key IN (${placeholders}) AND sampled_at >= ? AND sampled_at <= ?
+            WHERE publication_key IN (${placeholders}) AND sampled_at >= ? AND sampled_at <= ?
          )
         WHERE bucket >= ?
-        GROUP BY postKey, target, metricName, bucket
-        ORDER BY postKey ASC, target ASC, metricName ASC, bucket ASC`,
+        GROUP BY publicationKey, target, metricName, bucket
+        ORDER BY publicationKey ASC, target ASC, metricName ASC, bucket ASC`,
     )
-    .all(start, bucketSeconds, ...postKeys, start, end, firstBucket) as PipelineSampleRow[];
+    .all(start, bucketSeconds, ...publicationKeys, start, end, firstBucket) as PipelineSampleRow[];
 }
 
 /** The newest metric samples with the post they belong to. Both the pipeline
@@ -277,7 +282,7 @@ function fetchMetricSamples(
 export function recentPostMetrics(backendDb: BackendDb) {
   return unsafeDb(backendDb)
     .db.select({
-      postKey: postMetrics.postKey,
+      publicationKey: postMetrics.publicationKey,
       target: postMetrics.target,
       metricName: postMetrics.metricName,
       value: postMetrics.value,
@@ -288,8 +293,8 @@ export function recentPostMetrics(backendDb: BackendDb) {
       postUrl: sql<string | null>`coalesce(${posts.siteEnPath}, ${posts.siteRuPath}, ${posts.telegramUrl})`,
     })
     .from(postMetrics)
-    .leftJoin(posts, eq(posts.postKey, postMetrics.postKey))
-    .orderBy(desc(postMetrics.sampledAt), asc(postMetrics.postKey), asc(postMetrics.target), asc(postMetrics.metricName))
+    .leftJoin(posts, eq(posts.publicationKey, postMetrics.publicationKey))
+    .orderBy(desc(postMetrics.sampledAt), asc(postMetrics.publicationKey), asc(postMetrics.target), asc(postMetrics.metricName))
     .limit(100)
     .all();
 }

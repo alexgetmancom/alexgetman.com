@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { postEvents, videoTargets } from "../src/db/schema.js";
+import { publicationEvents, videoTargets } from "../src/db/schema.js";
 import { PROVIDER_CONFIRMATION_GRACE_MS, recordVideoCompletionIfFinal } from "../src/delivery/video-worker.js";
 import { replaceVideoTargets, saveVideoMetadata, scheduleVideo } from "../src/publishing/video-service.js";
 import { settleVideoTarget } from "../src/publishing/video-settle.js";
@@ -169,7 +169,7 @@ describe("a publication the provider never answers", () => {
 function completionEvents(backendDb: UnsafeBackendDb) {
   return backendDb.db
     .select()
-    .from(postEvents)
+    .from(publicationEvents)
     .all()
     .filter((event) => event.eventType === "delivery.video.completed");
 }

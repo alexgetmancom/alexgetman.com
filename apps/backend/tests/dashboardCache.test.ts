@@ -17,7 +17,7 @@ describe("dashboard render cache", () => {
         .insert(publishJobs)
         .values({
           postId: 1,
-          postKey: "post:cache",
+          publicationKey: "post:cache",
           messageId: 1,
           target: "telegram",
           status: "failed",
@@ -43,7 +43,7 @@ describe("dashboard render cache", () => {
         .run();
       backendDb.db
         .insert(posts)
-        .values({ postKey: "post:1", postId: 1, channel: "test", messageId: 1, createdAt: now, updatedAt: now })
+        .values({ publicationKey: "post:1", postId: 1, channel: "test", messageId: 1, createdAt: now, updatedAt: now })
         .run();
       backendDb.db.insert(postLocales).values({ postId: 1, locale: "ru", slug: "today", text: "Current local day", updatedAt: now }).run();
 
@@ -58,11 +58,11 @@ describe("dashboard render cache", () => {
     try {
       const before = commandCenterFingerprint(backendDb);
       backendDb.sqlite
-        .prepare("INSERT INTO metric_schedule(post_key,target,next_check_at,updated_at) VALUES ('post:cache','telegram',?,?)")
+        .prepare("INSERT INTO metric_schedule(publication_key,target,next_check_at,updated_at) VALUES ('post:cache','telegram',?,?)")
         .run("2026-08-10T00:00:00.000Z", "2026-08-10T00:00:00.000Z");
       expect(commandCenterFingerprint(backendDb)).toEqual(before);
       backendDb.sqlite
-        .prepare("UPDATE metric_schedule SET last_error = 'provider failed', updated_at = ? WHERE post_key = 'post:cache'")
+        .prepare("UPDATE metric_schedule SET last_error = 'provider failed', updated_at = ? WHERE publication_key = 'post:cache'")
         .run("2026-08-10T00:01:00.000Z");
       expect(commandCenterFingerprint(backendDb)).not.toEqual(before);
     } finally {

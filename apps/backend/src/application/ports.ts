@@ -59,7 +59,7 @@ export type DraftPatch = Partial<{
 
 export type PostEventRecord = {
   id: number;
-  postKey: string | null;
+  publicationKey: string | null;
   eventType: string;
   severity: string;
   target: string | null;
@@ -355,7 +355,7 @@ export type StudioVideoStore = {
   list(actorIds: number[], limit: number): StudioVideoDraftRecord[];
   targets(publicationId: number): StudioVideoTargetRecord[];
   jobs(publicationId: number): StudioVideoJobRecord[];
-  history(postKey: string, limit: number): PostEventRecord[];
+  history(publicationKey: string, limit: number): PostEventRecord[];
 };
 
 export type EntityEnrichmentStore = {

@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { and, asc, eq, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import { TARGET_GROUPS } from "../../botTargets.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
-import { metricSchedule, posts, postTargets } from "../../db/schema.js";
+import { metricSchedule, posts, publicationTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { metricCheckpointAt } from "./metric-checkpoints.js";
 
@@ -14,7 +14,7 @@ export const MAX_METRIC_TASKS_PER_CYCLE = 30;
 export const METRIC_LOCK_TIMEOUT_SECONDS = 900;
 
 export type MetricTask = {
-  postKey: string;
+  publicationKey: string;
   target: string;
   checkCount: number;
   messageId: number;
@@ -30,16 +30,19 @@ const PAID_METRIC_TARGETS = TARGET_GROUPS.x;
 export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly string[]): void {
   if (targets.length === 0) return;
   const rows = unsafeDb(backendDb)
-    .db.select({ postKey: posts.postKey, dateUtc: posts.dateUtc, target: postTargets.target })
+    .db.select({ publicationKey: posts.publicationKey, dateUtc: posts.dateUtc, target: publicationTargets.target })
     .from(posts)
-    .innerJoin(postTargets, eq(postTargets.postKey, posts.postKey))
-    .leftJoin(metricSchedule, and(eq(metricSchedule.postKey, posts.postKey), eq(metricSchedule.target, postTargets.target)))
+    .innerJoin(publicationTargets, eq(publicationTargets.publicationKey, posts.publicationKey))
+    .leftJoin(
+      metricSchedule,
+      and(eq(metricSchedule.publicationKey, posts.publicationKey), eq(metricSchedule.target, publicationTargets.target)),
+    )
     .where(
       and(
         eq(posts.status, "active"),
-        eq(postTargets.status, "published"),
-        inArray(postTargets.target, [...targets]),
-        isNull(metricSchedule.postKey),
+        eq(publicationTargets.status, "published"),
+        inArray(publicationTargets.target, [...targets]),
+        isNull(metricSchedule.publicationKey),
       ),
     )
     .all();
@@ -49,7 +52,7 @@ export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly str
       const publishedAt = parseDate(row.dateUtc);
       tx.insert(metricSchedule)
         .values({
-          postKey: row.postKey,
+          publicationKey: row.publicationKey,
           target: row.target,
           nextCheckAt: metricCheckpointAt(publishedAt.toISOString(), 0, publishedAt)?.toISOString() ?? publishedAt.toISOString(),
           frozenAt: null,
@@ -72,24 +75,27 @@ export function claimDueMetricTasks(
   const cutoff = new Date(Date.now() - METRIC_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
   const rows = unsafeDb(backendDb)
     .db.select({
-      postKey: metricSchedule.postKey,
+      publicationKey: metricSchedule.publicationKey,
       target: metricSchedule.target,
       checkCount: metricSchedule.checkCount,
       messageId: posts.messageId,
       dateUtc: posts.dateUtc,
-      externalId: postTargets.externalId,
-      externalIds: postTargets.externalIdsJson,
-      url: postTargets.url,
+      externalId: publicationTargets.externalId,
+      externalIds: publicationTargets.externalIdsJson,
+      url: publicationTargets.url,
       lockedBy: metricSchedule.lockedBy,
       lockedAt: metricSchedule.lockedAt,
     })
     .from(metricSchedule)
-    .innerJoin(posts, eq(posts.postKey, metricSchedule.postKey))
-    .innerJoin(postTargets, and(eq(postTargets.postKey, metricSchedule.postKey), eq(postTargets.target, metricSchedule.target)))
+    .innerJoin(posts, eq(posts.publicationKey, metricSchedule.publicationKey))
+    .innerJoin(
+      publicationTargets,
+      and(eq(publicationTargets.publicationKey, metricSchedule.publicationKey), eq(publicationTargets.target, metricSchedule.target)),
+    )
     .where(
       and(
         isNull(metricSchedule.frozenAt),
-        eq(postTargets.status, "published"),
+        eq(publicationTargets.status, "published"),
         inArray(metricSchedule.target, [...targets]),
         ...(config.ENABLE_X_METRICS ? [] : [notInArray(metricSchedule.target, [...PAID_METRIC_TARGETS])]),
         or(isNull(metricSchedule.nextCheckAt), lte(metricSchedule.nextCheckAt, now)),
@@ -109,16 +115,16 @@ export function claimDueMetricTasks(
         .set({ lockedBy: worker, lockedAt: now, updatedAt: now })
         .where(
           and(
-            eq(metricSchedule.postKey, row.postKey),
+            eq(metricSchedule.publicationKey, row.publicationKey),
             eq(metricSchedule.target, row.target),
             or(isNull(metricSchedule.lockedBy), isNull(metricSchedule.lockedAt), lt(metricSchedule.lockedAt, cutoff)),
           ),
         )
-        .returning({ postKey: metricSchedule.postKey })
+        .returning({ publicationKey: metricSchedule.publicationKey })
         .get();
       if (!locked) continue;
       claimed.push({
-        postKey: row.postKey,
+        publicationKey: row.publicationKey,
         target: row.target,
         checkCount: row.checkCount,
         messageId: row.messageId,
@@ -154,7 +160,13 @@ export function finishMetricTask(
       lockedAt: null,
       updatedAt: now.toISOString(),
     })
-    .where(and(eq(metricSchedule.postKey, task.postKey), eq(metricSchedule.target, task.target), eq(metricSchedule.lockedBy, task.lockId)))
+    .where(
+      and(
+        eq(metricSchedule.publicationKey, task.publicationKey),
+        eq(metricSchedule.target, task.target),
+        eq(metricSchedule.lockedBy, task.lockId),
+      ),
+    )
     .run();
 }
 

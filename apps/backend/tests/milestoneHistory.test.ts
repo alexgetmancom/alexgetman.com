@@ -7,7 +7,7 @@ describe("milestone history", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       backendDb.sqlite
-        .prepare("INSERT INTO post_events(event_type,severity,message,created_at) VALUES (?, 'info', ?, ?), (?, 'info', ?, ?)")
+        .prepare("INSERT INTO publication_events(event_type,severity,message,created_at) VALUES (?, 'info', ?, ?), (?, 'info', ?, ?)")
         .run(
           "analytics.milestone.reached",
           "🎉 Telegram RU: 250 подписчиков!",

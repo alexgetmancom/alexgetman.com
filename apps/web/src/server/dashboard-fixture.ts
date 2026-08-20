@@ -4,7 +4,7 @@ import {
   metricSamples,
   metricSchedule,
   postMetrics,
-  postTargets,
+  publicationTargets,
   publishJobs,
   siteJobs,
   studioMediaAssets,
@@ -237,7 +237,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
 
   try {
     for (const [index, postId] of options.postIds.entries()) {
-      const postKey = `post:${postId}`;
+      const publicationKey = `post:${postId}`;
       // Spread the posts across recent days so the period filters (day, week,
       // month) each select a different slice instead of all showing everything.
       const publishedAt = options.postDates?.[index] ?? iso(daysAgo(index));
@@ -245,9 +245,9 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
       for (const plan of options.targets ? TARGET_PLAN.filter((entry) => options.targets?.includes(entry.target)) : TARGET_PLAN) {
         const failed = options.full ? plan.target === "x" && index === 0 : plan.status === "failed";
         rawDb.db
-          .insert(postTargets)
+          .insert(publicationTargets)
           .values({
-            postKey,
+            publicationKey,
             target: plan.target,
             status: failed ? "failed" : "published",
             externalId: failed ? null : `${plan.target}-${postId}`,
@@ -273,7 +273,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
             : Math.max(0, Math.round(base * (1 - index * 0.18)));
           rawDb.db
             .insert(postMetrics)
-            .values({ postKey, target: plan.target, metricName, value, unit: "count", source: "fixture", sampledAt: nowIso })
+            .values({ publicationKey, target: plan.target, metricName, value, unit: "count", source: "fixture", sampledAt: nowIso })
             .run();
 
           // A growth curve rather than noise: the chart is read for shape, and
@@ -292,7 +292,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
             rawDb.db
               .insert(metricSamples)
               .values({
-                postKey,
+                publicationKey,
                 target: plan.target,
                 metricName,
                 value: Math.round(value * progress),
@@ -309,7 +309,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
         rawDb.db
           .insert(metricSchedule)
           .values({
-            postKey,
+            publicationKey,
             target: plan.target,
             nextCheckAt: iso(daysAgo(-1)),
             lastCheckedAt: nowIso,
@@ -323,7 +323,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
         .insert(publishJobs)
         .values({
           postId,
-          postKey,
+          publicationKey,
           messageId: postId,
           target: "x",
           status: index === 0 ? "failed" : "done",
@@ -355,7 +355,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
       .insert(publishJobs)
       .values({
         postId: 999,
-        postKey: "post:999",
+        publicationKey: "post:999",
         messageId: 999,
         target: "telegram",
         status: "queued",
@@ -390,7 +390,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
           publishedAt,
           text: reply ? `@researcher Fixture reply number ${index + 1}` : `Fixture X publication number ${index + 1}`,
           url: `https://x.com/alexgetmancom/status/${xPostId}`,
-          linkedPostKey: !reply && options.postIds[index] ? `post:${options.postIds[index]}` : null,
+          linkedPublicationKey: !reply && options.postIds[index] ? `post:${options.postIds[index]}` : null,
           firstSeenAt: nowIso,
           lastSeenAt: nowIso,
           rawJson: { source: "fixture" },
@@ -623,18 +623,18 @@ export function seedOverviewParityFixture(options: { dbPath: string; postIds: nu
   let targetRows = 0;
   let sampleRows = 0;
 
-  const writeMetric = (postKey: string, target: string, metricName: string, value: number, sampledAt: string) => {
-    rawDb.db.insert(postMetrics).values({ postKey, target, metricName, value, unit: "count", source: "fixture", sampledAt }).run();
+  const writeMetric = (publicationKey: string, target: string, metricName: string, value: number, sampledAt: string) => {
+    rawDb.db.insert(postMetrics).values({ publicationKey, target, metricName, value, unit: "count", source: "fixture", sampledAt }).run();
   };
-  const publishTarget = (postKey: string, target: string, publishedAt: string) => {
+  const publishTarget = (publicationKey: string, target: string, publishedAt: string) => {
     rawDb.db
-      .insert(postTargets)
+      .insert(publicationTargets)
       .values({
-        postKey,
+        publicationKey,
         target,
         status: "published",
-        externalId: `${target}-${postKey}`,
-        url: `https://example.com/${target}/${postKey}`,
+        externalId: `${target}-${publicationKey}`,
+        url: `https://example.com/${target}/${publicationKey}`,
         skipped: 0,
         publishedAt,
         updatedAt: nowIso,
@@ -650,25 +650,25 @@ export function seedOverviewParityFixture(options: { dbPath: string; postIds: nu
     for (const [index, plan] of PARITY_POSTS.entries()) {
       const postId = todayIds[index];
       if (postId === undefined) break;
-      const postKey = `post:${postId}`;
+      const publicationKey = `post:${postId}`;
       // Spread across the day so the daily chart draws a curve rather than a
       // single column, but all inside today's window.
       const publishedAt = iso(hoursAgo(3 + index * 2));
-      publishTarget(postKey, plan.target, publishedAt);
+      publishTarget(publicationKey, plan.target, publishedAt);
       for (const [metricName, value] of [
         ["views", plan.views],
         ["likes", plan.likes],
         ["reposts", plan.reposts],
         ["replies", plan.replies],
       ] as const)
-        writeMetric(postKey, plan.target, metricName, value, nowIso);
+        writeMetric(publicationKey, plan.target, metricName, value, nowIso);
 
       const slots = Math.max(1, Math.round((3 + index * 2) / HOURS_PER_SAMPLE));
       for (let slot = slots; slot >= 0; slot -= 1) {
         rawDb.db
           .insert(metricSamples)
           .values({
-            postKey,
+            publicationKey,
             target: plan.target,
             metricName: "views",
             value: Math.round(plan.views * ((slots - slot) / slots)),
@@ -687,15 +687,15 @@ export function seedOverviewParityFixture(options: { dbPath: string; postIds: nu
     for (const [index, postId] of historyIds.entries()) {
       const day = daysAgo(index + 1);
       const dayIso = iso(day);
-      const postKey = `post:${postId}`;
+      const publicationKey = `post:${postId}`;
       const factor = textVariance[index] ?? 1;
-      publishTarget(postKey, "telegram", dayIso);
+      publishTarget(publicationKey, "telegram", dayIso);
       for (const [metricName, base] of [
         ["views", PARITY_DAILY_TEXT_VIEWS],
         ["likes", 120],
         ["replies", 18],
       ] as const)
-        writeMetric(postKey, "telegram", metricName, Math.round(base * factor), dayIso);
+        writeMetric(publicationKey, "telegram", metricName, Math.round(base * factor), dayIso);
     }
 
     rawDb.db

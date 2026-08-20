@@ -14,7 +14,7 @@ function publishedPost(
   backendDb.db
     .insert(posts)
     .values({
-      postKey: `post:${options.postId}`,
+      publicationKey: `post:${options.postId}`,
       postId: options.postId,
       channel: "alexgetman",
       messageId: options.postId,
@@ -38,7 +38,7 @@ function sample(
   backendDb.db
     .insert(metricSamples)
     .values({
-      postKey: `post:${values.postId}`,
+      publicationKey: `post:${values.postId}`,
       target: values.target,
       metricName: values.metricName,
       value: values.value,

@@ -10,7 +10,7 @@ describe("operational retention", () => {
     try {
       backendDb.sqlite
         .prepare(
-          "INSERT INTO post_events(post_key,severity,message,created_at,acked_at) VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)",
+          "INSERT INTO publication_events(publication_key,severity,message,created_at,acked_at) VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)",
         )
         .run(
           "post:old",
@@ -30,7 +30,7 @@ describe("operational retention", () => {
           old,
         );
       backendDb.sqlite
-        .prepare("INSERT INTO post_events(event_type,severity,message,created_at) VALUES ('analytics.milestone.reached','info',?,?)")
+        .prepare("INSERT INTO publication_events(event_type,severity,message,created_at) VALUES ('analytics.milestone.reached','info',?,?)")
         .run("🎉 X EN: 500 подписчиков!", old);
       backendDb.sqlite.prepare("INSERT INTO ops_actions(actor_type,action,status,created_at) VALUES ('cli','old','ok',?)").run(old);
       backendDb.sqlite.prepare("INSERT INTO site_pageviews(day,path,count,updated_at) VALUES ('2024-01-01','/old',1,?)").run(old);
@@ -42,8 +42,8 @@ describe("operational retention", () => {
 
       const result = pruneOperationalHistory(backendDb, now);
 
-      expect(result).toEqual({ postEvents: 2, opsActions: 1, sitePageviews: 1, runtimeUsage: 1, total: 5 });
-      expect(backendDb.sqlite.prepare("SELECT message FROM post_events ORDER BY id").all()).toEqual([
+      expect(result).toEqual({ publicationEvents: 2, opsActions: 1, sitePageviews: 1, runtimeUsage: 1, total: 5 });
+      expect(backendDb.sqlite.prepare("SELECT message FROM publication_events ORDER BY id").all()).toEqual([
         { message: "old warning" },
         { message: "🎉 X EN: 500 подписчиков!" },
       ]);

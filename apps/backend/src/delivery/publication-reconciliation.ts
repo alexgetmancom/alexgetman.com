@@ -3,7 +3,7 @@ import { and, eq, isNull, lt, lte, or } from "drizzle-orm";
 import { publicationRef } from "../application/publication-ref.js";
 import { videoChannelIdentity } from "../channels/destinations.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { postTargets, publishJobs, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
+import { publicationTargets, publishJobs, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { PUBLISH_BACKOFF_BASE_SECONDS, PUBLISH_BACKOFF_MAX_SECONDS, PUBLISH_LOCK_TIMEOUT_SECONDS } from "../foundation/config.js";
@@ -44,9 +44,12 @@ export async function runPublicationReconciliation(
   const staleBefore = new Date(Date.now() - PUBLISH_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
   const unansweredBefore = new Date(Date.now() - PROVIDER_CONFIRMATION_GRACE_MS).toISOString();
   const ordinary = unsafeDb(backendDb)
-    .db.select({ job: publishJobs, target: postTargets })
+    .db.select({ job: publishJobs, target: publicationTargets })
     .from(publishJobs)
-    .innerJoin(postTargets, and(eq(postTargets.postKey, publishJobs.postKey), eq(postTargets.target, publishJobs.target)))
+    .innerJoin(
+      publicationTargets,
+      and(eq(publicationTargets.publicationKey, publishJobs.publicationKey), eq(publicationTargets.target, publishJobs.target)),
+    )
     .where(
       and(
         eq(publishJobs.status, "verification_required"),
@@ -114,7 +117,7 @@ export async function runPublicationReconciliation(
         .returning({ jobId: publishJobs.jobId })
         .get();
       if (!won) return false;
-      tx.update(postTargets)
+      tx.update(publicationTargets)
         .set({
           status: "published",
           error: null,
@@ -124,14 +127,14 @@ export async function runPublicationReconciliation(
           verifiedAt: now,
           updatedAt: now,
         })
-        .where(and(eq(postTargets.postKey, row.target.postKey), eq(postTargets.target, row.target.target)))
+        .where(and(eq(publicationTargets.publicationKey, row.target.publicationKey), eq(publicationTargets.target, row.target.target)))
         .run();
       return true;
     });
     if (!confirmed) continue;
     refreshPublicationStatus(backendDb, row.job.postId);
     recordDomainEvent(backendDb.events, {
-      ref: row.target.postKey,
+      ref: row.target.publicationKey,
       target: row.target.target,
       type: "publish.job.reconciled",
       severity: "info",
@@ -267,9 +270,9 @@ export async function runPublicationReconciliation(
   // every tick and an inbox that never ages is an inbox nobody escalates.
   const unresolvedTimes = [
     ...unsafeDb(backendDb)
-      .db.select({ updatedAt: postTargets.updatedAt })
-      .from(postTargets)
-      .where(eq(postTargets.status, "verification_required"))
+      .db.select({ updatedAt: publicationTargets.updatedAt })
+      .from(publicationTargets)
+      .where(eq(publicationTargets.status, "verification_required"))
       .all(),
     ...unsafeDb(backendDb)
       .db.select({ updatedAt: videoTargets.updatedAt })

@@ -192,7 +192,7 @@ export function seedSiteFixture(options: { dbPath: string; publicDir: string; po
       rawDb.db
         .insert(posts)
         .values({
-          postKey: `post:${post.postId}`,
+          publicationKey: `post:${post.postId}`,
           postId: post.postId,
           source: "bot",
           channel: "controller",

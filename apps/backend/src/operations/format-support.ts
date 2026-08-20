@@ -1,7 +1,7 @@
 import { asc, eq, sql } from "drizzle-orm";
 import { TARGETS } from "../botTargets.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { formatSupport, mediaTestCases, posts, postTargets } from "../db/schema.js";
+import { formatSupport, mediaTestCases, posts, publicationTargets } from "../db/schema.js";
 
 const MEDIA_TEST_CASES = [
   ["T01", "text_only", "Text only", "Send a plain text message."],
@@ -54,9 +54,17 @@ export function recordFormatEvidence(backendDb: BackendDb, testId: string, messa
   seedFormatSupport(backendDb);
   const test = unsafeDb(backendDb).db.select().from(mediaTestCases).where(eq(mediaTestCases.testId, testId)).get();
   if (!test) throw new Error(`unknown test: ${testId}`);
-  const post = unsafeDb(backendDb).db.select({ postKey: posts.postKey }).from(posts).where(eq(posts.messageId, messageId)).get();
+  const post = unsafeDb(backendDb)
+    .db.select({ publicationKey: posts.publicationKey })
+    .from(posts)
+    .where(eq(posts.messageId, messageId))
+    .get();
   if (!post) throw new Error(`message not found: ${messageId}`);
-  const rows = unsafeDb(backendDb).db.select().from(postTargets).where(eq(postTargets.postKey, post.postKey)).all();
+  const rows = unsafeDb(backendDb)
+    .db.select()
+    .from(publicationTargets)
+    .where(eq(publicationTargets.publicationKey, post.publicationKey))
+    .all();
   const byTarget = new Map(rows.map((row) => [row.target, row]));
   const expected = JSON.parse(test.expectedTargetsJson) as string[];
   const statuses: string[] = [];

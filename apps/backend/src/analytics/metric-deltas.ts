@@ -44,27 +44,27 @@ function metricSeriesSince(backendDb: BackendDb, since: string, scope?: MetricSc
   const rows = unsafeDb(backendDb)
     .sqlite.prepare(
       `WITH matched AS (
-         SELECT post_key, target, metric_name, value, sampled_at, id FROM metric_samples WHERE ${where}
+         SELECT publication_key, target, metric_name, value, sampled_at, id FROM metric_samples WHERE ${where}
        ),
        ranked_latest AS (
-         SELECT post_key, target, metric_name, value,
-                ROW_NUMBER() OVER (PARTITION BY post_key, target, metric_name ORDER BY sampled_at DESC, id DESC) AS rn
+         SELECT publication_key, target, metric_name, value,
+                ROW_NUMBER() OVER (PARTITION BY publication_key, target, metric_name ORDER BY sampled_at DESC, id DESC) AS rn
          FROM matched
        ),
        ranked_baseline AS (
-         SELECT post_key, target, metric_name, value,
-                ROW_NUMBER() OVER (PARTITION BY post_key, target, metric_name ORDER BY sampled_at DESC, id DESC) AS rn
+         SELECT publication_key, target, metric_name, value,
+                ROW_NUMBER() OVER (PARTITION BY publication_key, target, metric_name ORDER BY sampled_at DESC, id DESC) AS rn
          FROM matched WHERE sampled_at <= ?
        ),
        first_seen AS (
-         SELECT post_key, target, metric_name, MIN(sampled_at) AS first_at FROM matched GROUP BY post_key, target, metric_name
+         SELECT publication_key, target, metric_name, MIN(sampled_at) AS first_at FROM matched GROUP BY publication_key, target, metric_name
        )
        SELECT f.target AS target, f.metric_name AS metric_name, f.first_at AS first_at,
               CAST(COALESCE(l.value, 0) AS INTEGER) AS latest,
-              CASE WHEN b.post_key IS NOT NULL THEN CAST(COALESCE(b.value, 0) AS INTEGER) ELSE NULL END AS baseline
+              CASE WHEN b.publication_key IS NOT NULL THEN CAST(COALESCE(b.value, 0) AS INTEGER) ELSE NULL END AS baseline
        FROM first_seen f
-       JOIN ranked_latest l ON l.post_key = f.post_key AND l.target = f.target AND l.metric_name = f.metric_name AND l.rn = 1
-       LEFT JOIN ranked_baseline b ON b.post_key = f.post_key AND b.target = f.target AND b.metric_name = f.metric_name AND b.rn = 1`,
+       JOIN ranked_latest l ON l.publication_key = f.publication_key AND l.target = f.target AND l.metric_name = f.metric_name AND l.rn = 1
+       LEFT JOIN ranked_baseline b ON b.publication_key = f.publication_key AND b.target = f.target AND b.metric_name = f.metric_name AND b.rn = 1`,
     )
     .all(since) as Array<{ target: string; metric_name: string; first_at: string; latest: number; baseline: number | null }>;
   return rows.map((row) => ({
@@ -112,25 +112,25 @@ export function latestTextPostMetrics(backendDb: BackendDb, since: string): Text
   const rows = unsafeDb(backendDb)
     .sqlite.prepare(
       `WITH ranked_samples AS (
-         SELECT post_key, target, metric_name, value, sampled_at, id,
-                ROW_NUMBER() OVER (PARTITION BY post_key, target, metric_name ORDER BY sampled_at DESC, id DESC) AS rn
+         SELECT publication_key, target, metric_name, value, sampled_at, id,
+                ROW_NUMBER() OVER (PARTITION BY publication_key, target, metric_name ORDER BY sampled_at DESC, id DESC) AS rn
          FROM metric_samples
        )
-       SELECT p.post_key, COALESCE(NULLIF(p.text, ''), p.text_en, p.post_key) AS label,
+       SELECT p.publication_key, COALESCE(NULLIF(p.text, ''), p.text_en, p.publication_key) AS label,
               t.target, sample.metric_name, sample.value AS latest,
               (SELECT value FROM metric_samples baseline
-               WHERE baseline.post_key = t.post_key AND baseline.target = t.target
+               WHERE baseline.publication_key = t.publication_key AND baseline.target = t.target
                  AND baseline.metric_name = sample.metric_name AND baseline.sampled_at <= ?
                ORDER BY baseline.sampled_at DESC, baseline.id DESC LIMIT 1) AS baseline
        FROM posts p
-       JOIN post_targets t ON t.post_key = p.post_key
-       LEFT JOIN ranked_samples sample ON sample.post_key = t.post_key AND sample.target = t.target AND sample.rn = 1
+       JOIN publication_targets t ON t.publication_key = p.publication_key
+       LEFT JOIN ranked_samples sample ON sample.publication_key = t.publication_key AND sample.target = t.target AND sample.rn = 1
        WHERE t.status = 'published' AND COALESCE(t.published_at, p.date_utc, p.created_at) >= ?
          AND t.target NOT LIKE 'site_%' AND t.target NOT LIKE '%stories%'
        ORDER BY t.published_at DESC, t.target ASC`,
     )
     .all(since, since) as Array<{
-    post_key: string;
+    publication_key: string;
     label: string;
     target: string;
     metric_name: string | null;
@@ -139,7 +139,7 @@ export function latestTextPostMetrics(backendDb: BackendDb, since: string): Text
   }>;
   const grouped = new Map<string, TextPostMetricRow>();
   for (const row of rows) {
-    const key = `${row.post_key}${KEY_SEP}${row.target}`;
+    const key = `${row.publication_key}${KEY_SEP}${row.target}`;
     const value = grouped.get(key) ?? { platform: row.target, label: row.label, metrics: {} };
     if (row.metric_name) value.metrics[row.metric_name] = Math.max(0, metricNumber(row.latest) - metricNumber(row.baseline));
     grouped.set(key, value);

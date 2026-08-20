@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { and, asc, desc, eq, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
-import { postEvents, postLocales, publicationSources, siteJobs } from "../db/schema.js";
+import { postLocales, publicationEvents, publicationSources, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { withJobHeartbeat } from "../foundation/runtime/job-heartbeat.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
@@ -363,7 +363,7 @@ function insertSiteEvent(
   message: string,
   details: Record<string, unknown>,
 ): void {
-  db.insert(postEvents)
+  db.insert(publicationEvents)
     .values({ eventType, severity, message, detailsJson: JSON.stringify(details), createdAt: new Date().toISOString() })
     .run();
 }

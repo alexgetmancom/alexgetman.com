@@ -117,7 +117,7 @@ const config = loadTestConfig({
 });
 
 function job(target: string, payload: Record<string, unknown> = {}, overrides: Partial<ClaimedPublishJob> = {}): ClaimedPublishJob {
-  return { jobId: 1, postId: 10, postKey: "post:10", target, payload, ...overrides } as ClaimedPublishJob;
+  return { jobId: 1, postId: 10, publicationKey: "post:10", target, payload, ...overrides } as ClaimedPublishJob;
 }
 
 function reset(): void {

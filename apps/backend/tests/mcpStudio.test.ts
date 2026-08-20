@@ -75,7 +75,9 @@ describe("Studio MCP", () => {
         `Bearer ${"a".repeat(16)}`,
       );
       expect(JSON.stringify(await history.json())).toContain("content.draft.created");
-      expect(backendDb.sqlite.prepare("SELECT event_type, target FROM post_events WHERE event_type='studio.mcp.command'").get()).toEqual({
+      expect(
+        backendDb.sqlite.prepare("SELECT event_type, target FROM publication_events WHERE event_type='studio.mcp.command'").get(),
+      ).toEqual({
         event_type: "studio.mcp.command",
         target: "mcp",
       });
@@ -209,7 +211,7 @@ describe("Studio MCP", () => {
       });
       expect(
         backendDb.sqlite
-          .prepare("SELECT COUNT(*) AS count FROM post_events WHERE event_type='studio.mcp.command' AND post_key='video:1'")
+          .prepare("SELECT COUNT(*) AS count FROM publication_events WHERE event_type='studio.mcp.command' AND publication_key='video:1'")
           .get(),
       ).toEqual({ count: 3 });
     } finally {

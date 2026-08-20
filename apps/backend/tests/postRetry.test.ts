@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { drafts, postEvents, postTargets, publications, publishJobs, siteJobs } from "../src/db/schema.js";
+import { drafts, publicationEvents, publications, publicationTargets, publishJobs, siteJobs } from "../src/db/schema.js";
 import { createStudioServices } from "../src/studio/services/index.js";
 import { withDb } from "./helpers/db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
@@ -25,7 +25,7 @@ describe("post publication retry", () => {
         .insert(publishJobs)
         .values({
           postId: 700,
-          postKey: "post:700",
+          publicationKey: "post:700",
           messageId: 700,
           target: "telegram",
           status: "failed",
@@ -40,7 +40,7 @@ describe("post publication retry", () => {
         .insert(publishJobs)
         .values({
           postId: 700,
-          postKey: "post:700",
+          publicationKey: "post:700",
           messageId: 700,
           target: "threads_en",
           status: "verification_required",
@@ -81,7 +81,9 @@ describe("post publication retry", () => {
       expect(backendDb.db.select({ status: siteJobs.status, attemptCount: siteJobs.attemptCount }).from(siteJobs).all()).toEqual([
         { status: "queued", attemptCount: 0 },
       ]);
-      expect(backendDb.db.select({ target: postTargets.target, status: postTargets.status }).from(postTargets).all()).toEqual([
+      expect(
+        backendDb.db.select({ target: publicationTargets.target, status: publicationTargets.status }).from(publicationTargets).all(),
+      ).toEqual([
         { target: "telegram", status: "queued" },
         { target: "site_en", status: "queued" },
       ]);
@@ -113,7 +115,7 @@ describe("post publication retry", () => {
           .insert(publishJobs)
           .values({
             postId: 800,
-            postKey: "post:800",
+            publicationKey: "post:800",
             messageId: 800,
             target: job.target,
             status: job.status,
@@ -125,10 +127,10 @@ describe("post publication retry", () => {
           })
           .run();
       backendDb.db
-        .insert(postTargets)
+        .insert(publicationTargets)
         .values([
-          { postKey: "post:800", target: "telegram", status: "published", updatedAt: now },
-          { postKey: "post:800", target: "threads_ru", status: "failed", updatedAt: now },
+          { publicationKey: "post:800", target: "telegram", status: "published", updatedAt: now },
+          { publicationKey: "post:800", target: "threads_ru", status: "failed", updatedAt: now },
         ])
         .run();
 
@@ -139,14 +141,18 @@ describe("post publication retry", () => {
         { target: "telegram", status: "published" },
         { target: "threads_ru", status: "cancelled" },
       ]);
-      expect(backendDb.db.select({ target: postTargets.target, status: postTargets.status }).from(postTargets).all()).toEqual([
+      expect(
+        backendDb.db.select({ target: publicationTargets.target, status: publicationTargets.status }).from(publicationTargets).all(),
+      ).toEqual([
         { target: "telegram", status: "published" },
         { target: "threads_ru", status: "cancelled" },
       ]);
       // The publication no longer holds the draft in the attention list.
       expect(backendDb.db.select({ status: publications.status }).from(publications).all()).toEqual([{ status: "published" }]);
       expect(backendDb.studioQueue.failedPostIds([800])).toEqual([]);
-      expect(backendDb.db.select({ type: postEvents.eventType, target: postEvents.target }).from(postEvents).all()).toContainEqual({
+      expect(
+        backendDb.db.select({ type: publicationEvents.eventType, target: publicationEvents.target }).from(publicationEvents).all(),
+      ).toContainEqual({
         type: "publish.target.abandoned",
         target: "threads_ru",
       });

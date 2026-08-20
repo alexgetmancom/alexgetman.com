@@ -26,14 +26,14 @@ export function editLocaleContentTx(
   }
   db.update(posts)
     .set(locale === "en" ? { textEn: value, updatedAt: now } : { text: value, updatedAt: now })
-    .where(eq(posts.postKey, ref.postKey))
+    .where(eq(posts.publicationKey, ref.publicationKey))
     .run();
   updateSource(db, ref, locale === "en" ? { text_en: value, bodyMarkdown: value } : { text_ru: value, text: value }, now);
   enqueueRepairSiteJob(db, ref, `edit_${locale}`, now);
   return {
     ok: true,
     post_id: ref.postId,
-    post_key: ref.postKey,
+    publication_key: ref.publicationKey,
     locale,
     text: true,
     ...(locale === "en" ? { text_en: true } : { text_ru: true }),
@@ -68,14 +68,14 @@ export function replaceLocaleMediaTx(
   }
   updateSource(db, ref, { [locale === "en" ? "media_en" : "media"]: media }, now);
   enqueueRepairSiteJob(db, ref, media == null ? `use_other_media_for_${locale}` : `replace_${locale}_media`, now);
-  return { ok: true, post_id: ref.postId, post_key: ref.postKey, locale, media: media != null };
+  return { ok: true, post_id: ref.postId, publication_key: ref.publicationKey, locale, media: media != null };
 }
 
 /** Rebuilds one locale's public projection without touching social targets. */
 export function refreshLocaleSiteTx(db: UnsafeBackendDb["db"], ref: ResolvedPublicationRef, locale: "ru" | "en"): Record<string, unknown> {
   const now = new Date().toISOString();
   enqueueRepairSiteJob(db, ref, `refresh_${locale}_site`, now);
-  return { ok: true, post_id: ref.postId, post_key: ref.postKey, locale, site_refresh: true };
+  return { ok: true, post_id: ref.postId, publication_key: ref.publicationKey, locale, site_refresh: true };
 }
 
 /** Media reaches Delivery either as a Content asset on disk or as a Telegram

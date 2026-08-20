@@ -1,11 +1,11 @@
 import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { autoId, type JsonValue, json, timestamps } from "./_shared.js";
 
-export const postEvents = sqliteTable(
-  "post_events",
+export const publicationEvents = sqliteTable(
+  "publication_events",
   {
     id: autoId(),
-    postKey: text(),
+    publicationKey: text(),
     eventType: text().notNull().default("ops.event"),
     severity: text().notNull().default("info"),
     target: text(),
@@ -15,8 +15,8 @@ export const postEvents = sqliteTable(
     ackedAt: text(),
   },
   (table) => [
-    index("idx_post_events_lookup").on(table.postKey, table.target, table.createdAt),
-    index("idx_post_events_created_at").on(table.createdAt),
+    index("idx_publication_events_lookup").on(table.publicationKey, table.target, table.createdAt),
+    index("idx_publication_events_created_at").on(table.createdAt),
   ],
 );
 

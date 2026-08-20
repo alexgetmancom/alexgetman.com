@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { asc, count, eq } from "drizzle-orm";
-import { opsActions, posts, postTargets, publicationSources, publications, publishJobs, siteJobs } from "../src/db/schema.js";
+import { opsActions, posts, publicationSources, publications, publicationTargets, publishJobs, siteJobs } from "../src/db/schema.js";
 import { runOperationCommand } from "../src/operations/commands.js";
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
 import { postService } from "../src/studio/services/posts.js";
@@ -45,7 +45,7 @@ describe("command center actions", () => {
       for (const target of ["threads_ru", "threads_en"]) {
         const id = enqueuePublishJobTx(backendDb.db, {
           postId: 52,
-          postKey: "post:52",
+          publicationKey: "post:52",
           messageId: 52,
           target,
           payload: source,
@@ -93,7 +93,7 @@ describe("command center actions", () => {
       backendDb.db
         .insert(posts)
         .values({
-          postKey: "post:8",
+          publicationKey: "post:8",
           postId: 8,
           channel: "controller",
           messageId: 8,
@@ -105,8 +105,8 @@ describe("command center actions", () => {
         })
         .run();
       backendDb.db
-        .insert(postTargets)
-        .values([{ postKey: "post:8", target: "threads_en", status: "published", externalId: "en-post", updatedAt: now }])
+        .insert(publicationTargets)
+        .values([{ publicationKey: "post:8", target: "threads_en", status: "published", externalId: "en-post", updatedAt: now }])
         .run();
       const requests: Array<{ url: string; body: string }> = [];
       const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -139,7 +139,7 @@ describe("command center actions", () => {
       backendDb.db
         .insert(posts)
         .values({
-          postKey: "post:9",
+          publicationKey: "post:9",
           postId: 9,
           channel: "studio",
           messageId: 9,
@@ -153,15 +153,15 @@ describe("command center actions", () => {
       backendDb.db.insert(publicationSources).values({ postId: 9, itemJson: source, createdAt: now, updatedAt: now }).run();
       const jobId = enqueuePublishJobTx(backendDb.db, {
         postId: 9,
-        postKey: "post:9",
+        publicationKey: "post:9",
         messageId: 9,
         target: "threads_en",
         payload: source,
       });
       backendDb.db.update(publishJobs).set({ status: "published" }).where(eq(publishJobs.jobId, jobId)).run();
       backendDb.db
-        .insert(postTargets)
-        .values({ postKey: "post:9", target: "threads_en", status: "published", externalId: "page_post", updatedAt: now })
+        .insert(publicationTargets)
+        .values({ publicationKey: "post:9", target: "threads_en", status: "published", externalId: "page_post", updatedAt: now })
         .run();
       const requests: Array<{ url: string; method: string }> = [];
       const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -176,7 +176,9 @@ describe("command center actions", () => {
       );
       expect(requests).toEqual([{ url: "https://graph.threads.net/v1.0/page_post?access_token=token", method: "DELETE" }]);
       expect(result.removed).toEqual([{ target: "threads_en", ok: true, deleted: 1 }]);
-      expect(backendDb.db.select().from(postTargets).where(eq(postTargets.target, "threads_en")).get()?.status).toBe("queued");
+      expect(backendDb.db.select().from(publicationTargets).where(eq(publicationTargets.target, "threads_en")).get()?.status).toBe(
+        "queued",
+      );
     } finally {
       backendDb.close();
     }
@@ -191,7 +193,7 @@ describe("command center actions", () => {
       backendDb.db
         .insert(posts)
         .values({
-          postKey: "post:19",
+          publicationKey: "post:19",
           postId: 19,
           channel: "studio",
           messageId: 19,
@@ -204,21 +206,21 @@ describe("command center actions", () => {
       backendDb.db.insert(publicationSources).values({ postId: 19, itemJson: source, createdAt: now, updatedAt: now }).run();
       const jobId = enqueuePublishJobTx(backendDb.db, {
         postId: 19,
-        postKey: "post:19",
+        publicationKey: "post:19",
         messageId: 19,
         target: "threads_en",
         payload: source,
       });
       backendDb.db.update(publishJobs).set({ status: "published" }).where(eq(publishJobs.jobId, jobId)).run();
       backendDb.db
-        .insert(postTargets)
-        .values({ postKey: "post:19", target: "threads_en", status: "published", externalId: "old-post", updatedAt: now })
+        .insert(publicationTargets)
+        .values({ publicationKey: "post:19", target: "threads_en", status: "published", externalId: "old-post", updatedAt: now })
         .run();
       const fetchImpl = (async () => {
         backendDb.db
-          .update(postTargets)
+          .update(publicationTargets)
           .set({ externalId: "new-post", updatedAt: new Date().toISOString() })
-          .where(eq(postTargets.target, "threads_en"))
+          .where(eq(publicationTargets.target, "threads_en"))
           .run();
         return new Response("{}", { status: 200 });
       }) as unknown as typeof fetch;
@@ -241,7 +243,7 @@ describe("command center actions", () => {
         },
       ]);
       expect(result.republish).toEqual({ ok: false, results: [] });
-      expect(backendDb.db.select().from(postTargets).where(eq(postTargets.target, "threads_en")).get()).toMatchObject({
+      expect(backendDb.db.select().from(publicationTargets).where(eq(publicationTargets.target, "threads_en")).get()).toMatchObject({
         status: "published",
         externalId: "new-post",
       });
@@ -260,7 +262,7 @@ describe("command center actions", () => {
       backendDb.db
         .insert(posts)
         .values({
-          postKey: "post:21",
+          publicationKey: "post:21",
           postId: 21,
           channel: "studio",
           messageId: 21,
@@ -273,15 +275,15 @@ describe("command center actions", () => {
       backendDb.db.insert(publicationSources).values({ postId: 21, itemJson: source, createdAt: now, updatedAt: now }).run();
       const jobId = enqueuePublishJobTx(backendDb.db, {
         postId: 21,
-        postKey: "post:21",
+        publicationKey: "post:21",
         messageId: 21,
         target: "threads_en",
         payload: source,
       });
       backendDb.db.update(publishJobs).set({ status: "published" }).where(eq(publishJobs.jobId, jobId)).run();
       backendDb.db
-        .insert(postTargets)
-        .values({ postKey: "post:21", target: "threads_en", status: "published", externalId: "post-21", updatedAt: now })
+        .insert(publicationTargets)
+        .values({ publicationKey: "post:21", target: "threads_en", status: "published", externalId: "post-21", updatedAt: now })
         .run();
 
       await runOperationCommand(
@@ -291,7 +293,9 @@ describe("command center actions", () => {
         (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch,
       );
 
-      expect(backendDb.db.select().from(postTargets).where(eq(postTargets.target, "threads_en")).get()?.status).toBe("deleted");
+      expect(backendDb.db.select().from(publicationTargets).where(eq(publicationTargets.target, "threads_en")).get()?.status).toBe(
+        "deleted",
+      );
       expect(backendDb.db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get()?.status).toBe("cancelled");
       expect(backendDb.db.select().from(opsActions).all()).toHaveLength(1);
     } finally {
@@ -310,7 +314,7 @@ describe("command center actions", () => {
         .run();
       const jobId = enqueuePublishJobTx(backendDb.db, {
         postId: 20,
-        postKey: "post:20",
+        publicationKey: "post:20",
         messageId: 20,
         target: "threads_en",
         payload: { text: "RU", text_en: "EN" },
@@ -341,7 +345,7 @@ describe("command center actions", () => {
       backendDb.db
         .insert(posts)
         .values({
-          postKey: "post:9",
+          publicationKey: "post:9",
           postId: 9,
           channel: "studio",
           messageId: 9,
@@ -354,10 +358,17 @@ describe("command center actions", () => {
         .run();
       backendDb.db.insert(publicationSources).values({ postId: 9, itemJson: source, createdAt: now, updatedAt: now }).run();
       backendDb.db
-        .insert(postTargets)
+        .insert(publicationTargets)
         .values([
-          { postKey: "post:9", target: "threads_en", status: "published", externalId: "page_post", url: "https://t/1", updatedAt: now },
-          { postKey: "post:9", target: "threads_ru", status: "published", externalId: "ru_post", updatedAt: now },
+          {
+            publicationKey: "post:9",
+            target: "threads_en",
+            status: "published",
+            externalId: "page_post",
+            url: "https://t/1",
+            updatedAt: now,
+          },
+          { publicationKey: "post:9", target: "threads_ru", status: "published", externalId: "ru_post", updatedAt: now },
         ])
         .run();
       const requests: string[] = [];
@@ -376,7 +387,9 @@ describe("command center actions", () => {
       expect(plan.applied).toBe(false);
       expect(plan.targets).toEqual([{ target: "threads_en", status: "published", url: "https://t/1", published: true }]);
       expect(requests).toEqual([]);
-      expect(backendDb.db.select().from(postTargets).where(eq(postTargets.target, "threads_en")).get()?.status).toBe("published");
+      expect(backendDb.db.select().from(publicationTargets).where(eq(publicationTargets.target, "threads_en")).get()?.status).toBe(
+        "published",
+      );
     } finally {
       backendDb.close();
     }
@@ -392,7 +405,7 @@ describe("command center actions", () => {
       backendDb.db
         .insert(posts)
         .values({
-          postKey: "post:9",
+          publicationKey: "post:9",
           postId: 9,
           channel: "studio",
           messageId: 9,
@@ -462,7 +475,7 @@ describe("command center actions", () => {
         .run();
       const jobId = enqueuePublishJobTx(backendDb.db, {
         postId: 61,
-        postKey: "post:61",
+        publicationKey: "post:61",
         messageId: 61,
         target: "threads_en",
         payload: { text: "RU", text_en: "EN" },
@@ -497,7 +510,7 @@ describe("command center actions", () => {
         .run();
       const jobId = enqueuePublishJobTx(backendDb.db, {
         postId: 62,
-        postKey: "post:62",
+        publicationKey: "post:62",
         messageId: 62,
         target: "threads_en",
         payload: { text: "RU", text_en: "EN" },
@@ -541,8 +554,8 @@ describe("command center actions", () => {
         })
         .run();
       backendDb.db
-        .insert(postTargets)
-        .values({ postKey: "post:90", target: "site_ru", status: "failed", error: "render boom", skipped: 0, updatedAt: now })
+        .insert(publicationTargets)
+        .values({ publicationKey: "post:90", target: "site_ru", status: "failed", error: "render boom", skipped: 0, updatedAt: now })
         .run();
 
       const result = await runOperationCommand(backendDb, { action: "retry", ref: "post:90", target: "site_ru", apply: true });
@@ -571,7 +584,10 @@ describe("command center actions", () => {
         .values({ postId: 91, messageId: 91, reason: "site_ru", status: "published", attemptCount: 1, createdAt: now, updatedAt: now })
         .run();
       for (const target of ["telegram", "site_ru"])
-        backendDb.db.insert(postTargets).values({ postKey: "post:91", target, status: "published", skipped: 0, updatedAt: now }).run();
+        backendDb.db
+          .insert(publicationTargets)
+          .values({ publicationKey: "post:91", target, status: "published", skipped: 0, updatedAt: now })
+          .run();
 
       await runOperationCommand(backendDb, { action: "retry", ref: "post:91", locale: "ru", apply: true });
 

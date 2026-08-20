@@ -32,7 +32,7 @@ export const PUBLISH_CLAIM_LIMIT = 20;
 export type ClaimedPublishJob = {
   jobId: number;
   postId: number;
-  postKey: string;
+  publicationKey: string;
   messageId: number;
   target: string;
   payload: JsonObject;
@@ -104,9 +104,9 @@ export function claimPublishJob(
       .returning({ jobId: publishJobs.jobId })
       .get();
     if (!locked) return null;
-    const postKey = row.postKey;
+    const publicationKey = row.publicationKey;
     upsertPostTarget(tx, {
-      postKey,
+      publicationKey,
       target: row.target,
       status: "publishing",
       error: null,
@@ -114,11 +114,20 @@ export function claimPublishJob(
       updatedAt: now,
       rawJson: JSON.stringify({ job_id: row.jobId, worker }),
     });
-    insertEvent(tx, postKey, row.target, "publish.job.claimed", "info", `Publishing ${row.target}`, { job_id: row.jobId, worker }, now);
+    insertEvent(
+      tx,
+      publicationKey,
+      row.target,
+      "publish.job.claimed",
+      "info",
+      `Publishing ${row.target}`,
+      { job_id: row.jobId, worker },
+      now,
+    );
     return {
       jobId: row.jobId,
       postId: row.postId,
-      postKey,
+      publicationKey,
       messageId: row.messageId,
       target: row.target,
       payload: parsePayload(row.payloadJson),
@@ -177,13 +186,13 @@ export function recoverStalePublishJobs(backendDb: BackendDb, maxLockAgeSeconds 
       // owns the outcome — and the rows superseded by *its* result, which is why
       // nothing is deleted until this update is known to have won.
       if (!updated) continue;
-      deleteSupersededJobs(tx, job, job.jobId, job.postKey);
-      const postKey = job.postKey;
+      deleteSupersededJobs(tx, job, job.jobId, job.publicationKey);
+      const publicationKey = job.publicationKey;
       settleJob(
         tx,
         job.jobId,
         null,
-        postKey,
+        publicationKey,
         job.target,
         {
           status: recoveredStatus,
@@ -222,7 +231,7 @@ export function completePublishJob(
   const now = new Date().toISOString();
   const job = unsafeDb(backendDb).db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return;
-  const postKey = job.postKey;
+  const publicationKey = job.publicationKey;
   // Threads partial-publish and generic reconciliation both resume from a set of
   // external ids on the next attempt; they only differ in which payload key the
   // platform's publisher reads back and in the event type recorded.
@@ -233,7 +242,7 @@ export function completePublishJob(
       config,
       job,
       jobId,
-      postKey,
+      publicationKey,
       ids,
       "_threadsPublishedIds",
       "publish.job.partial",
@@ -252,7 +261,7 @@ export function completePublishJob(
       config,
       job,
       jobId,
-      postKey,
+      publicationKey,
       reconciliationIds,
       "_reconcile_ids",
       "publish.job.reconcile",
@@ -267,7 +276,7 @@ export function completePublishJob(
   const normalized = normalizePublishResult(result);
   const settled = withLease(backendDb, jobId, (tx) => {
     const published = normalized.status === "published";
-    // `post_targets` is the canonical external-publication reference for every
+    // `publication_targets` is the canonical external-publication reference for every
     // platform. Legacy Telegram message columns remain readable for history,
     // but new delivery results never mutate the domain model for one platform.
     settleJob(
@@ -281,7 +290,7 @@ export function completePublishJob(
         lastError: normalized.error,
         updatedAt: now,
       },
-      postKey,
+      publicationKey,
       job.target,
       {
         status: normalized.status,
@@ -312,14 +321,14 @@ export function completePublishJob(
       },
       lockId,
     );
-    deleteSupersededJobs(tx, job, jobId, postKey);
+    deleteSupersededJobs(tx, job, jobId, publicationKey);
   });
   if (!settled) return;
   if (normalized.status === "published") recordAuthSuccess(backendDb, job.target);
   else if (normalized.status === "failed" && classifyPublishError(normalized.error) === "auth") recordAuthFailure(backendDb, job.target);
   if (normalized.status === "published" && job.target === "x" && normalized.externalId)
     recordPublishedXActivity(backendDb, {
-      postKey,
+      publicationKey,
       xPostId: String(normalized.externalId),
       url: normalized.url,
       publishedAt: now,
@@ -332,7 +341,7 @@ function settleRetryableIds(
   config: BackendConfig,
   job: typeof publishJobs.$inferSelect,
   jobId: number,
-  postKey: string,
+  publicationKey: string,
   ids: string[],
   payloadKey: "_threadsPublishedIds" | "_reconcile_ids",
   retryEventType: string,
@@ -346,10 +355,10 @@ function settleRetryableIds(
   const error = String(result.error ?? fallbackError);
   const payload = { ...parsePayload(job.payloadJson), [payloadKey]: ids };
   const settled = withLease(backendDb, jobId, (tx) => {
-    // A queued row is unique per (post_key, target); clear any competing one
+    // A queued row is unique per (publication_key, target); clear any competing one
     // before this job re-enters the queue, and clear superseded rows once this
     // one is terminal — exactly what failPublishJob does for the same states.
-    deleteSupersededJobs(tx, job, jobId, postKey);
+    deleteSupersededJobs(tx, job, jobId, publicationKey);
     settleJob(
       tx,
       jobId,
@@ -364,7 +373,7 @@ function settleRetryableIds(
         lastError: error,
         updatedAt: now,
       },
-      postKey,
+      publicationKey,
       job.target,
       { status, externalId: ids[0] ?? null, externalIdsJson: ids, error, skipped: 0, updatedAt: now, rawJson: JSON.stringify(result) },
       {
@@ -385,7 +394,7 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
   const now = new Date().toISOString();
   const job = unsafeDb(backendDb).db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return;
-  const postKey = job.postKey;
+  const publicationKey = job.publicationKey;
   const {
     attempt,
     errorClass,
@@ -397,8 +406,8 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
   const settled = withLease(backendDb, jobId, (tx) => {
     // Before this job re-enters the queue (or becomes the terminal record for
     // its target), no other queued/failed row for the same target may remain:
-    // a queued row is unique per (post_key, target).
-    deleteSupersededJobs(tx, job, jobId, postKey);
+    // a queued row is unique per (publication_key, target).
+    deleteSupersededJobs(tx, job, jobId, publicationKey);
     settleJob(
       tx,
       jobId,
@@ -412,7 +421,7 @@ export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobI
         lastError: errorText,
         updatedAt: now,
       },
-      postKey,
+      publicationKey,
       job.target,
       {
         status,
@@ -446,11 +455,11 @@ export function requirePublishVerification(backendDb: BackendDb, jobId: number, 
   const now = new Date().toISOString();
   const job = unsafeDb(backendDb).db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return false;
-  const postKey = job.postKey;
+  const publicationKey = job.publicationKey;
   const errorText = error instanceof Error ? error.message : String(error);
   let updated = false;
   withLease(backendDb, jobId, (tx) => {
-    deleteSupersededJobs(tx, job, jobId, postKey);
+    deleteSupersededJobs(tx, job, jobId, publicationKey);
     settleJob(
       tx,
       jobId,
@@ -464,7 +473,7 @@ export function requirePublishVerification(backendDb: BackendDb, jobId: number, 
         lastError: errorText,
         updatedAt: now,
       },
-      postKey,
+      publicationKey,
       job.target,
       { status: "verification_required", error: errorText, skipped: 0, updatedAt: now },
       {
@@ -501,7 +510,7 @@ export function forcePublishJobVerification(
   const now = new Date().toISOString();
   const job = unsafeDb(backendDb).db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return false;
-  const postKey = job.postKey;
+  const publicationKey = job.publicationKey;
   const errorText = error instanceof Error ? error.message : String(error);
   const evidence = result ? normalizePublishResult(result) : null;
   const updated = unsafeDb(backendDb).db.transaction((tx) => {
@@ -528,7 +537,7 @@ export function forcePublishJobVerification(
       .get();
     if (!row) return false;
     upsertPostTarget(tx, {
-      postKey,
+      publicationKey,
       target: job.target,
       status: "verification_required",
       error: errorText,
@@ -553,7 +562,7 @@ export function enqueuePublishJobTx(db: UnsafeBackendDb["db"], input: EnqueuePub
   const now = new Date().toISOString();
   const inputRecord = {
     postId: input.postId,
-    postKey: input.postKey,
+    publicationKey: input.publicationKey,
     messageId: input.messageId,
     target: input.target,
     status: "queued",
@@ -570,7 +579,7 @@ export function enqueuePublishJobTx(db: UnsafeBackendDb["db"], input: EnqueuePub
     .insert(publishJobs)
     .values(inputRecord)
     .onConflictDoUpdate({
-      target: [publishJobs.postKey, publishJobs.target, publishJobs.status],
+      target: [publishJobs.publicationKey, publishJobs.target, publishJobs.status],
       set: { messageId: inputRecord.messageId, publishAt: inputRecord.publishAt, payloadJson: inputRecord.payloadJson, updatedAt: now },
     })
     .returning({ jobId: publishJobs.jobId })
@@ -584,6 +593,6 @@ type EnqueuePublishJobInput = {
   target: string;
   payload: JsonObject;
   postId: number;
-  postKey: string;
+  publicationKey: string;
   publishAt?: string | null;
 };

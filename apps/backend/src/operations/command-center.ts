@@ -1,6 +1,6 @@
 import { asc, desc, sql } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { credentialChecks, drafts, opsActions, postEvents, postTargets, publishJobs } from "../db/schema.js";
+import { credentialChecks, drafts, opsActions, publicationEvents, publicationTargets, publishJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { capabilityReport } from "../observability/capabilities.js";
 import { recentPostMetrics } from "./read-model.js";
@@ -14,27 +14,27 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     .all();
   const targets = unsafeDb(backendDb)
     .db.select({
-      target: postTargets.target,
-      status: postTargets.status,
+      target: publicationTargets.target,
+      status: publicationTargets.status,
       count: sql<number>`count(*)`,
     })
-    .from(postTargets)
-    .groupBy(postTargets.target, postTargets.status)
-    .orderBy(asc(postTargets.target), asc(postTargets.status))
+    .from(publicationTargets)
+    .groupBy(publicationTargets.target, publicationTargets.status)
+    .orderBy(asc(publicationTargets.target), asc(publicationTargets.status))
     .all();
   const events = unsafeDb(backendDb)
     .db.select({
-      id: postEvents.id,
-      postKey: postEvents.postKey,
-      eventType: postEvents.eventType,
-      severity: postEvents.severity,
-      target: postEvents.target,
-      message: postEvents.message,
-      createdAt: postEvents.createdAt,
-      ackedAt: postEvents.ackedAt,
+      id: publicationEvents.id,
+      publicationKey: publicationEvents.publicationKey,
+      eventType: publicationEvents.eventType,
+      severity: publicationEvents.severity,
+      target: publicationEvents.target,
+      message: publicationEvents.message,
+      createdAt: publicationEvents.createdAt,
+      ackedAt: publicationEvents.ackedAt,
     })
-    .from(postEvents)
-    .orderBy(desc(postEvents.createdAt), desc(postEvents.id))
+    .from(publicationEvents)
+    .orderBy(desc(publicationEvents.createdAt), desc(publicationEvents.id))
     .limit(50)
     .all();
   const jobs = unsafeDb(backendDb)
@@ -113,7 +113,7 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     actions,
     events: events.map((event) => ({
       id: event.id,
-      postKey: event.postKey,
+      publicationKey: event.publicationKey,
       eventType: event.eventType,
       severity: event.severity,
       target: event.target,
@@ -167,7 +167,7 @@ export function commandCenterFingerprint(backendDb: BackendDb): CommandCenterFin
       `SELECT
          (SELECT MAX(value) FROM (
            SELECT MAX(updated_at) AS value FROM posts
-           UNION ALL SELECT MAX(updated_at) FROM post_targets
+           UNION ALL SELECT MAX(updated_at) FROM publication_targets
            UNION ALL SELECT MAX(sampled_at) FROM post_metrics
            UNION ALL SELECT MAX(sampled_at) FROM metric_samples
            UNION ALL SELECT MAX(updated_at) FROM publish_jobs
@@ -175,7 +175,7 @@ export function commandCenterFingerprint(backendDb: BackendDb): CommandCenterFin
            UNION ALL SELECT MAX(updated_at) FROM metric_schedule WHERE last_error IS NOT NULL AND last_error <> ''
          )) AS pipelineUpdatedAt,
          (SELECT MAX(updated_at) FROM publish_jobs) AS latestJobUpdatedAt,
-         (SELECT MAX(created_at) FROM post_events) AS latestEventAt,
+         (SELECT MAX(created_at) FROM publication_events) AS latestEventAt,
          (SELECT MAX(value) FROM (
            SELECT MAX(updated_at) AS value FROM video_drafts
            UNION ALL SELECT MAX(sampled_at) FROM video_metric_snapshots

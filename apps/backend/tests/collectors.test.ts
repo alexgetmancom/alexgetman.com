@@ -24,7 +24,7 @@ const config = Object.assign(
 
 function task(overrides: Partial<MetricTask> = {}): MetricTask {
   return {
-    postKey: "post:106",
+    publicationKey: "post:106",
     target: "x",
     checkCount: 0,
     messageId: 106,

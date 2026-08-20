@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { posts, postTargets } from "../src/db/schema.js";
+import { posts, publicationTargets } from "../src/db/schema.js";
 import { verifyPostTargets } from "../src/operations/verify.js";
 import { withDb } from "./helpers/db.js";
 
@@ -25,11 +25,11 @@ function stubFetch(handler: (url: string) => Response | Promise<Response>): { ur
   return { urls };
 }
 
-function insertPost(backendDb: UnsafeBackendDb, overrides: { postKey: string; postId?: number | null; messageId: number }): void {
+function insertPost(backendDb: UnsafeBackendDb, overrides: { publicationKey: string; postId?: number | null; messageId: number }): void {
   backendDb.db
     .insert(posts)
     .values({
-      postKey: overrides.postKey,
+      publicationKey: overrides.publicationKey,
       postId: overrides.postId ?? null,
       channel: "alexgetman",
       messageId: overrides.messageId,
@@ -41,12 +41,12 @@ function insertPost(backendDb: UnsafeBackendDb, overrides: { postKey: string; po
 
 function insertTarget(
   backendDb: UnsafeBackendDb,
-  values: { postKey: string; target: string; status: string; url?: string | null; error?: string | null },
+  values: { publicationKey: string; target: string; status: string; url?: string | null; error?: string | null },
 ): void {
   backendDb.db
-    .insert(postTargets)
+    .insert(publicationTargets)
     .values({
-      postKey: values.postKey,
+      publicationKey: values.publicationKey,
       target: values.target,
       status: values.status,
       url: values.url ?? null,
@@ -59,8 +59,8 @@ function insertTarget(
 describe("verifyPostTargets", () => {
   it("resolves a post:<id> ref and reports a live publication as ok", async () => {
     await withDb(async (backendDb) => {
-      insertPost(backendDb, { postKey: "post:106", postId: 106, messageId: 106 });
-      insertTarget(backendDb, { postKey: "post:106", target: "telegram", status: "published", url: "https://t.me/alexgetman/106" });
+      insertPost(backendDb, { publicationKey: "post:106", postId: 106, messageId: 106 });
+      insertTarget(backendDb, { publicationKey: "post:106", target: "telegram", status: "published", url: "https://t.me/alexgetman/106" });
       const { urls } = stubFetch(() => new Response("ok", { status: 200 }));
 
       expect(await verifyPostTargets(backendDb, "post:106")).toEqual([
@@ -79,8 +79,8 @@ describe("verifyPostTargets", () => {
 
   it("resolves the same post by messageId when the key does not match", async () => {
     await withDb(async (backendDb) => {
-      insertPost(backendDb, { postKey: "studio:abc", postId: null, messageId: 106 });
-      insertTarget(backendDb, { postKey: "studio:abc", target: "telegram", status: "queued" });
+      insertPost(backendDb, { publicationKey: "studio:abc", postId: null, messageId: 106 });
+      insertTarget(backendDb, { publicationKey: "studio:abc", target: "telegram", status: "queued" });
 
       expect(await verifyPostTargets(backendDb, "post:106")).toMatchObject([{ ok: false, reason: "not_published" }]);
     });
@@ -94,8 +94,8 @@ describe("verifyPostTargets", () => {
 
   it("matches a non-numeric ref on the post key alone, without binding NaN", async () => {
     await withDb(async (backendDb) => {
-      insertPost(backendDb, { postKey: "post:draft-abc", postId: 7, messageId: 7 });
-      insertTarget(backendDb, { postKey: "post:draft-abc", target: "site", status: "published" });
+      insertPost(backendDb, { publicationKey: "post:draft-abc", postId: 7, messageId: 7 });
+      insertTarget(backendDb, { publicationKey: "post:draft-abc", target: "site", status: "published" });
 
       expect(await verifyPostTargets(backendDb, "post:draft-abc")).toMatchObject([{ ok: true, reason: "no_public_url_known" }]);
       await expect(verifyPostTargets(backendDb, "post:nope")).rejects.toThrow("post not found");
@@ -104,9 +104,9 @@ describe("verifyPostTargets", () => {
 
   it("counts 404 and 410 as failures, so a deleted publication does not verify as ok", async () => {
     await withDb(async (backendDb) => {
-      insertPost(backendDb, { postKey: "post:1", postId: 1, messageId: 1 });
-      insertTarget(backendDb, { postKey: "post:1", target: "instagram", status: "published", url: "https://example.test/gone" });
-      insertTarget(backendDb, { postKey: "post:1", target: "threads_ru", status: "published", url: "https://example.test/deleted" });
+      insertPost(backendDb, { publicationKey: "post:1", postId: 1, messageId: 1 });
+      insertTarget(backendDb, { publicationKey: "post:1", target: "instagram", status: "published", url: "https://example.test/gone" });
+      insertTarget(backendDb, { publicationKey: "post:1", target: "threads_ru", status: "published", url: "https://example.test/deleted" });
       stubFetch((url) => new Response(null, { status: url.endsWith("/gone") ? 404 : 410 }));
 
       expect(await verifyPostTargets(backendDb, "post:1")).toMatchObject([
@@ -118,8 +118,8 @@ describe("verifyPostTargets", () => {
 
   it("treats a provider 5xx as a failure too", async () => {
     await withDb(async (backendDb) => {
-      insertPost(backendDb, { postKey: "post:2", postId: 2, messageId: 2 });
-      insertTarget(backendDb, { postKey: "post:2", target: "x", status: "published", url: "https://example.test/down" });
+      insertPost(backendDb, { publicationKey: "post:2", postId: 2, messageId: 2 });
+      insertTarget(backendDb, { publicationKey: "post:2", target: "x", status: "published", url: "https://example.test/down" });
       stubFetch(() => new Response(null, { status: 503 }));
 
       expect(await verifyPostTargets(backendDb, "post:2")).toMatchObject([{ ok: false, reason: "http_503" }]);
@@ -128,8 +128,8 @@ describe("verifyPostTargets", () => {
 
   it("surfaces a transport error as the reason rather than throwing", async () => {
     await withDb(async (backendDb) => {
-      insertPost(backendDb, { postKey: "post:3", postId: 3, messageId: 3 });
-      insertTarget(backendDb, { postKey: "post:3", target: "x", status: "published", url: "https://example.test/unreachable" });
+      insertPost(backendDb, { publicationKey: "post:3", postId: 3, messageId: 3 });
+      insertTarget(backendDb, { publicationKey: "post:3", target: "x", status: "published", url: "https://example.test/unreachable" });
       stubFetch(() => {
         throw new Error("connect ECONNREFUSED");
       });
@@ -140,8 +140,8 @@ describe("verifyPostTargets", () => {
 
   it("prefers the stored error over the generic reason for an unpublished target", async () => {
     await withDb(async (backendDb) => {
-      insertPost(backendDb, { postKey: "post:4", postId: 4, messageId: 4 });
-      insertTarget(backendDb, { postKey: "post:4", target: "x", status: "failed", error: "rate limited" });
+      insertPost(backendDb, { publicationKey: "post:4", postId: 4, messageId: 4 });
+      insertTarget(backendDb, { publicationKey: "post:4", target: "x", status: "failed", error: "rate limited" });
 
       expect(await verifyPostTargets(backendDb, "post:4")).toMatchObject([{ ok: false, reason: "rate limited" }]);
     });
@@ -149,8 +149,8 @@ describe("verifyPostTargets", () => {
 
   it("never calls out for a target that is not published", async () => {
     await withDb(async (backendDb) => {
-      insertPost(backendDb, { postKey: "post:5", postId: 5, messageId: 5 });
-      insertTarget(backendDb, { postKey: "post:5", target: "x", status: "queued", url: "https://example.test/not-yet" });
+      insertPost(backendDb, { publicationKey: "post:5", postId: 5, messageId: 5 });
+      insertTarget(backendDb, { publicationKey: "post:5", target: "x", status: "queued", url: "https://example.test/not-yet" });
       const { urls } = stubFetch(() => new Response("ok", { status: 200 }));
 
       expect(await verifyPostTargets(backendDb, "post:5")).toMatchObject([{ ok: false, reason: "not_published" }]);
@@ -160,12 +160,12 @@ describe("verifyPostTargets", () => {
 
   it("returns targets ordered by name and ignores other posts' targets", async () => {
     await withDb(async (backendDb) => {
-      insertPost(backendDb, { postKey: "post:6", postId: 6, messageId: 6 });
-      insertPost(backendDb, { postKey: "post:7", postId: 7, messageId: 7 });
+      insertPost(backendDb, { publicationKey: "post:6", postId: 6, messageId: 6 });
+      insertPost(backendDb, { publicationKey: "post:7", postId: 7, messageId: 7 });
       for (const target of ["telegram", "instagram", "x"]) {
-        insertTarget(backendDb, { postKey: "post:6", target, status: "queued" });
+        insertTarget(backendDb, { publicationKey: "post:6", target, status: "queued" });
       }
-      insertTarget(backendDb, { postKey: "post:7", target: "site", status: "queued" });
+      insertTarget(backendDb, { publicationKey: "post:7", target: "site", status: "queued" });
 
       expect((await verifyPostTargets(backendDb, "post:6")).map((record) => record.target)).toEqual(["instagram", "telegram", "x"]);
     });

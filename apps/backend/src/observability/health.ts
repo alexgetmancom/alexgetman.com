@@ -1,6 +1,6 @@
 import { and, inArray, isNull, sql } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { credentialChecks, postEvents, workerState } from "../db/schema.js";
+import { credentialChecks, publicationEvents, workerState } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { expectedWorkerNames, workerLiveness } from "../foundation/runtime/worker-state.js";
 import { capabilityReport } from "./capabilities.js";
@@ -25,8 +25,8 @@ export function healthReport(config: BackendConfig, backendDb: BackendDb) {
   const missingWorkers = expectedWorkers.filter((name) => !observedWorkers.has(name));
   const [pending] = unsafeDb(backendDb)
     .db.select({ count: sql<number>`count(*)` })
-    .from(postEvents)
-    .where(and(inArray(postEvents.severity, ["warn", "error"]), isNull(postEvents.ackedAt)))
+    .from(publicationEvents)
+    .where(and(inArray(publicationEvents.severity, ["warn", "error"]), isNull(publicationEvents.ackedAt)))
     .all();
   const credentialsOk = credentials.every((check) => check.status === "ready");
   const workersOk =

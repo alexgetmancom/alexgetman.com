@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../../db/client.js";
-import { type JsonValue, postTargets } from "../../db/schema.js";
+import { type JsonValue, publicationTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { log } from "../../foundation/logger.js";
 import { recordWorkerState } from "../../foundation/runtime/worker-state.js";
@@ -52,11 +52,19 @@ export async function runMetricsCycle(
           metricCount = Object.keys(result.metrics).length;
           const persistStartedAt = Date.now();
           unsafeDb(backendDb).db.transaction((tx) => {
-            upsertMetrics(backendDb, task.postKey, task.target, result.metrics, result.source, result.raw, tx as UnsafeBackendDb["db"]);
+            upsertMetrics(
+              backendDb,
+              task.publicationKey,
+              task.target,
+              result.metrics,
+              result.source,
+              result.raw,
+              tx as UnsafeBackendDb["db"],
+            );
             if (result.url)
-              tx.update(postTargets)
+              tx.update(publicationTargets)
                 .set({ url: result.url, updatedAt: new Date().toISOString() })
-                .where(and(eq(postTargets.postKey, task.postKey), eq(postTargets.target, task.target)))
+                .where(and(eq(publicationTargets.publicationKey, task.publicationKey), eq(publicationTargets.target, task.target)))
                 .run();
             finishMetricTask(backendDb, task, null, false, tx as UnsafeBackendDb["db"]);
           });
@@ -83,7 +91,7 @@ export async function runMetricsCycle(
       unsafeDb(backendDb).db.transaction((transactionDb) => {
         upsertMetricError(
           backendDb,
-          task.postKey,
+          task.publicationKey,
           task.target,
           `${task.target}_metrics`,
           message,

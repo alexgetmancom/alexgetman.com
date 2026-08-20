@@ -10,7 +10,7 @@ describe("daily editorial inbox", () => {
       backendDb.db
         .insert(posts)
         .values({
-          postKey: "post:7",
+          publicationKey: "post:7",
           postId: 7,
           source: "studio",
           channel: "studio",
@@ -59,7 +59,7 @@ describe("daily editorial inbox", () => {
       backendDb.db
         .insert(posts)
         .values({
-          postKey: "post:8",
+          publicationKey: "post:8",
           postId: 8,
           source: "studio",
           channel: "studio",

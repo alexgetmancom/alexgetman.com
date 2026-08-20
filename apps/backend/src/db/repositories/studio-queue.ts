@@ -6,7 +6,7 @@ import type {
   StudioQueueVideo,
   StudioQueueVideoTarget,
 } from "../../application/ports.js";
-import { draftStoryCards, drafts, posts, postTargets, publishJobs, siteJobs, videoDrafts, videoTargets } from "../schema.js";
+import { draftStoryCards, drafts, posts, publicationTargets, publishJobs, siteJobs, videoDrafts, videoTargets } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite adapter for the transport-neutral Studio queue projection. */
@@ -56,12 +56,14 @@ export function createStudioQueueStore(db: BackendDatabase): StudioQueueStore {
 
     latestPublished(actorIds: number[]): StudioQueuePublished | null {
       const post = db
-        .select({ id: drafts.id, label: drafts.textRu, publishedAt: postTargets.publishedAt })
+        .select({ id: drafts.id, label: drafts.textRu, publishedAt: publicationTargets.publishedAt })
         .from(drafts)
         .innerJoin(posts, eq(posts.postId, drafts.postId))
-        .innerJoin(postTargets, eq(postTargets.postKey, posts.postKey))
-        .where(and(inArray(drafts.actorId, actorIds), eq(postTargets.status, "published"), isNotNull(postTargets.publishedAt)))
-        .orderBy(desc(postTargets.publishedAt))
+        .innerJoin(publicationTargets, eq(publicationTargets.publicationKey, posts.publicationKey))
+        .where(
+          and(inArray(drafts.actorId, actorIds), eq(publicationTargets.status, "published"), isNotNull(publicationTargets.publishedAt)),
+        )
+        .orderBy(desc(publicationTargets.publishedAt))
         .limit(1)
         .get();
       const video = db

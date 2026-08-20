@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq } from "drizzle-orm";
-import { credentialChecks, postEvents } from "../src/db/schema.js";
+import { credentialChecks, publicationEvents } from "../src/db/schema.js";
 import { checkTokenHealth } from "../src/observability/token-health.js";
 import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
@@ -45,8 +45,8 @@ describe("token health probes", () => {
 
       const event = backendDb.db
         .select()
-        .from(postEvents)
-        .where(and(eq(postEvents.eventType, "credential.token_expiring_soon"), eq(postEvents.target, "instagram_ru")))
+        .from(publicationEvents)
+        .where(and(eq(publicationEvents.eventType, "credential.token_expiring_soon"), eq(publicationEvents.target, "instagram_ru")))
         .get();
       expect(event).not.toBeUndefined();
       expect(event?.target).toBe("instagram_ru");

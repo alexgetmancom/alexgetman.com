@@ -59,7 +59,7 @@ describe("settle", () => {
 
     const plan = await runOperation("settle", context(backendDb), { ref, target: "threads_ru", external_id: "18049" });
     expect(plan).toMatchObject({ applied: false, outcome: "published", hint: "re-run with apply to record it" });
-    expect(backendDb.sqlite.prepare("SELECT status FROM post_targets").get()).toEqual({ status: "verification_required" });
+    expect(backendDb.sqlite.prepare("SELECT status FROM publication_targets").get()).toEqual({ status: "verification_required" });
 
     await runOperation("settle", context(backendDb), {
       ref,
@@ -69,7 +69,7 @@ describe("settle", () => {
       apply: true,
     });
 
-    expect(backendDb.sqlite.prepare("SELECT status, external_id, url, confirmation_source FROM post_targets").get()).toEqual({
+    expect(backendDb.sqlite.prepare("SELECT status, external_id, url, confirmation_source FROM publication_targets").get()).toEqual({
       status: "published",
       external_id: "18049",
       url: "https://threads.net/p/18049",
@@ -84,7 +84,7 @@ describe("settle", () => {
 
     await runOperation("settle", context(backendDb), { ref, target: "threads_ru", apply: true });
 
-    expect(backendDb.sqlite.prepare("SELECT status, external_id FROM post_targets").get()).toEqual({
+    expect(backendDb.sqlite.prepare("SELECT status, external_id FROM publication_targets").get()).toEqual({
       status: "queued",
       external_id: null,
     });

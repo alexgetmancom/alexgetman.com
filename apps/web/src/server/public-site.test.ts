@@ -21,7 +21,7 @@ describe("Drizzle site feed", () => {
     rawDb.db
       .insert(posts)
       .values({
-        postKey: "post:7",
+        publicationKey: "post:7",
         postId: 7,
         source: "bot",
         channel: "controller",
@@ -58,7 +58,10 @@ describe("Drizzle site feed", () => {
         },
       ])
       .run();
-    rawDb.db.insert(postMetrics).values({ postKey: "post:7", target: "telegram", metricName: "views", value: 321, unit: "count" }).run();
+    rawDb.db
+      .insert(postMetrics)
+      .values({ publicationKey: "post:7", target: "telegram", metricName: "views", value: 321, unit: "count" })
+      .run();
     const entity = rawDb.db
       .insert(knowledgeEntities)
       .values({ kind: "company", slug: "example-ai", titleRu: "Example AI", titleEn: "Example AI", createdAt: now, updatedAt: now })
@@ -91,7 +94,7 @@ describe("Drizzle site feed", () => {
     rawDb.db.insert(publications).values({ postId: 8, status: "scheduled", createdAt: now, updatedAt: now }).run();
     rawDb.db
       .insert(posts)
-      .values({ postKey: "post:8", postId: 8, source: "bot", channel: "controller", messageId: 88, createdAt: now, updatedAt: now })
+      .values({ publicationKey: "post:8", postId: 8, source: "bot", channel: "controller", messageId: 88, createdAt: now, updatedAt: now })
       .run();
     rawDb.db
       .insert(postLocales)
@@ -115,7 +118,15 @@ describe("Drizzle site feed", () => {
     rawDb.db.insert(publications).values({ postId: 10, status: "scheduled", createdAt: now, updatedAt: now }).run();
     rawDb.db
       .insert(posts)
-      .values({ postKey: "post:10", postId: 10, source: "studio", channel: "studio", messageId: 110, createdAt: now, updatedAt: now })
+      .values({
+        publicationKey: "post:10",
+        postId: 10,
+        source: "studio",
+        channel: "studio",
+        messageId: 110,
+        createdAt: now,
+        updatedAt: now,
+      })
       .run();
     rawDb.db
       .insert(postLocales)
@@ -144,7 +155,7 @@ describe("Drizzle site feed", () => {
     rawDb.db.insert(publications).values({ postId: 9, status: "published", createdAt: now, updatedAt: now }).run();
     rawDb.db
       .insert(posts)
-      .values({ postKey: "post:9", postId: 9, source: "bot", channel: "controller", messageId: 99, createdAt: now, updatedAt: now })
+      .values({ publicationKey: "post:9", postId: 9, source: "bot", channel: "controller", messageId: 99, createdAt: now, updatedAt: now })
       .run();
     rawDb.db
       .insert(postLocales)

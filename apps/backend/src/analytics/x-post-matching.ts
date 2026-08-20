@@ -1,6 +1,6 @@
 import { type BackendDb, unsafeDb } from "../db/client.js";
 
-export type EditorialText = { post_key: string; text_en: string; date_utc: string | null };
+export type EditorialText = { publication_key: string; text_en: string; date_utc: string | null };
 export type XActivityText = { text: string; publishedAt: string | null };
 
 /** HTML entities and emoji presentation selectors are how one text arrives
@@ -40,7 +40,7 @@ const LINK_SIMILARITY_MARGIN = 0.1;
 
 export function editorialTexts(backendDb: BackendDb): EditorialText[] {
   return unsafeDb(backendDb)
-    .sqlite.prepare("SELECT post_key, text_en, date_utc FROM posts WHERE trim(COALESCE(text_en, '')) <> ''")
+    .sqlite.prepare("SELECT publication_key, text_en, date_utc FROM posts WHERE trim(COALESCE(text_en, '')) <> ''")
     .all() as EditorialText[];
 }
 
@@ -60,16 +60,16 @@ export function matchEditorialPost(item: XActivityText, posts: EditorialText[]):
   const source = comparableText(item.text);
   if (source.length < LINK_PREFIX_LENGTH) return null;
   const prefixed = posts.filter((post) => comparableText(post.text_en).startsWith(source));
-  if (prefixed.length === 1) return prefixed[0]?.post_key ?? null;
+  if (prefixed.length === 1) return prefixed[0]?.publication_key ?? null;
   if (prefixed.length > 1) return null;
   const day = item.publishedAt?.slice(0, 10);
   if (!day) return null;
   const best = bestSimilarMatch(item.text, posts);
   if (!best || best.similarity < LINK_SIMILARITY || best.similarity - best.runnerUp < LINK_SIMILARITY_MARGIN) return null;
-  return best.date?.slice(0, 10) === day ? best.postKey : null;
+  return best.date?.slice(0, 10) === day ? best.publicationKey : null;
 }
 
-export type SimilarMatch = { postKey: string; similarity: number; runnerUp: number; date: string | null; text: string };
+export type SimilarMatch = { publicationKey: string; similarity: number; runnerUp: number; date: string | null; text: string };
 
 /** The post a text reads most like, with the score the runner-up reached. */
 export function bestSimilarMatch(text: string, posts: EditorialText[]): SimilarMatch | null {
@@ -84,7 +84,7 @@ export function bestSimilarMatch(text: string, posts: EditorialText[]): SimilarM
       continue;
     }
     if (best) runnerUp = Math.max(runnerUp, best.similarity);
-    best = { postKey: post.post_key, similarity, runnerUp: 0, date: post.date_utc, text: post.text_en };
+    best = { publicationKey: post.publication_key, similarity, runnerUp: 0, date: post.date_utc, text: post.text_en };
   }
   return best ? { ...best, runnerUp } : null;
 }

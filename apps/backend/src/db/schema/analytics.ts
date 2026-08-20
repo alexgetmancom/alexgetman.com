@@ -5,7 +5,7 @@ import { autoId, type JsonObject, type JsonValue, json } from "./_shared.js";
 export const postMetrics = sqliteTable(
   "post_metrics",
   {
-    postKey: text().notNull(),
+    publicationKey: text().notNull(),
     target: text().notNull(),
     metricName: text().notNull().default("views"),
     value: integer(),
@@ -16,7 +16,7 @@ export const postMetrics = sqliteTable(
     rawJson: json<JsonValue | null>(),
   },
   (table) => [
-    primaryKey({ columns: [table.postKey, table.target, table.metricName] }),
+    primaryKey({ columns: [table.publicationKey, table.target, table.metricName] }),
     index("idx_post_metrics_sampled_at").on(table.sampledAt),
   ],
 );
@@ -25,7 +25,7 @@ export const metricSamples = sqliteTable(
   "metric_samples",
   {
     id: autoId(),
-    postKey: text().notNull(),
+    publicationKey: text().notNull(),
     target: text().notNull(),
     metricName: text().notNull().default("views"),
     value: integer(),
@@ -34,9 +34,9 @@ export const metricSamples = sqliteTable(
     rawJson: json<JsonValue | null>(),
   },
   (table) => [
-    index("idx_metric_samples_lookup").on(table.postKey, table.target, table.metricName, table.sampledAt),
+    index("idx_metric_samples_lookup").on(table.publicationKey, table.target, table.metricName, table.sampledAt),
     // Retention deletes by age alone. The lookup index above is useless for
-    // that predicate — post_key leads it — so the sweep read the whole table.
+    // that predicate — publication_key leads it — so the sweep read the whole table.
     index("idx_metric_samples_sampled_at").on(table.sampledAt),
   ],
 );
@@ -44,7 +44,7 @@ export const metricSamples = sqliteTable(
 export const metricSchedule = sqliteTable(
   "metric_schedule",
   {
-    postKey: text().notNull(),
+    publicationKey: text().notNull(),
     target: text().notNull(),
     nextCheckAt: text(),
     lastCheckedAt: text(),
@@ -56,7 +56,7 @@ export const metricSchedule = sqliteTable(
     updatedAt: text().notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.postKey, table.target] }),
+    primaryKey({ columns: [table.publicationKey, table.target] }),
     index("idx_metric_schedule_lock").on(table.lockedBy, table.lockedAt),
     index("idx_metric_schedule_error_updated_at")
       .on(table.updatedAt)
@@ -112,7 +112,7 @@ export const creatorProfileSnapshots = sqliteTable(
 );
 
 /** Account-wide X activity is deliberately separate from editorial posts.
- * linkedPostKey is optional: replies and posts written directly in X remain
+ * linkedPublicationKey is optional: replies and posts written directly in X remain
  * analytics-only, while Studio publications can still share one identity. */
 export const xActivityItems = sqliteTable(
   "x_activity_items",
@@ -122,14 +122,14 @@ export const xActivityItems = sqliteTable(
     publishedAt: text(),
     text: text().notNull(),
     url: text().notNull(),
-    linkedPostKey: text(),
+    linkedPublicationKey: text(),
     firstSeenAt: text().notNull(),
     lastSeenAt: text().notNull(),
     rawJson: json<JsonValue | null>(),
   },
   (table) => [
     index("idx_x_activity_items_published").on(table.publishedAt),
-    index("idx_x_activity_items_linked_post").on(table.linkedPostKey),
+    index("idx_x_activity_items_linked_post").on(table.linkedPublicationKey),
     index("idx_x_activity_items_last_seen_at").on(table.lastSeenAt),
   ],
 );

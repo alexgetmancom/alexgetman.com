@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
-import { postEvents, videoJobs, videoTargets } from "../src/db/schema.js";
+import { publicationEvents, videoJobs, videoTargets } from "../src/db/schema.js";
 import { recordAuthFailure } from "../src/observability/auth-circuit.js";
 import { replaceVideoTargets, saveVideoMetadata, scheduleVideo } from "../src/publishing/video-service.js";
 import { VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
@@ -360,7 +360,7 @@ describe("video job execution", () => {
       // The provider takes a publication before the platform does. Announcing
       // the outcome here said "completed with 1 failed target" about a Reel the
       // sweep confirmed a minute later, and the waiting itself was a warning.
-      const events = backendDb.db.select().from(postEvents).all();
+      const events = backendDb.db.select().from(publicationEvents).all();
       expect(events.filter((event) => event.eventType === "delivery.video.completed")).toEqual([]);
       const waiting = events.find((event) => event.eventType === "video.target.verification_required");
       expect(waiting?.severity).toBe("info");

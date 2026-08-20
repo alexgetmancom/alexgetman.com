@@ -326,7 +326,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
         const postId = draft.post_id;
         const results = requeuePublicationTargets(
           backendDb,
-          { postId, postKey: publicationRef("post", postId), messageId: null },
+          { postId, publicationKey: publicationRef("post", postId), messageId: null },
           selected.map((item) => item.target),
           { from: AUDIENCE_MUTATION_RETRYABLE_STATUSES, source: () => backendDb.studioPosts.publicationSource(postId) },
         );
@@ -350,7 +350,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
         const postId = draft.post_id;
         const results = abandonPublicationTargets(
           backendDb,
-          { postId, postKey: publicationRef("post", postId), messageId: null },
+          { postId, publicationKey: publicationRef("post", postId), messageId: null },
           selected.map((item) => item.target),
         );
         const abandoned = results.filter((item) => item.outcome === "abandoned").length;

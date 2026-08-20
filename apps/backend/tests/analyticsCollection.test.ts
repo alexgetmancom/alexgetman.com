@@ -8,7 +8,7 @@ import {
   analyticsSync,
   creatorProfileSnapshots,
   creatorProfiles,
-  postEvents,
+  publicationEvents,
   socialComments,
   videoMetricSchedule,
   videoMetricSnapshots,
@@ -253,8 +253,10 @@ describe("creator analytics collection", () => {
         frozenAt: expect.any(String),
         lockedBy: null,
       });
-      expect(backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, "analytics.video_metrics.frozen")).get()).toMatchObject({
-        postKey: `video:${draftId}`,
+      expect(
+        backendDb.db.select().from(publicationEvents).where(eq(publicationEvents.eventType, "analytics.video_metrics.frozen")).get(),
+      ).toMatchObject({
+        publicationKey: `video:${draftId}`,
         target: "instagram_reels",
         severity: "warn",
       });

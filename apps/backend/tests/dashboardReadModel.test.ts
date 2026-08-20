@@ -21,7 +21,9 @@ describe("dashboard read model bounds", () => {
         )
         .run(publishedToday);
       backendDb.sqlite
-        .prepare("INSERT INTO post_targets(post_key,target,status,published_at,updated_at) VALUES ('post:1','telegram','published',?,?)")
+        .prepare(
+          "INSERT INTO publication_targets(publication_key,target,status,published_at,updated_at) VALUES ('post:1','telegram','published',?,?)",
+        )
         .run(publishedToday, publishedToday);
 
       // Scheduled on Friday, published on Monday: the dashboard's "today" used
@@ -46,7 +48,7 @@ describe("dashboard read model bounds", () => {
 
       backendDb.sqlite
         .prepare(
-          "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,'active',?,?)",
+          "INSERT INTO posts(publication_key,post_id,channel,message_id,date_utc,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,'active',?,?)",
         )
         .run(postAt, postAt, postAt);
       backendDb.sqlite
@@ -58,16 +60,18 @@ describe("dashboard read model bounds", () => {
         )
         .run(postAt);
       backendDb.sqlite
-        .prepare("INSERT INTO post_targets(post_key,target,status,updated_at,raw_json) VALUES ('post:1','telegram','published',?,?)")
+        .prepare(
+          "INSERT INTO publication_targets(publication_key,target,status,updated_at,raw_json) VALUES ('post:1','telegram','published',?,?)",
+        )
         .run(postAt, raw);
       backendDb.sqlite
         .prepare(
-          "INSERT INTO post_metrics(post_key,target,metric_name,value,unit,source,sampled_at,raw_json) VALUES ('post:1','telegram','views',250,'count','fixture',?,?)",
+          "INSERT INTO post_metrics(publication_key,target,metric_name,value,unit,source,sampled_at,raw_json) VALUES ('post:1','telegram','views',250,'count','fixture',?,?)",
         )
         .run(postAt, raw);
 
       const sampleInsert = backendDb.sqlite.prepare(
-        "INSERT INTO metric_samples(post_key,target,metric_name,value,sampled_at,source,raw_json) VALUES ('post:1','telegram','views',?,?,?,?)",
+        "INSERT INTO metric_samples(publication_key,target,metric_name,value,sampled_at,source,raw_json) VALUES ('post:1','telegram','views',?,?,?,?)",
       );
       sampleInsert.run(999, new Date(periodStartMs - 1_000).toISOString(), "fixture", raw);
       for (let index = 0; index < 30 * 24; index += 1) {

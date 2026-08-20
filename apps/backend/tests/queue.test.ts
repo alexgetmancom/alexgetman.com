@@ -1,7 +1,7 @@
 import { describe, expect, it, jest, setSystemTime } from "bun:test";
 import { eq } from "drizzle-orm";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { type JsonObject, postEvents, postTargets, publishJobs } from "../src/db/schema.js";
+import { type JsonObject, publicationEvents, publicationTargets, publishJobs } from "../src/db/schema.js";
 import { AmbiguousPublicationError } from "../src/delivery/ambiguous-publication.js";
 import type { DeliveryAdapter, DeliveryPorts, DeliveryPublisher } from "../src/delivery/ports.js";
 import { recordAuthFailure } from "../src/observability/auth-circuit.js";
@@ -17,7 +17,7 @@ import { runPublishCycle, runPublishWatchdog } from "../src/runtime/workers.js";
 import { withDb } from "./helpers/db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
-/** Test-only convenience over enqueuePublishJobTx: derives a postId/postKey from
+/** Test-only convenience over enqueuePublishJobTx: derives a postId/publicationKey from
  * messageId so queue-mechanics tests don't need a real publication behind each job. */
 function enqueuePublishJob(
   backendDb: UnsafeBackendDb,
@@ -26,7 +26,7 @@ function enqueuePublishJob(
   return enqueuePublishJobTx(backendDb.db, {
     ...input,
     postId: input.messageId,
-    postKey: `post:${input.messageId}`,
+    publicationKey: `post:${input.messageId}`,
   });
 }
 
@@ -89,7 +89,11 @@ describe("publish queue", () => {
       });
       const [claimed] = claimDuePublishJobs(backendDb, 1, "active-worker");
       if (!claimed) throw new Error("job was not claimed");
-      backendDb.db.update(postTargets).set({ externalId: "existing-id" }).where(eq(postTargets.target, "test_platform")).run();
+      backendDb.db
+        .update(publicationTargets)
+        .set({ externalId: "existing-id" })
+        .where(eq(publicationTargets.target, "test_platform"))
+        .run();
 
       failPublishJob(
         backendDb,
@@ -111,9 +115,9 @@ describe("publish queue", () => {
       });
       expect(
         backendDb.db
-          .select({ status: postTargets.status, externalId: postTargets.externalId })
-          .from(postTargets)
-          .where(eq(postTargets.target, "test_platform"))
+          .select({ status: publicationTargets.status, externalId: publicationTargets.externalId })
+          .from(publicationTargets)
+          .where(eq(publicationTargets.target, "test_platform"))
           .get(),
       ).toEqual({
         status: "queued",
@@ -137,9 +141,9 @@ describe("publish queue", () => {
         .get();
       expect(row).toEqual({ status: "publishing", lockedBy: "test-worker" });
       const target = backendDb.db
-        .select({ status: postTargets.status })
-        .from(postTargets)
-        .where(eq(postTargets.target, "test_platform"))
+        .select({ status: publicationTargets.status })
+        .from(publicationTargets)
+        .where(eq(publicationTargets.target, "test_platform"))
         .get();
       if (!target) throw new Error("expected post target");
       expect(target.status).toBe("publishing");
@@ -183,22 +187,22 @@ describe("publish queue", () => {
         .get();
       expect(job).toEqual({ status: "published", lastError: null });
       const phases = backendDb.db
-        .select({ details: postEvents.detailsJson })
-        .from(postEvents)
-        .where(eq(postEvents.eventType, "publish.job.phase"))
+        .select({ details: publicationEvents.detailsJson })
+        .from(publicationEvents)
+        .where(eq(publicationEvents.eventType, "publish.job.phase"))
         .all()
         .map((row) => JSON.parse(row.details ?? "{}") as Record<string, unknown>);
       expect(phases.map((phase) => phase.phase)).toEqual(["validate", "prepare", "provider.publish", "provider.verify"]);
       expect(phases.every((phase) => typeof phase.duration_ms === "number")).toBe(true);
       const target = backendDb.db
         .select({
-          status: postTargets.status,
-          externalId: postTargets.externalId,
-          url: postTargets.url,
-          publishedAt: postTargets.publishedAt,
+          status: publicationTargets.status,
+          externalId: publicationTargets.externalId,
+          url: publicationTargets.url,
+          publishedAt: publicationTargets.publishedAt,
         })
-        .from(postTargets)
-        .where(eq(postTargets.target, "test_platform"))
+        .from(publicationTargets)
+        .where(eq(publicationTargets.target, "test_platform"))
         .get();
       expect(target).toMatchObject({
         status: "published",
@@ -400,7 +404,11 @@ describe("publish queue", () => {
           .get(),
       ).toEqual({ status: "verification_required", nextAttemptAt: null });
       expect(
-        backendDb.db.select({ status: postTargets.status }).from(postTargets).where(eq(postTargets.target, "ambiguous-provider")).get(),
+        backendDb.db
+          .select({ status: publicationTargets.status })
+          .from(publicationTargets)
+          .where(eq(publicationTargets.target, "ambiguous-provider"))
+          .get(),
       ).toEqual({ status: "verification_required" });
     }));
 
@@ -554,7 +562,11 @@ describe("publish queue", () => {
         .get();
       expect(job).toEqual({ status: "verification_required", lockedBy: null });
       expect(
-        backendDb.db.select({ status: postTargets.status }).from(postTargets).where(eq(postTargets.target, "test_platform")).get(),
+        backendDb.db
+          .select({ status: publicationTargets.status })
+          .from(publicationTargets)
+          .where(eq(publicationTargets.target, "test_platform"))
+          .get(),
       ).toEqual({
         status: "verification_required",
       });
@@ -701,7 +713,10 @@ describe("publish queue", () => {
         .where(eq(publishJobs.jobId, id))
         .get();
       expect(job).toMatchObject({ status: "queued", payloadJson: { _reconcile_ids: ["at://did/app.bsky.feed.post/root"] } });
-      const target = backendDb.db.select({ status: postTargets.status, externalId: postTargets.externalId }).from(postTargets).get();
+      const target = backendDb.db
+        .select({ status: publicationTargets.status, externalId: publicationTargets.externalId })
+        .from(publicationTargets)
+        .get();
       expect(target).toEqual({ status: "queued", externalId: "at://did/app.bsky.feed.post/root" });
     }));
 
@@ -717,7 +732,7 @@ describe("publish queue", () => {
         backendDb,
         testPorts({
           test_platform: async () => {
-            backendDb.sqlite.exec("DROP TABLE post_events; CREATE TABLE post_events (id INTEGER PRIMARY KEY)");
+            backendDb.sqlite.exec("DROP TABLE publication_events; CREATE TABLE publication_events (id INTEGER PRIMARY KEY)");
             return { ok: true, id: "test-platform-1" };
           },
         }),
@@ -732,9 +747,9 @@ describe("publish queue", () => {
       expect(job.lockedBy).toBeNull();
       expect(
         backendDb.db
-          .select({ status: postTargets.status, externalId: postTargets.externalId })
-          .from(postTargets)
-          .where(eq(postTargets.target, "test_platform"))
+          .select({ status: publicationTargets.status, externalId: publicationTargets.externalId })
+          .from(publicationTargets)
+          .where(eq(publicationTargets.target, "test_platform"))
           .get(),
       ).toEqual({ status: "verification_required", externalId: "test-platform-1" });
       expect(job.lastError).toContain("worker finalization failed");

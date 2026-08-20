@@ -58,7 +58,7 @@ export async function backfillTextStoryCards(
     );
   const base = {
     post_id: ref.postId,
-    post_key: ref.postKey,
+    publication_key: ref.publicationKey,
     draft_id: publication.draftId,
     count: plan.length,
     force,

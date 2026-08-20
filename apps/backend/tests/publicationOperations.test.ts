@@ -121,10 +121,12 @@ it("purges an absent publication and every stored publication path", async () =>
     const now = new Date().toISOString();
     backendDb.sqlite
       .query(
-        "INSERT INTO post_targets(post_key,target,status,url,updated_at) VALUES (?,'threads_ru','published','https://threads.example/deleted',?)",
+        "INSERT INTO publication_targets(publication_key,target,status,url,updated_at) VALUES (?,'threads_ru','published','https://threads.example/deleted',?)",
       )
       .run(published.ref, now);
-    backendDb.sqlite.query("INSERT INTO metric_schedule(post_key,target,updated_at) VALUES (?,'threads_ru',?)").run(published.ref, now);
+    backendDb.sqlite
+      .query("INSERT INTO metric_schedule(publication_key,target,updated_at) VALUES (?,'threads_ru',?)")
+      .run(published.ref, now);
     backendDb.sqlite
       .query(
         "INSERT INTO studio_notification_jobs(actor_id,ref,kind,run_at,status,created_at,updated_at) VALUES (42,?,'completion',?,'delivered',?,?)",
@@ -150,7 +152,7 @@ it("purges an absent publication and every stored publication path", async () =>
       drafts: 1,
       publications: 1,
       publish_jobs: 1,
-      post_targets: 1,
+      publication_targets: 1,
       notification_jobs: 1,
     });
 
@@ -168,7 +170,7 @@ it("purges an absent publication and every stored publication path", async () =>
       events: [],
     });
     expect(backendDb.sqlite.query("SELECT COUNT(*) AS count FROM drafts WHERE id=?").get(published.draft_id)).toEqual({ count: 0 });
-    expect(backendDb.sqlite.query("SELECT COUNT(*) AS count FROM metric_schedule WHERE post_key=?").get(published.ref)).toEqual({
+    expect(backendDb.sqlite.query("SELECT COUNT(*) AS count FROM metric_schedule WHERE publication_key=?").get(published.ref)).toEqual({
       count: 0,
     });
     expect(backendDb.sqlite.query("SELECT COUNT(*) AS count FROM studio_notification_jobs WHERE ref=?").get(published.ref)).toEqual({
@@ -201,7 +203,7 @@ it("purges a video publication whose reel is gone, and the source it was the las
       .run(targetId, now, now, now);
     backendDb.sqlite
       .query(
-        "INSERT INTO post_events(post_key,target,event_type,severity,message,created_at) VALUES (?,'instagram_reels','x','warn','y',?)",
+        "INSERT INTO publication_events(publication_key,target,event_type,severity,message,created_at) VALUES (?,'instagram_reels','x','warn','y',?)",
       )
       .run(ref, now);
 
@@ -231,7 +233,7 @@ it("purges a video publication whose reel is gone, and the source it was the las
       files: string[];
     };
     expect(plan.applied).toBe(false);
-    expect(plan.rows).toMatchObject({ video_drafts: 1, video_targets: 1, video_metric_schedule: 1, post_events: 1 });
+    expect(plan.rows).toMatchObject({ video_drafts: 1, video_targets: 1, video_metric_schedule: 1, publication_events: 1 });
     expect(plan.files).toEqual([source]);
 
     const result = (await runOperation("purge", context(backendDb, notFound), { ref, apply: true })) as {
@@ -281,7 +283,7 @@ it("shows the operator every target the command would touch, not only the delive
       text: "Сегодня разобрал, как мы используем React и Bun в проде",
     })) as { ref: string };
 
-    // Nothing has been claimed yet, so there is no post_targets row — and the
+    // Nothing has been claimed yet, so there is no publication_targets row — and the
     // plan used to read only that table. It reported "nothing is in scope" for
     // a publication whose target `--apply` then requeued.
     const plan = (await runOperation("retry", context(backendDb), { ref: published.ref })) as {
@@ -308,7 +310,7 @@ it("keeps the identity of a live post it was told to publish again", async () =>
     const now = new Date().toISOString();
     backendDb.sqlite
       .prepare(
-        "INSERT INTO post_targets(post_key,target,status,external_id,url,published_at,updated_at) VALUES (?,'threads_ru','published','LIVE-1','https://threads.net/p/LIVE-1',?,?)",
+        "INSERT INTO publication_targets(publication_key,target,status,external_id,url,published_at,updated_at) VALUES (?,'threads_ru','published','LIVE-1','https://threads.net/p/LIVE-1',?,?)",
       )
       .run(published.ref, now, now);
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE target='threads_ru'").run();
@@ -317,12 +319,12 @@ it("keeps the identity of a live post it was told to publish again", async () =>
 
     // The row now names a different post, which is right — but the one it used
     // to name is still live, and nothing else remembers how to reach it.
-    expect(backendDb.sqlite.prepare("SELECT external_id, status FROM post_targets WHERE target='threads_ru'").get()).toEqual({
+    expect(backendDb.sqlite.prepare("SELECT external_id, status FROM publication_targets WHERE target='threads_ru'").get()).toEqual({
       external_id: null,
       status: "queued",
     });
     expect(
-      backendDb.sqlite.prepare("SELECT details_json FROM post_events WHERE event_type='publish.target.identity_dropped'").get() as {
+      backendDb.sqlite.prepare("SELECT details_json FROM publication_events WHERE event_type='publish.target.identity_dropped'").get() as {
         details_json: string;
       },
     ).toEqual({ details_json: JSON.stringify({ external_id: "LIVE-1", url: "https://threads.net/p/LIVE-1" }) });
@@ -343,7 +345,7 @@ it("refuses to purge when a target changed while it was being verified", async (
     const now = new Date().toISOString();
     backendDb.sqlite
       .query(
-        "INSERT INTO post_targets(post_key,target,status,url,updated_at) VALUES (?,'threads_ru','published','https://threads.example/deleted',?)",
+        "INSERT INTO publication_targets(publication_key,target,status,url,updated_at) VALUES (?,'threads_ru','published','https://threads.example/deleted',?)",
       )
       .run(published.ref, now);
 
@@ -352,7 +354,9 @@ it("refuses to purge when a target changed while it was being verified", async (
     // post live with nothing in the database that knows about it.
     const publishesMidVerification = (async () => {
       backendDb.sqlite
-        .query("INSERT INTO post_targets(post_key,target,status,url,updated_at) VALUES (?,'telegram','published','https://t.me/c/1/2',?)")
+        .query(
+          "INSERT INTO publication_targets(publication_key,target,status,url,updated_at) VALUES (?,'telegram','published','https://t.me/c/1/2',?)",
+        )
         .run(published.ref, new Date().toISOString());
       return new Response("gone", { status: 404 });
     }) as unknown as typeof fetch;
@@ -362,7 +366,9 @@ it("refuses to purge when a target changed while it was being verified", async (
     );
     // Nothing may have been deleted: the whole cascade rolls back together.
     expect(backendDb.sqlite.query("SELECT COUNT(*) AS count FROM drafts WHERE id=?").get(published.draft_id)).toEqual({ count: 1 });
-    expect(backendDb.sqlite.query("SELECT COUNT(*) AS count FROM post_targets WHERE post_key=?").get(published.ref)).toEqual({ count: 2 });
+    expect(backendDb.sqlite.query("SELECT COUNT(*) AS count FROM publication_targets WHERE publication_key=?").get(published.ref)).toEqual({
+      count: 2,
+    });
   } finally {
     backendDb.close();
   }
@@ -380,7 +386,7 @@ it("proves a Threads post absent by asking Threads, not by its login-walled perm
     const now = new Date().toISOString();
     backendDb.sqlite
       .query(
-        "INSERT INTO post_targets(post_key,target,status,url,external_id,updated_at) VALUES (?,'threads_ru','published','https://www.threads.com/@studio/post/A','18332651503276467',?)",
+        "INSERT INTO publication_targets(publication_key,target,status,url,external_id,updated_at) VALUES (?,'threads_ru','published','https://www.threads.com/@studio/post/A','18332651503276467',?)",
       )
       .run(published.ref, now);
     // What Threads serves a logged-out reader either way: its login wall, HTTP

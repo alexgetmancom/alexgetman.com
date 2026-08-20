@@ -1,7 +1,7 @@
 import { asc, desc, eq, inArray } from "drizzle-orm";
 import type { PostEventRecord, StudioVideoStore } from "../../application/ports.js";
 import { parsePublicationRef } from "../../application/publication-ref.js";
-import { postEvents, videoDrafts, videoJobs, videoTargets } from "../schema.js";
+import { publicationEvents, videoDrafts, videoJobs, videoTargets } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite read adapter for Studio video drafts, targets, jobs, and history. */
@@ -41,14 +41,14 @@ export function createStudioVideoStore(db: BackendDatabase): StudioVideoStore {
         .map(({ videoDraftId, ...job }) => ({ ...job, publicationId: videoDraftId }));
     },
 
-    history(postKey, limit): PostEventRecord[] {
-      const parsed = parsePublicationRef(postKey);
-      const refs = parsed ? [postKey, `${parsed.kind}:${parsed.id}`] : [postKey];
+    history(publicationKey, limit): PostEventRecord[] {
+      const parsed = parsePublicationRef(publicationKey);
+      const refs = parsed ? [publicationKey, `${parsed.kind}:${parsed.id}`] : [publicationKey];
       return db
         .select()
-        .from(postEvents)
-        .where(inArray(postEvents.postKey, refs))
-        .orderBy(desc(postEvents.createdAt), desc(postEvents.id))
+        .from(publicationEvents)
+        .where(inArray(publicationEvents.publicationKey, refs))
+        .orderBy(desc(publicationEvents.createdAt), desc(publicationEvents.id))
         .limit(limit)
         .all();
     },

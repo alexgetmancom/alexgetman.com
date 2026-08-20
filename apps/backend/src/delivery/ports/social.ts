@@ -94,7 +94,7 @@ async function createStoryMedia(job: ClaimedPublishJob, media: ReturnType<typeof
 
 function mediaCacheKey(job: ClaimedPublishJob, media: ReturnType<typeof payloadMedia>, config: BackendConfig): string {
   return JSON.stringify({
-    post: job.postKey,
+    post: job.publicationKey,
     target: job.target,
     locale: job.payload.locale ?? "en",
     // Story media is a separately rendered 9:16 asset. It must never share

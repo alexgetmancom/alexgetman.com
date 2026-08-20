@@ -103,7 +103,7 @@ export async function runOperationCommand(
       external = await editPublishedTargets(
         backendDb,
         {
-          postKey: publicationRef.postKey,
+          publicationKey: publicationRef.publicationKey,
           textRu: locale === "ru" ? text : null,
           textEn: locale === "en" ? text : null,
           ...(input.target ? { target: input.target } : {}),
@@ -140,7 +140,7 @@ export async function runOperationCommand(
       ? await attemptPublishedTargetRemovals(
           backendDb,
           config,
-          { postKey: publicationRef.postKey, ...(input.target ? { target: input.target } : {}), locale },
+          { publicationKey: publicationRef.publicationKey, ...(input.target ? { target: input.target } : {}), locale },
           fetchImpl,
         )
       : [];
@@ -161,7 +161,7 @@ export async function runOperationCommand(
       backendDb,
       config,
       {
-        postKey: publicationRef.postKey,
+        publicationKey: publicationRef.publicationKey,
         ...(input.target ? { target: input.target } : {}),
         ...(input.locale ? { locale: input.locale } : {}),
       },
@@ -208,7 +208,7 @@ function reschedulePost(
     .from(drafts)
     .where(eq(drafts.postId, ref.postId))
     .get();
-  if (!draft) throw new Error(`draft not found for publication: ${ref.postKey}`);
+  if (!draft) throw new Error(`draft not found for publication: ${ref.publicationKey}`);
   const at = parseOperationSchedule(rawAt, config);
   const posts = createStudioServices(backendDb, config).posts;
   const input = posts.scheduleAt(draft.actorId, draft.id, locale, at);

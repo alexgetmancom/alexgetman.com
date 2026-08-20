@@ -32,7 +32,7 @@ const COUNTER_OF: Record<string, keyof ReachCounters | undefined> = { ...TEXT_CO
 
 type RawSample = { at: number; value: number };
 
-export type XActivitySeries = ReachSeries & { linkedPostKey: string | null };
+export type XActivitySeries = ReachSeries & { linkedPublicationKey: string | null };
 
 /**
  * `coveredByXActivity` names the posts whose tweet the X collector reports
@@ -47,7 +47,7 @@ export function textReachSeries(
   const series: ReachSeries[] = [];
   for (const post of posts) {
     for (const target of targetIds) {
-      if (target === "x" && post.post_key && coveredByXActivity.has(post.post_key)) continue;
+      if (target === "x" && post.publication_key && coveredByXActivity.has(post.publication_key)) continue;
       if (!isPublished(post, target)) continue;
       const metrics = post.metrics?.[target];
       if (!metrics) continue;
@@ -106,7 +106,7 @@ export function xActivityReachSeries(
 
   return wanted.map((item) => ({
     publishedAt: item.publishedAt,
-    linkedPostKey: item.linkedPostKey,
+    linkedPublicationKey: item.linkedPublicationKey,
     target: "x",
     samples: alignSamples(byItem.get(item.xPostId) ?? new Map(), item.publishedAt, { views: 0, reactions: 0, replies: 0, reposts: 0 }),
   }));

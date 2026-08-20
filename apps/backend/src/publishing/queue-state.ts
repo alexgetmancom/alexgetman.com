@@ -2,7 +2,7 @@ import { and, eq, inArray, ne } from "drizzle-orm";
 import * as z from "zod";
 import type { UnsafeBackendDb } from "../db/client.js";
 import type { JsonObject } from "../db/schema.js";
-import { postEvents, postTargets, publishJobs } from "../db/schema.js";
+import { publicationEvents, publicationTargets, publishJobs } from "../db/schema.js";
 import {
   type BackendConfig,
   PUBLISH_BACKOFF_BASE_SECONDS,
@@ -43,7 +43,7 @@ export function deleteSupersededJobs(
   tx: UnsafeBackendDb["db"],
   job: typeof publishJobs.$inferSelect,
   jobId: number,
-  postKey: string,
+  publicationKey: string,
 ): void {
   tx.delete(publishJobs)
     .where(
@@ -51,7 +51,7 @@ export function deleteSupersededJobs(
         eq(publishJobs.target, job.target),
         ne(publishJobs.jobId, jobId),
         inArray(publishJobs.status, ["queued", "failed", "verification_required"]),
-        eq(publishJobs.postKey, postKey),
+        eq(publishJobs.publicationKey, publicationKey),
       ),
     )
     .run();
@@ -69,17 +69,17 @@ export function externalIds(result: PublishResult): string[] {
 }
 
 /** Keeps target state updates consistent across claim, completion, and recovery paths. */
-export function upsertPostTarget(db: UnsafeBackendDb["db"], value: typeof postTargets.$inferInsert): void {
-  const { postKey, target, ...patch } = value;
-  db.insert(postTargets)
+export function upsertPostTarget(db: UnsafeBackendDb["db"], value: typeof publicationTargets.$inferInsert): void {
+  const { publicationKey, target, ...patch } = value;
+  db.insert(publicationTargets)
     .values(value)
-    .onConflictDoUpdate({ target: [postTargets.postKey, postTargets.target], set: patch })
+    .onConflictDoUpdate({ target: [publicationTargets.publicationKey, publicationTargets.target], set: patch })
     .run();
 }
 
 export function insertEvent(
   tx: UnsafeBackendDb["db"],
-  postKey: string | null,
+  publicationKey: string | null,
   target: string | null,
   eventType: string,
   severity: string,
@@ -87,8 +87,8 @@ export function insertEvent(
   details: Record<string, unknown>,
   createdAt: string,
 ): void {
-  tx.insert(postEvents)
-    .values({ postKey, eventType, severity, target, message, detailsJson: JSON.stringify(details), createdAt })
+  tx.insert(publicationEvents)
+    .values({ publicationKey, eventType, severity, target, message, detailsJson: JSON.stringify(details), createdAt })
     .run();
 }
 
@@ -110,9 +110,9 @@ export function settleJob(
   tx: UnsafeBackendDb["db"],
   jobId: number,
   jobPatch: Partial<typeof publishJobs.$inferInsert> | null,
-  postKey: string,
+  publicationKey: string,
   target: string,
-  targetPatch: Omit<typeof postTargets.$inferInsert, "postKey" | "target"> & { updatedAt: string },
+  targetPatch: Omit<typeof publicationTargets.$inferInsert, "publicationKey" | "target"> & { updatedAt: string },
   event: { type: string; severity: string; message: string; details: Record<string, unknown> },
   fence?: string,
 ): void {
@@ -125,6 +125,6 @@ export function settleJob(
       .get();
     if (!updated) throw new PublishLockLostError(jobId);
   } else if (jobPatch) tx.update(publishJobs).set(jobPatch).where(eq(publishJobs.jobId, jobId)).run();
-  upsertPostTarget(tx, { postKey, target, ...targetPatch });
-  insertEvent(tx, postKey, target, event.type, event.severity, event.message, event.details, targetPatch.updatedAt);
+  upsertPostTarget(tx, { publicationKey, target, ...targetPatch });
+  insertEvent(tx, publicationKey, target, event.type, event.severity, event.message, event.details, targetPatch.updatedAt);
 }

@@ -22,11 +22,11 @@ export async function purgePublication(backendDb: BackendDb, config: BackendConf
   const publication = sqlite.query("SELECT draft_id AS draftId FROM publications WHERE post_id=?").get(resolved.postId) as {
     draftId: number | null;
   } | null;
-  if (!publication?.draftId) throw new Error(`purge requires a Studio publication: ${resolved.postKey}`);
+  if (!publication?.draftId) throw new Error(`purge requires a Studio publication: ${resolved.publicationKey}`);
   const draftId = publication.draftId;
   const postId = resolved.postId;
   const refs = [`post:${postId}`, `draft:${draftId}`];
-  const statements = purgeStatements(postId, draftId, resolved.postKey, resolved.messageId, refs);
+  const statements = purgeStatements(postId, draftId, resolved.publicationKey, resolved.messageId, refs);
   const rows = Object.fromEntries(
     statements
       .map((statement) => [statement.name, count(sqlite.query(statement.countSql).get(...statement.args))] as const)
@@ -35,13 +35,13 @@ export async function purgePublication(backendDb: BackendDb, config: BackendConf
   const files = (
     sqlite
       .query(
-        "SELECT local_path AS path FROM draft_story_cards WHERE draft_id=? AND local_path IS NOT NULL UNION SELECT site_ru_path AS path FROM posts WHERE post_key=? AND site_ru_path IS NOT NULL UNION SELECT site_en_path AS path FROM posts WHERE post_key=? AND site_en_path IS NOT NULL",
+        "SELECT local_path AS path FROM draft_story_cards WHERE draft_id=? AND local_path IS NOT NULL UNION SELECT site_ru_path AS path FROM posts WHERE publication_key=? AND site_ru_path IS NOT NULL UNION SELECT site_en_path AS path FROM posts WHERE publication_key=? AND site_en_path IS NOT NULL",
       )
-      .all(draftId, resolved.postKey, resolved.postKey) as Array<{ path: string }>
+      .all(draftId, resolved.publicationKey, resolved.publicationKey) as Array<{ path: string }>
   ).map(({ path }) => path);
-  if (!input.apply) return { ok: true, applied: false, action: "purge", ref: resolved.postKey, draft_id: draftId, rows, files };
+  if (!input.apply) return { ok: true, applied: false, action: "purge", ref: resolved.publicationKey, draft_id: draftId, rows, files };
 
-  const verified = await assertPublicationAbsent(sqlite, resolved.postKey, config, fetchImpl);
+  const verified = await assertPublicationAbsent(sqlite, resolved.publicationKey, config, fetchImpl);
   const deleted = sqlite
     .transaction(() => {
       // The proof that nothing is live was gathered over HTTP and cannot travel
@@ -49,15 +49,15 @@ export async function purgePublication(backendDb: BackendDb, config: BackendConf
       // while the targets still look exactly as they did when they were
       // checked. A worker that published one in between rolls the whole purge
       // back rather than erasing the record of a post that just went out.
-      if (targetSignature(targetStates(sqlite, resolved.postKey)) !== targetSignature(verified))
-        throw new Error(`targets for ${resolved.postKey} changed while it was being verified; nothing was deleted`);
+      if (targetSignature(targetStates(sqlite, resolved.publicationKey)) !== targetSignature(verified))
+        throw new Error(`targets for ${resolved.publicationKey} changed while it was being verified; nothing was deleted`);
       const result: Record<string, number> = {};
       for (const statement of statements) {
         const changes = sqlite.query(statement.deleteSql).run(...statement.args).changes;
         if (changes > 0) result[statement.name] = changes;
       }
       const remaining = sqlite.query("SELECT COUNT(*) AS count FROM publications WHERE post_id=? OR draft_id=?").get(postId, draftId);
-      if (count(remaining) !== 0) throw new Error(`purge did not remove ${resolved.postKey}`);
+      if (count(remaining) !== 0) throw new Error(`purge did not remove ${resolved.publicationKey}`);
       return result;
     })
     .immediate();
@@ -76,7 +76,7 @@ export async function purgePublication(backendDb: BackendDb, config: BackendConf
     ok: failedFiles.length === 0,
     applied: true,
     action: "purge",
-    ref: resolved.postKey,
+    ref: resolved.publicationKey,
     draft_id: draftId,
     deleted,
     removed_files: removedFiles,
@@ -168,7 +168,7 @@ function videoPurgeStatements(videoDraftId: number, ref: string): PurgeStatement
   });
   return [
     direct("notification_jobs", "studio_notification_jobs", "ref=?", [ref]),
-    direct("post_events", "post_events", "post_key=?", [ref]),
+    direct("publication_events", "publication_events", "publication_key=?", [ref]),
     direct("social_comments", "social_comments", ofDraft, [videoDraftId]),
     direct("video_metric_snapshots", "video_metric_snapshots", ofDraft, [videoDraftId]),
     direct("video_metric_schedule", "video_metric_schedule", ofDraft, [videoDraftId]),
@@ -217,12 +217,12 @@ function orphanedAssetFiles(backendDb: BackendDb, assetId: number, videoDraftId:
   return asset?.path ? [asset.path] : [];
 }
 
-function targetStates(sqlite: ReturnType<typeof unsafeDb>["sqlite"], postKey: string): TargetState[] {
+function targetStates(sqlite: ReturnType<typeof unsafeDb>["sqlite"], publicationKey: string): TargetState[] {
   return sqlite
     .query(
-      "SELECT target,status,url,external_id AS externalId,external_ids_json AS externalIdsJson FROM post_targets WHERE post_key=? ORDER BY target",
+      "SELECT target,status,url,external_id AS externalId,external_ids_json AS externalIdsJson FROM publication_targets WHERE publication_key=? ORDER BY target",
     )
-    .all(postKey) as TargetState[];
+    .all(publicationKey) as TargetState[];
 }
 
 function storedExternalIds(target: TargetState): string[] {
@@ -240,11 +240,11 @@ function targetSignature(states: TargetState[]): string {
  * against anything else. */
 async function assertPublicationAbsent(
   sqlite: ReturnType<typeof unsafeDb>["sqlite"],
-  postKey: string,
+  publicationKey: string,
   config: BackendConfig,
   fetchImpl: typeof fetch,
 ): Promise<TargetState[]> {
-  return assertTargetsAbsent(targetStates(sqlite, postKey), config, fetchImpl);
+  return assertTargetsAbsent(targetStates(sqlite, publicationKey), config, fetchImpl);
 }
 
 /** The platform is asked about the stored id wherever it can answer, and only a
@@ -280,7 +280,7 @@ async function assertTargetsAbsent(targets: TargetState[], config: BackendConfig
   return targets;
 }
 
-function purgeStatements(postId: number, draftId: number, postKey: string, messageId: number, refs: string[]): PurgeStatement[] {
+function purgeStatements(postId: number, draftId: number, publicationKey: string, messageId: number, refs: string[]): PurgeStatement[] {
   const refMarks = refs.map(() => "?").join(",");
   const direct = (name: string, table: string, where: string, args: SqlArgs): PurgeStatement => ({
     name,
@@ -290,29 +290,29 @@ function purgeStatements(postId: number, draftId: number, postKey: string, messa
   });
   return [
     direct("notification_jobs", "studio_notification_jobs", `ref IN (${refMarks})`, refs),
-    direct("post_events", "post_events", `post_key IN (${refMarks})`, refs),
+    direct("publication_events", "publication_events", `publication_key IN (${refMarks})`, refs),
     direct("draft_story_cards", "draft_story_cards", "draft_id=?", [draftId]),
     direct("draft_entity_candidates", "draft_entity_candidates", "draft_id=?", [draftId]),
     direct("conversation_sessions", "conversation_sessions", "draft_id=?", [draftId]),
     direct("pending_albums", "pending_albums", "draft_id=?", [draftId]),
-    direct("post_metrics", "post_metrics", "post_key=?", [postKey]),
-    direct("metric_samples", "metric_samples", "post_key=?", [postKey]),
-    direct("metric_schedule", "metric_schedule", "post_key=?", [postKey]),
+    direct("post_metrics", "post_metrics", "publication_key=?", [publicationKey]),
+    direct("metric_samples", "metric_samples", "publication_key=?", [publicationKey]),
+    direct("metric_schedule", "metric_schedule", "publication_key=?", [publicationKey]),
     {
       name: "x_activity_links",
-      countSql: "SELECT COUNT(*) AS count FROM x_activity_items WHERE linked_post_key=?",
-      deleteSql: "UPDATE x_activity_items SET linked_post_key=NULL WHERE linked_post_key=?",
-      args: [postKey],
+      countSql: "SELECT COUNT(*) AS count FROM x_activity_items WHERE linked_publication_key=?",
+      deleteSql: "UPDATE x_activity_items SET linked_publication_key=NULL WHERE linked_publication_key=?",
+      args: [publicationKey],
     },
     direct("post_entity_links", "post_entity_links", "post_id=?", [postId]),
     direct("post_locales", "post_locales", "post_id=?", [postId]),
-    direct("post_targets", "post_targets", "post_key=?", [postKey]),
+    direct("publication_targets", "publication_targets", "publication_key=?", [publicationKey]),
     direct("site_jobs", "site_jobs", "post_id=?", [postId]),
     direct("site_source_items", "site_source_items", "message_id=? AND json_extract(item_json,'$.post_id')=?", [messageId, postId]),
-    direct("publish_jobs", "publish_jobs", "post_id=? OR post_key=?", [postId, postKey]),
+    direct("publish_jobs", "publish_jobs", "post_id=? OR publication_key=?", [postId, publicationKey]),
     direct("publication_plans", "publication_plans", "post_id=?", [postId]),
     direct("publication_sources", "publication_sources", "post_id=?", [postId]),
-    direct("posts", "posts", "post_id=? OR post_key=?", [postId, postKey]),
+    direct("posts", "posts", "post_id=? OR publication_key=?", [postId, publicationKey]),
     direct("publications", "publications", "post_id=? AND draft_id=?", [postId, draftId]),
     direct("drafts", "drafts", "id=? AND post_id=?", [draftId, postId]),
   ];

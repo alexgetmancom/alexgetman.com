@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { targetLocale } from "../../botTargets.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
-import { postTargets, publishJobs } from "../../db/schema.js";
+import { publicationTargets, publishJobs } from "../../db/schema.js";
 import type { ResolvedPublicationRef } from "../publication-ref.js";
 
 type ScopedTarget = { target: string; status: string; url: string | null; published: boolean };
@@ -18,11 +18,11 @@ export function publicationScope(backendDb: BackendDb, ref: ResolvedPublicationR
   const scoped = (value: string): boolean => (!target || value === target) && (!locale || targetLocale(value) === locale);
   const rows = new Map<string, ScopedTarget>();
   // A target with a job but no delivery row yet is still in scope: `retry` works
-  // off the jobs, and reading only `post_targets` here reported "nothing is in
+  // off the jobs, and reading only `publication_targets` here reported "nothing is in
   // scope" for a publication whose targets `--apply` then went and requeued.
   for (const row of db.select({ target: publishJobs.target, status: publishJobs.status }).from(publishJobs).where(jobsOf(ref)).all())
     if (scoped(row.target)) rows.set(row.target, { target: row.target, status: row.status, url: null, published: false });
-  for (const row of db.select().from(postTargets).where(eq(postTargets.postKey, ref.postKey)).all())
+  for (const row of db.select().from(publicationTargets).where(eq(publicationTargets.publicationKey, ref.publicationKey)).all())
     if (scoped(row.target))
       rows.set(row.target, { target: row.target, status: row.status, url: row.url ?? null, published: row.status === "published" });
   return [...rows.values()].sort((left, right) => left.target.localeCompare(right.target));
@@ -30,7 +30,7 @@ export function publicationScope(backendDb: BackendDb, ref: ResolvedPublicationR
 
 /** The publication's own jobs, by whichever identity it has. */
 function jobsOf(ref: ResolvedPublicationRef) {
-  return ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.postKey, ref.postKey);
+  return ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.publicationKey, ref.publicationKey);
 }
 
 export function scopePlan(
@@ -44,7 +44,7 @@ export function scopePlan(
     applied: false,
     action,
     post_id: ref.postId,
-    post_key: ref.postKey,
+    publication_key: ref.publicationKey,
     targets: scope,
     ...detail,
     hint: scope.length ? "re-run with apply to perform it" : "nothing is in scope; widen --target or --locale",

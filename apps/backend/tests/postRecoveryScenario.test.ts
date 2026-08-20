@@ -3,7 +3,7 @@ import type { Bot, Context } from "grammy";
 import { runCallbackBoundary } from "../src/bot/callback-boundary.js";
 import { handlePublicationCallback } from "../src/bot/callback-router.js";
 import { publicationCallback } from "../src/bot/publication-callback.js";
-import { drafts, postTargets, publications, publishJobs } from "../src/db/schema.js";
+import { drafts, publications, publicationTargets, publishJobs } from "../src/db/schema.js";
 import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
 import { claimDuePublishJobs, enqueuePublishJobTx, failPublishJob } from "../src/publishing/queue.js";
@@ -34,7 +34,7 @@ describe("post recovery scenario", () => {
       for (const target of ["telegram", "threads_ru"])
         enqueuePublishJobTx(backendDb.db, {
           postId: 700,
-          postKey: "post:700",
+          publicationKey: "post:700",
           messageId: 700,
           target,
           payload: { text: "Night post" },
@@ -79,7 +79,7 @@ describe("post recovery scenario", () => {
         { status: "queued" },
       ]);
       expect(backendDb.db.select().from(publishJobs).all()).toHaveLength(2);
-      expect(backendDb.db.select({ status: postTargets.status }).from(postTargets).all()).toEqual([
+      expect(backendDb.db.select({ status: publicationTargets.status }).from(publicationTargets).all()).toEqual([
         { status: "queued" },
         { status: "queued" },
       ]);

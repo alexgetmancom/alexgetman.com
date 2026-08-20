@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { isSiteTarget } from "../botTargets.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
-import { postTargets, publishJobs, siteJobs } from "../db/schema.js";
+import { publicationTargets, publishJobs, siteJobs } from "../db/schema.js";
 import { insertEvent } from "./queue-state.js";
 import type { RequeueScope } from "./requeue.js";
 
@@ -49,13 +49,13 @@ function abandonSiteTarget(tx: AbandonDb, scope: RequeueScope, target: string, n
     .returning({ jobId: siteJobs.jobId })
     .get();
   if (!abandoned) return { target, outcome: "not_abandonable", status: row.status };
-  return settle(tx, scope.postKey, target, row.status, now);
+  return settle(tx, scope.publicationKey, target, row.status, now);
 }
 
 function abandonSocialTarget(tx: AbandonDb, scope: RequeueScope, target: string, now: string): AbandonResult {
-  const whereRef = scope.postId != null ? eq(publishJobs.postId, scope.postId) : eq(publishJobs.postKey, scope.postKey);
+  const whereRef = scope.postId != null ? eq(publishJobs.postId, scope.postId) : eq(publishJobs.publicationKey, scope.publicationKey);
   const row = tx
-    .select({ jobId: publishJobs.jobId, status: publishJobs.status, postKey: publishJobs.postKey })
+    .select({ jobId: publishJobs.jobId, status: publishJobs.status, publicationKey: publishJobs.publicationKey })
     .from(publishJobs)
     .where(and(whereRef, eq(publishJobs.target, target)))
     .orderBy(desc(publishJobs.jobId))
@@ -68,21 +68,21 @@ function abandonSocialTarget(tx: AbandonDb, scope: RequeueScope, target: string,
     .returning({ jobId: publishJobs.jobId })
     .get();
   if (!abandoned) return { target, outcome: "not_abandonable", status: row.status };
-  return settle(tx, row.postKey ?? scope.postKey, target, row.status, now);
+  return settle(tx, row.publicationKey ?? scope.publicationKey, target, row.status, now);
 }
 
 /** The mirrored target row and the journal entry, in the transaction that
- * abandoned the job: post_targets is what the Command Center and the bot read,
+ * abandoned the job: publication_targets is what the Command Center and the bot read,
  * and an ambiguous target given up on is the one state worth reading back
  * later, so it is never only a status change. */
-function settle(tx: AbandonDb, postKey: string, target: string, previousStatus: string, now: string): AbandonResult {
-  tx.update(postTargets)
+function settle(tx: AbandonDb, publicationKey: string, target: string, previousStatus: string, now: string): AbandonResult {
+  tx.update(publicationTargets)
     .set({ status: "cancelled", updatedAt: now })
-    .where(and(eq(postTargets.postKey, postKey), eq(postTargets.target, target)))
+    .where(and(eq(publicationTargets.publicationKey, publicationKey), eq(publicationTargets.target, target)))
     .run();
   insertEvent(
     tx,
-    postKey,
+    publicationKey,
     target,
     "publish.target.abandoned",
     "warn",

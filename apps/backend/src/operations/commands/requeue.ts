@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { targetLocale } from "../../botTargets.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../../db/client.js";
-import { postTargets, publishJobs } from "../../db/schema.js";
+import { publicationTargets, publishJobs } from "../../db/schema.js";
 import { attemptPublishedTargetRemovals, type TargetRemovalAttempt, type TargetRemovalResult } from "../../delivery/external-removals.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { RETRY_UNLESS_HELD, requeuePublicationTargetsTx } from "../../publishing/requeue.js";
@@ -16,7 +16,7 @@ function requeuePublicationTx(
   source: Record<string, unknown>,
   target?: string,
 ): Record<string, unknown> {
-  const scope = { postId: ref.postId, postKey: ref.postKey, messageId: ref.messageId };
+  const scope = { postId: ref.postId, publicationKey: ref.publicationKey, messageId: ref.messageId };
   const targets = target ? [target] : jobbedTargets(db, ref);
   if (targets.length === 0) throw new Error("no publish jobs found");
   const results = requeuePublicationTargetsTx(db, scope, targets, {
@@ -32,7 +32,7 @@ function requeuePublicationTx(
     // reading `ok: true` off `ops retry` would believe otherwise.
     ok: results.some((row) => row.outcome !== "not_retryable"),
     post_id: ref.postId,
-    post_key: ref.postKey,
+    publication_key: ref.publicationKey,
     message_id: ref.messageId,
     target: target ?? null,
     targets: results.map((row) => row.target),
@@ -42,7 +42,7 @@ function requeuePublicationTx(
 
 /** Targets this publication has ever delivered to, newest job per target. */
 function jobbedTargets(db: UnsafeBackendDb["db"], ref: ResolvedPublicationRef): string[] {
-  const whereRef = ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.postKey, ref.postKey);
+  const whereRef = ref.postId != null ? eq(publishJobs.postId, ref.postId) : eq(publishJobs.publicationKey, ref.publicationKey);
   return [
     ...new Set(
       db
@@ -64,15 +64,15 @@ export function requeuePublicationScopeTx(
 ): Record<string, unknown> {
   if (target || !locale) return requeuePublicationTx(db, ref, source, target);
   const targets = db
-    .select({ target: postTargets.target })
-    .from(postTargets)
-    .where(eq(postTargets.postKey, ref.postKey))
+    .select({ target: publicationTargets.target })
+    .from(publicationTargets)
+    .where(eq(publicationTargets.publicationKey, ref.publicationKey))
     .all()
     .map((row) => row.target)
     .filter((value) => targetLocale(value) === locale);
   // A mutation that matched nothing is not a success. Silently returning an
   // empty result set reads as "done" to an operator running `ops retry`.
-  if (targets.length === 0) throw new Error(`no ${locale} targets found for ${ref.postKey}`);
+  if (targets.length === 0) throw new Error(`no ${locale} targets found for ${ref.publicationKey}`);
   return { ok: true, locale, results: targets.map((value) => requeuePublicationTx(db, ref, source, value)) };
 }
 
@@ -109,15 +109,20 @@ export async function attemptTextFallbackRemovals(
 ): Promise<Array<{ target: string; attempts: TargetRemovalAttempt[] }>> {
   const rewritten = new Set(edited.filter((row) => row.ok === true && typeof row.target === "string").map((row) => row.target as string));
   const targets = unsafeDb(backendDb)
-    .db.select({ target: postTargets.target })
-    .from(postTargets)
-    .where(eq(postTargets.postKey, ref.postKey))
+    .db.select({ target: publicationTargets.target })
+    .from(publicationTargets)
+    .where(eq(publicationTargets.publicationKey, ref.publicationKey))
     .all()
     .map((row) => row.target)
     .filter((value) => (!target || value === target) && targetLocale(value) === locale && !rewritten.has(value));
   const results: Array<{ target: string; attempts: TargetRemovalAttempt[] }> = [];
   for (const value of targets) {
-    const attempts = await attemptPublishedTargetRemovals(backendDb, config, { postKey: ref.postKey, target: value }, fetchImpl);
+    const attempts = await attemptPublishedTargetRemovals(
+      backendDb,
+      config,
+      { publicationKey: ref.publicationKey, target: value },
+      fetchImpl,
+    );
     results.push({ target: value, attempts });
   }
   return results;

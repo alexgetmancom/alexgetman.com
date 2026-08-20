@@ -6,7 +6,7 @@ import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
 import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
 import { recordProfileSnapshot } from "../src/analytics/snapshots/creator-store.js";
 import { registerChannel } from "../src/channels/registry.js";
-import { creatorProfileSnapshots, creatorProfiles, metricSamples, postEvents, videoMetricSnapshots } from "../src/db/schema.js";
+import { creatorProfileSnapshots, creatorProfiles, metricSamples, publicationEvents, videoMetricSnapshots } from "../src/db/schema.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
 import { registerTestChannels } from "./helpers/channels.js";
 import { withDb } from "./helpers/db.js";
@@ -40,12 +40,12 @@ describe("creator analytics deltas", () => {
       backendDb.db
         .insert(metricSamples)
         .values([
-          { postKey: "post:1", target: "site_ru", metricName: "views", value: 100, sampledAt: before },
-          { postKey: "post:1", target: "site_ru", metricName: "views", value: 145, sampledAt: now },
-          { postKey: "post:2", target: "telegram", metricName: "views", value: 20, sampledAt: before },
-          { postKey: "post:2", target: "telegram", metricName: "views", value: 50, sampledAt: now },
-          { postKey: "post:2", target: "telegram", metricName: "likes", value: 4, sampledAt: before },
-          { postKey: "post:2", target: "telegram", metricName: "likes", value: 9, sampledAt: now },
+          { publicationKey: "post:1", target: "site_ru", metricName: "views", value: 100, sampledAt: before },
+          { publicationKey: "post:1", target: "site_ru", metricName: "views", value: 145, sampledAt: now },
+          { publicationKey: "post:2", target: "telegram", metricName: "views", value: 20, sampledAt: before },
+          { publicationKey: "post:2", target: "telegram", metricName: "views", value: 50, sampledAt: now },
+          { publicationKey: "post:2", target: "telegram", metricName: "likes", value: 4, sampledAt: before },
+          { publicationKey: "post:2", target: "telegram", metricName: "likes", value: 9, sampledAt: now },
         ])
         .run();
       const config = loadTestConfig({}, SITE_STUDIO_PROFILE);
@@ -244,9 +244,9 @@ describe("creator analytics deltas", () => {
       expect(evaluateAudienceMilestones(backendDb)).toBe(6);
 
       const milestones = backendDb.db
-        .select({ message: postEvents.message })
-        .from(postEvents)
-        .where(eq(postEvents.eventType, "analytics.milestone.reached"))
+        .select({ message: publicationEvents.message })
+        .from(publicationEvents)
+        .where(eq(publicationEvents.eventType, "analytics.milestone.reached"))
         .all()
         .map((row) => row.message);
       expect(milestones).toContain("🎉 YouTube RU: 500 подписчиков!");

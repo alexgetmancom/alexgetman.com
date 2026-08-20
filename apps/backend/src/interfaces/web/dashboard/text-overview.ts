@@ -27,7 +27,7 @@ export function textOverviewOf(
   days: PeriodDay[],
   timeZone: string,
 ): TextOverview {
-  const covered = new Set(xSeries.map((entry) => entry.linkedPostKey).filter((key): key is string => Boolean(key)));
+  const covered = new Set(xSeries.map((entry) => entry.linkedPublicationKey).filter((key): key is string => Boolean(key)));
   const series = [
     ...textReachSeries(
       posts,

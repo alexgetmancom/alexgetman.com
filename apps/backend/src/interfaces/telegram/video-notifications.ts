@@ -87,29 +87,29 @@ export async function sendStudioReminder(
   backendDb: BackendDb,
   bot: Bot | null,
   config: StudioTimeConfig & Pick<BackendConfig, "CONTROLLER_ADMIN_IDS">,
-  event: { postKey: string | null; detailsJson: unknown },
+  event: { publicationKey: string | null; detailsJson: unknown },
 ): Promise<void> {
   if (!bot) return;
   const details = object(event.detailsJson);
   // The reminder reaches every administrator, so the actor is not an address —
   // it only says the event still refers to something real. `admin_id` is the
   // pre-rename spelling, and events written before 0030 are still durable.
-  const known = number(details.actor_id) != null || number(details.admin_id) != null || publicationExists(backendDb, event.postKey);
+  const known = number(details.actor_id) != null || number(details.admin_id) != null || publicationExists(backendDb, event.publicationKey);
   if (!known) return;
   const targets = Array.isArray(details.targets) ? details.targets.filter((value): value is string => typeof value === "string") : [];
   const minutes = number(details.minutes) ?? 5;
   const publishAt = typeof details.publish_at === "string" ? details.publish_at : null;
-  const videoLocale = videoLocaleForRef(backendDb, event.postKey);
+  const videoLocale = videoLocaleForRef(backendDb, event.publicationKey);
   // Reminders are enabled per publication kind, so the delivery gate reads the
   // same flag the scheduler did. A video reference is the only one that means
   // video; drafts and posts are both reminded about as text.
-  const isVideo = parsePublicationRef(event.postKey)?.kind === "video";
+  const isVideo = parsePublicationRef(event.publicationKey)?.kind === "video";
   await forEachAdmin(config.CONTROLLER_ADMIN_IDS, async (actorId) => {
     const notifications = settingsService(backendDb).notifications(actorId);
     if (!(isVideo ? notifications.videoRemindersEnabled : notifications.postRemindersEnabled)) return;
     const locale = settingsService(backendDb).locale(actorId);
     const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
-    const title = typeof details.title === "string" ? details.title : (event.postKey ?? t(locale, "notif.publication"));
+    const title = typeof details.title === "string" ? details.title : (event.publicationKey ?? t(locale, "notif.publication"));
     const lines = targets.map((target) => `• ${friendlyTarget(target)}${videoLocale ? ` · ${videoLocale.toUpperCase()}` : ""}`);
     await bot.api.sendMessage(
       actorId,
@@ -122,32 +122,33 @@ export async function sendStudioCompletion(
   backendDb: BackendDb,
   bot: Bot | null,
   config: Pick<BackendConfig, "CONTROLLER_ADMIN_IDS" | "TIMEZONE" | "TIMEZONE_LABEL">,
-  event: { postKey: string | null; detailsJson: unknown; eventType?: string },
+  event: { publicationKey: string | null; detailsJson: unknown; eventType?: string },
 ): Promise<void> {
   if (!bot) return;
-  if (!publicationExists(backendDb, event.postKey)) return;
+  if (!publicationExists(backendDb, event.publicationKey)) return;
   const details = object(event.detailsJson);
   const total = number(details.total) ?? 0;
   const published = number(details.published) ?? 0;
   const failed = number(details.failed) ?? 0;
   const partialLocale = event.eventType === "delivery.post.locale.completed" ? localeDetail(details.locale) : null;
-  const results = completionTargets(backendDb, event.postKey).filter(
+  const results = completionTargets(backendDb, event.publicationKey).filter(
     (result) => partialLocale == null || targetLocale(result.target) === partialLocale,
   );
-  const videoLocale = videoLocaleForRef(backendDb, event.postKey);
+  const videoLocale = videoLocaleForRef(backendDb, event.publicationKey);
   const failedTargets = results.filter((result) => result.status === "failed" || result.status === "verification_required");
-  const publication = parsePublicationRef(event.postKey);
+  const publication = parsePublicationRef(event.publicationKey);
   const retryableTargets = failedTargets.filter((result) =>
     publication?.kind === "video"
       ? isAudienceMutationRetryable(result.status)
       : publication?.kind === "post" && isPostTargetRetryable(result.target, result.status),
   );
-  const draftId = publicationDraftId(backendDb, event.postKey);
+  const draftId = publicationDraftId(backendDb, event.publicationKey);
   await forEachAdmin(config.CONTROLLER_ADMIN_IDS, async (actorId) => {
     if (!settingsService(backendDb).notifications(actorId).completionEnabled) return;
     const locale = settingsService(backendDb).locale(actorId);
     const timeConfig = settingsService(backendDb).timeConfig(actorId, config);
-    const label = parsePublicationRef(event.postKey)?.kind === "video" ? t(locale, "notif.label-video") : t(locale, "notif.label-post");
+    const label =
+      parsePublicationRef(event.publicationKey)?.kind === "video" ? t(locale, "notif.label-video") : t(locale, "notif.label-post");
     const headline = partialLocale
       ? failed
         ? t(locale, "notif.locale-completion-failed", {
@@ -169,14 +170,14 @@ export async function sendStudioCompletion(
     );
     const remaining = partialLocale ? remainingScheduleText(details, locale, timeConfig) : "";
     const text = `${headline}${videoLocale ? `\n${localeName(videoLocale, locale)}` : ""}${remaining ? `\n\n${remaining}` : ""}${lines.length ? `\n\n${lines.join("\n")}` : ""}`;
-    const replyMarkup = completionKeyboard(locale, event.postKey, draftId, retryableTargets, failedTargets, partialLocale != null);
+    const replyMarkup = completionKeyboard(locale, event.publicationKey, draftId, retryableTargets, failedTargets, partialLocale != null);
     await bot.api.sendMessage(actorId, text, replyMarkup ? { reply_markup: replyMarkup } : undefined);
   });
 }
 
 function completionKeyboard(
   locale: StudioLocale,
-  postKey: string | null,
+  publicationKey: string | null,
   draftId: number | null,
   retryableTargets: Array<{ target: string; status: string; error: string | null }>,
   failedTargets: Array<{ target: string; status: string; error: string | null }>,
@@ -184,7 +185,7 @@ function completionKeyboard(
 ): InlineKeyboard | undefined {
   const keyboard = new InlineKeyboard();
   let hasButtons = false;
-  const publication = parsePublicationRef(postKey);
+  const publication = parsePublicationRef(publicationKey);
   const kind = publication?.kind === "post" || publication?.kind === "video" ? publication.kind : null;
   // Only a post can requeue every failed target in one call; a video is retried
   // per target because each upload carries its own metadata.

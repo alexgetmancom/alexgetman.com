@@ -67,7 +67,7 @@ if (reset) {
   fs.rmSync(`${dbPath}-shm`, { force: true });
   fs.rmSync(publicDir, { recursive: true, force: true });
 }
-// A second run against a populated database would collide on post_key; make
+// A second run against a populated database would collide on publication_key; make
 // re-seeding the normal path rather than something to remember a flag for.
 if (fs.existsSync(dbPath)) {
   console.error(`${dbPath} already exists — re-run with --reset to rebuild it.`);

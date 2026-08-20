@@ -25,11 +25,11 @@ export function postText(backendDb: BackendDb, ref: string): PostText {
   const row = unsafeDb(backendDb)
     .db.select({ postId: posts.postId, dateUtc: posts.dateUtc, text: posts.text, textEn: posts.textEn })
     .from(posts)
-    .where(eq(posts.postKey, resolved.postKey))
+    .where(eq(posts.publicationKey, resolved.publicationKey))
     .get();
-  if (!row) throw new Error(`publication ${resolved.postKey} has no stored text`);
+  if (!row) throw new Error(`publication ${resolved.publicationKey} has no stored text`);
   return {
-    ref: resolved.postKey,
+    ref: resolved.publicationKey,
     postId: row.postId,
     at: row.dateUtc,
     locales: postLocales(backendDb),

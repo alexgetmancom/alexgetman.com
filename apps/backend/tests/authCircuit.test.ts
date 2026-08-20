@@ -71,7 +71,7 @@ describe("auth circuit breaker", () => {
         enqueuePublishJobTx(backendDb.db, {
           messageId,
           postId: messageId,
-          postKey: `post:${messageId}`,
+          publicationKey: `post:${messageId}`,
           target: "test_platform",
           payload: { text: "hi" } as JsonObject,
         });

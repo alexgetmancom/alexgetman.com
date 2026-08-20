@@ -35,15 +35,15 @@ describe("TypeScript operations tooling", () => {
       const now = new Date().toISOString();
       backendDb.sqlite
         .query(
-          "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,locked_at,created_at,updated_at) VALUES (106,'post:106',106,'telegram','published',?,?,?)",
+          "INSERT INTO publish_jobs(post_id,publication_key,message_id,target,status,locked_at,created_at,updated_at) VALUES (106,'post:106',106,'telegram','published',?,?,?)",
         )
         .run(now, now, new Date(Date.parse(now) + 25).toISOString());
       backendDb.sqlite
-        .query("INSERT INTO post_targets(post_key,target,status,updated_at) VALUES ('post:106','telegram','published',?)")
+        .query("INSERT INTO publication_targets(publication_key,target,status,updated_at) VALUES ('post:106','telegram','published',?)")
         .run(now);
       backendDb.sqlite
         .query(
-          "INSERT INTO post_events(post_key,event_type,severity,target,message,details_json,created_at) VALUES ('post:106','publish.job.phase','info','telegram','done','{\"phase\":\"provider.publish\",\"duration_ms\":25}',?)",
+          "INSERT INTO publication_events(publication_key,event_type,severity,target,message,details_json,created_at) VALUES ('post:106','publish.job.phase','info','telegram','done','{\"phase\":\"provider.publish\",\"duration_ms\":25}',?)",
         )
         .run(now);
       const timeline = publicationTimeline(backendDb, "post:106");
@@ -79,7 +79,7 @@ describe("TypeScript operations tooling", () => {
       const now = new Date().toISOString();
       backendDb.sqlite
         .query(
-          "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,payload_json,created_at,updated_at) VALUES (106,'post:106',106,'instagram_stories','published',?,?,?)",
+          "INSERT INTO publish_jobs(post_id,publication_key,message_id,target,status,payload_json,created_at,updated_at) VALUES (106,'post:106',106,'instagram_stories','published',?,?,?)",
         )
         .run(JSON.stringify({ locale: "en", media: [{ type: "IMAGE", localPath: "/tmp/source.jpg" }] }), now, now);
       const plan = await reprocessPostMedia(backendDb, loadTestConfig({}), "post:106", false);
@@ -125,18 +125,20 @@ describe("TypeScript operations tooling", () => {
       const now = new Date().toISOString();
       backendDb.sqlite
         .prepare(
-          "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,'active',?,?)",
+          "INSERT INTO posts(publication_key,post_id,channel,message_id,date_utc,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,'active',?,?)",
         )
         .run(now, now, now);
       backendDb.sqlite
-        .prepare("INSERT INTO post_targets(post_key,target,status,updated_at) VALUES ('post:1','threads_ru','published',?)")
+        .prepare("INSERT INTO publication_targets(publication_key,target,status,updated_at) VALUES ('post:1','threads_ru','published',?)")
         .run(now);
       const plan = buildMetricsBackfillPlan(backendDb, { targets: ["threads_ru"] });
       expect(plan).toHaveLength(1);
       const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
       expect(withMaintenanceLock(backendDb, () => applyMetricsBackfill(backendDb, config, plan, true))).toBe(1);
       expect(
-        backendDb.sqlite.prepare("SELECT check_count,frozen_at FROM metric_schedule WHERE post_key='post:1' AND target='threads_ru'").get(),
+        backendDb.sqlite
+          .prepare("SELECT check_count,frozen_at FROM metric_schedule WHERE publication_key='post:1' AND target='threads_ru'")
+          .get(),
       ).toEqual({ check_count: 0, frozen_at: null });
       expect((backendDb.sqlite.prepare("SELECT count(*) AS count FROM maintenance_locks").get() as { count: number }).count).toBe(0);
     } finally {
@@ -151,8 +153,8 @@ describe("TypeScript operations tooling", () => {
       backendDb.db
         .insert(metricSchedule)
         .values([
-          { postKey: "post:active", target: "telegram", lastError: "temporary", updatedAt: now },
-          { postKey: "post:frozen", target: "telegram", lastError: "terminal", frozenAt: now, updatedAt: now },
+          { publicationKey: "post:active", target: "telegram", lastError: "temporary", updatedAt: now },
+          { publicationKey: "post:frozen", target: "telegram", lastError: "terminal", frozenAt: now, updatedAt: now },
         ])
         .run();
       expect(auditOperations(backendDb).metricScheduleErrors).toEqual([{ target: "telegram", count: 1, latest: now }]);
@@ -167,15 +169,15 @@ describe("TypeScript operations tooling", () => {
       const now = new Date().toISOString();
       backendDb.sqlite
         .prepare(
-          "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,'active',?,?)",
+          "INSERT INTO posts(publication_key,post_id,channel,message_id,date_utc,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,'active',?,?)",
         )
         .run(now, now, now);
       backendDb.sqlite
-        .prepare("INSERT INTO post_targets(post_key,target,status,updated_at) VALUES ('post:1','telegram','published',?)")
+        .prepare("INSERT INTO publication_targets(publication_key,target,status,updated_at) VALUES ('post:1','telegram','published',?)")
         .run(now);
       backendDb.sqlite
         .prepare(
-          "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,created_at,updated_at) VALUES (1,'post:1',1,'telegram','published',?,?)",
+          "INSERT INTO publish_jobs(post_id,publication_key,message_id,target,status,created_at,updated_at) VALUES (1,'post:1',1,'telegram','published',?,?)",
         )
         .run(now, now);
       backendDb.sqlite
@@ -318,12 +320,12 @@ describe("TypeScript operations tooling", () => {
       insertVideoAsset(backendDb);
       backendDb.sqlite
         .query(
-          "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,last_error,created_at,updated_at) VALUES (1,'post:1',1,'x','verification_required','socket closed',?,?)",
+          "INSERT INTO publish_jobs(post_id,publication_key,message_id,target,status,last_error,created_at,updated_at) VALUES (1,'post:1',1,'x','verification_required','socket closed',?,?)",
         )
         .run(now, now);
       backendDb.sqlite
         .query(
-          "INSERT INTO post_targets(post_key,target,status,error,updated_at) VALUES ('post:1','x','verification_required','socket closed',?)",
+          "INSERT INTO publication_targets(publication_key,target,status,error,updated_at) VALUES ('post:1','x','verification_required','socket closed',?)",
         )
         .run(now);
       backendDb.sqlite
@@ -355,7 +357,7 @@ describe("TypeScript operations tooling", () => {
     try {
       const now = new Date().toISOString();
       backendDb.sqlite.run("PRAGMA foreign_keys=OFF");
-      backendDb.sqlite.query("INSERT INTO metric_schedule(post_key,target,updated_at) VALUES ('post:orphan','telegram',?)").run(now);
+      backendDb.sqlite.query("INSERT INTO metric_schedule(publication_key,target,updated_at) VALUES ('post:orphan','telegram',?)").run(now);
       backendDb.sqlite
         .query(
           "INSERT INTO video_targets(id,video_draft_id,target,metadata_json,status,created_at,updated_at) VALUES (1,999,'instagram_reels','{}','failed',?,?)",
@@ -381,15 +383,17 @@ describe("TypeScript operations tooling", () => {
         .run(now, now);
       backendDb.sqlite
         .query(
-          "INSERT INTO posts(post_key,post_id,channel,message_id,status,created_at,updated_at) VALUES ('post:1',1,'test',1,'active',?,?)",
+          "INSERT INTO posts(publication_key,post_id,channel,message_id,status,created_at,updated_at) VALUES ('post:1',1,'test',1,'active',?,?)",
         )
         .run(now, now);
       backendDb.sqlite
-        .query("INSERT INTO post_targets(post_key,target,status,error,updated_at) VALUES ('post:1','telegram','failed','stale',?)")
+        .query(
+          "INSERT INTO publication_targets(publication_key,target,status,error,updated_at) VALUES ('post:1','telegram','failed','stale',?)",
+        )
         .run(now);
       backendDb.sqlite
         .query(
-          "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,created_at,updated_at) VALUES (1,'post:1',1,'telegram','published',?,?)",
+          "INSERT INTO publish_jobs(post_id,publication_key,message_id,target,status,created_at,updated_at) VALUES (1,'post:1',1,'telegram','published',?,?)",
         )
         .run(now, now);
       expect(publicationConsistencyReport(backendDb).targetMismatches).toHaveLength(1);
@@ -400,7 +404,9 @@ describe("TypeScript operations tooling", () => {
         repairedPublications: 1,
       });
       expect(backendDb.sqlite.query("PRAGMA foreign_key_check").all()).toEqual([]);
-      expect(backendDb.sqlite.query("SELECT status,error FROM post_targets WHERE post_key='post:1' AND target='telegram'").get()).toEqual({
+      expect(
+        backendDb.sqlite.query("SELECT status,error FROM publication_targets WHERE publication_key='post:1' AND target='telegram'").get(),
+      ).toEqual({
         status: "published",
         error: null,
       });
@@ -419,20 +425,22 @@ describe("TypeScript operations tooling", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      backendDb.sqlite.query("INSERT INTO metric_schedule(post_key,target,updated_at) VALUES ('post:orphan','telegram',?)").run(now);
+      backendDb.sqlite.query("INSERT INTO metric_schedule(publication_key,target,updated_at) VALUES ('post:orphan','telegram',?)").run(now);
       for (const postId of [1, 2]) {
         backendDb.sqlite
           .query("INSERT INTO publications(post_id,status,created_at,updated_at) VALUES (?,'failed',?,?)")
           .run(postId, now, now);
         backendDb.sqlite
-          .query("INSERT INTO posts(post_key,post_id,channel,message_id,status,created_at,updated_at) VALUES (?,?, 'test',?,'active',?,?)")
+          .query(
+            "INSERT INTO posts(publication_key,post_id,channel,message_id,status,created_at,updated_at) VALUES (?,?, 'test',?,'active',?,?)",
+          )
           .run(`post:${postId}`, postId, postId, now, now);
         backendDb.sqlite
-          .query("INSERT INTO post_targets(post_key,target,status,error,updated_at) VALUES (?,'telegram','failed','stale',?)")
+          .query("INSERT INTO publication_targets(publication_key,target,status,error,updated_at) VALUES (?,'telegram','failed','stale',?)")
           .run(`post:${postId}`, now);
         backendDb.sqlite
           .query(
-            "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,created_at,updated_at) VALUES (?,? ,?,'telegram','published',?,?)",
+            "INSERT INTO publish_jobs(post_id,publication_key,message_id,target,status,created_at,updated_at) VALUES (?,? ,?,'telegram','published',?,?)",
           )
           .run(postId, `post:${postId}`, postId, now, now);
       }
@@ -442,11 +450,15 @@ describe("TypeScript operations tooling", () => {
         repairedTargets: 1,
         repairedPublications: 1,
       });
-      expect(backendDb.sqlite.query("SELECT count(*) AS count FROM metric_schedule WHERE post_key='post:orphan'").get()).toEqual({
+      expect(backendDb.sqlite.query("SELECT count(*) AS count FROM metric_schedule WHERE publication_key='post:orphan'").get()).toEqual({
         count: 1,
       });
-      expect(backendDb.sqlite.query("SELECT status FROM post_targets WHERE post_key='post:1'").get()).toEqual({ status: "published" });
-      expect(backendDb.sqlite.query("SELECT status FROM post_targets WHERE post_key='post:2'").get()).toEqual({ status: "failed" });
+      expect(backendDb.sqlite.query("SELECT status FROM publication_targets WHERE publication_key='post:1'").get()).toEqual({
+        status: "published",
+      });
+      expect(backendDb.sqlite.query("SELECT status FROM publication_targets WHERE publication_key='post:2'").get()).toEqual({
+        status: "failed",
+      });
     } finally {
       backendDb.close();
     }
@@ -480,7 +492,7 @@ describe("TypeScript operations tooling", () => {
         .run(JSON.stringify({ mode: "scheduled", targets: { telegram: true, threads_en: true }, scheduled_at: now }), now, now);
       backendDb.sqlite
         .query(
-          "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,created_at,updated_at) VALUES (70,'post:70',70,'telegram','published',?,?)",
+          "INSERT INTO publish_jobs(post_id,publication_key,message_id,target,status,created_at,updated_at) VALUES (70,'post:70',70,'telegram','published',?,?)",
         )
         .run(now, now);
 
@@ -498,7 +510,7 @@ describe("TypeScript operations tooling", () => {
       backendDb.sqlite.query("INSERT INTO publications(post_id,status,created_at,updated_at) VALUES (71,'scheduled',?,?)").run(now, now);
       backendDb.sqlite
         .query(
-          "INSERT INTO publish_jobs(post_id,post_key,message_id,target,status,created_at,updated_at) VALUES (71,'post:71',71,'telegram','published',?,?)",
+          "INSERT INTO publish_jobs(post_id,publication_key,message_id,target,status,created_at,updated_at) VALUES (71,'post:71',71,'telegram','published',?,?)",
         )
         .run(now, now);
 

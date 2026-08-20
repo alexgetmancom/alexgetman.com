@@ -177,7 +177,7 @@ describe("Telegram event consumer", () => {
       const sharedConfig = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42,7" }, MSK_STUDIO_PROFILE);
 
       await sendStudioReminder(backendDb, bot, sharedConfig, {
-        postKey: "video:10",
+        publicationKey: "video:10",
         detailsJson: {
           actor_id: 42,
           title: "Shared launch",
@@ -187,7 +187,7 @@ describe("Telegram event consumer", () => {
         },
       });
       await sendStudioCompletion(backendDb, bot, sharedConfig, {
-        postKey: "video:10",
+        publicationKey: "video:10",
         detailsJson: { total: 2, published: 2, failed: 0 },
       });
 
@@ -241,7 +241,7 @@ describe("Telegram event consumer", () => {
       const bot = { api: { sendMessage } } as unknown as Bot;
 
       await sendStudioCompletion(backendDb, bot, config, {
-        postKey: "video:11",
+        publicationKey: "video:11",
         detailsJson: { total: 1, published: 0, failed: 1 },
       });
 
@@ -273,10 +273,18 @@ describe("Telegram event consumer", () => {
       backendDb.db
         .insert(publishJobs)
         .values([
-          { postId: 113, postKey: "post:113", messageId: 113, target: "threads_en", status: "published", createdAt: now, updatedAt: now },
           {
             postId: 113,
-            postKey: "post:113",
+            publicationKey: "post:113",
+            messageId: 113,
+            target: "threads_en",
+            status: "published",
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            postId: 113,
+            publicationKey: "post:113",
             messageId: 113,
             target: "telegram",
             status: "queued",
@@ -348,7 +356,7 @@ describe("Telegram event consumer", () => {
         .insert(publishJobs)
         .values({
           postId: 110,
-          postKey: "post:110",
+          publicationKey: "post:110",
           messageId: 110,
           target: "telegram_ru",
           status: "failed",

@@ -11,18 +11,22 @@ export function recordPageview(backendDb: BackendDb, rawPath: string, timeZone =
   const [firstCandidate, secondCandidate] = candidates;
   if (!firstCandidate || !secondCandidate) return path;
   const ru = unsafeDb(backendDb)
-    .db.select({ postKey: posts.postKey })
+    .db.select({ publicationKey: posts.publicationKey })
     .from(posts)
     .where(or(eq(posts.siteRuPath, firstCandidate), eq(posts.siteRuPath, secondCandidate)))
     .get();
   const en = ru
     ? null
     : unsafeDb(backendDb)
-        .db.select({ postKey: posts.postKey })
+        .db.select({ publicationKey: posts.publicationKey })
         .from(posts)
         .where(or(eq(posts.siteEnPath, firstCandidate), eq(posts.siteEnPath, secondCandidate)))
         .get();
-  const row = ru ? { postKey: ru.postKey, target: "site_ru" } : en ? { postKey: en.postKey, target: "site_en" } : null;
+  const row = ru
+    ? { publicationKey: ru.publicationKey, target: "site_ru" }
+    : en
+      ? { publicationKey: en.publicationKey, target: "site_en" }
+      : null;
   const sampledAt = now.toISOString();
   unsafeDb(backendDb).sqlite.transaction(() => {
     unsafeDb(backendDb)
@@ -33,14 +37,14 @@ export function recordPageview(backendDb: BackendDb, rawPath: string, timeZone =
     if (!row) return;
     const incremented = unsafeDb(backendDb)
       .sqlite.prepare(
-        "INSERT INTO post_metrics (post_key, target, metric_name, value, unit, source, sampled_at, error, raw_json) VALUES (?, ?, 'views', 1, 'count', 'site_pageview_endpoint', ?, NULL, ?) ON CONFLICT(post_key, target, metric_name) DO UPDATE SET value=COALESCE(value,0)+1, source=excluded.source, sampled_at=excluded.sampled_at, error=NULL, raw_json=excluded.raw_json RETURNING value",
+        "INSERT INTO post_metrics (publication_key, target, metric_name, value, unit, source, sampled_at, error, raw_json) VALUES (?, ?, 'views', 1, 'count', 'site_pageview_endpoint', ?, NULL, ?) ON CONFLICT(publication_key, target, metric_name) DO UPDATE SET value=COALESCE(value,0)+1, source=excluded.source, sampled_at=excluded.sampled_at, error=NULL, raw_json=excluded.raw_json RETURNING value",
       )
-      .get(row.postKey, row.target, sampledAt, JSON.stringify({ path })) as { value: number } | null;
+      .get(row.publicationKey, row.target, sampledAt, JSON.stringify({ path })) as { value: number } | null;
     unsafeDb(backendDb)
       .sqlite.prepare(
-        "INSERT INTO metric_samples (post_key, target, metric_name, value, sampled_at, source) VALUES (?, ?, 'views', ?, ?, 'site_pageview_endpoint')",
+        "INSERT INTO metric_samples (publication_key, target, metric_name, value, sampled_at, source) VALUES (?, ?, 'views', ?, ?, 'site_pageview_endpoint')",
       )
-      .run(row.postKey, row.target, Number(incremented?.value ?? 0), sampledAt);
+      .run(row.publicationKey, row.target, Number(incremented?.value ?? 0), sampledAt);
   })();
   return path;
 }

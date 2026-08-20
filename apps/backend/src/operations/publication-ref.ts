@@ -3,7 +3,7 @@ import { type BackendDb, unsafeDb } from "../db/client.js";
 import { posts, publicationSources, publications } from "../db/schema.js";
 import { jsonObject } from "../json.js";
 
-export type ResolvedPublicationRef = { input: string; postId: number | null; postKey: string; messageId: number };
+export type ResolvedPublicationRef = { input: string; postId: number | null; publicationKey: string; messageId: number };
 
 /** Resolves external command input to the stable publication identity used by Operations commands. */
 export function resolvePublicationRef(backendDb: BackendDb, ref: string): ResolvedPublicationRef | null {
@@ -11,8 +11,8 @@ export function resolvePublicationRef(backendDb: BackendDb, ref: string): Resolv
   const postKeyRef = trimmed.startsWith("post:") ? trimmed : null;
   const numeric = trimmed.match(/^post:(\d+)$/)?.[1] ?? (/^\d+$/.test(trimmed) ? trimmed : null);
   if (postKeyRef) {
-    const post = unsafeDb(backendDb).db.select().from(posts).where(eq(posts.postKey, postKeyRef)).get();
-    if (post) return { input: ref, postId: post.postId, postKey: post.postKey, messageId: post.messageId };
+    const post = unsafeDb(backendDb).db.select().from(posts).where(eq(posts.publicationKey, postKeyRef)).get();
+    if (post) return { input: ref, postId: post.postId, publicationKey: post.publicationKey, messageId: post.messageId };
   }
   if (!numeric) return null;
   const id = Number(numeric);
@@ -25,21 +25,21 @@ export function resolvePublicationRef(backendDb: BackendDb, ref: string): Resolv
     const post = unsafeDb(backendDb)
       .db.select()
       .from(posts)
-      .where(eq(posts.postKey, `post:${publication.postId}`))
+      .where(eq(posts.publicationKey, `post:${publication.postId}`))
       .get();
     return {
       input: ref,
       postId: publication.postId,
-      postKey: `post:${publication.postId}`,
+      publicationKey: `post:${publication.postId}`,
       messageId: post?.messageId ?? publication.postId,
     };
   }
   const post = unsafeDb(backendDb)
     .db.select()
     .from(posts)
-    .where(or(eq(posts.messageId, id), eq(posts.postId, id), eq(posts.postKey, `post:${id}`)))
+    .where(or(eq(posts.messageId, id), eq(posts.postId, id), eq(posts.publicationKey, `post:${id}`)))
     .get();
-  return post ? { input: ref, postId: post.postId, postKey: post.postKey, messageId: post.messageId } : null;
+  return post ? { input: ref, postId: post.postId, publicationKey: post.publicationKey, messageId: post.messageId } : null;
 }
 
 export function sourcePayload(backendDb: BackendDb, ref: ResolvedPublicationRef): Record<string, unknown> {
@@ -52,7 +52,7 @@ export function sourcePayload(backendDb: BackendDb, ref: ResolvedPublicationRef)
       .get()?.itemJson,
   );
   if (Object.keys(stored).length > 0) return stored;
-  const post = unsafeDb(backendDb).db.select().from(posts).where(eq(posts.postKey, ref.postKey)).get();
+  const post = unsafeDb(backendDb).db.select().from(posts).where(eq(posts.publicationKey, ref.publicationKey)).get();
   const source = post
     ? {
         post_id: post.postId,

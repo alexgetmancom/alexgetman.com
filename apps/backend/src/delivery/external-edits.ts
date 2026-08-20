@@ -1,11 +1,11 @@
 import { eq } from "drizzle-orm";
 import { targetLocale } from "../botTargets.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { posts, postTargets } from "../db/schema.js";
+import { posts, publicationTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { createPlatformAdapters } from "./platform-adapters.js";
 
-type PublishedTargetEdit = { postKey: string; textRu: string | null; textEn: string | null; target?: string; locale?: "ru" | "en" };
+type PublishedTargetEdit = { publicationKey: string; textRu: string | null; textEn: string | null; target?: string; locale?: "ru" | "en" };
 
 /** Delivery gateway for best-effort edits of content that has already left this system. */
 export async function editPublishedTargets(
@@ -17,17 +17,17 @@ export async function editPublishedTargets(
   const post = unsafeDb(backendDb)
     .db.select({ chatId: posts.chatId, mediaCount: posts.mediaCount })
     .from(posts)
-    .where(eq(posts.postKey, edit.postKey))
+    .where(eq(posts.publicationKey, edit.publicationKey))
     .get();
   const rows = unsafeDb(backendDb)
     .db.select({
-      target: postTargets.target,
-      status: postTargets.status,
-      externalId: postTargets.externalId,
-      externalIdsJson: postTargets.externalIdsJson,
+      target: publicationTargets.target,
+      status: publicationTargets.status,
+      externalId: publicationTargets.externalId,
+      externalIdsJson: publicationTargets.externalIdsJson,
     })
-    .from(postTargets)
-    .where(eq(postTargets.postKey, edit.postKey))
+    .from(publicationTargets)
+    .where(eq(publicationTargets.publicationKey, edit.publicationKey))
     .all();
   const editable = rows
     .filter((row): row is typeof row & { externalId: string } => row.status === "published" && row.externalId != null)

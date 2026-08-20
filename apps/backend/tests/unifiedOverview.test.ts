@@ -197,9 +197,9 @@ function renderOverview(
   // series the read model would load — including the rule that an X row wins
   // over the pipeline's own copy of the same tweet.
   const items = input.xItems ?? [];
-  const covered = new Set(items.map((item) => item.linkedPostKey).filter(Boolean));
+  const covered = new Set(items.map((item) => item.linkedPublicationKey).filter(Boolean));
   const posts = [...(input.data?.posts ?? []), ...(input.previousData?.posts ?? [])].map((post) =>
-    post.post_key && covered.has(post.post_key) ? { ...post, targets: { ...post.targets, x: undefined } } : post,
+    post.publication_key && covered.has(post.publication_key) ? { ...post, targets: { ...post.targets, x: undefined } } : post,
   );
   return renderCombinedSection(
     {
@@ -501,7 +501,7 @@ describe("unified overview video read model", () => {
 
 describe("text daily reach", () => {
   const sampled = (values: Array<[string, number]>): PipelinePost => ({
-    post_key: "post:1",
+    publication_key: "post:1",
     date: "2026-07-30T08:00:00.000Z",
     targets: { telegram: { status: "published" } },
     metrics: {
@@ -562,7 +562,7 @@ describe("text daily reach", () => {
     const overview = textOverviewOf(
       [
         {
-          post_key: "post:3",
+          publication_key: "post:3",
           date: "2026-07-30T00:00:00.000Z",
           targets: { telegram: { status: "published" } },
           metrics: {
@@ -588,7 +588,7 @@ describe("text daily reach", () => {
     const overview = textOverviewOf(
       [
         {
-          post_key: "post:2",
+          publication_key: "post:2",
           date: "2026-07-30T08:00:00.000Z",
           targets: { telegram: { status: "published" } },
           metrics: { telegram: { views: { value: 250 } } },
@@ -807,7 +807,7 @@ describe("unified overview rendering", () => {
 
   it("scopes the new overview to the selected text platform", () => {
     const post: PipelinePost = {
-      post_key: "scoped-post",
+      publication_key: "scoped-post",
       date: hoursAgo(2),
       text_en: "Threads EN publication",
       targets: {
@@ -937,7 +937,7 @@ describe("unified overview rendering", () => {
 
   it("lists the top three destinations of each locale and no drawer", () => {
     const post: PipelinePost = {
-      post_key: "post:1",
+      publication_key: "post:1",
       date: today().toISOString(),
       targets: {
         site_ru: { status: "published" },
@@ -1016,12 +1016,12 @@ describe("unified overview rendering", () => {
         publishedAt: new Date().toISOString(),
         text: "An X post",
         url: "https://x.com/example/status/x-1",
-        linkedPostKey: "post:1",
+        linkedPublicationKey: "post:1",
         metrics: { views: 42 },
       },
     ];
     const post: PipelinePost = {
-      post_key: "post:1",
+      publication_key: "post:1",
       targets: { x: { status: "published" } },
       metrics: { x: { views: { value: 0 } } },
     };
@@ -1042,7 +1042,7 @@ describe("unified overview rendering", () => {
       seedVideo(backendDb);
       const video = videoOverview(backendDb, new Date(Date.now() - 86_400_000), new Date());
       const post: PipelinePost = {
-        post_key: "post:1",
+        publication_key: "post:1",
         date: today().toISOString(),
         targets: { telegram: { status: "published" }, threads_en: { status: "published" } },
         metrics: { telegram: { views: { value: 400 } }, threads_en: { views: { value: 90 } } },
@@ -1077,7 +1077,7 @@ describe("unified overview rendering", () => {
         items: Array.from({ length: 6 }, (_, index) => ({ ...(loaded.items[0] as (typeof loaded.items)[number]), key: `video:${index}` })),
       };
       const posts = Array.from({ length: 6 }, (_, index) => ({
-        post_key: `post:${index}`,
+        publication_key: `post:${index}`,
         date: today().toISOString(),
         targets: { telegram: { status: "published" } },
         metrics: { telegram: { views: { value: 10 } } },

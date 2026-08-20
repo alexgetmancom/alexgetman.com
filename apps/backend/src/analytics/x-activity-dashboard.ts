@@ -7,7 +7,7 @@ export type XActivityDashboardItem = {
   publishedAt: string;
   text: string;
   url: string;
-  linkedPostKey: string | null;
+  linkedPublicationKey: string | null;
   metrics: Record<string, number>;
 };
 
@@ -38,7 +38,7 @@ export function xActivityDashboardRange(
 ): { items: XActivityDashboardItem[]; samples: XActivityMetricSample[] } {
   const rows = unsafeDb(backendDb)
     .sqlite.prepare(
-      `SELECT x_post_id AS xPostId,kind,published_at AS publishedAt,text,url,linked_post_key AS linkedPostKey
+      `SELECT x_post_id AS xPostId,kind,published_at AS publishedAt,text,url,linked_publication_key AS linkedPublicationKey
        FROM x_activity_items
        WHERE published_at BETWEEN ? AND ?
        ORDER BY published_at DESC,x_post_id DESC`,

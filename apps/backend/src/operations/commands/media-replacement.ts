@@ -33,7 +33,7 @@ export async function replacePublishedMedia(
   if (!ref) throw new Error(`publication not found: ${input.ref}`);
   if (ref.postId == null) throw new Error(`media replacement requires a Studio post ref: ${input.ref}`);
   const draft = unsafeDb(backendDb).db.select({ actorId: drafts.actorId }).from(drafts).where(eq(drafts.postId, ref.postId)).get();
-  if (!draft) throw new Error(`draft not found for publication: ${ref.postKey}`);
+  if (!draft) throw new Error(`draft not found for publication: ${ref.publicationKey}`);
   // The scope report comes before the file is imported: a plan should not leave
   // an asset behind for a replacement the caller may never ask for.
   if (!input.apply)

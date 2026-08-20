@@ -3,7 +3,7 @@ import type { Bot } from "grammy";
 import { parsePublicationRef } from "../../application/publication-ref.js";
 import { refreshPostControlCard } from "../../bot/progress.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
-import { alertDedup, drafts, postEvents } from "../../db/schema.js";
+import { alertDedup, drafts, publicationEvents } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { log } from "../../foundation/logger.js";
 import { notifyFinalVideoFailure, refreshVideoControlCard, sendStudioCompletion, sendStudioReminder } from "./video-notifications.js";
@@ -42,27 +42,27 @@ export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | nul
   const delivered = unsafeDb(backendDb)
     .db.select({ one: sql<number>`1` })
     .from(alertDedup)
-    .where(eq(alertDedup.alertKey, sql<string>`'telegram:event:' || ${postEvents.id}`));
+    .where(eq(alertDedup.alertKey, sql<string>`'telegram:event:' || ${publicationEvents.id}`));
   const events = unsafeDb(backendDb)
     .db.select()
-    .from(postEvents)
+    .from(publicationEvents)
     .where(
       and(
-        inArray(postEvents.eventType, TELEGRAM_EVENT_TYPES),
+        inArray(publicationEvents.eventType, TELEGRAM_EVENT_TYPES),
         or(
           and(
-            inArray(postEvents.eventType, REMINDER_EVENT_TYPES),
-            gte(postEvents.createdAt, new Date(Date.now() - REMINDER_EVENT_MAX_AGE_MS).toISOString()),
+            inArray(publicationEvents.eventType, REMINDER_EVENT_TYPES),
+            gte(publicationEvents.createdAt, new Date(Date.now() - REMINDER_EVENT_MAX_AGE_MS).toISOString()),
           ),
           and(
-            notInArray(postEvents.eventType, REMINDER_EVENT_TYPES),
-            gte(postEvents.createdAt, new Date(Date.now() - OUTCOME_EVENT_MAX_AGE_MS).toISOString()),
+            notInArray(publicationEvents.eventType, REMINDER_EVENT_TYPES),
+            gte(publicationEvents.createdAt, new Date(Date.now() - OUTCOME_EVENT_MAX_AGE_MS).toISOString()),
           ),
         ),
         notExists(delivered),
       ),
     )
-    .orderBy(asc(postEvents.createdAt), asc(postEvents.id))
+    .orderBy(asc(publicationEvents.createdAt), asc(publicationEvents.id))
     .limit(50)
     .all();
   let handled = 0;
@@ -82,7 +82,12 @@ export async function consumeTelegramEvents(backendDb: BackendDb, bot: Bot | nul
   return handled;
 }
 
-async function deliverEvent(backendDb: BackendDb, bot: Bot, config: BackendConfig, event: typeof postEvents.$inferSelect): Promise<void> {
+async function deliverEvent(
+  backendDb: BackendDb,
+  bot: Bot,
+  config: BackendConfig,
+  event: typeof publicationEvents.$inferSelect,
+): Promise<void> {
   const details = eventDetails(event.detailsJson);
   const videoDraftId = numberDetail(details, "videoDraftId");
   const videoTargetId = numberDetail(details, "videoTargetId");
@@ -97,7 +102,7 @@ async function deliverEvent(backendDb: BackendDb, bot: Bot, config: BackendConfi
   } else if (event.eventType === "analytics.milestone.reached") {
     for (const actorId of config.CONTROLLER_ADMIN_IDS) await bot.api.sendMessage(actorId, event.message);
   } else if (event.eventType === "delivery.post.settled" || event.eventType.startsWith("publish.job.")) {
-    const postId = numberDetail(details, "post_id") ?? postIdFromRef(event.postKey);
+    const postId = numberDetail(details, "post_id") ?? postIdFromRef(event.publicationKey);
     const draft =
       postId == null ? null : unsafeDb(backendDb).db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, postId)).get();
     if (draft) await refreshPostControlCard(backendDb, bot, draft.id);

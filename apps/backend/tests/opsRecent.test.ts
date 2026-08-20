@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { posts, postTargets } from "../src/db/schema.js";
+import { posts, publicationTargets } from "../src/db/schema.js";
 import { findPublication, formatRecentPublications, recentPublications } from "../src/operations/recent.js";
 import { openBackendDb } from "./helpers/open-db.js";
 
@@ -19,7 +19,7 @@ function seed(db: UnsafeBackendDb, count: number, gap: { postId: number; target:
     db.db
       .insert(posts)
       .values({
-        postKey: `post:${postId}`,
+        publicationKey: `post:${postId}`,
         postId,
         channel: "alexgetmancom",
         messageId: postId,
@@ -32,8 +32,8 @@ function seed(db: UnsafeBackendDb, count: number, gap: { postId: number; target:
     for (const target of USUAL) {
       if (postId === gap.postId && target === gap.target) continue;
       db.db
-        .insert(postTargets)
-        .values({ postKey: `post:${postId}`, target, status: "published", updatedAt: now })
+        .insert(publicationTargets)
+        .values({ publicationKey: `post:${postId}`, target, status: "published", updatedAt: now })
         .run();
     }
   }

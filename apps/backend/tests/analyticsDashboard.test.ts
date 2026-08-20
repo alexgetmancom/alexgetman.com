@@ -3,7 +3,7 @@ import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
 import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
 import { pruneMetricSamples } from "../src/analytics/snapshots/metric-repository.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { creatorProfiles, metricSamples, posts, postTargets, videoMetricSnapshots } from "../src/db/schema.js";
+import { creatorProfiles, metricSamples, posts, publicationTargets, videoMetricSnapshots } from "../src/db/schema.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
 import { TEXT_TEST_CHANNELS, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { withDb as withFixtureDb } from "./helpers/db.js";
@@ -100,10 +100,10 @@ describe("creator analytics dashboards", () => {
       backendDb.db
         .insert(metricSamples)
         .values([
-          { postKey: "post:1", target: "telegram", metricName: "views", value: 10, sampledAt: before },
-          { postKey: "post:1", target: "telegram", metricName: "views", value: 34, sampledAt: now },
-          { postKey: "post:1", target: "telegram", metricName: "likes", value: 2, sampledAt: before },
-          { postKey: "post:1", target: "telegram", metricName: "likes", value: 7, sampledAt: now },
+          { publicationKey: "post:1", target: "telegram", metricName: "views", value: 10, sampledAt: before },
+          { publicationKey: "post:1", target: "telegram", metricName: "views", value: 34, sampledAt: now },
+          { publicationKey: "post:1", target: "telegram", metricName: "likes", value: 2, sampledAt: before },
+          { publicationKey: "post:1", target: "telegram", metricName: "likes", value: 7, sampledAt: now },
         ])
         .run();
       const overview = studioAnalyticsDashboard(backendDb, "overview", 1, "ru").text;
@@ -161,7 +161,7 @@ describe("creator analytics dashboards", () => {
       backendDb.db
         .insert(posts)
         .values({
-          postKey: "post:1",
+          publicationKey: "post:1",
           channel: "telegram",
           messageId: 1,
           text: "Релиз новой функции",
@@ -170,13 +170,16 @@ describe("creator analytics dashboards", () => {
           updatedAt: now,
         })
         .run();
-      backendDb.db.insert(postTargets).values({ postKey: "post:1", target: "telegram", status: "published", updatedAt: now }).run();
+      backendDb.db
+        .insert(publicationTargets)
+        .values({ publicationKey: "post:1", target: "telegram", status: "published", updatedAt: now })
+        .run();
       backendDb.db
         .insert(metricSamples)
         .values([
-          { postKey: "post:1", target: "telegram", metricName: "views", value: 200, sampledAt: now },
-          { postKey: "post:1", target: "telegram", metricName: "likes", value: 20, sampledAt: now },
-          { postKey: "post:1", target: "telegram", metricName: "reposts", value: 7, sampledAt: now },
+          { publicationKey: "post:1", target: "telegram", metricName: "views", value: 200, sampledAt: now },
+          { publicationKey: "post:1", target: "telegram", metricName: "likes", value: 20, sampledAt: now },
+          { publicationKey: "post:1", target: "telegram", metricName: "reposts", value: 7, sampledAt: now },
         ])
         .run();
       const dashboard = studioAnalyticsDashboard(backendDb, "posts", 1, "ru");
@@ -193,7 +196,7 @@ describe("creator analytics dashboards", () => {
       backendDb.db
         .insert(posts)
         .values({
-          postKey: "post:icons",
+          publicationKey: "post:icons",
           channel: "telegram",
           messageId: 2,
           text: "Platform labels",
@@ -204,12 +207,14 @@ describe("creator analytics dashboards", () => {
         .run();
       const targets = ["threads_en", "x", "telegram", "discord"];
       backendDb.db
-        .insert(postTargets)
-        .values(targets.map((target) => ({ postKey: "post:icons", target, status: "published", publishedAt: now, updatedAt: now })))
+        .insert(publicationTargets)
+        .values(targets.map((target) => ({ publicationKey: "post:icons", target, status: "published", publishedAt: now, updatedAt: now })))
         .run();
       backendDb.db
         .insert(metricSamples)
-        .values(targets.map((target, index) => ({ postKey: "post:icons", target, metricName: "views", value: index + 1, sampledAt: now })))
+        .values(
+          targets.map((target, index) => ({ publicationKey: "post:icons", target, metricName: "views", value: index + 1, sampledAt: now })),
+        )
         .run();
 
       const dashboard = studioAnalyticsDashboard(backendDb, "posts", 1, "en").text;
@@ -227,7 +232,7 @@ describe("creator analytics dashboards", () => {
       backendDb.db
         .insert(posts)
         .values({
-          postKey: "post:1",
+          publicationKey: "post:1",
           channel: "telegram",
           messageId: 1,
           text: "Старый пост",
@@ -237,14 +242,14 @@ describe("creator analytics dashboards", () => {
         })
         .run();
       backendDb.db
-        .insert(postTargets)
-        .values({ postKey: "post:1", target: "telegram", status: "published", publishedAt, updatedAt: now })
+        .insert(publicationTargets)
+        .values({ publicationKey: "post:1", target: "telegram", status: "published", publishedAt, updatedAt: now })
         .run();
       backendDb.db
         .insert(metricSamples)
         .values([
-          { postKey: "post:1", target: "telegram", metricName: "views", value: 900, sampledAt: beforePeriod },
-          { postKey: "post:1", target: "telegram", metricName: "views", value: 950, sampledAt: now },
+          { publicationKey: "post:1", target: "telegram", metricName: "views", value: 900, sampledAt: beforePeriod },
+          { publicationKey: "post:1", target: "telegram", metricName: "views", value: 950, sampledAt: now },
         ])
         .run();
       pruneMetricSamples(backendDb);
@@ -315,7 +320,7 @@ describe("creator analytics dashboards", () => {
       const now = new Date().toISOString();
       backendDb.db
         .insert(metricSamples)
-        .values({ postKey: "post:1", target: "telegram", metricName: "views", value: 10, sampledAt: now })
+        .values({ publicationKey: "post:1", target: "telegram", metricName: "views", value: 10, sampledAt: now })
         .run();
       const dashboard = studioAnalyticsDashboard(backendDb, "posts", 30, "en").text;
       expect(dashboard).not.toContain("History has been collected since");

@@ -1,7 +1,15 @@
 import { asc, eq } from "drizzle-orm";
 import { parsePublicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { postEvents, postTargets, publishJobs, videoDrafts, videoJobs, videoMetricSchedule, videoTargets } from "../db/schema.js";
+import {
+  publicationEvents,
+  publicationTargets,
+  publishJobs,
+  videoDrafts,
+  videoJobs,
+  videoMetricSchedule,
+  videoTargets,
+} from "../db/schema.js";
 import { jsonObject } from "../json.js";
 
 export function publicationTimeline(backendDb: BackendDb, ref: string): Record<string, unknown> {
@@ -29,22 +37,22 @@ function postTimeline(backendDb: BackendDb, ref: string): Record<string, unknown
       lastError: publishJobs.lastError,
     })
     .from(publishJobs)
-    .where(eq(publishJobs.postKey, ref))
+    .where(eq(publishJobs.publicationKey, ref))
     .orderBy(asc(publishJobs.createdAt), asc(publishJobs.jobId))
     .all()
     .map((job) => ({ ...job, durationMs: elapsed(job.lockedAt ?? job.createdAt, job.updatedAt) }));
   const targets = unsafeDb(backendDb)
     .db.select({
-      target: postTargets.target,
-      status: postTargets.status,
-      url: postTargets.url,
-      error: postTargets.error,
-      publishedAt: postTargets.publishedAt,
-      updatedAt: postTargets.updatedAt,
+      target: publicationTargets.target,
+      status: publicationTargets.status,
+      url: publicationTargets.url,
+      error: publicationTargets.error,
+      publishedAt: publicationTargets.publishedAt,
+      updatedAt: publicationTargets.updatedAt,
     })
-    .from(postTargets)
-    .where(eq(postTargets.postKey, ref))
-    .orderBy(postTargets.target)
+    .from(publicationTargets)
+    .where(eq(publicationTargets.publicationKey, ref))
+    .orderBy(publicationTargets.target)
     .all();
   return { ref, jobs, targets, events };
 }
@@ -111,9 +119,9 @@ function videoTimeline(backendDb: BackendDb, ref: string, videoDraftId: number):
 function timelineEvents(backendDb: BackendDb, ref: string) {
   return unsafeDb(backendDb)
     .db.select()
-    .from(postEvents)
-    .where(eq(postEvents.postKey, ref))
-    .orderBy(asc(postEvents.createdAt), asc(postEvents.id))
+    .from(publicationEvents)
+    .where(eq(publicationEvents.publicationKey, ref))
+    .orderBy(asc(publicationEvents.createdAt), asc(publicationEvents.id))
     .all()
     .map((event) => ({
       at: event.createdAt,

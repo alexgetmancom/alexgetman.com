@@ -4,7 +4,7 @@ import { TerminalMetricError } from "../src/analytics/collection/collectors/erro
 import { createMetricCollectors, SUPPORTED_METRIC_TARGETS } from "../src/analytics/collection/collectors/index.js";
 import { claimDueMetricTasks, type MetricTask } from "../src/analytics/collection/metric-schedule.js";
 import { runMetricsCycle } from "../src/analytics/collection/metrics-cycle.js";
-import { metricSamples, metricSchedule, postMetrics, posts, postTargets, workerState } from "../src/db/schema.js";
+import { metricSamples, metricSchedule, postMetrics, posts, publicationTargets, workerState } from "../src/db/schema.js";
 import { openBackendDb } from "./helpers/open-db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
@@ -41,7 +41,9 @@ describe("metrics cycle", () => {
         { rawJson: null },
         { rawJson: null },
       ]);
-      expect(backendDb.db.select({ url: postTargets.url }).from(postTargets).get()).toEqual({ url: "https://threads.test/new-url" });
+      expect(backendDb.db.select({ url: publicationTargets.url }).from(publicationTargets).get()).toEqual({
+        url: "https://threads.test/new-url",
+      });
       expect(
         backendDb.db.select({ checkCount: metricSchedule.checkCount, lastError: metricSchedule.lastError }).from(metricSchedule).get(),
       ).toEqual({ checkCount: 1, lastError: null });
@@ -119,20 +121,20 @@ describe("metrics cycle", () => {
         .insert(metricSchedule)
         .values([
           {
-            postKey: "post:old",
+            publicationKey: "post:old",
             target: "threads_ru",
             nextCheckAt: new Date(now - 60_000).toISOString(),
             updatedAt: new Date(now - 60_000).toISOString(),
           },
           {
-            postKey: "post:new",
+            publicationKey: "post:new",
             target: "threads_ru",
             nextCheckAt: new Date(now - 1_000).toISOString(),
             updatedAt: new Date(now - 1_000).toISOString(),
           },
         ])
         .run();
-      expect(claimDueMetricTasks(backendDb, loadTestConfig({ MAX_METRIC_TASKS_PER_CYCLE: "1" }), ["threads_ru"])[0]?.postKey).toBe(
+      expect(claimDueMetricTasks(backendDb, loadTestConfig({ MAX_METRIC_TASKS_PER_CYCLE: "1" }), ["threads_ru"])[0]?.publicationKey).toBe(
         "post:old",
       );
     } finally {
@@ -149,7 +151,7 @@ describe("metrics cycle", () => {
       backendDb.db
         .insert(metricSchedule)
         .values({
-          postKey: "post:stale",
+          publicationKey: "post:stale",
           target: "site_en",
           nextCheckAt: new Date(now - 60_000).toISOString(),
           updatedAt: new Date(now - 60_000).toISOString(),
@@ -163,16 +165,16 @@ describe("metrics cycle", () => {
       expect(checked).toBe(1);
       expect(
         backendDb.db
-          .select({ postKey: postMetrics.postKey, value: postMetrics.value })
+          .select({ publicationKey: postMetrics.publicationKey, value: postMetrics.value })
           .from(postMetrics)
-          .where(eq(postMetrics.postKey, "post:current"))
+          .where(eq(postMetrics.publicationKey, "post:current"))
           .get(),
-      ).toEqual({ postKey: "post:current", value: 42 });
+      ).toEqual({ publicationKey: "post:current", value: 42 });
       expect(
         backendDb.db
           .select({ checkCount: metricSchedule.checkCount })
           .from(metricSchedule)
-          .where(eq(metricSchedule.postKey, "post:stale"))
+          .where(eq(metricSchedule.publicationKey, "post:stale"))
           .get(),
       ).toEqual({ checkCount: 0 });
     } finally {
@@ -189,8 +191,8 @@ describe("metrics cycle", () => {
       backendDb.db
         .insert(metricSchedule)
         .values([
-          { postKey: "post:retired", target: "bluesky", nextCheckAt: overdue, updatedAt: overdue },
-          { postKey: "post:paid", target: "x", nextCheckAt: overdue, updatedAt: overdue },
+          { publicationKey: "post:retired", target: "bluesky", nextCheckAt: overdue, updatedAt: overdue },
+          { publicationKey: "post:paid", target: "x", nextCheckAt: overdue, updatedAt: overdue },
         ])
         .run();
 
@@ -260,21 +262,21 @@ describe("Telegram public metrics", () => {
   });
 });
 
-function seedPublishedPost(backendDb: ReturnType<typeof openBackendDb>, postKey: string, target: string): void {
+function seedPublishedPost(backendDb: ReturnType<typeof openBackendDb>, publicationKey: string, target: string): void {
   const date = new Date(Date.now() - 2 * 3_600_000).toISOString();
   backendDb.db
     .insert(posts)
-    .values({ postKey, channel: "alexgetmancom", messageId: 42, dateUtc: date, status: "active", createdAt: date, updatedAt: date })
+    .values({ publicationKey, channel: "alexgetmancom", messageId: 42, dateUtc: date, status: "active", createdAt: date, updatedAt: date })
     .run();
   backendDb.db
-    .insert(postTargets)
-    .values({ postKey, target, status: "published", externalId: "external-1", url: "https://example.test/post", updatedAt: date })
+    .insert(publicationTargets)
+    .values({ publicationKey, target, status: "published", externalId: "external-1", url: "https://example.test/post", updatedAt: date })
     .run();
 }
 
 function task(target: string): MetricTask {
   return {
-    postKey: "post:42",
+    publicationKey: "post:42",
     target,
     checkCount: 0,
     messageId: 42,

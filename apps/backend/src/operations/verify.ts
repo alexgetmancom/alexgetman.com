@@ -1,6 +1,6 @@
 import { asc, eq, or } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { posts, postTargets } from "../db/schema.js";
+import { posts, publicationTargets } from "../db/schema.js";
 
 /** Read-only target verification for the Operations CLI and API. */
 export async function verifyPostTargets(backendDb: BackendDb, ref: string): Promise<Record<string, unknown>[]> {
@@ -8,18 +8,23 @@ export async function verifyPostTargets(backendDb: BackendDb, ref: string): Prom
   // A non-numeric ref must not reach the query as NaN: bind it only when it is a
   // usable id, and otherwise match on the post key alone.
   const id = Number.isSafeInteger(numeric) ? numeric : null;
-  const byKey = eq(posts.postKey, ref);
+  const byKey = eq(posts.publicationKey, ref);
   const post = unsafeDb(backendDb)
-    .db.select({ postKey: posts.postKey })
+    .db.select({ publicationKey: posts.publicationKey })
     .from(posts)
     .where(id == null ? byKey : or(byKey, eq(posts.postId, id), eq(posts.messageId, id)))
     .get();
   if (!post) throw new Error(`post not found: ${ref}`);
   const targets = unsafeDb(backendDb)
-    .db.select({ target: postTargets.target, status: postTargets.status, url: postTargets.url, error: postTargets.error })
-    .from(postTargets)
-    .where(eq(postTargets.postKey, post.postKey))
-    .orderBy(asc(postTargets.target))
+    .db.select({
+      target: publicationTargets.target,
+      status: publicationTargets.status,
+      url: publicationTargets.url,
+      error: publicationTargets.error,
+    })
+    .from(publicationTargets)
+    .where(eq(publicationTargets.publicationKey, post.publicationKey))
+    .orderBy(asc(publicationTargets.target))
     .all();
   return Promise.all(
     targets.map(async (record) => {

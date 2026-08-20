@@ -4,7 +4,7 @@ import { formatZonedSortable } from "../foundation/time.js";
 import { jsonArray } from "../json.js";
 
 export type PipelineTargetRow = {
-  postKey: string;
+  publicationKey: string;
   target: string;
   status: string;
   externalId?: string | null;
@@ -16,7 +16,7 @@ export type PipelineTargetRow = {
 };
 
 export type PipelineMetricRow = {
-  postKey: string;
+  publicationKey: string;
   target: string;
   metricName: string;
   value: number | null;
@@ -26,7 +26,7 @@ export type PipelineMetricRow = {
 };
 
 export type PipelineSampleRow = {
-  postKey: string;
+  publicationKey: string;
   target: string;
   metricName: string;
   value: number | null;
@@ -35,7 +35,7 @@ export type PipelineSampleRow = {
 };
 
 export type PipelinePostRow = {
-  post_key: string;
+  publication_key: string;
   post_id: number;
   telegram_message_id: number | null;
   created_at: string;
@@ -63,14 +63,14 @@ export function formatPipelinePosts(
   includeContent: boolean,
   compact = false,
 ): Record<string, unknown>[] {
-  const targetsByPost = groupBy(targetRows, (target) => target.postKey);
-  const metricsByPost = groupBy(metricRows, (metric) => metric.postKey);
-  const samplesByMetric = groupBy(sampleRows, (sample) => `${sample.postKey}\u0000${sample.target}\u0000${sample.metricName}`);
+  const targetsByPost = groupBy(targetRows, (target) => target.publicationKey);
+  const metricsByPost = groupBy(metricRows, (metric) => metric.publicationKey);
+  const samplesByMetric = groupBy(sampleRows, (sample) => `${sample.publicationKey}\u0000${sample.target}\u0000${sample.metricName}`);
   return rows.map((row) => {
     const postId = row.post_id == null ? null : Number(row.post_id);
-    const postKey = String(row.post_key ?? `post:${postId}`);
+    const publicationKey = String(row.publication_key ?? `post:${postId}`);
     const targets = Object.fromEntries(
-      (targetsByPost.get(postKey) ?? []).map((target) => [
+      (targetsByPost.get(publicationKey) ?? []).map((target) => [
         target.target,
         compact
           ? { status: target.status, url: target.url ?? null }
@@ -87,10 +87,10 @@ export function formatPipelinePosts(
       ]),
     );
     const metrics: Record<string, Record<string, unknown>> = {};
-    for (const metric of metricsByPost.get(postKey) ?? []) {
+    for (const metric of metricsByPost.get(publicationKey) ?? []) {
       const targetMetrics = metrics[metric.target] ?? {};
       metrics[metric.target] = targetMetrics;
-      const samples = samplesByMetric.get(`${postKey}\u0000${metric.target}\u0000${metric.metricName}`);
+      const samples = samplesByMetric.get(`${publicationKey}\u0000${metric.target}\u0000${metric.metricName}`);
       targetMetrics[metric.metricName] = {
         value: metric.value,
         // Samples are fetched only when a caller asked for them, so `compact`

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
-import { postEvents, studioNotificationJobs } from "../src/db/schema.js";
+import { publicationEvents, studioNotificationJobs } from "../src/db/schema.js";
 import { cancelScheduledNotifications, runNotificationCycle, scheduleReminder } from "../src/notifications/jobs.js";
 import { postService } from "../src/studio/services/posts.js";
 import { settingsService } from "../src/studio/services/settings.js";
@@ -32,7 +32,7 @@ describe("Studio notifications", () => {
       });
       expect(runNotificationCycle(backendDb)).toBe(1);
       expect(
-        backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, "studio.notification.reminder.due")).get(),
+        backendDb.db.select().from(publicationEvents).where(eq(publicationEvents.eventType, "studio.notification.reminder.due")).get(),
       ).toBeDefined();
 
       scheduleReminder(backendDb, {

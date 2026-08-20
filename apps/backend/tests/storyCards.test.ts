@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { draftStoryCards, drafts, postEvents, postLocales, publicationSources, publishJobs, siteJobs } from "../src/db/schema.js";
+import { draftStoryCards, drafts, postLocales, publicationEvents, publicationSources, publishJobs, siteJobs } from "../src/db/schema.js";
 import { backfillTextStoryCards } from "../src/operations/story-card-backfill.js";
 import { localizeTargetPayload } from "../src/publishing/payload.js";
 import { createPublicationPlan } from "../src/publishing/publication-plan.js";
@@ -274,7 +274,7 @@ describe("text Story cards", () => {
         .some((job) => job.target.includes("stories")),
     ).toBe(false);
     expect(
-      backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, "studio.notification.story-cards.failed")).all(),
+      backendDb.db.select().from(publicationEvents).where(eq(publicationEvents.eventType, "studio.notification.story-cards.failed")).all(),
     ).toHaveLength(1);
   }, 20_000);
 

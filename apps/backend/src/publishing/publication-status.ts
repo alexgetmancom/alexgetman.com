@@ -3,7 +3,7 @@ import { publicationRef } from "../application/publication-ref.js";
 import { isSiteTarget, targetLocale } from "../botTargets.js";
 import { registeredPostTargetIds } from "../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { drafts, postEvents, publicationPlans, publications, publishJobs, siteJobs } from "../db/schema.js";
+import { drafts, publicationEvents, publicationPlans, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import { effectivePublicationStatus, isPostJobFinal, planObject, planScheduleAt } from "./state.js";
 
@@ -117,13 +117,13 @@ function emitLocaleCompletion(backendDb: BackendDb, postId: number, jobs: Public
     if (!remaining.length) continue;
 
     const alreadyEmitted = unsafeDb(backendDb)
-      .db.select({ id: postEvents.id })
-      .from(postEvents)
+      .db.select({ id: publicationEvents.id })
+      .from(publicationEvents)
       .where(
         and(
-          eq(postEvents.postKey, publicationRef("post", postId)),
-          eq(postEvents.eventType, "delivery.post.locale.completed"),
-          eq(postEvents.target, locale),
+          eq(publicationEvents.publicationKey, publicationRef("post", postId)),
+          eq(publicationEvents.eventType, "delivery.post.locale.completed"),
+          eq(publicationEvents.target, locale),
         ),
       )
       .get();

@@ -1,13 +1,13 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { targetLocale } from "../botTargets.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
-import { postTargets, publishJobs } from "../db/schema.js";
+import { publicationTargets, publishJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { createPlatformAdapters } from "./platform-adapters.js";
 import type { DeliveryRemove } from "./ports.js";
 
-type RemovalOptions = { postKey: string; target?: string; locale?: "ru" | "en" };
-type PublishedTarget = typeof postTargets.$inferSelect;
+type RemovalOptions = { publicationKey: string; target?: string; locale?: "ru" | "en" };
+type PublishedTarget = typeof publicationTargets.$inferSelect;
 
 export type TargetRemovalResult = {
   target: string;
@@ -35,8 +35,8 @@ export async function attemptPublishedTargetRemovals(
 ): Promise<TargetRemovalAttempt[]> {
   const rows = unsafeDb(backendDb)
     .db.select()
-    .from(postTargets)
-    .where(and(eq(postTargets.postKey, options.postKey), eq(postTargets.status, "published")))
+    .from(publicationTargets)
+    .where(and(eq(publicationTargets.publicationKey, options.publicationKey), eq(publicationTargets.status, "published")))
     .all()
     .filter((row) => !options.target || row.target === options.target)
     .filter((row) => !options.locale || targetLocale(row.target) === options.locale);
@@ -70,15 +70,15 @@ export function settlePublishedTargetRemovals(
     if ("skipped" in outcome) return { target: row.target, ok: false, skipped: true, error: outcome.error };
     if ("failed" in outcome) return { target: row.target, ok: false, error: outcome.error };
     const sameRemoteObject = and(
-      eq(postTargets.postKey, row.postKey),
-      eq(postTargets.target, row.target),
-      eq(postTargets.status, "published"),
-      row.externalId == null ? isNull(postTargets.externalId) : eq(postTargets.externalId, row.externalId),
+      eq(publicationTargets.publicationKey, row.publicationKey),
+      eq(publicationTargets.target, row.target),
+      eq(publicationTargets.status, "published"),
+      row.externalId == null ? isNull(publicationTargets.externalId) : eq(publicationTargets.externalId, row.externalId),
     );
     const { deleted, remaining, error } = outcome;
     const updated = remaining.length
       ? db
-          .update(postTargets)
+          .update(publicationTargets)
           .set({
             externalId: remaining[0] ?? null,
             externalIdsJson: remaining,
@@ -87,10 +87,10 @@ export function settlePublishedTargetRemovals(
             rawJson: JSON.stringify({ deleted, remaining }),
           })
           .where(sameRemoteObject)
-          .returning({ target: postTargets.target })
+          .returning({ target: publicationTargets.target })
           .get()
       : db
-          .update(postTargets)
+          .update(publicationTargets)
           .set({
             status: "deleted",
             externalId: null,
@@ -103,7 +103,7 @@ export function settlePublishedTargetRemovals(
             rawJson: JSON.stringify({ deleted: true, ids: deleted }),
           })
           .where(sameRemoteObject)
-          .returning({ target: postTargets.target })
+          .returning({ target: publicationTargets.target })
           .get();
     if (!updated)
       return {
@@ -125,7 +125,7 @@ function cancelDeletedPublishJob(db: UnsafeBackendDb["db"], target: PublishedTar
   const job = db
     .select({ jobId: publishJobs.jobId, status: publishJobs.status })
     .from(publishJobs)
-    .where(and(eq(publishJobs.postKey, target.postKey), eq(publishJobs.target, target.target)))
+    .where(and(eq(publishJobs.publicationKey, target.publicationKey), eq(publishJobs.target, target.target)))
     .orderBy(desc(publishJobs.jobId))
     .get();
   if (job?.status !== "published") return;

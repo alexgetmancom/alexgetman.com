@@ -106,7 +106,9 @@ export function baselineDrizzleMigrations(sqlite: SqliteCompat): MigrationStatus
     name: string;
   }>;
   const names = new Set(tables.map((table) => table.name));
-  const missing = ["publish_jobs", "drafts", "publications", "posts", "post_targets", "site_jobs"].filter((name) => !names.has(name));
+  const missing = ["publish_jobs", "drafts", "publications", "posts", "publication_targets", "site_jobs"].filter(
+    (name) => !names.has(name),
+  );
   if (missing.length > 0) throw new Error(`baseline requires a complete database; missing: ${missing.join(", ")}`);
   sqlite.exec(
     "CREATE TABLE IF NOT EXISTS __drizzle_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, hash text NOT NULL, created_at numeric)",

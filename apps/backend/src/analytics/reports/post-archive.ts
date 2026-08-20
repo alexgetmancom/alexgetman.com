@@ -46,7 +46,7 @@ export function creatorPostArchive(
 }
 
 export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale: StudioLocale = "en"): string {
-  const postKey = `post:${postId}`;
+  const publicationKey = `post:${postId}`;
   const post = unsafeDb(backendDb)
     .db.select({ text: posts.text, mediaCount: posts.mediaCount, dateMsk: posts.dateMsk })
     .from(posts)
@@ -58,12 +58,12 @@ export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale:
   const latestSampleIds = unsafeDb(backendDb)
     .db.select({ id: max(metricSamples.id) })
     .from(metricSamples)
-    .where(eq(metricSamples.postKey, postKey))
+    .where(eq(metricSamples.publicationKey, publicationKey))
     .groupBy(metricSamples.target, metricSamples.metricName);
   const rows = unsafeDb(backendDb)
     .db.select({ target: metricSamples.target, metricName: metricSamples.metricName, value: metricSamples.value })
     .from(metricSamples)
-    .where(and(eq(metricSamples.postKey, postKey), inArray(metricSamples.id, latestSampleIds)))
+    .where(and(eq(metricSamples.publicationKey, publicationKey), inArray(metricSamples.id, latestSampleIds)))
     .orderBy(metricSamples.target, metricSamples.metricName)
     .all();
   const metrics = new Map<string, Record<string, number>>();

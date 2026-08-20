@@ -29,11 +29,11 @@ export type XAnalyticsReport = {
   editorialCoverage: {
     xTargets: number;
     covered: number;
-    uncovered: Array<{ postKey: string; externalId: string | null }>;
+    uncovered: Array<{ publicationKey: string; externalId: string | null }>;
   };
   linkCandidates: Array<{
     xPostId: string;
-    postKey: string;
+    publicationKey: string;
     similarity: number;
     sameDay: boolean;
     url: string;
@@ -82,7 +82,7 @@ export function xAnalyticsReport(backendDb: BackendDb, limit: number): XAnalytic
 
   const totals = query<{ total: number; linked: number; first: string | null; last: string | null }>(
     `SELECT count(*) AS total,
-            sum(CASE WHEN linked_post_key IS NOT NULL THEN 1 ELSE 0 END) AS linked,
+            sum(CASE WHEN linked_publication_key IS NOT NULL THEN 1 ELSE 0 END) AS linked,
             min(published_at) AS first, max(published_at) AS last
      FROM x_activity_items`,
   )[0] ?? { total: 0, linked: 0, first: null, last: null };
@@ -97,16 +97,16 @@ export function xAnalyticsReport(backendDb: BackendDb, limit: number): XAnalytic
     "SELECT DISTINCT sampled_at AS sampledAt FROM x_activity_metric_snapshots ORDER BY sampled_at",
   ).map((row) => row.sampledAt);
 
-  const xTargets = query<{ postKey: string; externalId: string | null; covered: number }>(
-    `SELECT target.post_key AS postKey, target.external_id AS externalId,
-            (SELECT count(*) FROM x_activity_items AS item WHERE item.linked_post_key=target.post_key) AS covered
-     FROM post_targets AS target
+  const xTargets = query<{ publicationKey: string; externalId: string | null; covered: number }>(
+    `SELECT target.publication_key AS publicationKey, target.external_id AS externalId,
+            (SELECT count(*) FROM x_activity_items AS item WHERE item.linked_publication_key=target.publication_key) AS covered
+     FROM publication_targets AS target
      WHERE target.target='x' AND target.status='published'`,
   );
 
   const unlinked = query<{ xPostId: string; kind: string; publishedAt: string | null; text: string; url: string }>(
     `SELECT x_post_id AS xPostId, kind, published_at AS publishedAt, text, url
-     FROM x_activity_items WHERE linked_post_key IS NULL`,
+     FROM x_activity_items WHERE linked_publication_key IS NULL`,
   );
   const editorial = editorialTexts(backendDb);
   const linkCandidates = unlinked.flatMap((item) => {
@@ -116,7 +116,7 @@ export function xAnalyticsReport(backendDb: BackendDb, limit: number): XAnalytic
     return [
       {
         xPostId: item.xPostId,
-        postKey: best.postKey,
+        publicationKey: best.publicationKey,
         similarity: Math.round(best.similarity * 100) / 100,
         sameDay: best.date?.slice(0, 10) === item.publishedAt?.slice(0, 10),
         url: item.url,
@@ -162,7 +162,9 @@ export function xAnalyticsReport(backendDb: BackendDb, limit: number): XAnalytic
     editorialCoverage: {
       xTargets: xTargets.length,
       covered: xTargets.filter((target) => target.covered > 0).length,
-      uncovered: xTargets.filter((target) => target.covered === 0).map(({ postKey, externalId }) => ({ postKey, externalId })),
+      uncovered: xTargets
+        .filter((target) => target.covered === 0)
+        .map(({ publicationKey, externalId }) => ({ publicationKey, externalId })),
     },
     linkCandidates: linkCandidates.sort((left, right) => right.similarity - left.similarity),
     topUnlinked,

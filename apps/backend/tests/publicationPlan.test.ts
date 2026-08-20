@@ -22,7 +22,7 @@ describe("PublicationPlan", () => {
       "2026-07-14T10:00:00.000Z",
     );
 
-    expect(plan).toMatchObject({ draftId: 9, postId: 99, postKey: "post:99", messageId: 42, mode: "scheduled" });
+    expect(plan).toMatchObject({ draftId: 9, postId: 99, publicationKey: "post:99", messageId: 42, mode: "scheduled" });
     expect(plan.payload).toMatchObject({
       text_ru: "Русский заголовок\nТекст",
       text_en: "English title\nText",

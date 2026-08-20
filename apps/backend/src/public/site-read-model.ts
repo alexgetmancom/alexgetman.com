@@ -108,7 +108,7 @@ function buildPublicSiteFeed(backendDb: BackendDb, postId?: number): FeedItem[] 
     .db.select({
       postId: publications.postId,
       messageId: posts.messageId,
-      postKey: posts.postKey,
+      publicationKey: posts.publicationKey,
       date: posts.dateUtc,
       createdAt: publications.createdAt,
       ruSlug: ruLocale.slug,
@@ -131,7 +131,7 @@ function buildPublicSiteFeed(backendDb: BackendDb, postId?: number): FeedItem[] 
     .leftJoin(enLocale, and(eq(enLocale.postId, publications.postId), eq(enLocale.locale, "en")))
     .leftJoin(
       postMetrics,
-      and(eq(postMetrics.postKey, posts.postKey), eq(postMetrics.target, "telegram"), eq(postMetrics.metricName, "views")),
+      and(eq(postMetrics.publicationKey, posts.publicationKey), eq(postMetrics.target, "telegram"), eq(postMetrics.metricName, "views")),
     )
     .where(
       postId === undefined
@@ -173,14 +173,14 @@ function buildPublicSiteFeed(backendDb: BackendDb, postId?: number): FeedItem[] 
   }
   const now = Date.now();
   return rows.flatMap((row): FeedItem[] => {
-    if (row.postId == null || row.messageId == null || row.postKey == null) return [];
+    if (row.postId == null || row.messageId == null || row.publicationKey == null) return [];
     const ru = locale(row.ruEnabled, row.ruPublishedAt, row.ruText, row.ruSlug, row.ruHtml, publishedMedia(row.ruMedia), now);
     const en = locale(row.enEnabled, row.enPublishedAt, row.enText, row.enSlug, row.enHtml, publishedMedia(row.enMedia), now);
     if (!ru.enabled && !en.enabled) return [];
     const media = ru.media;
     const mediaEn = en.media.length > 0 ? en.media : media;
     const parsed = feedItemSchema.safeParse({
-      id: row.postKey,
+      id: row.publicationKey,
       post_id: row.postId,
       message_id: row.messageId,
       date: row.date ?? row.createdAt,
@@ -207,8 +207,8 @@ function buildPublicSiteFeed(backendDb: BackendDb, postId?: number): FeedItem[] 
         ref: publicationRef("post", row.postId),
         type: "site.feed.item_invalid",
         severity: "warn",
-        message: `Post ${row.postKey} dropped from the public feed: ${parsed.error.issues[0]?.message ?? "invalid shape"}`,
-        details: { post_key: row.postKey, issues: parsed.error.issues.slice(0, 5) },
+        message: `Post ${row.publicationKey} dropped from the public feed: ${parsed.error.issues[0]?.message ?? "invalid shape"}`,
+        details: { publication_key: row.publicationKey, issues: parsed.error.issues.slice(0, 5) },
         cooldownSeconds: 60 * 60,
       });
       return [];

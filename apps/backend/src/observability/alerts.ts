@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { alertDedup, postEvents } from "../db/schema.js";
+import { alertDedup, publicationEvents } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 
@@ -15,15 +15,15 @@ export async function deliverPendingAlerts(config: BackendConfig, backendDb: Bac
   let alerts = 0;
   const events = unsafeDb(backendDb)
     .db.select({
-      id: postEvents.id,
-      eventType: postEvents.eventType,
-      severity: postEvents.severity,
-      target: postEvents.target,
-      message: postEvents.message,
+      id: publicationEvents.id,
+      eventType: publicationEvents.eventType,
+      severity: publicationEvents.severity,
+      target: publicationEvents.target,
+      message: publicationEvents.message,
     })
-    .from(postEvents)
-    .where(and(inArray(postEvents.severity, ["warn", "error"]), isNull(postEvents.ackedAt)))
-    .orderBy(asc(postEvents.createdAt), asc(postEvents.id))
+    .from(publicationEvents)
+    .where(and(inArray(publicationEvents.severity, ["warn", "error"]), isNull(publicationEvents.ackedAt)))
+    .orderBy(asc(publicationEvents.createdAt), asc(publicationEvents.id))
     .limit(20)
     .all();
   for (const event of events) {
@@ -37,10 +37,10 @@ export async function deliverPendingAlerts(config: BackendConfig, backendDb: Bac
       const cooling = dedup?.lastSentAt && Date.now() - new Date(dedup.lastSentAt).getTime() < ALERT_COOLDOWN_SECONDS * 1000;
       if (!cooling && !alertsPort.sendAlert) return "unavailable";
       const claimed = tx
-        .update(postEvents)
+        .update(publicationEvents)
         .set({ ackedAt: now })
-        .where(and(eq(postEvents.id, event.id), isNull(postEvents.ackedAt)))
-        .returning({ id: postEvents.id })
+        .where(and(eq(publicationEvents.id, event.id), isNull(publicationEvents.ackedAt)))
+        .returning({ id: publicationEvents.id })
         .get();
       if (!claimed) return "claimed";
       if (cooling) {

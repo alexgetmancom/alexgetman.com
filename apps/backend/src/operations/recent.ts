@@ -1,6 +1,6 @@
 import { desc, inArray } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { posts, postTargets } from "../db/schema.js";
+import { posts, publicationTargets } from "../db/schema.js";
 
 /** How many posts back the "usual" target set is learned from. Wide enough that
  * one skipped delivery cannot remove a target from the baseline, short enough
@@ -48,34 +48,52 @@ export function findPublication(backendDb: BackendDb, query: string): Publicatio
   return { query, expectedTargets, matches };
 }
 
-type RawRow = { postKey: string; postId: number | null; dateUtc: string | null; status: string; text: string; targets: DeliveredTarget[] };
+type RawRow = {
+  publicationKey: string;
+  postId: number | null;
+  dateUtc: string | null;
+  status: string;
+  text: string;
+  targets: DeliveredTarget[];
+};
 
 function publicationRows(backendDb: BackendDb, limit: number): RawRow[] {
   const rows = unsafeDb(backendDb)
-    .db.select({ postKey: posts.postKey, postId: posts.postId, dateUtc: posts.dateUtc, status: posts.status, text: posts.text })
+    .db.select({
+      publicationKey: posts.publicationKey,
+      postId: posts.postId,
+      dateUtc: posts.dateUtc,
+      status: posts.status,
+      text: posts.text,
+    })
     .from(posts)
     .orderBy(desc(posts.dateUtc))
     .limit(limit)
     .all();
   if (rows.length === 0) return [];
   const delivered = unsafeDb(backendDb)
-    .db.select({ postKey: postTargets.postKey, target: postTargets.target, status: postTargets.status, url: postTargets.url })
-    .from(postTargets)
+    .db.select({
+      publicationKey: publicationTargets.publicationKey,
+      target: publicationTargets.target,
+      status: publicationTargets.status,
+      url: publicationTargets.url,
+    })
+    .from(publicationTargets)
     .where(
       inArray(
-        postTargets.postKey,
-        rows.map((row) => row.postKey),
+        publicationTargets.publicationKey,
+        rows.map((row) => row.publicationKey),
       ),
     )
-    .orderBy(postTargets.target)
+    .orderBy(publicationTargets.target)
     .all();
   const byPost = new Map<string, DeliveredTarget[]>();
   for (const row of delivered) {
-    const list = byPost.get(row.postKey) ?? [];
+    const list = byPost.get(row.publicationKey) ?? [];
     list.push({ target: row.target, status: row.status, url: row.url });
-    byPost.set(row.postKey, list);
+    byPost.set(row.publicationKey, list);
   }
-  return rows.map((row) => ({ ...row, text: row.text ?? "", targets: byPost.get(row.postKey) ?? [] }));
+  return rows.map((row) => ({ ...row, text: row.text ?? "", targets: byPost.get(row.publicationKey) ?? [] }));
 }
 
 /** A target counts as expected once most of the recent posts carried it, so a
@@ -94,7 +112,7 @@ function usualTargets(rows: RawRow[]): string[] {
 function describe(row: RawRow, expectedTargets: string[]): PublicationRow {
   const present = new Set(row.targets.map((target) => target.target));
   return {
-    ref: row.postKey,
+    ref: row.publicationKey,
     postId: row.postId,
     at: row.dateUtc,
     status: row.status,

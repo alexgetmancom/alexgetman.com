@@ -3,10 +3,19 @@ import os from "node:os";
 import path from "node:path";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import { freezeDisabledMetricSchedules } from "../analytics/collection/metric-schedule.js";
-import { type BackendDb, unsafeDb } from "../db/client.js";
-import { drafts, maintenanceLocks, metricSchedule, postEvents, posts, postTargets, videoDrafts, videoTargets } from "../db/schema.js";
-import type { BackendConfig } from "../foundation/config.js";
 import { registeredPostTargetIds } from "../channels/registry.js";
+import { type BackendDb, unsafeDb } from "../db/client.js";
+import {
+  drafts,
+  maintenanceLocks,
+  metricSchedule,
+  posts,
+  publicationEvents,
+  publicationTargets,
+  videoDrafts,
+  videoTargets,
+} from "../db/schema.js";
+import type { BackendConfig } from "../foundation/config.js";
 import { effectivePublicationStatus, planObject } from "../publishing/state.js";
 
 /** Explicitly invoked operational maintenance routines. */
@@ -32,7 +41,7 @@ export function restoreDatabase(source: string, destination: string, force: bool
 }
 
 type OperationalRetentionResult = {
-  postEvents: number;
+  publicationEvents: number;
   opsActions: number;
   sitePageviews: number;
   runtimeUsage: number;
@@ -61,7 +70,7 @@ export function pruneOperationalHistory(backendDb: BackendDb, now = new Date()):
   };
 
   const postEventsDeleted = deleteBatched(
-    `DELETE FROM post_events
+    `DELETE FROM publication_events
      WHERE created_at < ?
        AND event_type != 'analytics.milestone.reached'
        AND NOT (severity IN ('warn', 'error') AND acked_at IS NULL)`,
@@ -71,7 +80,7 @@ export function pruneOperationalHistory(backendDb: BackendDb, now = new Date()):
   const sitePageviewsDeleted = deleteBatched("DELETE FROM site_pageviews WHERE day < ?", cutoffDay(SITE_PAGEVIEWS_RETENTION_DAYS));
   const runtimeUsageDeleted = deleteBatched("DELETE FROM runtime_usage WHERE bucket_day < ?", cutoffDay(RUNTIME_USAGE_RETENTION_DAYS));
   return {
-    postEvents: postEventsDeleted,
+    publicationEvents: postEventsDeleted,
     opsActions: opsActionsDeleted,
     sitePageviews: sitePageviewsDeleted,
     runtimeUsage: runtimeUsageDeleted,
@@ -84,22 +93,26 @@ export function buildMetricsBackfillPlan(
   options: { targets: string[]; refs?: string[]; dateFrom?: string; dateTo?: string },
 ): Record<string, unknown>[] {
   if (options.targets.length === 0) return [];
-  const conditions = [eq(posts.status, "active"), eq(postTargets.status, "published"), inArray(postTargets.target, options.targets)];
-  if (options.refs?.length) conditions.push(inArray(posts.postKey, options.refs));
+  const conditions = [
+    eq(posts.status, "active"),
+    eq(publicationTargets.status, "published"),
+    inArray(publicationTargets.target, options.targets),
+  ];
+  if (options.refs?.length) conditions.push(inArray(posts.publicationKey, options.refs));
   if (options.dateFrom) conditions.push(gte(posts.dateUtc, options.dateFrom));
   if (options.dateTo) conditions.push(lte(posts.dateUtc, options.dateTo));
   return unsafeDb(backendDb)
     .db.select({
-      postKey: posts.postKey,
+      publicationKey: posts.publicationKey,
       postId: posts.postId,
       messageId: posts.messageId,
       dateUtc: posts.dateUtc,
-      target: postTargets.target,
+      target: publicationTargets.target,
     })
     .from(posts)
-    .innerJoin(postTargets, eq(postTargets.postKey, posts.postKey))
+    .innerJoin(publicationTargets, eq(publicationTargets.publicationKey, posts.publicationKey))
     .where(and(...conditions))
-    .orderBy(desc(posts.dateUtc), postTargets.target)
+    .orderBy(desc(posts.dateUtc), publicationTargets.target)
     .all();
 }
 
@@ -112,13 +125,13 @@ export function applyMetricsBackfill(
   const now = new Date().toISOString();
   unsafeDb(backendDb).db.transaction((tx) => {
     for (const row of rows) {
-      const postKey = typeof row.postKey === "string" ? row.postKey : "";
+      const publicationKey = typeof row.publicationKey === "string" ? row.publicationKey : "";
       const target = typeof row.target === "string" ? row.target : "";
-      if (!postKey || !target) continue;
+      if (!publicationKey || !target) continue;
       tx.insert(metricSchedule)
-        .values({ postKey, target, nextCheckAt: null, checkCount: 0, frozenAt: null, lastError: null, updatedAt: now })
+        .values({ publicationKey, target, nextCheckAt: null, checkCount: 0, frozenAt: null, lastError: null, updatedAt: now })
         .onConflictDoUpdate({
-          target: [metricSchedule.postKey, metricSchedule.target],
+          target: [metricSchedule.publicationKey, metricSchedule.target],
           set: { nextCheckAt: null, ...(resetCounts ? { checkCount: 0 } : {}), frozenAt: null, lastError: null, updatedAt: now },
         })
         .run();
@@ -135,25 +148,25 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
   return {
     postEventsByType: unsafeDb(backendDb)
       .db.select({
-        severity: postEvents.severity,
-        eventType: postEvents.eventType,
+        severity: publicationEvents.severity,
+        eventType: publicationEvents.eventType,
         count: sql<number>`count(*)`,
-        latest: sql<string | null>`max(${postEvents.createdAt})`,
+        latest: sql<string | null>`max(${publicationEvents.createdAt})`,
       })
-      .from(postEvents)
-      .groupBy(postEvents.severity, postEvents.eventType)
-      .orderBy(postEvents.severity, postEvents.eventType)
+      .from(publicationEvents)
+      .groupBy(publicationEvents.severity, publicationEvents.eventType)
+      .orderBy(publicationEvents.severity, publicationEvents.eventType)
       .all(),
     recentPostEvents: unsafeDb(backendDb)
       .db.select({
-        severity: postEvents.severity,
-        eventType: postEvents.eventType,
-        target: postEvents.target,
-        message: postEvents.message,
-        createdAt: postEvents.createdAt,
+        severity: publicationEvents.severity,
+        eventType: publicationEvents.eventType,
+        target: publicationEvents.target,
+        message: publicationEvents.message,
+        createdAt: publicationEvents.createdAt,
       })
-      .from(postEvents)
-      .orderBy(desc(postEvents.createdAt))
+      .from(publicationEvents)
+      .orderBy(desc(publicationEvents.createdAt))
       .limit(20)
       .all(),
     deliveryIssues: unsafeDb(backendDb)
@@ -164,7 +177,7 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
          GROUP BY status,target
          UNION ALL
          SELECT 'post_target' AS source,status,target,count(*) AS count,max(updated_at) AS latest
-         FROM post_targets
+         FROM publication_targets
          WHERE status IN ('failed','verification_required')
          GROUP BY status,target
          ORDER BY status,source,target`,
@@ -221,14 +234,14 @@ export function auditOperations(backendDb: BackendDb): Record<string, unknown> {
 }
 
 type LatestPublishJob = {
-  post_key: string;
+  publication_key: string;
   target: string;
   status: string;
   last_error: string | null;
 };
 
 type PublicationConsistencyOptions = { ref?: string };
-type PublicationConsistencyScope = { kind: "post"; id: number; postKey: string } | { kind: "video"; id: number };
+type PublicationConsistencyScope = { kind: "post"; id: number; publicationKey: string } | { kind: "video"; id: number };
 type TargetStateMismatch = LatestPublishJob & { target_status: string; job_status: string };
 type PublicationStateMismatch = { post_id: number; status: string; expected: "published" | "failed" | "scheduled" | "cancelled" };
 type VideoTargetJobMismatch = {
@@ -244,7 +257,7 @@ type VideoTargetJobMismatch = {
 };
 type PublicationConsistencyReport = {
   foreignKeyViolations: Record<string, unknown>[];
-  staleTargets: Array<{ post_key: string; target: string; status: string; error: string | null; updated_at: string }>;
+  staleTargets: Array<{ publication_key: string; target: string; status: string; error: string | null; updated_at: string }>;
   targetMismatches: TargetStateMismatch[];
   publicationMismatches: PublicationStateMismatch[];
   videoDraftMismatches: Array<{ id: number; status: string; target_statuses: string }>;
@@ -256,7 +269,7 @@ function publicationConsistencyScope(ref: string | undefined): PublicationConsis
   const match = ref.match(/^(post|video):(\d+)$/);
   const id = Number(match?.[2]);
   if (!match || !Number.isSafeInteger(id) || id <= 0) throw new Error("--ref must look like post:1 or video:1");
-  return match[1] === "post" ? { kind: "post", id, postKey: `post:${id}` } : { kind: "video", id };
+  return match[1] === "post" ? { kind: "post", id, publicationKey: `post:${id}` } : { kind: "video", id };
 }
 
 export function publicationConsistencyReport(
@@ -268,19 +281,19 @@ export function publicationConsistencyReport(
   const staleTargets = (
     unsafeDb(backendDb)
       .sqlite.query(
-        `SELECT t.post_key,t.target,t.status,t.error,t.updated_at
-       FROM post_targets t
+        `SELECT t.publication_key,t.target,t.status,t.error,t.updated_at
+       FROM publication_targets t
        WHERE t.status IN ('queued','publishing')
          AND NOT EXISTS (
            SELECT 1 FROM publish_jobs j
-           WHERE j.post_key=t.post_key AND j.target=t.target AND j.status IN ('queued','publishing')
+           WHERE j.publication_key=t.publication_key AND j.target=t.target AND j.status IN ('queued','publishing')
        )
        ORDER BY t.updated_at`,
       )
       .all() as PublicationConsistencyReport["staleTargets"]
-  ).filter((row) => !scope || (scope.kind === "post" && row.post_key === scope.postKey));
+  ).filter((row) => !scope || (scope.kind === "post" && row.publication_key === scope.publicationKey));
   const targetMismatches = targetStateMismatches(backendDb).filter(
-    (row) => !scope || (scope.kind === "post" && row.post_key === scope.postKey),
+    (row) => !scope || (scope.kind === "post" && row.publication_key === scope.publicationKey),
   );
   const publicationMismatches = publicationStateMismatches(backendDb).filter(
     (row) => !scope || (scope.kind === "post" && row.post_id === scope.id),
@@ -345,8 +358,8 @@ export function repairPublicationConsistency(backendDb: BackendDb, options: Publ
         "DELETE FROM video_metric_schedule WHERE video_target_id NOT IN (SELECT id FROM video_targets) OR video_target_id IN (SELECT id FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts))",
         "DELETE FROM video_jobs WHERE video_draft_id NOT IN (SELECT id FROM video_drafts) OR (video_target_id IS NOT NULL AND video_target_id NOT IN (SELECT id FROM video_targets))",
         "DELETE FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts)",
-        "DELETE FROM metric_schedule WHERE post_key NOT IN (SELECT post_key FROM posts)",
-        "DELETE FROM post_targets WHERE post_key NOT IN (SELECT post_key FROM posts)",
+        "DELETE FROM metric_schedule WHERE publication_key NOT IN (SELECT publication_key FROM posts)",
+        "DELETE FROM publication_targets WHERE publication_key NOT IN (SELECT publication_key FROM posts)",
         "DELETE FROM post_locales WHERE post_id NOT IN (SELECT post_id FROM publications)",
         "DELETE FROM publication_sources WHERE post_id NOT IN (SELECT post_id FROM publications)",
         "DELETE FROM publication_plans WHERE post_id NOT IN (SELECT post_id FROM publications)",
@@ -359,16 +372,16 @@ export function repairPublicationConsistency(backendDb: BackendDb, options: Publ
       const error = normalized === "failed" ? mismatch.last_error : null;
       const changed = unsafeDb(backendDb)
         .sqlite.query(
-          `UPDATE post_targets
+          `UPDATE publication_targets
            SET status=?, error=?, skipped=?, updated_at=?
-           WHERE post_key=? AND target=? AND status=?`,
+           WHERE publication_key=? AND target=? AND status=?`,
         )
         .run(
           normalized,
           error,
           normalized === "skipped" || normalized === "cancelled" ? 1 : 0,
           now,
-          mismatch.post_key,
+          mismatch.publication_key,
           mismatch.target,
           mismatch.target_status,
         ).changes;
@@ -421,17 +434,17 @@ function targetStateMismatches(backendDb: BackendDb): TargetStateMismatch[] {
   const rows = unsafeDb(backendDb)
     .sqlite.query(
       `WITH latest AS (
-         SELECT p.post_key,p.target,p.status,p.last_error
+         SELECT p.publication_key,p.target,p.status,p.last_error
          FROM publish_jobs p
          JOIN (
-           SELECT post_key,target,max(job_id) AS job_id
-           FROM publish_jobs WHERE post_key IS NOT NULL GROUP BY post_key,target
+           SELECT publication_key,target,max(job_id) AS job_id
+           FROM publish_jobs WHERE publication_key IS NOT NULL GROUP BY publication_key,target
          ) x ON x.job_id=p.job_id
        )
-       SELECT t.post_key,t.target,t.status AS target_status,l.status AS job_status,l.last_error
-       FROM post_targets t JOIN latest l ON l.post_key=t.post_key AND l.target=t.target
+       SELECT t.publication_key,t.target,t.status AS target_status,l.status AS job_status,l.last_error
+       FROM publication_targets t JOIN latest l ON l.publication_key=t.publication_key AND l.target=t.target
        WHERE t.target NOT IN ('site_ru','site_en')
-       ORDER BY t.post_key,t.target`,
+       ORDER BY t.publication_key,t.target`,
     )
     .all() as TargetStateMismatch[];
   return rows.filter((row) => row.target_status !== normalizeArchivedJobStatus(row.job_status));

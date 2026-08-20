@@ -183,6 +183,13 @@
       "when": 1786990000000,
       "tag": "0025_default_targets_drop_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1787000000000,
+      "tag": "0026_publication_scoped_delivery",
+      "breakpoints": true
     }
   ]
 }

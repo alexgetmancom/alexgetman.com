@@ -5,7 +5,7 @@ import { type JsonValue, metricSamples, postMetrics } from "../../db/schema.js";
 /** Persistence for collected analytics samples. */
 export function upsertMetrics(
   backendDb: BackendDb,
-  postKey: string,
+  publicationKey: string,
   target: string,
   metrics: Record<string, number>,
   source: string,
@@ -16,19 +16,19 @@ export function upsertMetrics(
   for (const [name, value] of Object.entries(metrics)) {
     const normalized = Number.isFinite(value) ? Math.trunc(value) : 0;
     db.insert(postMetrics)
-      .values({ postKey, target, metricName: name, value: normalized, source, sampledAt, error: null, rawJson: raw })
+      .values({ publicationKey, target, metricName: name, value: normalized, source, sampledAt, error: null, rawJson: raw })
       .onConflictDoUpdate({
-        target: [postMetrics.postKey, postMetrics.target, postMetrics.metricName],
+        target: [postMetrics.publicationKey, postMetrics.target, postMetrics.metricName],
         set: { value: normalized, source, sampledAt, error: null, rawJson: raw },
       })
       .run();
-    db.insert(metricSamples).values({ postKey, target, metricName: name, value: normalized, sampledAt, source }).run();
+    db.insert(metricSamples).values({ publicationKey, target, metricName: name, value: normalized, sampledAt, source }).run();
   }
 }
 
 export function upsertMetricError(
   backendDb: BackendDb,
-  postKey: string,
+  publicationKey: string,
   target: string,
   source: string,
   error: string,
@@ -37,9 +37,9 @@ export function upsertMetricError(
 ): void {
   const sampledAt = new Date().toISOString();
   db.insert(postMetrics)
-    .values({ postKey, target, metricName: "views", value: null, source, sampledAt, error, rawJson: raw })
+    .values({ publicationKey, target, metricName: "views", value: null, source, sampledAt, error, rawJson: raw })
     .onConflictDoUpdate({
-      target: [postMetrics.postKey, postMetrics.target, postMetrics.metricName],
+      target: [postMetrics.publicationKey, postMetrics.target, postMetrics.metricName],
       set: { source, sampledAt, error, rawJson: raw },
     })
     .run();

@@ -4,7 +4,7 @@ import { json, type MediaPayload, timestamps } from "./_shared.js";
 export const posts = sqliteTable(
   "posts",
   {
-    postKey: text().primaryKey(),
+    publicationKey: text().primaryKey(),
     postId: integer(),
     source: text().notNull().default("studio"),
     channel: text().notNull(),
@@ -45,10 +45,10 @@ export const postLocales = sqliteTable(
   (table) => [primaryKey({ columns: [table.postId, table.locale] })],
 );
 
-export const postTargets = sqliteTable(
-  "post_targets",
+export const publicationTargets = sqliteTable(
+  "publication_targets",
   {
-    postKey: text().notNull(),
+    publicationKey: text().notNull(),
     target: text().notNull(),
     status: text().notNull().default("unknown"),
     externalId: text(),
@@ -62,5 +62,8 @@ export const postTargets = sqliteTable(
     updatedAt: text().notNull(),
     rawJson: text(),
   },
-  (table) => [primaryKey({ columns: [table.postKey, table.target] }), index("idx_post_targets_updated_at").on(table.updatedAt)],
+  (table) => [
+    primaryKey({ columns: [table.publicationKey, table.target] }),
+    index("idx_publication_targets_updated_at").on(table.updatedAt),
+  ],
 );

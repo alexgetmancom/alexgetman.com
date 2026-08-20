@@ -48,9 +48,9 @@ function renderOverview(
   // series the read model would load — including the rule that an X row wins
   // over the pipeline's own copy of the same tweet.
   const items = input.xItems ?? [];
-  const covered = new Set(items.map((item) => item.linkedPostKey).filter(Boolean));
+  const covered = new Set(items.map((item) => item.linkedPublicationKey).filter(Boolean));
   const posts = [...(input.data?.posts ?? []), ...(input.previousData?.posts ?? [])].map((post) =>
-    post.post_key && covered.has(post.post_key) ? { ...post, targets: { ...post.targets, x: undefined } } : post,
+    post.publication_key && covered.has(post.publication_key) ? { ...post, targets: { ...post.targets, x: undefined } } : post,
   );
   return renderCombinedSection(
     {
@@ -71,20 +71,20 @@ describe("X Activity", () => {
       const now = new Date().toISOString();
       backendDb.sqlite
         .prepare(
-          "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,text,text_en,status,created_at,updated_at) VALUES ('post:1',1,'x',1,?,?,?,?,?,?)",
+          "INSERT INTO posts(publication_key,post_id,channel,message_id,date_utc,text,text_en,status,created_at,updated_at) VALUES ('post:1',1,'x',1,?,?,?,?,?,?)",
         )
         .run(now, "Русский текст", "English text", "active", now, now);
 
-      recordPublishedXActivity(backendDb, { postKey: "post:1", xPostId: "x-1", url: null, publishedAt: now });
+      recordPublishedXActivity(backendDb, { publicationKey: "post:1", xPostId: "x-1", url: null, publishedAt: now });
       recordPublishedXActivity(backendDb, {
-        postKey: "post:1",
+        publicationKey: "post:1",
         xPostId: "x-1",
         url: "https://x.com/alex/status/x-1",
         publishedAt: new Date(Date.now() + 1_000).toISOString(),
       });
 
       expect(backendDb.db.select().from(xActivityItems).all()).toMatchObject([
-        { xPostId: "x-1", kind: "standalone", text: "English text", url: "https://x.com/alex/status/x-1", linkedPostKey: "post:1" },
+        { xPostId: "x-1", kind: "standalone", text: "English text", url: "https://x.com/alex/status/x-1", linkedPublicationKey: "post:1" },
       ]);
 
       const replyAt = new Date(Date.now() - 60 * 60_000).toISOString();
@@ -99,7 +99,7 @@ describe("X Activity", () => {
             publishedAt: replyAt,
             text: "reply",
             url: "https://x.com/reply",
-            linkedPostKey: null,
+            linkedPublicationKey: null,
             firstSeenAt: now,
             lastSeenAt: now,
           },
@@ -109,7 +109,7 @@ describe("X Activity", () => {
             publishedAt: repostAt,
             text: "repost",
             url: "https://x.com/repost",
-            linkedPostKey: null,
+            linkedPublicationKey: null,
             firstSeenAt: now,
             lastSeenAt: now,
           },
@@ -119,7 +119,7 @@ describe("X Activity", () => {
             publishedAt: unknownAt,
             text: "quote",
             url: "https://x.com/quote",
-            linkedPostKey: null,
+            linkedPublicationKey: null,
             firstSeenAt: now,
             lastSeenAt: now,
           },
@@ -151,12 +151,12 @@ describe("X Activity", () => {
       const now = "2026-07-29T11:49:00.000Z";
       backendDb.sqlite
         .prepare(
-          "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,'A linked Studio post','active',?,?)",
+          "INSERT INTO posts(publication_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,'A linked Studio post','active',?,?)",
         )
         .run(now, now, now);
       backendDb.sqlite
         .prepare(
-          "INSERT INTO post_targets(post_key,target,status,external_id,url,updated_at) VALUES ('post:1','x','published','100','https://x.com/test/status/100',?)",
+          "INSERT INTO publication_targets(publication_key,target,status,external_id,url,updated_at) VALUES ('post:1','x','published','100','https://x.com/test/status/100',?)",
         )
         .run(now);
       const directory = mkdtempSync(join(tmpdir(), "x-activity-"));
@@ -175,8 +175,8 @@ describe("X Activity", () => {
 
       expect(result).toMatchObject({ linkedByExternalId: 1, linkedByText: 0, activityItems: 2, activitySamples: 26, insertedSamples: 13 });
       expect(backendDb.db.select().from(xActivityItems).all()).toMatchObject([
-        { xPostId: "100", kind: "standalone", linkedPostKey: "post:1" },
-        { xPostId: "101", kind: "reply", linkedPostKey: null },
+        { xPostId: "100", kind: "standalone", linkedPublicationKey: "post:1" },
+        { xPostId: "101", kind: "reply", linkedPublicationKey: null },
       ]);
       expect(backendDb.db.select().from(xActivityMetricSnapshots).all()).toHaveLength(26);
       expect((backendDb.sqlite.prepare("SELECT count(*) AS count FROM posts").get() as { count: number }).count).toBe(1);
@@ -206,12 +206,12 @@ describe("X Activity", () => {
       expect(importXAnalyticsCsv(backendDb, file, now)).toMatchObject({ linkedByText: 0, insertedSamples: 0 });
       backendDb.sqlite
         .prepare(
-          "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,?,'active',?,?)",
+          "INSERT INTO posts(publication_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,?,'active',?,?)",
         )
         .run(now, text, now, now);
 
       expect(attachXActivityToPosts(backendDb, false)).toMatchObject({
-        links: [{ xPostId: "100", postKey: "post:1", matchedBy: "direct_text" }],
+        links: [{ xPostId: "100", publicationKey: "post:1", matchedBy: "direct_text" }],
         insertedSamples: 0,
       });
       // The plan wrote nothing: the same call is still available to apply.
@@ -219,7 +219,7 @@ describe("X Activity", () => {
       expect(attachXActivityToPosts(backendDb, true)).toMatchObject({ links: [], insertedSamples: 0, updatedMetrics: 0 });
 
       const samples = backendDb.sqlite
-        .prepare("SELECT metric_name AS metric, value FROM metric_samples WHERE post_key='post:1' AND metric_name='views'")
+        .prepare("SELECT metric_name AS metric, value FROM metric_samples WHERE publication_key='post:1' AND metric_name='views'")
         .all();
       expect(samples).toMatchObject([{ metric: "views", value: 50 }]);
     } finally {
@@ -248,7 +248,7 @@ describe("X Activity", () => {
       for (const [index, item] of cases.entries())
         backendDb.sqlite
           .prepare(
-            "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES (?,?,'test',?,?,?,'active',?,?)",
+            "INSERT INTO posts(publication_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES (?,?,'test',?,?,?,'active',?,?)",
           )
           .run(item.key, index + 1, index + 1, now, item.post, now, now);
       const directory = mkdtempSync(join(tmpdir(), "x-activity-spelling-"));
@@ -271,7 +271,7 @@ describe("X Activity", () => {
 
       expect(result).toMatchObject({ linkedByText: 2 });
       expect(
-        backendDb.sqlite.prepare("SELECT x_post_id AS id, linked_post_key AS post FROM x_activity_items ORDER BY id").all(),
+        backendDb.sqlite.prepare("SELECT x_post_id AS id, linked_publication_key AS post FROM x_activity_items ORDER BY id").all(),
       ).toMatchObject([
         { id: "200", post: "post:1" },
         { id: "201", post: "post:2" },
@@ -292,12 +292,12 @@ describe("X Activity", () => {
       const short = "Shorter post about pricing";
       backendDb.sqlite
         .prepare(
-          "INSERT INTO posts(post_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,?,'active',?,?),('post:2',2,'test',2,?,?,'active',?,?)",
+          "INSERT INTO posts(publication_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,?,'active',?,?),('post:2',2,'test',2,?,?,'active',?,?)",
         )
         .run(now, `${linked} and a tail`, now, now, now, `${short} and a tail`, now, now);
       backendDb.sqlite
         .prepare(
-          "INSERT INTO post_targets(post_key,target,status,external_id,url,updated_at) VALUES ('post:9','x','published','900','https://x.com/test/status/900',?)",
+          "INSERT INTO publication_targets(publication_key,target,status,external_id,url,updated_at) VALUES ('post:9','x','published','900','https://x.com/test/status/900',?)",
         )
         .run(now);
       const directory = mkdtempSync(join(tmpdir(), "x-activity-report-"));
@@ -318,8 +318,8 @@ describe("X Activity", () => {
       expect(report.imports).toMatchObject([{ id: 1, rowCount: 2, sampledAt: now, items: 2 }]);
       expect(report.items).toMatchObject({ total: 2, linked: 1, unlinked: 1 });
       // post:9 was published to X but no export row carries it.
-      expect(report.editorialCoverage).toMatchObject({ xTargets: 2, covered: 1, uncovered: [{ postKey: "post:9" }] });
-      expect(report.linkCandidates).toMatchObject([{ xPostId: "101", postKey: "post:2" }]);
+      expect(report.editorialCoverage).toMatchObject({ xTargets: 2, covered: 1, uncovered: [{ publicationKey: "post:9" }] });
+      expect(report.linkCandidates).toMatchObject([{ xPostId: "101", publicationKey: "post:2" }]);
       expect(report.topUnlinked[0]).toMatchObject({ xPostId: "101", metrics: { views: 500, likes: 2, replies: 1 } });
     } finally {
       backendDb.close();
@@ -330,7 +330,7 @@ describe("X Activity", () => {
     const editorial = {
       posts: [
         {
-          post_key: "post:1",
+          publication_key: "post:1",
           date: "2026-07-29T10:00:00.000Z",
           text_en: "Editorial post",
           targets: {
@@ -361,7 +361,7 @@ describe("X Activity", () => {
         publishedAt: "2026-07-29T10:00:00.000Z",
         text: "Editorial post",
         url: "https://x.com/test/status/100",
-        linkedPostKey: "post:1",
+        linkedPublicationKey: "post:1",
         metrics: { views: 50, interactions: 8, replies: 1 },
       },
       {
@@ -370,7 +370,7 @@ describe("X Activity", () => {
         publishedAt: "2026-07-29T11:00:00.000Z",
         text: "@friend Useful answer",
         url: "https://x.com/test/status/101",
-        linkedPostKey: null,
+        linkedPublicationKey: null,
         metrics: { views: 500, interactions: 40, replies: 3 },
       },
     ];

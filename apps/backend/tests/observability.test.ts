@@ -1,7 +1,15 @@
 import { describe, expect, it, mock } from "bun:test";
 import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
-import { alertDedup, channelConnections, credentialChecks, postEvents, publishJobs, siteJobs, workerState } from "../src/db/schema.js";
+import {
+  alertDedup,
+  channelConnections,
+  credentialChecks,
+  publicationEvents,
+  publishJobs,
+  siteJobs,
+  workerState,
+} from "../src/db/schema.js";
 import { expectedWorkerNames } from "../src/foundation/runtime/worker-state.js";
 import { renderDashboard } from "../src/interfaces/web/dashboard.js";
 import { deliverPendingAlerts } from "../src/observability/alerts.js";
@@ -24,13 +32,13 @@ function testHarness() {
 
 function recordFailure(backendDb: ReturnType<typeof openBackendDb>, message: string): void {
   backendDb.db
-    .insert(postEvents)
+    .insert(publicationEvents)
     .values({ eventType: "publish.failed", severity: "error", target: "x", message, createdAt: new Date().toISOString() })
     .run();
 }
 
 function countEvents(backendDb: ReturnType<typeof openBackendDb>, eventType: string): number {
-  return backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, eventType)).all().length;
+  return backendDb.db.select().from(publicationEvents).where(eq(publicationEvents.eventType, eventType)).all().length;
 }
 
 describe("observability", () => {
@@ -73,7 +81,7 @@ describe("observability", () => {
         expect(
           backendDb.db
             .select()
-            .from(postEvents)
+            .from(publicationEvents)
             .all()
             .filter((event) => event.ackedAt != null),
         ).toHaveLength(attempts);
@@ -97,7 +105,7 @@ describe("observability", () => {
         .insert(publishJobs)
         .values({
           postId: 1,
-          postKey: "post:stale",
+          publicationKey: "post:stale",
           messageId: 1,
           target: "threads_ru",
           status: "publishing",
@@ -149,7 +157,7 @@ describe("observability", () => {
         .insert(publishJobs)
         .values({
           postId: 8,
-          postKey: "post:terminal",
+          publicationKey: "post:terminal",
           messageId: 8,
           target: "telegram_stories",
           status: "failed",
@@ -318,7 +326,7 @@ function insertExpectedWorkers(
 
 function insertAlertEvent(backendDb: ReturnType<typeof openBackendDb>, severity: string, ackedAt: string | null): void {
   backendDb.db
-    .insert(postEvents)
+    .insert(publicationEvents)
     .values({ eventType: "publish.failed", severity, target: "x", message: "m", ackedAt, createdAt: checkedAt })
     .run();
 }

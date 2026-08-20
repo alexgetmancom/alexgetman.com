@@ -120,12 +120,12 @@ describe("operations registry", () => {
     backendDb = openBackendDb(":memory:");
 
     // The bare number is a spelling of the ref, and the journal has to carry
-    // the resolved one: `160` in post_key joins to nothing.
+    // the resolved one: `160` in publication_key joins to nothing.
     await runOperation("publication-repair", context(backendDb), { ref: "160" });
     await runOperation("recent", context(backendDb), {});
 
-    expect(backendDb.sqlite.prepare("SELECT post_key, event_type, target FROM post_events").all()).toEqual([
-      { post_key: "post:160", event_type: "operations.command", target: "test" },
+    expect(backendDb.sqlite.prepare("SELECT publication_key, event_type, target FROM publication_events").all()).toEqual([
+      { publication_key: "post:160", event_type: "operations.command", target: "test" },
     ]);
   });
 

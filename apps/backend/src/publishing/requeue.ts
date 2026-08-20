@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { isSiteTarget, targetLocale } from "../botTargets.js";
 import { textLocale } from "../content/text-locale.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
-import { postTargets, publications, publishJobs, siteJobs } from "../db/schema.js";
+import { publications, publicationTargets, publishJobs, siteJobs } from "../db/schema.js";
 import { jsonObject } from "../json.js";
 import { requeuedPostTarget, requeuedPublishJobColumns } from "./job-policy.js";
 import { localizeTargetPayload } from "./payload.js";
@@ -46,7 +46,7 @@ function unpublishable(payload: Record<string, unknown>, target: string): Requeu
  * reconciliation. */
 export const RETRY_UNLESS_HELD = ["queued", "failed", "cancelled", "skipped", "published"] as const;
 
-export type RequeueScope = { postId: number | null; postKey: string; messageId: number | null };
+export type RequeueScope = { postId: number | null; publicationKey: string; messageId: number | null };
 
 type RequeueOptions = {
   /** Job states this caller may pull back. */
@@ -127,7 +127,7 @@ function requeueSiteTarget(tx: RequeueDb, scope: RequeueScope, target: string, o
     .returning({ jobId: siteJobs.jobId })
     .get();
   if (!requeued) return { target, outcome: "not_retryable", status: row.status };
-  mirrorRequeuedTarget(tx, scope.postKey, target, now);
+  mirrorRequeuedTarget(tx, scope.publicationKey, target, now);
   return { target, outcome: "requeued", status: row.status };
 }
 
@@ -139,7 +139,7 @@ function requeueSocialTarget(
   source: () => Record<string, unknown>,
   now: string,
 ): RequeueResult {
-  const whereRef = scope.postId != null ? eq(publishJobs.postId, scope.postId) : eq(publishJobs.postKey, scope.postKey);
+  const whereRef = scope.postId != null ? eq(publishJobs.postId, scope.postId) : eq(publishJobs.publicationKey, scope.publicationKey);
   const row = tx
     .select()
     .from(publishJobs)
@@ -163,7 +163,7 @@ function requeueSocialTarget(
     .returning({ jobId: publishJobs.jobId })
     .get();
   if (!requeued) return { target, outcome: "not_retryable", status: row.status };
-  mirrorRequeuedTarget(tx, row.postKey ?? scope.postKey, target, now);
+  mirrorRequeuedTarget(tx, row.publicationKey ?? scope.publicationKey, target, now);
   return { target, outcome: "requeued", status: row.status };
 }
 
@@ -178,7 +178,7 @@ function createPublishJob(tx: RequeueDb, scope: RequeueScope, target: string, so
   tx.insert(publishJobs)
     .values({
       postId: scope.postId,
-      postKey: scope.postKey,
+      publicationKey: scope.publicationKey,
       messageId: scope.messageId,
       target,
       status: "queued",
@@ -193,7 +193,7 @@ function createPublishJob(tx: RequeueDb, scope: RequeueScope, target: string, so
       updatedAt: now,
     })
     .run();
-  mirrorRequeuedTarget(tx, scope.postKey, target, now);
+  mirrorRequeuedTarget(tx, scope.publicationKey, target, now);
   return { target, outcome: "requeued", status: null };
 }
 
@@ -203,16 +203,16 @@ function pickPayload(source: Record<string, unknown>, payloadJson: unknown): Rec
   return Object.keys(source).length > 0 ? source : jsonObject(payloadJson);
 }
 
-function mirrorRequeuedTarget(tx: RequeueDb, postKey: string, target: string, now: string): void {
+function mirrorRequeuedTarget(tx: RequeueDb, publicationKey: string, target: string, now: string): void {
   const previous = tx
-    .select({ status: postTargets.status, externalId: postTargets.externalId, url: postTargets.url })
-    .from(postTargets)
-    .where(and(eq(postTargets.postKey, postKey), eq(postTargets.target, target)))
+    .select({ status: publicationTargets.status, externalId: publicationTargets.externalId, url: publicationTargets.url })
+    .from(publicationTargets)
+    .where(and(eq(publicationTargets.publicationKey, publicationKey), eq(publicationTargets.target, target)))
     .get();
-  const mirrored = requeuedPostTarget(postKey, target, now);
-  tx.insert(postTargets)
+  const mirrored = requeuedPostTarget(publicationKey, target, now);
+  tx.insert(publicationTargets)
     .values(mirrored.values)
-    .onConflictDoUpdate({ target: [postTargets.postKey, postTargets.target], set: mirrored.patch })
+    .onConflictDoUpdate({ target: [publicationTargets.publicationKey, publicationTargets.target], set: mirrored.patch })
     .run();
   // The row is about to describe a different remote object, so it drops the id
   // of the one it named. When that object was live, dropping the id is the only
@@ -222,7 +222,7 @@ function mirrorRequeuedTarget(tx: RequeueDb, postKey: string, target: string, no
   if (previous?.status !== "published" || !previous.externalId) return;
   insertEvent(
     tx,
-    postKey,
+    publicationKey,
     target,
     "publish.target.identity_dropped",
     "warn",

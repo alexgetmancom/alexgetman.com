@@ -1,7 +1,7 @@
 import { describe, expect, it, setSystemTime } from "bun:test";
 import type { Context } from "grammy";
 import { queueScreen, showQueue } from "../src/bot/queue.js";
-import { draftStoryCards, drafts, posts, postTargets, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
+import { draftStoryCards, drafts, posts, publicationTargets, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
 import type { StudioQueueSnapshot } from "../src/studio/services/queue.js";
 import { queueService } from "../src/studio/services/queue.js";
 import { registerTestChannels } from "./helpers/channels.js";
@@ -30,7 +30,7 @@ describe("Telegram work queue", () => {
       backendDb.db
         .insert(posts)
         .values({
-          postKey: "post:10",
+          publicationKey: "post:10",
           postId: 10,
           channel: "studio",
           messageId: 10,
@@ -41,9 +41,9 @@ describe("Telegram work queue", () => {
         })
         .run();
       backendDb.db
-        .insert(postTargets)
+        .insert(publicationTargets)
         .values({
-          postKey: "post:10",
+          publicationKey: "post:10",
           target: "telegram",
           status: "published",
           publishedAt: postPublishedAt,
@@ -130,7 +130,7 @@ describe("Telegram work queue", () => {
         .insert(publishJobs)
         .values({
           postId: 101,
-          postKey: "post:101",
+          publicationKey: "post:101",
           messageId: 101,
           target: "telegram_ru",
           status: "failed",

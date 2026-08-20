@@ -1,6 +1,6 @@
 import { and, count, desc, eq } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
-import { postEvents } from "../../db/schema.js";
+import { publicationEvents } from "../../db/schema.js";
 import { t } from "../../foundation/i18n/index.js";
 import { STUDIO_LOCALE_TAGS, type StudioLocale } from "../../foundation/locale.js";
 
@@ -16,13 +16,13 @@ export type MilestoneHistory = {
 /** Durable audience thresholds in reverse chronological order. These events
  * are the achievement record itself, rather than notification delivery state. */
 export function creatorMilestoneHistory(backendDb: BackendDb, offset: number, locale: StudioLocale, timeZone: string): MilestoneHistory {
-  const where = and(eq(postEvents.eventType, "analytics.milestone.reached"), eq(postEvents.severity, "info"));
-  const total = unsafeDb(backendDb).db.select({ value: count() }).from(postEvents).where(where).get()?.value ?? 0;
+  const where = and(eq(publicationEvents.eventType, "analytics.milestone.reached"), eq(publicationEvents.severity, "info"));
+  const total = unsafeDb(backendDb).db.select({ value: count() }).from(publicationEvents).where(where).get()?.value ?? 0;
   const items = unsafeDb(backendDb)
-    .db.select({ id: postEvents.id, message: postEvents.message, reachedAt: postEvents.createdAt })
-    .from(postEvents)
+    .db.select({ id: publicationEvents.id, message: publicationEvents.message, reachedAt: publicationEvents.createdAt })
+    .from(publicationEvents)
     .where(where)
-    .orderBy(desc(postEvents.createdAt), desc(postEvents.id))
+    .orderBy(desc(publicationEvents.createdAt), desc(publicationEvents.id))
     .limit(PAGE_SIZE)
     .offset(Math.max(0, offset))
     .all();

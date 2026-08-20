@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { postEvents, studioNotificationJobs, videoTargets } from "../src/db/schema.js";
+import { publicationEvents, studioNotificationJobs, videoTargets } from "../src/db/schema.js";
 import { replaceVideoTargets } from "../src/publishing/video-service.js";
 import { videoService } from "../src/studio/services/videos.js";
 import { useBackendDb } from "./helpers/db.js";
@@ -75,7 +75,7 @@ function publishedInstagram(backendDb: UnsafeBackendDb, draftId: number): void {
     .run();
 }
 
-/** post_events.details_json is a TEXT column holding a JSON string. */
+/** publication_events.details_json is a TEXT column holding a JSON string. */
 function eventDetails(event: { detailsJson?: string | null } | undefined): Record<string, unknown> {
   return JSON.parse(event?.detailsJson ?? "{}") as Record<string, unknown>;
 }
@@ -83,8 +83,10 @@ function eventDetails(event: { detailsJson?: string | null } | undefined): Recor
 function cancellationEvents(backendDb: UnsafeBackendDb, draftId: number) {
   return backendDb.db
     .select()
-    .from(postEvents)
-    .where(and(eq(postEvents.postKey, `video:${draftId}`), eq(postEvents.eventType, "studio.notification.video_cancelled")))
+    .from(publicationEvents)
+    .where(
+      and(eq(publicationEvents.publicationKey, `video:${draftId}`), eq(publicationEvents.eventType, "studio.notification.video_cancelled")),
+    )
     .all();
 }
 

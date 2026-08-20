@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { postTargets, publishJobs } from "../db/schema.js";
+import { publicationTargets, publishJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import { refreshPublicationStatus } from "../publishing/publication-status.js";
 import type { ResolvedPublicationRef } from "./publication-ref.js";
@@ -33,17 +33,17 @@ export function settleAmbiguousTarget(backendDb: BackendDb, input: SettleInput):
   const job = db
     .select()
     .from(publishJobs)
-    .where(and(eq(publishJobs.postKey, input.ref.postKey), eq(publishJobs.target, input.target)))
+    .where(and(eq(publishJobs.publicationKey, input.ref.publicationKey), eq(publishJobs.target, input.target)))
     .orderBy(desc(publishJobs.jobId))
     .get();
-  if (!job) throw new Error(`${input.target} has no publish job on ${input.ref.postKey}`);
+  if (!job) throw new Error(`${input.target} has no publish job on ${input.ref.publicationKey}`);
   if (job.status !== "verification_required")
     throw new Error(`${input.target} is ${job.status}, not verification_required; settle only answers an ambiguous target`);
   const found = input.externalId !== undefined;
   const plan = {
     ok: true,
     action: "settle",
-    post_key: input.ref.postKey,
+    publication_key: input.ref.publicationKey,
     target: input.target,
     job_id: job.jobId,
     outcome: found ? "published" : "requeued",
@@ -72,7 +72,7 @@ export function settleAmbiguousTarget(backendDb: BackendDb, input: SettleInput):
       .returning({ jobId: publishJobs.jobId })
       .get();
     if (!won) return false;
-    tx.update(postTargets)
+    tx.update(publicationTargets)
       .set({
         status: found ? "published" : "queued",
         externalId: input.externalId ?? null,
@@ -84,10 +84,10 @@ export function settleAmbiguousTarget(backendDb: BackendDb, input: SettleInput):
         verifiedAt: null,
         updatedAt: now,
       })
-      .where(and(eq(postTargets.postKey, input.ref.postKey), eq(postTargets.target, input.target)))
+      .where(and(eq(publicationTargets.publicationKey, input.ref.publicationKey), eq(publicationTargets.target, input.target)))
       .run();
     recordDomainEvent(backendDb.events, {
-      ref: input.ref.postKey,
+      ref: input.ref.publicationKey,
       target: input.target,
       type: found ? "publish.job.settled_published" : "publish.job.settled_absent",
       severity: "info",

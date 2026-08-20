@@ -32,9 +32,9 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
     rawJson: JSON.stringify(plan.payload),
   };
   tx.insert(posts)
-    .values({ postKey: plan.postKey, ...postValues })
+    .values({ publicationKey: plan.publicationKey, ...postValues })
     .onConflictDoUpdate({
-      target: posts.postKey,
+      target: posts.publicationKey,
       set: {
         postId: plan.postId,
         dateUtc: postValues.dateUtc,
@@ -122,7 +122,7 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
     if (enabled && publishAt != null && !isSiteTarget(target) && !finalTargets.has(target))
       enqueuePublishJobTx(tx, {
         postId: plan.postId,
-        postKey: plan.postKey,
+        publicationKey: plan.publicationKey,
         messageId: plan.messageId,
         target,
         payload: localizeTargetPayload(plan.payload, target),

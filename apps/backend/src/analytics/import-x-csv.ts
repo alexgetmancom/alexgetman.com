@@ -89,14 +89,14 @@ export function importXAnalyticsCsv(
   };
   const upsertActivity = unsafeDb(backendDb).sqlite.prepare(
     `INSERT INTO x_activity_items
-     (x_post_id,kind,published_at,text,url,linked_post_key,first_seen_at,last_seen_at,raw_json)
+     (x_post_id,kind,published_at,text,url,linked_publication_key,first_seen_at,last_seen_at,raw_json)
      VALUES (?,?,?,?,?,?,?,?,?)
      ON CONFLICT(x_post_id) DO UPDATE SET
        kind=excluded.kind,
        published_at=coalesce(excluded.published_at,x_activity_items.published_at),
        text=excluded.text,
        url=excluded.url,
-       linked_post_key=coalesce(excluded.linked_post_key,x_activity_items.linked_post_key),
+       linked_publication_key=coalesce(excluded.linked_publication_key,x_activity_items.linked_publication_key),
        last_seen_at=excluded.last_seen_at,
        raw_json=excluded.raw_json`,
   );

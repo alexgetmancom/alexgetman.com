@@ -3,10 +3,10 @@ import { and, eq } from "drizzle-orm";
 import {
   credentialChecks,
   drafts,
-  postEvents,
-  postTargets,
+  publicationEvents,
   publicationPlans,
   publications,
+  publicationTargets,
   publishJobs,
   siteJobs,
 } from "../src/db/schema.js";
@@ -60,7 +60,7 @@ describe("publication reconciliation", () => {
         .values([
           {
             postId: 90,
-            postKey: "post:90",
+            publicationKey: "post:90",
             messageId: 90,
             target: "threads_en",
             status: "published",
@@ -69,7 +69,7 @@ describe("publication reconciliation", () => {
           },
           {
             postId: 90,
-            postKey: "post:90",
+            publicationKey: "post:90",
             messageId: 90,
             target: "telegram",
             status: "queued",
@@ -105,7 +105,7 @@ describe("publication reconciliation", () => {
       refreshPublicationStatus(backendDb, 90);
       refreshPublicationStatus(backendDb, 90);
 
-      const events = backendDb.db.select().from(postEvents).all();
+      const events = backendDb.db.select().from(publicationEvents).all();
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({ eventType: "delivery.post.locale.completed", target: "en" });
       expect(JSON.parse(events[0]?.detailsJson ?? "{}")).toMatchObject({
@@ -136,7 +136,7 @@ describe("publication reconciliation", () => {
         .insert(publishJobs)
         .values({
           postId: 91,
-          postKey: "post:91",
+          publicationKey: "post:91",
           messageId: 91,
           target: "telegram_ru",
           status: "failed",
@@ -150,11 +150,11 @@ describe("publication reconciliation", () => {
         .run();
 
       refreshPublicationStatus(backendDb, 91);
-      expect(backendDb.db.select({ eventType: postEvents.eventType }).from(postEvents).all()).toHaveLength(1);
+      expect(backendDb.db.select({ eventType: publicationEvents.eventType }).from(publicationEvents).all()).toHaveLength(1);
       expect(backendDb.db.select({ status: drafts.status }).from(drafts).where(eq(drafts.id, 91)).get()).toEqual({ status: "failed" });
 
       refreshPublicationStatus(backendDb, 91);
-      expect(backendDb.db.select({ eventType: postEvents.eventType }).from(postEvents).all()).toHaveLength(1);
+      expect(backendDb.db.select({ eventType: publicationEvents.eventType }).from(publicationEvents).all()).toHaveLength(1);
     }));
 
   it("announces the completion again once a retried target lands", () =>
@@ -177,10 +177,18 @@ describe("publication reconciliation", () => {
       backendDb.db
         .insert(publishJobs)
         .values([
-          { postId: 92, postKey: "post:92", messageId: 92, target: "telegram_ru", status: "published", createdAt: now, updatedAt: now },
           {
             postId: 92,
-            postKey: "post:92",
+            publicationKey: "post:92",
+            messageId: 92,
+            target: "telegram_ru",
+            status: "published",
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            postId: 92,
+            publicationKey: "post:92",
             messageId: 92,
             target: "instagram_stories",
             status: "failed",
@@ -212,7 +220,7 @@ describe("publication reconciliation", () => {
     withDb(async (backendDb) => {
       const jobId = enqueuePublishJobTx(backendDb.db, {
         postId: 81,
-        postKey: "post:81",
+        publicationKey: "post:81",
         messageId: 81,
         target: "threads_ru",
         payload: { text: "published" },
@@ -225,8 +233,14 @@ describe("publication reconciliation", () => {
         .where(eq(publishJobs.jobId, jobId))
         .run();
       backendDb.db
-        .insert(postTargets)
-        .values({ postKey: "post:81", target: "threads_ru", status: "verification_required", externalId: "thread-81", updatedAt: now })
+        .insert(publicationTargets)
+        .values({
+          publicationKey: "post:81",
+          target: "threads_ru",
+          status: "verification_required",
+          externalId: "thread-81",
+          updatedAt: now,
+        })
         .run();
 
       const fetchImpl = (async () =>
@@ -241,11 +255,11 @@ describe("publication reconciliation", () => {
       expect(
         backendDb.db
           .select({
-            status: postTargets.status,
-            confirmationSource: postTargets.confirmationSource,
+            status: publicationTargets.status,
+            confirmationSource: publicationTargets.confirmationSource,
           })
-          .from(postTargets)
-          .where(and(eq(postTargets.postKey, "post:81"), eq(postTargets.target, "threads_ru")))
+          .from(publicationTargets)
+          .where(and(eq(publicationTargets.publicationKey, "post:81"), eq(publicationTargets.target, "threads_ru")))
           .get(),
       ).toEqual({ status: "published", confirmationSource: "provider_verify" });
     }));
@@ -254,7 +268,7 @@ describe("publication reconciliation", () => {
     withDb(async (backendDb) => {
       const jobId = enqueuePublishJobTx(backendDb.db, {
         postId: 83,
-        postKey: "post:83",
+        publicationKey: "post:83",
         messageId: 83,
         target: "threads_ru",
         payload: { text: "retried before it turned ambiguous" },
@@ -269,8 +283,14 @@ describe("publication reconciliation", () => {
         .where(eq(publishJobs.jobId, jobId))
         .run();
       backendDb.db
-        .insert(postTargets)
-        .values({ postKey: "post:83", target: "threads_ru", status: "verification_required", externalId: "thread-83", updatedAt: now })
+        .insert(publicationTargets)
+        .values({
+          publicationKey: "post:83",
+          target: "threads_ru",
+          status: "verification_required",
+          externalId: "thread-83",
+          updatedAt: now,
+        })
         .run();
 
       const fetchImpl = (async () =>
@@ -280,9 +300,9 @@ describe("publication reconciliation", () => {
       expect(await runPublicationReconciliation(backendDb, config, fetchImpl)).toMatchObject({ checked: 1, resolved: 1 });
       expect(
         backendDb.db
-          .select({ status: postTargets.status })
-          .from(postTargets)
-          .where(and(eq(postTargets.postKey, "post:83"), eq(postTargets.target, "threads_ru")))
+          .select({ status: publicationTargets.status })
+          .from(publicationTargets)
+          .where(and(eq(publicationTargets.publicationKey, "post:83"), eq(publicationTargets.target, "threads_ru")))
           .get(),
       ).toEqual({ status: "published" });
     }));
@@ -291,7 +311,7 @@ describe("publication reconciliation", () => {
     withDb(async (backendDb) => {
       const jobId = enqueuePublishJobTx(backendDb.db, {
         postId: 84,
-        postKey: "post:84",
+        publicationKey: "post:84",
         messageId: 84,
         target: "threads_ru",
         payload: { text: "unknown outcome" },
@@ -304,8 +324,14 @@ describe("publication reconciliation", () => {
         .where(eq(publishJobs.jobId, jobId))
         .run();
       backendDb.db
-        .insert(postTargets)
-        .values({ postKey: "post:84", target: "threads_ru", status: "verification_required", externalId: "thread-84", updatedAt: now })
+        .insert(publicationTargets)
+        .values({
+          publicationKey: "post:84",
+          target: "threads_ru",
+          status: "verification_required",
+          externalId: "thread-84",
+          updatedAt: now,
+        })
         .run();
 
       const fetchImpl = (async () => new Response("expired token", { status: 401 })) as unknown as typeof fetch;
@@ -322,7 +348,7 @@ describe("publication reconciliation", () => {
     withDb(async (backendDb) => {
       const jobId = enqueuePublishJobTx(backendDb.db, {
         postId: 82,
-        postKey: "post:82",
+        publicationKey: "post:82",
         messageId: 82,
         target: "telegram",
         payload: { text: "unknown" },
@@ -335,8 +361,8 @@ describe("publication reconciliation", () => {
         .where(eq(publishJobs.jobId, jobId))
         .run();
       backendDb.db
-        .insert(postTargets)
-        .values({ postKey: "post:82", target: "telegram", status: "verification_required", updatedAt: now })
+        .insert(publicationTargets)
+        .values({ publicationKey: "post:82", target: "telegram", status: "verification_required", updatedAt: now })
         .run();
 
       const config = loadTestConfig();
@@ -350,22 +376,22 @@ describe("publication reconciliation", () => {
       ).toEqual({ reconcileAttemptCount: RECONCILE_MAX_ATTEMPTS, nextAttemptAt: null });
       expect(
         backendDb.db
-          .select({ eventType: postEvents.eventType })
-          .from(postEvents)
-          .where(eq(postEvents.eventType, "studio.notification.publication_verification_required"))
+          .select({ eventType: publicationEvents.eventType })
+          .from(publicationEvents)
+          .where(eq(publicationEvents.eventType, "studio.notification.publication_verification_required"))
           .all(),
       ).toHaveLength(1);
       expect(await runPublicationReconciliation(backendDb, config)).toMatchObject({ checked: 0, unresolved: 1 });
       expect(
         backendDb.db
-          .select({ eventType: postEvents.eventType })
-          .from(postEvents)
-          .where(eq(postEvents.eventType, "studio.notification.publication_verification_required"))
+          .select({ eventType: publicationEvents.eventType })
+          .from(publicationEvents)
+          .where(eq(publicationEvents.eventType, "studio.notification.publication_verification_required"))
           .all(),
       ).toHaveLength(1);
     }));
 });
 
 function completionEvents(backendDb: Parameters<Parameters<typeof withDb>[0]>[0]) {
-  return backendDb.db.select().from(postEvents).where(eq(postEvents.eventType, "delivery.post.completed")).all();
+  return backendDb.db.select().from(publicationEvents).where(eq(publicationEvents.eventType, "delivery.post.completed")).all();
 }

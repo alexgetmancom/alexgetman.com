@@ -23,7 +23,7 @@ export function createPublicationPlan(
   const parsedTargets = parseTargets(draft.targets_json);
   assertKnownTargets(parsedTargets);
   const messageId = Number(draft.channel_message_id ?? postId);
-  const postKey = `post:${postId}`;
+  const publicationKey = `post:${postId}`;
   const contentRu = draftLocaleContent(draft, "ru");
   const contentEn = draftLocaleContent(draft, "en");
   const { media: mediaRu, entities: entitiesRu, text: textRu } = contentRu;
@@ -95,7 +95,7 @@ export function createPublicationPlan(
   return {
     draftId,
     postId,
-    postKey,
+    publicationKey,
     messageId,
     mode: schedule.mode,
     ruAt: schedule.ruAt,

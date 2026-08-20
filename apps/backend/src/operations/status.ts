@@ -57,7 +57,7 @@ export function compactOperationsStatus(config: BackendConfig, backendDb: Backen
   const workerRows = workers(backendDb, new Set(expectedWorkers));
   const observedWorkers = new Set(workerRows.map((worker) => worker.name));
   const missingWorkers = expectedWorkers.filter((name) => !observedWorkers.has(name));
-  const postTargetCounts = statusCounts(backendDb, "post_targets");
+  const postTargetCounts = statusCounts(backendDb, "publication_targets");
   const publishJobCounts = statusCounts(backendDb, "publish_jobs");
   const siteJobCounts = statusCounts(backendDb, "site_jobs");
   const videoDraftCounts = statusCounts(backendDb, "video_drafts");
