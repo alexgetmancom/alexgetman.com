@@ -5,6 +5,7 @@ import type { StudioMediaAssetRecord } from "../application/ports.js";
 import type { BackendDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { fileExtension, imageExtension, imageExtensionForContentType, mediaContentType } from "../foundation/media-types.js";
 
 /** The mounted media volume is sized around this, and the HTTP upload path
  * rejects a larger body before it reads it. */
@@ -67,7 +68,7 @@ export async function importStudioMediaFile(backendDb: BackendDb, config: Backen
     : backendDb.studioMediaAssets.insertIfAbsent({
         actorId,
         kind,
-        mimeType: input.contentType || (kind === "video" ? "video/mp4" : "image/jpeg"),
+        mimeType: input.contentType || mediaContentType(filename) || (kind === "video" ? "video/mp4" : "image/jpeg"),
         filename: safeFilename(input.filename) || filename,
         localPath: storedPath,
         byteSize,
@@ -115,19 +116,13 @@ function mediaKind(contentType: string, filename: string): StudioMediaKind | nul
   const value = contentType.toLowerCase();
   if (value.startsWith("image/")) return "photo";
   if (value === "video/mp4") return "video";
-  const extension = path.extname(filename).toLowerCase();
-  if ([".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"].includes(extension)) return "photo";
-  return extension === ".mp4" ? "video" : null;
+  if (imageExtension(filename)) return "photo";
+  return fileExtension(filename) === ".mp4" ? "video" : null;
 }
 
 function mediaExtension(kind: StudioMediaKind, contentType: string, filename: string): string {
-  const existing = path.extname(filename).toLowerCase();
   if (kind === "video") return ".mp4";
-  if ([".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"].includes(existing)) return existing === ".jpeg" ? ".jpg" : existing;
-  if (contentType === "image/png") return ".png";
-  if (contentType === "image/webp") return ".webp";
-  if (contentType === "image/gif") return ".gif";
-  return ".jpg";
+  return imageExtension(filename) ?? imageExtensionForContentType(contentType) ?? ".jpg";
 }
 
 function safeFilename(value: string): string {

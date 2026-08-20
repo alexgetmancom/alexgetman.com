@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Context } from "grammy";
 import { extractMessage } from "../src/bot/message.js";
-import { mediaSizeAdvice, RECOMMENDED_MEDIA_BYTES } from "../src/publishing/media-size-advice.js";
+import { mediaSizeAdvice, RECOMMENDED_MEDIA_BYTES } from "../src/content/media-size-advice.js";
 
 /** extractMessage only ever reads ctx.message, so a literal is a truer stand-in
  * than a full grammy Context: it keeps each case's shape visible. */

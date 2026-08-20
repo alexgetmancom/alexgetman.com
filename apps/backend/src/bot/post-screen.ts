@@ -1,12 +1,12 @@
 import type { Context } from "grammy";
 import { flowStepInput } from "../application/conversation-flow.js";
+import { mediaSizeAdvice } from "../content/media-size-advice.js";
 import type { DraftMessage } from "../content/message.js";
 import { translateDraftText } from "../content/translation.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { describeError, t } from "../foundation/i18n/index.js";
-import { mediaSizeAdvice } from "../publishing/media-size-advice.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
 import { appendPendingAlbum } from "./albums.js";

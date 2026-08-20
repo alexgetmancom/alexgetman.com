@@ -7,10 +7,11 @@ by three orders of magnitude in size.
 
 ## The database, which arrives on its own
 
-Every day, silently, the Studio sends a copy of its database to the same
-Telegram chat you author from: posts, schedules, delivery state, analytics,
-external ids. Nothing to set up — it is on unless you turn it off under
-**Settings → Notifications → Database backup**.
+When Telegram is configured, the Studio silently sends a daily copy of its
+database to the same chat you author from: posts, schedules, delivery state,
+analytics and external ids. It is on unless you turn it off under **Settings →
+Notifications → Database backup**. An MCP-only or site-only Studio has no chat
+to deliver that copy to, so back up its `app-data` volume directly.
 
 It is a real snapshot taken with SQLite's own backup, never a file copy. A live
 database has a write-ahead log beside it, and a plain copy of one is a corrupt

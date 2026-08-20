@@ -30,7 +30,7 @@ export function startTelegramWorkers(config: BackendConfig, backendDb: BackendDb
     }),
     startLoop("telegram-alerts", interfacePollMs, async () => {
       const actorId = config.CONTROLLER_ADMIN_IDS[0];
-      const alerts = await deliverPendingAlerts(config, backendDb, {
+      const alerts = await deliverPendingAlerts(backendDb, {
         ...(actorId === undefined ? {} : { sendAlert: async (text) => void (await bot.api.sendMessage(actorId, text)) }),
       });
       if (alerts) log("debug", "telegram alert loop tick", { alerts });

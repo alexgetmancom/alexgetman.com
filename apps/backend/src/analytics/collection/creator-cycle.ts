@@ -4,6 +4,7 @@ import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { log } from "../../foundation/logger.js";
 import { recordUsage, type UsageFeatureKey } from "../../observability/usage.js";
+import { uniqueAudienceConnections } from "../audience-groups.js";
 import { evaluateAudienceMilestones } from "../audience-milestones.js";
 import { claimSync } from "../snapshots/creator-store.js";
 import { syncCommunityProfiles, syncInstagramProfile, syncXProfile, syncYouTubeProfile, syncZernioChannelProfile } from "./profile-sync.js";
@@ -40,7 +41,7 @@ async function step(backendDb: BackendDb, name: string, featureKey: UsageFeature
 export async function runAnalyticsCycle(config: BackendConfig, backendDb: BackendDb, fetchImpl: typeof fetch = fetch): Promise<number> {
   const profileInterval = config.CREATOR_PROFILE_REFRESH_INTERVAL_SECONDS;
   let profiles = 0;
-  const channels = listChannels(backendDb);
+  const channels = uniqueAudienceConnections(listChannels(backendDb));
   for (const channel of channels) {
     const standardProfile = channel.platform === "youtube" || channel.platform === "instagram";
     const profileSupported = standardProfile || (channel.provider === "zernio" && !standardProfile);

@@ -301,9 +301,14 @@ const en = {
   "settings.channels-pick": "Choose an account for this language ({count} found).",
   "settings.channels-error": "Could not load Zernio accounts.",
   "settings.channel-connected": "Channel connected",
+  "settings.channel-disabled": "Channel disabled",
+  "settings.disable-channel": "Disable {target}",
+  "settings.channel-ready": "ready",
+  "settings.channel-missing": "missing credentials: {count}",
   "settings.device-code":
     "Open {url}, enter the code {code} and approve access. You have {minutes} minutes; the channel connects itself once you are done.",
   "settings.connect-native": "↻ {platform} {locale} · native",
+  "settings.enable-target": "＋ {target}",
   "settings.channels-unsupported": "{count} account(s) hidden: their platform cannot be published to yet.",
   "settings.category-publishing-body": "📡 Publishing\n\nWhere posts go and what is appended to them.",
   "settings.category-notifications-body": "🔔 Notifications\n\nWhat the bot tells you, and when.",
@@ -722,8 +727,31 @@ const en = {
   "cc.studio.attention": "Needs attention",
   "cc.studio.channels": "Channels",
   "cc.studio.connect-native": "Connect {platform} {locale}",
+  "cc.studio.enable-target": "Enable {target}",
+  "cc.studio.disable-channel": "Disable",
+  "cc.studio.channel-ready": "ready",
+  "cc.studio.channel-missing": "missing credentials: {count}",
+  "cc.studio.authoring": "Authoring",
+  "cc.studio.authoring-missing": "Configure Telegram or MCP to give Studio work an owner. Channel setup is already available above.",
   "cc.studio.native-unconfigured":
     "Native Meta OAuth needs its app credentials and TOKEN_ENCRYPTION_KEY. Zernio remains available from Telegram settings.",
+  "cc.first-run.eyebrow": "Your Studio is running",
+  "cc.first-run.title": "Publish the first draft",
+  "cc.first-run.body":
+    "Choose how you write, connect one destination, then send the first draft. Analytics replaces this guide after a channel is connected.",
+  "cc.first-run.authoring-title": "Choose an authoring interface",
+  "cc.first-run.authoring-body": "Add either Telegram or MCP credentials to .env, then run docker compose up -d.",
+  "cc.first-run.authoring-ready": "{interface} is ready.",
+  "cc.first-run.or": "or",
+  "cc.first-run.channel-title": "Connect one destination",
+  "cc.first-run.channel-body": "Enable the website or a channel you already publish to. Studio will name any credentials it still needs.",
+  "cc.first-run.channel-ready": "{count} destination(s) connected.",
+  "cc.first-run.channel-action": "Open channels",
+  "cc.first-run.draft-title": "Send the first draft",
+  "cc.first-run.draft-body":
+    "Write to the private Telegram bot or ask your MCP agent to create a draft. Nothing reaches an audience until you publish or schedule it.",
+  "cc.first-run.site-title": "Want the included public site?",
+  "cc.first-run.site-body": "It is optional and off by default. Enable it without restarting:",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -1014,9 +1042,14 @@ const ru = {
   "settings.channels-pick": "Выберите аккаунт для этого языка (найдено: {count}).",
   "settings.channels-error": "Не удалось загрузить аккаунты Zernio.",
   "settings.channel-connected": "Канал подключён",
+  "settings.channel-disabled": "Канал отключён",
+  "settings.disable-channel": "Отключить {target}",
+  "settings.channel-ready": "готов",
+  "settings.channel-missing": "не хватает credentials: {count}",
   "settings.device-code":
     "Откройте {url}, введите код {code} и подтвердите доступ. У вас {minutes} минут; канал подключится сам, когда закончите.",
   "settings.connect-native": "↻ {platform} {locale} · native",
+  "settings.enable-target": "＋ {target}",
   "settings.channels-unsupported": "Скрыто аккаунтов: {count} — в их платформу публикация пока не поддерживается.",
   "settings.category-publishing-body": "📡 Публикация\n\nКуда уходят посты и что к ним добавляется.",
   "settings.category-notifications-body": "🔔 Уведомления\n\nЧто бот сообщает и когда.",
@@ -1434,8 +1467,32 @@ const ru = {
   "cc.studio.attention": "Требует внимания",
   "cc.studio.channels": "Каналы",
   "cc.studio.connect-native": "Подключить {platform} {locale}",
+  "cc.studio.enable-target": "Подключить {target}",
+  "cc.studio.disable-channel": "Отключить",
+  "cc.studio.channel-ready": "готов",
+  "cc.studio.channel-missing": "не хватает credentials: {count}",
+  "cc.studio.authoring": "Создание материалов",
+  "cc.studio.authoring-missing":
+    "Настройте Telegram или MCP, чтобы у работы Studio появился владелец. Подключение каналов уже доступно выше.",
   "cc.studio.native-unconfigured":
     "Для native OAuth Meta нужны credentials приложения и TOKEN_ENCRYPTION_KEY. Zernio по-прежнему доступен в настройках Telegram.",
+  "cc.first-run.eyebrow": "Studio уже работает",
+  "cc.first-run.title": "Опубликуйте первый черновик",
+  "cc.first-run.body":
+    "Выберите, где писать, подключите одну площадку и отправьте первый черновик. После подключения канала этот экран сменится аналитикой.",
+  "cc.first-run.authoring-title": "Выберите интерфейс автора",
+  "cc.first-run.authoring-body": "Добавьте в .env credentials Telegram или MCP, затем выполните docker compose up -d.",
+  "cc.first-run.authoring-ready": "{interface} готов.",
+  "cc.first-run.or": "или",
+  "cc.first-run.channel-title": "Подключите одну площадку",
+  "cc.first-run.channel-body": "Включите публичный сайт или канал, в котором уже публикуетесь. Studio назовёт недостающие credentials.",
+  "cc.first-run.channel-ready": "Подключено назначений: {count}.",
+  "cc.first-run.channel-action": "Открыть каналы",
+  "cc.first-run.draft-title": "Отправьте первый черновик",
+  "cc.first-run.draft-body":
+    "Напишите приватному Telegram-боту или попросите MCP-агента создать черновик. До публикации или постановки в расписание он не попадёт к аудитории.",
+  "cc.first-run.site-title": "Нужен встроенный публичный сайт?",
+  "cc.first-run.site-body": "Он необязателен и по умолчанию выключен. Включение не требует перезапуска:",
 } satisfies Record<MessageKey, string>;
 
 export const catalog: Record<StudioLocale, Record<MessageKey, string>> = { en, ru };

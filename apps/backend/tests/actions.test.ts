@@ -104,6 +104,10 @@ describe("command center actions", () => {
         })
         .run();
       backendDb.db
+        .insert(publicationSources)
+        .values({ postId: 8, itemJson: { text: "RU", text_ru: "RU", text_en: "EN", media: [] }, createdAt: now, updatedAt: now })
+        .run();
+      backendDb.db
         .insert(publicationTargets)
         .values([{ publicationKey: "post:8", target: "threads_en", status: "published", externalId: "en-post", updatedAt: now }])
         .run();

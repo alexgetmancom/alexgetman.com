@@ -2,7 +2,6 @@ import type { Hono } from "hono";
 import type { BackendDb } from "../../db/client.js";
 import type { engagementService } from "../../engagement/service.js";
 import type { BackendConfig } from "../../foundation/config.js";
-import type { createOperationsService } from "../../operations/service.js";
 import type { StudioServices } from "../../studio/services/index.js";
 
 /** What a route module is handed. Services are built once by the composition
@@ -12,7 +11,6 @@ type HttpDeps = {
   config: BackendConfig;
   backendDb: BackendDb;
   studio: StudioServices;
-  operations: ReturnType<typeof createOperationsService>;
   engagement: ReturnType<typeof engagementService>;
 };
 

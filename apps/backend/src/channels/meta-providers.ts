@@ -1,6 +1,7 @@
 import type { ChannelInput } from "../channels/registry.js";
 import type { BackendConfig } from "../foundation/config.js";
 import type { VideoLocale } from "../publishing/video-types.js";
+import { channelIdentity } from "./identity.js";
 import type { MetaTokenTarget } from "./meta-tokens.js";
 
 export type MetaOauthPlatform = "threads" | "instagram";
@@ -36,8 +37,8 @@ export type MetaProvider = {
   /** Where the renewable token is stored, by the name `platform_tokens` uses. */
   tokenTarget: (locale: VideoLocale) => MetaTokenTarget;
   /** What a connected account becomes in the channel registry. Threads is a
-   * text target; an Instagram account is an account, and the Story target is
-   * derived from it rather than connected beside it. */
+   * text target; Instagram is a Reels account. A Story route is connected
+   * independently because enabling it changes the post screens and queue. */
   registryRow: (locale: VideoLocale, accountId: string, account: string) => Omit<ChannelInput, "source">;
 };
 
@@ -58,13 +59,13 @@ export const META_PROVIDERS: Record<MetaOauthPlatform, MetaProvider> = {
     appSecret: (config) => config.THREADS_APP_SECRET,
     appIdName: "THREADS_APP_ID",
     appSecretName: "THREADS_APP_SECRET",
-    tokenTarget: (locale) => `threads_${locale}`,
+    tokenTarget: (locale) => channelIdentity("threads", locale),
     registryRow: (locale, accountId, account) => ({
-      platform: `threads_${locale}`,
+      platform: channelIdentity("threads", locale),
       locale,
       provider: "native",
       providerAccountId: accountId,
-      targetId: `threads_${locale}`,
+      targetId: channelIdentity("threads", locale),
       label: `Threads ${locale.toUpperCase()} · ${account}`,
     }),
   },
@@ -88,7 +89,7 @@ export const META_PROVIDERS: Record<MetaOauthPlatform, MetaProvider> = {
     appSecret: (config) => config.INSTAGRAM_APP_SECRET,
     appIdName: "INSTAGRAM_APP_ID",
     appSecretName: "INSTAGRAM_APP_SECRET",
-    tokenTarget: (locale) => `instagram_${locale}`,
+    tokenTarget: (locale) => channelIdentity("instagram", locale),
     registryRow: (locale, accountId, account) => ({
       platform: "instagram",
       locale,

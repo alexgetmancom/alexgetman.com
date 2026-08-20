@@ -13,7 +13,7 @@ import { settingsService } from "../studio/services/settings.js";
  * These two helpers used to live in navigation.ts next to `buildMainMenu`, which
  * put them behind that module's imports of every screen it can open — so a
  * screen needing nothing but the persistent keyboard had to import back into
- * navigation, and post-screen and settings-screen each closed an import cycle.
+ * navigation, and post-screen and settings each closed an import cycle.
  * Neither helper knows how the menu is assembled: `showMainMenu` takes the built
  * menu as an argument. */
 

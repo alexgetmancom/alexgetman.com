@@ -63,19 +63,21 @@ export function postSocialImagePath(item: FeedItem, locale: FeedLocale = "en"): 
 }
 
 export function responsiveImageSrcSet(publicPath: string | null | undefined): string | undefined {
-  const normalized = normalizePublicPath(publicPath);
-  const source = filePath(normalized);
-  if (!source || !/\.(png|jpe?g)$/i.test(source)) return undefined;
-  const base = source.replace(/[\\/]/g, "-").replace(/\.[a-z0-9]+$/i, "");
-  const suffix = cacheSuffix(normalized);
+  const image = responsiveImage(publicPath);
+  if (!image) return undefined;
+  const { base, suffix } = image;
   return RESPONSIVE_WIDTHS.map((width) => `/generated/responsive/${base}-${width}.webp${suffix} ${width}w`).join(", ");
 }
 
 export function responsiveVariantFor(publicPath: string | null | undefined, width: (typeof RESPONSIVE_WIDTHS)[number]) {
+  const image = responsiveImage(publicPath);
+  return image ? `generated/responsive/${image.base}-${width}.webp${image.suffix}` : undefined;
+}
+
+function responsiveImage(publicPath: string | null | undefined): { base: string; suffix: string } | null {
   const normalized = normalizePublicPath(publicPath);
   const source = filePath(normalized);
-  if (!source || !/\.(png|jpe?g)$/i.test(source)) return undefined;
+  if (!source || !/\.(png|jpe?g)$/i.test(source)) return null;
   const base = source.replace(/[\\/]/g, "-").replace(/\.[a-z0-9]+$/i, "");
-  const suffix = cacheSuffix(normalized);
-  return `generated/responsive/${base}-${width}.webp${suffix}`;
+  return { base, suffix: cacheSuffix(normalized) };
 }

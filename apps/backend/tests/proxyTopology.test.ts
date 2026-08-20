@@ -55,7 +55,7 @@ describe("host proxy topology", () => {
     const routes = read("apps/backend/src/interfaces/http/command-center.ts");
 
     const allowed = (caddy.match(/@allowed path ([^\n]+)/)?.[1] ?? "").split(" ");
-    const endpoints = [...routes.matchAll(/"(\/api\/command-center\/[^"]+)"/g)].map((match) => match[1] ?? "");
+    const endpoints = [...routes.matchAll(/"(\/(?:api\/)?command-center\/[^"]+)"/g)].map((match) => match[1] ?? "");
     expect(endpoints.length).toBeGreaterThan(0);
     for (const endpoint of endpoints) {
       expect(allowed.some((pattern) => (pattern.endsWith("*") ? endpoint.startsWith(pattern.slice(0, -1)) : endpoint === pattern))).toBe(

@@ -1,3 +1,4 @@
+import { publicationRef } from "../../../application/publication-ref.js";
 import type { BackendDb } from "../../../db/client.js";
 import { calendarDays, emptyDailyReach, latestAtOrBefore, periodReach } from "./daily-reach.js";
 import { emptyMetrics, periodSubscriberDelta, videoReachSeries } from "./video-overview-calendar.js";
@@ -106,7 +107,7 @@ export function videoOverview(
       );
       const first = draftRows[0];
       return {
-        key: `video:${first?.videoDraftId ?? 0}`,
+        key: publicationRef("video", first?.videoDraftId ?? 0),
         destinations,
         title: first?.label || "Без названия",
         url: destinations.find((destination) => destination.url)?.url ?? null,

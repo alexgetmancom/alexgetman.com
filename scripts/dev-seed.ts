@@ -124,7 +124,7 @@ function connectChannels(): void {
 }
 
 console.log(
-  `\nbun run build\nDATA_DIR=${path.join(defaultRoot, "data")} STUDIO_MEDIA_DIR=${path.join(defaultRoot, "video-media")} VIDEO_MEDIA_DIR=${path.join(defaultRoot, "video-media")} MEDIA_CACHE_DIR=${path.join(defaultRoot, "media-cache")} STORY_CARD_DIR=${path.join(defaultRoot, "story-cards")} PIPELINE_DB=${dbPath} SITE_PUBLIC_DIR=${publicDir} COMMAND_CENTER_TOKEN=dev ASTRO_DIST_DIR=${path.resolve("dist")} bun run --filter @alexgetman/backend dev`,
+  `\nbun run build\nNODE_ENV=test DATA_DIR=${path.join(defaultRoot, "data")} STUDIO_MEDIA_DIR=${path.join(defaultRoot, "video-media")} VIDEO_MEDIA_DIR=${path.join(defaultRoot, "video-media")} MEDIA_CACHE_DIR=${path.join(defaultRoot, "media-cache")} STORY_CARD_DIR=${path.join(defaultRoot, "story-cards")} PIPELINE_DB=${dbPath} SITE_PUBLIC_DIR=${publicDir} COMMAND_CENTER_TOKEN=dev MCP_STUDIO_TOKEN=demo-studio-token MCP_STUDIO_ACTOR_ID=1 STUDIO_ACTOR_IDS=1 ASTRO_DIST_DIR=${path.resolve("dist")} bun run --filter @alexgetman/backend dev`,
 );
 console.log("  site       http://localhost:8788/");
 if (withDashboard) console.log("  dashboard  http://localhost:8788/command-center?token=dev");

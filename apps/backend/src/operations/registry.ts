@@ -4,9 +4,11 @@ import { importXAnalyticsCsv } from "../analytics/import-x-csv.js";
 import { attachXActivityToPosts } from "../analytics/x-activity-linking.js";
 import { xAnalyticsReport } from "../analytics/x-activity-report.js";
 import type { LocalizedProfiles, LocalizedText } from "../application/ports.js";
-import { targetDefinition, targetIdsFor } from "../botTargets.js";
+import { publicationRef } from "../application/publication-ref.js";
+import { targetIdsFor } from "../botTargets.js";
 import { API_KEY_TARGETS, storeApiKey } from "../channels/api-keys.js";
 import { CONNECT_PLATFORMS, type ConnectStart, startConnect } from "../channels/connect.js";
+import { registerTargetChannel } from "../channels/registry.js";
 import { type BackendDb, baselineDrizzleMigrations, migrationStatus, unsafeDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -21,6 +23,7 @@ import type { VideoTarget } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { channelReport, connectChannel, disableChannel } from "./channels.js";
 import { replacePublishedMedia } from "./commands/media-replacement.js";
+import { runOperationCommand } from "./commands.js";
 import { doctorChecks } from "./doctor.js";
 import { formatSupportSummary, recordFormatEvidence } from "./format-support.js";
 import { buildOperationsGuide, formatOperationsGuide, type OperationCatalogEntry } from "./guide.js";
@@ -40,7 +43,6 @@ import { purgePublication } from "./publication-purge.js";
 import { resolvePublicationRef } from "./publication-ref.js";
 import { publishText } from "./publish.js";
 import { findPublication, formatPublicationMatches, formatRecentPublications, recentPublications } from "./recent.js";
-import { createOperationsService } from "./service.js";
 import { settleAmbiguousTarget } from "./settle.js";
 import { backfillSiteImageMedia } from "./site-media-backfill.js";
 import { deduplicateSiteMedia } from "./site-media-deduplicate.js";
@@ -102,7 +104,7 @@ function ask(question: string): string {
 
 /** Callers reach for the bare post number — it is what every other surface
  * shows them — so it is a spelling of the ref, not a mistake to reject. */
-const refSpelling = (value: string): string => (/^\d+$/.test(value) ? `post:${value}` : value);
+const refSpelling = (value: string): string => (/^\d+$/.test(value) ? publicationRef("post", Number(value)) : value);
 const refOption = example(z.string().trim().min(1), "post:160").describe("publication ref").transform(refSpelling);
 const applyOption = z.boolean().default(false).describe("perform the change; omitted it reports the plan only");
 
@@ -145,10 +147,7 @@ const repairSchema = <S extends z.ZodRawShape>(extra: S) =>
 
 function runRepair(context: OperationContext, action: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
   const { ref, ...rest } = input as { ref: string } & Record<string, unknown>;
-  return createOperationsService(context.db(), context.config()).command(
-    { action, ref, actor_type: context.actorType, ...rest },
-    context.fetchImpl,
-  );
+  return runOperationCommand(context.db(), { action, ref, actor_type: context.actorType, ...rest }, context.config(), context.fetchImpl);
 }
 
 // --- The catalog ----------------------------------------------------------------
@@ -330,7 +329,7 @@ const operationDefs = {
     schema: z.object({}),
     mutates: false,
     agent: true,
-    handler: (context) => channelReport(context.db()),
+    handler: (context) => channelReport(context.config(), context.db()),
   }),
   "format-support": operation({
     summary: "Which media formats each target is proven to carry, and what proved it.",
@@ -481,7 +480,7 @@ const operationDefs = {
     agent: true,
     handler: (context, input) => {
       retryVideoTarget(context.db(), input.draft, input.target as VideoTarget);
-      return { ref: `video:${input.draft}`, target: input.target, requeued: 1 };
+      return { ref: publicationRef("video", input.draft), target: input.target, requeued: 1 };
     },
   }),
   "video-settle": operation({
@@ -541,13 +540,18 @@ const operationDefs = {
     mutates: true,
     agent: true,
     handler: (context, input) =>
-      createOperationsService(context.db(), context.config()).command({
-        action: "reschedule",
-        ref: input.ref,
-        actor_type: context.actorType,
-        schedule_locale: input.schedule_locale,
-        at: input.at,
-      }),
+      runOperationCommand(
+        context.db(),
+        {
+          action: "reschedule",
+          ref: input.ref,
+          actor_type: context.actorType,
+          schedule_locale: input.schedule_locale,
+          at: input.at,
+        },
+        context.config(),
+        context.fetchImpl,
+      ),
   }),
   "publication-repair": operation({
     summary: "Reconcile publication rows against their jobs and targets.",
@@ -708,18 +712,30 @@ const operationDefs = {
       // The target is the whole identity of a text or story route. Deriving
       // both from it removes the combination that stores one platform under
       // another one's id.
-      const definition = input.target ? targetDefinition(input.target) : null;
-      const platform = input.target ?? input.platform;
-      const locale = definition?.locale ?? input.locale;
+      if (input.target)
+        return {
+          id: registerTargetChannel(context.db(), input.target, {
+            provider: input.provider,
+            ...(input.account_id ? { providerAccountId: input.account_id } : {}),
+            ...(input.label ? { label: input.label } : {}),
+            source: context.actorType,
+          }).id,
+        };
+      const platform = input.platform;
+      const locale = input.locale;
       if (!platform || !locale) throw new Error("channel-connect needs --target, or --platform with --locale");
-      return connectChannel(context.db(), {
-        platform,
-        locale,
-        provider: input.provider,
-        ...(input.target ? { targetId: input.target } : {}),
-        ...(input.account_id ? { providerAccountId: input.account_id } : {}),
-        ...(input.label ? { label: input.label } : {}),
-      });
+      return connectChannel(
+        context.db(),
+        {
+          platform,
+          locale,
+          provider: input.provider,
+          ...(input.target ? { targetId: input.target } : {}),
+          ...(input.account_id ? { providerAccountId: input.account_id } : {}),
+          ...(input.label ? { label: input.label } : {}),
+        },
+        context.actorType,
+      );
     },
   }),
   "connect-link": operation({

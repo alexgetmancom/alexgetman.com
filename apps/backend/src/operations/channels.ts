@@ -2,6 +2,8 @@ import { isPublishableVideoPlatform } from "../channels/destinations.js";
 
 import { listChannels, registerChannel } from "../channels/registry.js";
 import type { BackendDb } from "../db/client.js";
+import type { BackendConfig } from "../foundation/config.js";
+import { channelReadiness } from "../observability/capabilities.js";
 import type { VideoLocale } from "../publishing/video-types.js";
 
 /**
@@ -23,10 +25,14 @@ type ChannelReport = {
   enabled: boolean;
   source: string;
   publishable: boolean;
+  status: "ready" | "missing" | "disabled";
+  missing: string[];
 };
 
-export function channelReport(backendDb: BackendDb): ChannelReport[] {
+export function channelReport(config: BackendConfig, backendDb: BackendDb): ChannelReport[] {
+  const readiness = channelReadiness(config, backendDb);
   return listChannels(backendDb, false).map((channel) => {
+    const state = readiness.get(channel.targetId ?? channel.id);
     return {
       id: channel.id,
       platform: channel.platform,
@@ -38,6 +44,8 @@ export function channelReport(backendDb: BackendDb): ChannelReport[] {
       source: channel.source,
       // A text channel has no video target and is not expected to have one.
       publishable: channel.targetId ? true : isPublishableVideoPlatform(channel.platform),
+      status: channel.enabled === 0 ? "disabled" : (state?.status ?? "ready"),
+      missing: state?.missing ?? [],
     };
   });
 }
@@ -52,8 +60,9 @@ export function connectChannel(
     providerAccountId?: string;
     label?: string;
   },
+  source: string,
 ): { id: string } {
-  return { id: registerChannel(backendDb, { ...input, source: "cli" }).id };
+  return { id: registerChannel(backendDb, { ...input, source }).id };
 }
 
 /** Disabling keeps the row: its publications, metrics and audience history stay

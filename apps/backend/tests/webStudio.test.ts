@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createApiHandler } from "../src/api.js";
+import { registerChannel } from "../src/channels/registry.js";
 import { openBackendDb } from "./helpers/open-db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
@@ -8,8 +9,7 @@ const COMMAND_TOKEN = "b".repeat(16);
 function testConfig() {
   return loadTestConfig({
     CONTROLLER_ADMIN_IDS: "42",
-    MCP_STUDIO_TOKEN: "a".repeat(16),
-    MCP_STUDIO_ACTOR_ID: "42",
+    CONTROLLER_BOT_TOKEN: "bot-token",
     COMMAND_CENTER_TOKEN: COMMAND_TOKEN,
     PUBLIC_BASE_URL: "https://publisher.example.com",
     TOKEN_ENCRYPTION_KEY: "cd".repeat(32),
@@ -42,21 +42,34 @@ describe("Command Center Studio tab", () => {
       expect(dashboardText).toContain("Подключить Threads RU");
       expect(dashboardText).toContain("/oauth/threads/start?locale=ru");
       expect(dashboardText).toContain("Подключить Instagram EN");
+      expect(dashboardText).toContain("<table bordered striped>");
+      expect(dashboardText).not.toContain("| Площадка |");
     } finally {
       backendDb.close();
     }
   });
 
-  it("hides the studio tab when no Studio actor is configured", async () => {
+  it("keeps channel setup available without MCP and leads a fresh install through its first draft", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const config = loadTestConfig({ COMMAND_CENTER_TOKEN: COMMAND_TOKEN });
       const app = createApiHandler({ config, backendDb });
-      const response = await app(
-        new Request("http://localhost/command-center?tab=studio", { headers: { "X-Admin-Token": COMMAND_TOKEN } }),
-      );
-      expect(response.status).toBe(200);
-      expect(await response.text()).not.toContain('href="/command-center?tab=studio"');
+      const studio = await app(new Request("http://localhost/command-center?tab=studio", { headers: { "X-Admin-Token": COMMAND_TOKEN } }));
+      expect(studio.status).toBe(200);
+      const studioText = await studio.text();
+      expect(studioText).toContain('href="/command-center?tab=studio"');
+      expect(studioText).toContain("Подключить Telegram");
+      expect(studioText).toContain("Настройте Telegram или MCP");
+      expect(studioText).not.toContain("<h2>Очередь</h2>");
+
+      const landing = await app(new Request("http://localhost/command-center", { headers: { "X-Admin-Token": COMMAND_TOKEN } }));
+      expect(await landing.text()).toContain("Опубликуйте первый черновик");
+
+      registerChannel(backendDb, { platform: "telegram", locale: "ru", provider: "native", targetId: "telegram", source: "test" });
+      const configured = await app(new Request("http://localhost/command-center", { headers: { "X-Admin-Token": COMMAND_TOKEN } }));
+      const configuredText = await configured.text();
+      expect(configuredText).toContain("Опубликуйте первый черновик");
+      expect(configuredText).toContain("Подключено назначений: 1");
     } finally {
       backendDb.close();
     }

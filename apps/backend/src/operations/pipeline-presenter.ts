@@ -1,3 +1,4 @@
+import { publicationRef } from "../application/publication-ref.js";
 import { TARGETS } from "../botTargets.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { formatZonedSortable } from "../foundation/time.js";
@@ -68,7 +69,7 @@ export function formatPipelinePosts(
   const samplesByMetric = groupBy(sampleRows, (sample) => `${sample.publicationKey}\u0000${sample.target}\u0000${sample.metricName}`);
   return rows.map((row) => {
     const postId = row.post_id == null ? null : Number(row.post_id);
-    const publicationKey = String(row.publication_key ?? `post:${postId}`);
+    const publicationKey = row.publication_key ?? (postId == null ? "" : publicationRef("post", postId));
     const targets = Object.fromEntries(
       (targetsByPost.get(publicationKey) ?? []).map((target) => [
         target.target,

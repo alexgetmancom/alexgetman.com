@@ -6,6 +6,7 @@ import {
   type VideoLocale,
   type VideoTarget,
 } from "../publishing/video-types.js";
+import { channelIdentity } from "./identity.js";
 import { listChannels } from "./registry.js";
 
 /**
@@ -53,5 +54,5 @@ export function isPublishableVideoPlatform(platform: string): boolean {
  * the deterministic platform/locale id remains its identity fallback. */
 export function videoChannelIdentity(backendDb: BackendDb, target: VideoTarget, locale: VideoLocale): string {
   const platform = VIDEO_TARGET_PLATFORM[target];
-  return backendDb.channels.find(platform, locale)?.id ?? `${platform}_${locale}`;
+  return backendDb.channels.find(platform, locale)?.id ?? channelIdentity(platform, locale);
 }

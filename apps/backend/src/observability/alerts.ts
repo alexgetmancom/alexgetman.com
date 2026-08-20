@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { alertDedup, publicationEvents } from "../db/schema.js";
-import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 
 /** How long one alert subject stays quiet after it has been reported. */
@@ -11,7 +10,7 @@ export const ALERT_COOLDOWN_SECONDS = 3600;
 export type AlertPort = { sendAlert?: (text: string) => Promise<void> };
 
 /** Delivers unacknowledged durable events through an optional transport adapter. */
-export async function deliverPendingAlerts(config: BackendConfig, backendDb: BackendDb, alertsPort: AlertPort): Promise<number> {
+export async function deliverPendingAlerts(backendDb: BackendDb, alertsPort: AlertPort): Promise<number> {
   let alerts = 0;
   const events = unsafeDb(backendDb)
     .db.select({

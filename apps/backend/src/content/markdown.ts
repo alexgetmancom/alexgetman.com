@@ -1,3 +1,4 @@
+import { isHttpUrl } from "../foundation/url.js";
 import type { DraftMessage } from "./message.js";
 
 /** Turns a Markdown article into the representation the rest of the system
@@ -86,7 +87,7 @@ function inlineEntities(line: string): { text: string; inline: Entity[] } {
     // exactly what the marker took with it.
     for (const entity of inline) if (Number(entity.offset) > start) entity.offset = Number(entity.offset) - consumed;
     const url = next.url?.(next.match);
-    if (next.type === "text_link" && !safeHttpUrl(url ?? "")) continue;
+    if (next.type === "text_link" && !isHttpUrl(url ?? "")) continue;
     inline.push({ type: next.type, offset: start, length: inner.length, ...(url ? { url } : {}) });
   }
   return { text, inline };
@@ -102,12 +103,4 @@ function trimBlankEdges(lines: string[]): string[] {
   while (start < end && !(lines[start] ?? "").trim()) start += 1;
   while (end > start && !(lines[end - 1] ?? "").trim()) end -= 1;
   return lines.slice(start, end);
-}
-
-function safeHttpUrl(value: string): boolean {
-  try {
-    return ["http:", "https:"].includes(new URL(value).protocol);
-  } catch {
-    return false;
-  }
 }

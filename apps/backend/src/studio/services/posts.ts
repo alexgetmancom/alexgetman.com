@@ -583,7 +583,7 @@ function rescheduleReminders(backendDb: BackendDb, actorId: number, postId: numb
 function assertKnownTarget(backendDb: BackendDb, target: string): void {
   if (!TARGETS.some(({ id }) => id === target)) throw new StudioError("err.unknown-target");
   const registered = registeredPostTargetIds(backendDb);
-  if (registered.size && !registered.has(target)) throw new StudioError("err.unknown-target");
+  if (!registered.has(target)) throw new StudioError("err.unknown-target");
 }
 
 function exactTargets(backendDb: BackendDb, selected: string[]): Record<string, boolean> {

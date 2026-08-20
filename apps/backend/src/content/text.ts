@@ -1,4 +1,5 @@
 import { escapeHtml } from "../foundation/html.js";
+import { isHttpUrl } from "../foundation/url.js";
 
 type Wrapper = { open: string; close: string };
 
@@ -62,12 +63,12 @@ function entityWrapper(type: string, entity: Record<string, unknown>, raw: strin
   if (type === "spoiler") return { open: '<span class="spoiler">', close: "</span>" };
   if (type === "code") return { open: "<code>", close: "</code>" };
   if (type === "pre") return { open: "<pre><code>", close: "</code></pre>" };
-  if (type === "text_link" && typeof entity.url === "string" && safeHttpUrl(entity.url))
+  if (type === "text_link" && typeof entity.url === "string" && isHttpUrl(entity.url))
     return { open: `<a href="${escapeHtml(entity.url)}" rel="noopener noreferrer">`, close: "</a>" };
   // A bare `url` entity's href is its own text. Telegram also auto-detects
   // schemeless domains, so it gets the same protocol check as text_link.
-  if (type === "url" && safeHttpUrl(raw)) return { open: `<a href="${escapeHtml(raw)}" rel="noopener noreferrer">`, close: "</a>" };
-  if (type === "url" && safeHttpUrl(`https://${raw}`))
+  if (type === "url" && isHttpUrl(raw)) return { open: `<a href="${escapeHtml(raw)}" rel="noopener noreferrer">`, close: "</a>" };
+  if (type === "url" && isHttpUrl(`https://${raw}`))
     return { open: `<a href="https://${escapeHtml(raw)}" rel="noopener noreferrer">`, close: "</a>" };
   return null;
 }
@@ -83,17 +84,9 @@ export function firstTextLinkUrl(entities: Record<string, unknown>[]): string | 
   return (
     [...entities]
       .sort((left, right) => Number(left.offset ?? 0) - Number(right.offset ?? 0))
-      .flatMap((entity) => (entity.type === "text_link" && typeof entity.url === "string" && safeHttpUrl(entity.url) ? [entity.url] : []))
+      .flatMap((entity) => (entity.type === "text_link" && typeof entity.url === "string" && isHttpUrl(entity.url) ? [entity.url] : []))
       .at(0) ?? null
   );
-}
-
-function safeHttpUrl(value: string): boolean {
-  try {
-    return ["http:", "https:"].includes(new URL(value).protocol);
-  } catch {
-    return false;
-  }
 }
 
 /** Canonical leading-emoji stripper, imported directly by the social payload

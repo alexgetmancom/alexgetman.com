@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { UnsafeBackendDb } from "../../db/client.js";
-import { drafts, postLocales, posts, publicationSources, siteJobs, siteSourceItems } from "../../db/schema.js";
+import { drafts, postLocales, posts, publicationSources, siteJobs } from "../../db/schema.js";
 import { jsonObject } from "../../json.js";
 import type { ResolvedPublicationRef } from "../publication-ref.js";
 
@@ -94,32 +94,18 @@ function locatesMedia(item: Record<string, unknown>): boolean {
   return ["file_id", "fileId", "local_path", "localPath", "path", "asset_id"].some((key) => item[key] != null);
 }
 
-/** Merges a patch into the durable publication source and the site's copy of
- * it. Both rows carry the same object, so writing one without the other is how
- * a repair reached the site and not the queue — or the reverse. */
+/** Merges a patch into the publication's single durable source. */
 export function updateSource(db: UnsafeBackendDb["db"], ref: ResolvedPublicationRef, patch: Record<string, unknown>, now: string): void {
-  const row =
-    ref.postId == null
-      ? null
-      : db
-          .select({ itemJson: publicationSources.itemJson })
-          .from(publicationSources)
-          .where(eq(publicationSources.postId, ref.postId))
-          .get();
-  const source = { ...jsonObject(row?.itemJson), ...patch };
-  if (ref.postId != null)
-    db.update(publicationSources).set({ itemJson: source, updatedAt: now }).where(eq(publicationSources.postId, ref.postId)).run();
-  const siteSource = db
-    .select({ itemJson: siteSourceItems.itemJson })
-    .from(siteSourceItems)
-    .where(eq(siteSourceItems.messageId, ref.messageId))
+  if (ref.postId == null) throw new Error("publication has no post id");
+  const row = db
+    .select({ itemJson: publicationSources.itemJson })
+    .from(publicationSources)
+    .where(eq(publicationSources.postId, ref.postId))
     .get();
-  db.insert(siteSourceItems)
-    .values({ messageId: ref.messageId, itemJson: { ...jsonObject(siteSource?.itemJson), ...source }, createdAt: now, updatedAt: now })
-    .onConflictDoUpdate({
-      target: siteSourceItems.messageId,
-      set: { itemJson: { ...jsonObject(siteSource?.itemJson), ...source }, updatedAt: now },
-    })
+  const source = { ...jsonObject(row?.itemJson), ...patch };
+  db.insert(publicationSources)
+    .values({ postId: ref.postId, itemJson: source, createdAt: now, updatedAt: now })
+    .onConflictDoUpdate({ target: publicationSources.postId, set: { itemJson: source, updatedAt: now } })
     .run();
 }
 

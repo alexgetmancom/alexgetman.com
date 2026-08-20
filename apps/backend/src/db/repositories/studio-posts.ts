@@ -3,16 +3,7 @@ import type { DraftEntityCandidate, FailedPublicationTarget, PostEventRecord, St
 import { publicationRef } from "../../application/publication-ref.js";
 import { isSiteTarget } from "../../botTargets.js";
 import { jsonObject } from "../../json.js";
-import {
-  draftEntityCandidates,
-  drafts,
-  posts,
-  publicationEvents,
-  publicationSources,
-  publishJobs,
-  siteJobs,
-  siteSourceItems,
-} from "../schema.js";
+import { draftEntityCandidates, drafts, publicationEvents, publicationSources, publishJobs, siteJobs } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite adapter for Studio post-specific persistence operations. */
@@ -109,17 +100,8 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
 }
 
 function publicationSource(db: BackendDatabase, postId: number): Record<string, unknown> {
-  const source = jsonObject(
+  return jsonObject(
     db.select({ itemJson: publicationSources.itemJson }).from(publicationSources).where(eq(publicationSources.postId, postId)).get()
       ?.itemJson,
   );
-  if (Object.keys(source).length > 0) return source;
-  const post = db.select({ messageId: posts.messageId, rawJson: posts.rawJson }).from(posts).where(eq(posts.postId, postId)).get();
-  const siteSource = post
-    ? jsonObject(
-        db.select({ itemJson: siteSourceItems.itemJson }).from(siteSourceItems).where(eq(siteSourceItems.messageId, post.messageId)).get()
-          ?.itemJson,
-      )
-    : {};
-  return Object.keys(siteSource).length > 0 ? siteSource : jsonObject(post?.rawJson);
 }

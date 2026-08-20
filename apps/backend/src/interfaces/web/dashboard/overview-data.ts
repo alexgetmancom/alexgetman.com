@@ -6,7 +6,7 @@ import type { BackendDb } from "../../../db/client.js";
 import type { BackendConfig } from "../../../foundation/config.js";
 import { log } from "../../../foundation/logger.js";
 import { zonedRollingPeriodBounds, zonedSlot } from "../../../foundation/time.js";
-import type { createOperationsService } from "../../../operations/service.js";
+import { dashboardPipelineHistoryPayload } from "../../../operations/read-model.js";
 import type { CombinedSectionInput, PlatformMetric } from "./combined-section.js";
 import { calendarDays } from "./daily-reach.js";
 import { audiencePlatformFollowers } from "./ops-sections.js";
@@ -16,7 +16,6 @@ import { xActivityReachSeries } from "./text-reach.js";
 import type { PipelineData, PipelinePost } from "./types.js";
 import { createVideoOverviewCache, setVideoOverviewCacheRange, type VideoOverview, videoOverview } from "./video-overview.js";
 
-type OverviewService = ReturnType<typeof createOperationsService>;
 type OverviewCache = ReturnType<typeof createVideoOverviewCache>;
 
 type DashboardReadModel = {
@@ -56,7 +55,6 @@ type DashboardReadModel = {
 export function loadDashboardReadModel(
   config: BackendConfig,
   backendDb: BackendDb,
-  service: OverviewService,
   videoCache: OverviewCache,
   weekOffset: number,
   periodDays: number,
@@ -81,7 +79,7 @@ export function loadDashboardReadModel(
   const historyEnd = new Date(Math.max(end.getTime(), previousEnd.getTime(), medianEnd.getTime(), yesterdayEnd.getTime()));
   const historyDays = Math.max(1, Math.round((historyEnd.getTime() - historyStart.getTime() + 1) / 86_400_000));
   const offsetDays = weekOffset * periodDays;
-  const pipelineHistory = timed("pipelineMs", () => service.dashboardPipelineHistory(historyDays, offsetDays));
+  const pipelineHistory = timed("pipelineMs", () => dashboardPipelineHistoryPayload(config, backendDb, historyDays, offsetDays));
   const pipeline = {
     current: pipelineForDates(pipelineHistory, start, end, config.TIMEZONE),
     comparison: pipelineForDates(pipelineHistory, previousStart, previousEnd, config.TIMEZONE),

@@ -56,6 +56,7 @@ describe("operations registry", () => {
       expect(await run({ target: "threads_en", provider: "native" })).toEqual({ id: "threads_en" });
       const connected = listChannels(backendDb).find((channel) => channel.id === "threads_en");
       expect(connected?.locale).toBe("en");
+      expect(connected?.source).toBe("test");
 
       expect(await run({ platform: "youtube", locale: "ru", provider: "native" })).toEqual({ id: "youtube_ru" });
       await expect(run({ provider: "native" })).rejects.toThrow("needs --target");

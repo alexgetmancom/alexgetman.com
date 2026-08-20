@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { fileExtension, mediaContentType } from "../../foundation/media-types.js";
 
 type MediaKind = "IMAGE" | "VIDEO";
 
@@ -115,13 +116,7 @@ export function mediaExtension(item: PublishMediaItem): string {
 }
 
 export function guessContentType(filePath: string): string {
-  const ext = fileExtension(filePath).toLowerCase();
-  if (ext === ".png") return "image/png";
-  if (ext === ".webp") return "image/webp";
-  if (ext === ".gif") return "image/gif";
-  if (ext === ".mp4") return "video/mp4";
-  if (ext === ".mov") return "video/quicktime";
-  return "image/jpeg";
+  return mediaContentType(filePath) ?? "application/octet-stream";
 }
 
 function stringValue(value: unknown): string {
@@ -133,10 +128,4 @@ function normalizeMediaType(value: unknown): MediaKind | null {
   if (text === "image" || text === "photo") return "IMAGE";
   if (text === "video") return "VIDEO";
   return null;
-}
-
-function fileExtension(filePath: string): string {
-  const name = filePath.slice(Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\")) + 1);
-  const dot = name.lastIndexOf(".");
-  return dot > 0 ? name.slice(dot) : "";
 }

@@ -21,7 +21,7 @@ import { handleOperationsCallback } from "./bot/operations-screen.js";
 import { handleProgressCallback } from "./bot/progress-screen.js";
 import { parseSessionCallback } from "./bot/publication-callback.js";
 import { showQueue, showQueueAttention } from "./bot/queue.js";
-import { buildSettingsMenu, handleSettingsMessage, showSettings } from "./bot/settings-screen.js";
+import { buildSettingsMenu, handleSettingsMessage, showSettings } from "./bot/settings/index.js";
 import type { BackendDb } from "./db/client.js";
 import { actorFromTelegramUser } from "./foundation/actors.js";
 import type { BackendConfig } from "./foundation/config.js";

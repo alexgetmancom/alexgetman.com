@@ -1,12 +1,15 @@
 import crypto from "node:crypto";
 import { and, eq, isNull, lt, lte, or } from "drizzle-orm";
 import { publicationRef } from "../application/publication-ref.js";
+import { TARGET_GROUPS, targetInGroup } from "../botTargets.js";
 import { videoChannelIdentity } from "../channels/destinations.js";
+import { targetRouting } from "../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { publicationTargets, publishJobs, videoDrafts, videoJobs, videoTargets } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { PUBLISH_BACKOFF_BASE_SECONDS, PUBLISH_BACKOFF_MAX_SECONDS, PUBLISH_LOCK_TIMEOUT_SECONDS } from "../foundation/config.js";
+import { jsonObject } from "../json.js";
 import { ALERT_COOLDOWN_SECONDS } from "../observability/alerts.js";
 import { isTargetAuthBlocked, recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
 import { classifyPublishError, nextRetryAt } from "../publishing/errors.js";
@@ -60,6 +63,7 @@ export async function runPublicationReconciliation(
     )
     .limit(PUBLISH_CLAIM_LIMIT)
     .all();
+  const routing = targetRouting(backendDb);
   for (const row of ordinary) {
     const claimed = unsafeDb(backendDb)
       .db.update(publishJobs)
@@ -78,15 +82,42 @@ export async function runPublicationReconciliation(
     checked += 1;
     const externalId = row.target.externalId;
     if (!externalId || isTargetAuthBlocked(backendDb, row.job.target)) {
-      deferOrdinaryReconciliation(backendDb, config, job, reconciliationWorker);
+      deferOrdinaryReconciliation(backendDb, job, reconciliationWorker);
       continue;
     }
     let result: Awaited<ReturnType<typeof verifyPlatformPublication>>;
     try {
-      result = await verifyPlatformPublication(row.job.target, { ok: true, id: externalId, url: row.target.url }, config, fetchImpl);
+      const providerResult = jsonObject(row.target.rawJson);
+      const providerPostId = typeof providerResult.providerPostId === "string" ? providerResult.providerPostId : null;
+      const route = routing[row.job.target];
+      const zernioPlatform = targetInGroup(TARGET_GROUPS.threads, row.job.target)
+        ? "threads"
+        : targetInGroup(TARGET_GROUPS.instagramStory, row.job.target)
+          ? "instagram"
+          : null;
+      if (route?.provider === "zernio" && providerPostId && zernioPlatform) {
+        const verified = await verifyZernioPost(config, providerPostId, zernioPlatform, fetchImpl);
+        result = verified.externalId
+          ? {
+              ok: true,
+              id: verified.externalId,
+              url: verified.url ?? row.target.url,
+              providerPostId,
+              verification: { status: "verified", providerId: verified.externalId },
+            }
+          : {
+              ok: true,
+              id: externalId,
+              url: row.target.url,
+              providerPostId,
+              verification: { status: "unavailable", error: `${zernioPlatform} publication is still pending at Zernio` },
+            };
+      } else {
+        result = await verifyPlatformPublication(row.job.target, { ok: true, id: externalId, url: row.target.url }, config, fetchImpl);
+      }
     } catch (error) {
       if (classifyPublishError(error) === "auth") recordAuthFailure(backendDb, row.job.target);
-      deferOrdinaryReconciliation(backendDb, config, job, reconciliationWorker);
+      deferOrdinaryReconciliation(backendDb, job, reconciliationWorker);
       continue;
     }
     const verification = result.verification as { status?: string } | undefined;
@@ -94,7 +125,7 @@ export async function runPublicationReconciliation(
     if (verification?.status === "unavailable" && classifyPublishError(verificationError) === "auth")
       recordAuthFailure(backendDb, row.job.target);
     if (verification?.status !== "verified") {
-      deferOrdinaryReconciliation(backendDb, config, job, reconciliationWorker);
+      deferOrdinaryReconciliation(backendDb, job, reconciliationWorker);
       continue;
     }
     recordAuthSuccess(backendDb, row.job.target);
@@ -120,6 +151,7 @@ export async function runPublicationReconciliation(
       tx.update(publicationTargets)
         .set({
           status: "published",
+          externalId: result.id == null ? row.target.externalId : String(result.id),
           error: null,
           url: typeof result.url === "string" ? result.url : row.target.url,
           publishedAt: row.target.publishedAt ?? now,
@@ -191,7 +223,7 @@ export async function runPublicationReconciliation(
     const locale = row.draft.locale === "en" ? "en" : "ru";
     const credentialTarget = videoChannelIdentity(backendDb, row.target.target as "youtube_shorts" | "instagram_reels", locale);
     if (isTargetAuthBlocked(backendDb, credentialTarget)) {
-      deferVideoReconciliation(backendDb, config, job, reconciliationWorker);
+      deferVideoReconciliation(backendDb, job, reconciliationWorker);
       continue;
     }
     // Native Instagram Reels are deliberately absent below. Before media_publish
@@ -201,7 +233,7 @@ export async function runPublicationReconciliation(
     let confirmation: { externalId?: string | null; url?: string | null } | null = null;
     try {
       if (row.target.deliveryProvider === "zernio" && row.target.providerPostId) {
-        const verified = await verifyZernioPost(config, row.target.providerPostId);
+        const verified = await verifyZernioPost(config, row.target.providerPostId, "instagram", fetchImpl);
         confirmation = { externalId: verified.externalId, url: verified.url };
       } else if (row.target.target === "youtube_shorts" && row.target.externalId) {
         const verified = await verifyYouTubeVideo(config, row.target.externalId, locale);
@@ -209,11 +241,11 @@ export async function runPublicationReconciliation(
       }
     } catch (error) {
       if (classifyPublishError(error) === "auth") recordAuthFailure(backendDb, credentialTarget);
-      deferVideoReconciliation(backendDb, config, job, reconciliationWorker);
+      deferVideoReconciliation(backendDb, job, reconciliationWorker);
       continue;
     }
     if (!confirmation) {
-      deferVideoReconciliation(backendDb, config, job, reconciliationWorker);
+      deferVideoReconciliation(backendDb, job, reconciliationWorker);
       continue;
     }
     recordAuthSuccess(backendDb, credentialTarget);
@@ -295,18 +327,13 @@ export async function runPublicationReconciliation(
   return { checked, resolved, unresolved: unresolvedTimes.length, oldestAt: unresolvedTimes[0] ?? null };
 }
 
-function deferOrdinaryReconciliation(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  job: typeof publishJobs.$inferSelect,
-  owner: string,
-): void {
+function deferOrdinaryReconciliation(backendDb: BackendDb, job: typeof publishJobs.$inferSelect, owner: string): void {
   const attempt = job.reconcileAttemptCount + 1;
   unsafeDb(backendDb)
     .db.update(publishJobs)
     .set({
       reconcileAttemptCount: attempt,
-      nextAttemptAt: reconciliationNextAttempt(config, attempt),
+      nextAttemptAt: reconciliationNextAttempt(attempt),
       lockedBy: null,
       lockedAt: null,
       updatedAt: new Date().toISOString(),
@@ -315,13 +342,13 @@ function deferOrdinaryReconciliation(
     .run();
 }
 
-function deferVideoReconciliation(backendDb: BackendDb, config: BackendConfig, job: typeof videoJobs.$inferSelect, owner: string): void {
+function deferVideoReconciliation(backendDb: BackendDb, job: typeof videoJobs.$inferSelect, owner: string): void {
   const attempt = job.reconcileAttemptCount + 1;
   unsafeDb(backendDb)
     .db.update(videoJobs)
     .set({
       reconcileAttemptCount: attempt,
-      nextAttemptAt: reconciliationNextAttempt(config, attempt),
+      nextAttemptAt: reconciliationNextAttempt(attempt),
       lockedBy: null,
       lockedAt: null,
       updatedAt: new Date().toISOString(),
@@ -330,7 +357,7 @@ function deferVideoReconciliation(backendDb: BackendDb, config: BackendConfig, j
     .run();
 }
 
-function reconciliationNextAttempt(config: BackendConfig, attempt: number): string | null {
+function reconciliationNextAttempt(attempt: number): string | null {
   if (attempt >= RECONCILE_MAX_ATTEMPTS) return null;
   return nextRetryAt(attempt, PUBLISH_BACKOFF_BASE_SECONDS, PUBLISH_BACKOFF_MAX_SECONDS);
 }

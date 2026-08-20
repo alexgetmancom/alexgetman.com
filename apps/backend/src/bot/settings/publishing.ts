@@ -1,0 +1,249 @@
+import { Menu, type MenuFlavor } from "@grammyjs/menu";
+import type { Context } from "grammy";
+import { directConnectTargets, TARGETS } from "../../botTargets.js";
+import { META_PROVIDERS, type MetaOauthPlatform } from "../../channels/meta-providers.js";
+import { listChannels, registeredPostTargetIds } from "../../channels/registry.js";
+import { type ZernioConnectionOption, zernioConnectionOptions } from "../../channels/zernio-connections.js";
+import type { BackendDb } from "../../db/client.js";
+import type { BackendConfig } from "../../foundation/config.js";
+import { describeError, t } from "../../foundation/i18n/index.js";
+import type { StudioLocale } from "../../foundation/locale.js";
+import { escapeMarkdown } from "../../foundation/markdown.js";
+import { createStudioServices } from "../../studio/services/index.js";
+import { settingsService } from "../../studio/services/settings.js";
+import { clearConversationState } from "../conversation-state.js";
+import {
+  backToSettings,
+  beginSettingsInput,
+  CHANNELS_MENU_ID,
+  DEFAULT_TARGETS_MENU_ID,
+  PUBLISHING_MENU_ID,
+  YOUTUBE_SIGNATURE_MENU_ID,
+} from "./shared.js";
+
+const discoveredAccounts = new Map<number, { locale: "ru" | "en"; options: ZernioConnectionOption[] }>();
+
+export function buildPublishingMenu(config: BackendConfig, backendDb: BackendDb): Menu<Context> {
+  const channels = new Menu<Context>(CHANNELS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const actorId = Number(ctx.from?.id);
+    const locale = settingsService(backendDb).locale(actorId);
+    const studioChannels = createStudioServices(backendDb, config).channels;
+    const discovered = discoveredAccounts.get(actorId);
+    for (const channel of studioChannels.report())
+      range
+        .text(t(locale, "settings.disable-channel", { target: channel.label }), async (ctx) => {
+          studioChannels.disable(channel.id);
+          await ctx.answerCallbackQuery({ text: t(locale, "settings.channel-disabled") });
+          await ctx.editMessageText(channelsText(backendDb, config, locale));
+        })
+        .row();
+    if (discovered) {
+      for (const option of discovered.options) {
+        range
+          .text(option.label, async (ctx) => {
+            await studioChannels.connectZernio(option.accountId, discovered.locale, option.key);
+            discoveredAccounts.delete(actorId);
+            await ctx.answerCallbackQuery({ text: t(locale, "settings.channel-connected") });
+            await ctx.editMessageText(channelsText(backendDb, config, locale));
+          })
+          .row();
+      }
+    }
+    for (const platform of Object.keys(META_PROVIDERS) as MetaOauthPlatform[]) {
+      const ru = studioChannels.nativeConnectUrl(platform, "ru");
+      const en = studioChannels.nativeConnectUrl(platform, "en");
+      if (ru) range.url(t(locale, "settings.connect-native", { platform: channelPlatformLabel(platform), locale: "RU" }), ru);
+      if (en) range.url(t(locale, "settings.connect-native", { platform: channelPlatformLabel(platform), locale: "EN" }), en);
+      if (ru || en) range.row();
+    }
+    const xUrl = studioChannels.xConnectUrl();
+    if (xUrl) range.url(t(locale, "settings.connect-native", { platform: "X", locale: "EN" }), xUrl).row();
+    for (const channelLocale of ["ru", "en"] as const)
+      range.text(t(locale, "settings.connect-native", { platform: "YouTube", locale: channelLocale.toUpperCase() }), async (ctx) => {
+        try {
+          const started = await studioChannels.startConnect("youtube", channelLocale);
+          if (started.kind !== "device") throw new Error("YouTube is expected to answer with a code");
+          await ctx.answerCallbackQuery();
+          await ctx.editMessageText(
+            t(locale, "settings.device-code", {
+              url: started.verificationUrl,
+              code: started.userCode,
+              minutes: Math.round(started.expiresInSeconds / 60),
+            }),
+          );
+        } catch (error) {
+          await ctx.answerCallbackQuery({ text: describeError(locale, error).slice(0, 190), show_alert: true });
+        }
+      });
+    range.row();
+    const connectedIds = new Set(studioChannels.list().map(({ id }) => id));
+    for (const target of directConnectTargets().filter(({ id }) => !connectedIds.has(id)))
+      range
+        .text(t(locale, "settings.enable-target", { target: target.label }), async (ctx) => {
+          studioChannels.connectTarget(target.id);
+          await ctx.answerCallbackQuery({ text: t(locale, "settings.channel-connected") });
+          await ctx.editMessageText(channelsText(backendDb, config, locale));
+        })
+        .row();
+    if (config.ZERNIO_API_KEY)
+      range
+        .text("➕ Zernio · RU", (ctx) => discoverZernio(ctx, actorId, "ru", locale))
+        .text("➕ Zernio · EN", (ctx) => discoverZernio(ctx, actorId, "en", locale))
+        .row();
+    range.back(t(locale, "settings.back-to-publishing"), async (ctx) => {
+      discoveredAccounts.delete(actorId);
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(t(locale, "settings.category-publishing-body"));
+    });
+  });
+
+  const defaultTargets = new Menu<Context>(DEFAULT_TARGETS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const actorId = Number(ctx.from?.id);
+    const locale = settingsService(backendDb).locale(actorId);
+    const studioSettings = createStudioServices(backendDb, config).settings;
+    const selected = studioSettings.defaultTargets();
+    const rows = connectedTargets(backendDb);
+    rows.forEach(({ id, label }, index) => {
+      range.text(`${selected[id] ? "✓" : "□"} ${label}`, async (ctx) => {
+        studioSettings.toggleDefaultTarget(id);
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(defaultTargetsText(backendDb, config, locale), { parse_mode: "Markdown" });
+      });
+      if (index % 2 === 1) range.row();
+    });
+    if (rows.length % 2 === 1) range.row();
+    range.back(t(locale, "settings.back-to-publishing"), async (ctx) => {
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(t(locale, "settings.category-publishing-body"));
+    });
+  });
+
+  const youtubeSignature = new Menu<Context>(YOUTUBE_SIGNATURE_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const actorId = Number(ctx.from?.id);
+    const locale = settingsService(backendDb).locale(actorId);
+    range
+      .text(t(locale, "settings.edit"), async (ctx) => {
+        beginSettingsInput(backendDb, actorId, "youtube_signature");
+        await ctx.answerCallbackQuery();
+        await ctx.reply(t(locale, "settings.youtube-edit-prompt"));
+      })
+      .text(t(locale, "settings.clear"), async (ctx) => {
+        createStudioServices(backendDb, config).settings.clearYoutubeSignature(actorId);
+        await ctx.answerCallbackQuery({ text: t(locale, "settings.cleared") });
+        await ctx.editMessageText(youtubeSignatureText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
+      })
+      .row()
+      .back(t(locale, "settings.back-to-publishing"), async (ctx) => {
+        clearConversationState(backendDb, actorId, "settings");
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(t(locale, "settings.category-publishing-body"));
+      });
+  });
+
+  const publishing = new Menu<Context>(PUBLISHING_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
+    const actorId = Number(ctx.from?.id);
+    const locale = settingsService(backendDb).locale(actorId);
+    range
+      .submenu(t(locale, "settings.channels"), CHANNELS_MENU_ID, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(channelsText(backendDb, config, locale));
+      })
+      .row()
+      .submenu(t(locale, "settings.default-targets"), DEFAULT_TARGETS_MENU_ID, async (ctx) => {
+        await ctx.answerCallbackQuery();
+        await ctx.editMessageText(defaultTargetsText(backendDb, config, locale), { parse_mode: "Markdown" });
+      })
+      .row();
+    if (listChannels(backendDb).some((channel) => channel.platform === "youtube"))
+      range
+        .submenu(t(locale, "settings.youtube-signature"), YOUTUBE_SIGNATURE_MENU_ID, async (ctx) => {
+          await ctx.answerCallbackQuery();
+          await ctx.editMessageText(youtubeSignatureText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
+        })
+        .row();
+    range.back(t(locale, "settings.back-to-settings"), backToSettings(backendDb));
+  });
+  publishing.register(channels);
+  publishing.register(defaultTargets);
+  publishing.register(youtubeSignature);
+  return publishing;
+
+  async function discoverZernio(ctx: Context & MenuFlavor, actorId: number, channelLocale: "ru" | "en", locale: StudioLocale) {
+    try {
+      const studioChannels = createStudioServices(backendDb, config).channels;
+      const accounts = await studioChannels.discoverZernioAccounts();
+      const options = accounts.flatMap((account) => zernioConnectionOptions(account, channelLocale));
+      discoveredAccounts.set(actorId, { locale: channelLocale, options });
+      const supportedAccounts = new Set(options.map(({ accountId }) => accountId));
+      await ctx.answerCallbackQuery({ text: t(locale, "settings.channels-found", { count: options.length }) });
+      await ctx.editMessageText(channelsText(backendDb, config, locale, options.length, accounts.length - supportedAccounts.size));
+      await ctx.menu.update();
+    } catch {
+      await ctx.answerCallbackQuery({ text: t(locale, "settings.channels-error"), show_alert: true });
+    }
+  }
+}
+
+export async function collectYoutubeSignature(
+  ctx: Context,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  text: string,
+  settingsMenu: Menu<Context>,
+): Promise<boolean> {
+  createStudioServices(backendDb, config).settings.setYoutubeSignature(actorId, text);
+  const locale = settingsService(backendDb).locale(actorId);
+  await ctx.reply(t(locale, "settings.youtube-saved"));
+  await ctx.reply(youtubeSignatureText(backendDb, config, actorId, locale), {
+    parse_mode: "Markdown",
+    reply_markup: settingsMenu.at(YOUTUBE_SIGNATURE_MENU_ID),
+  });
+  return true;
+}
+
+function channelPlatformLabel(platform: string): string {
+  if (platform === "tiktok") return "TikTok";
+  if (platform === "youtube") return "YouTube";
+  if (platform === "threads") return "Threads";
+  return "Instagram";
+}
+
+function channelsText(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  locale: StudioLocale,
+  discoveredCount?: number,
+  hiddenCount = 0,
+): string {
+  const rows = createStudioServices(backendDb, config)
+    .channels.report()
+    .map(
+      (channel) =>
+        `• ${channel.label} — ${channel.provider}${channel.providerAccountId ? ` · ${channel.providerAccountId}` : ""} · ${t(locale, channel.status === "ready" ? "settings.channel-ready" : "settings.channel-missing", { count: channel.missing.length })}`,
+    );
+  const suffix = discoveredCount == null ? "" : `\n\n${t(locale, "settings.channels-pick", { count: discoveredCount })}`;
+  const hidden = hiddenCount ? `\n${t(locale, "settings.channels-unsupported", { count: hiddenCount })}` : "";
+  return `${t(locale, "settings.channels-title")}\n\n${rows.join("\n") || t(locale, "settings.channels-none")}${suffix}${hidden}`;
+}
+
+function connectedTargets(backendDb: BackendDb): (typeof TARGETS)[number][] {
+  const registered = registeredPostTargetIds(backendDb);
+  return TARGETS.filter(({ id }) => registered.has(id));
+}
+
+function defaultTargetsText(backendDb: BackendDb, config: BackendConfig, locale: StudioLocale): string {
+  const selected = createStudioServices(backendDb, config).settings.defaultTargets();
+  const active = connectedTargets(backendDb)
+    .filter(({ id }) => selected[id])
+    .map(({ label }) => label)
+    .join(", ");
+  return `${t(locale, "settings.default-targets-title")}\n\n${t(locale, "settings.default-targets-active")}: *${escapeMarkdown(active || t(locale, "settings.default-targets-none"))}*\n\n${t(locale, "settings.default-targets-hint")}`;
+}
+
+function youtubeSignatureText(backendDb: BackendDb, config: BackendConfig, actorId: number, locale: StudioLocale): string {
+  const signature = createStudioServices(backendDb, config).settings.youtubeSignature(actorId);
+  return t(locale, "settings.youtube-body", {
+    signature: signature ? escapeMarkdown(signature) : t(locale, "settings.youtube-not-set"),
+  });
+}

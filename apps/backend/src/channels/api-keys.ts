@@ -1,10 +1,9 @@
-import { eq } from "drizzle-orm";
-import { type BackendDb, unsafeDb } from "../db/client.js";
-import { platformTokens } from "../db/schema.js";
+import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { requestJson } from "../foundation/http.js";
 import { log } from "../foundation/logger.js";
 import { encryptionKey, open, seal } from "../foundation/secret-box.js";
+import { platformToken, storePlatformToken } from "./platform-token-store.js";
 
 /**
  * The services this Studio reaches with a key it is handed rather than one it
@@ -29,7 +28,7 @@ export function applyStoredApiKeys(config: BackendConfig, backendDb: BackendDb):
   const key = encryptionKey(config.TOKEN_ENCRYPTION_KEY);
   if (!key) return;
   for (const target of API_KEY_TARGETS) {
-    const row = unsafeDb(backendDb).db.select().from(platformTokens).where(eq(platformTokens.target, target)).get();
+    const row = platformToken(backendDb, target);
     if (!row) continue;
     try {
       config[API_KEYS[target].setting] = open(row.sealedToken, key);
@@ -67,11 +66,7 @@ export async function storeApiKey(
     refreshedAt: timestamp,
     updatedAt: timestamp,
   };
-  unsafeDb(backendDb)
-    .db.insert(platformTokens)
-    .values({ target, ...row })
-    .onConflictDoUpdate({ target: platformTokens.target, set: row })
-    .run();
+  storePlatformToken(backendDb, target, row);
   config[API_KEYS[target].setting] = trimmed;
   return { target, account };
 }

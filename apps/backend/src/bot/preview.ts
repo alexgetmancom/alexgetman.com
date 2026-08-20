@@ -95,7 +95,7 @@ export function draftPreview(
   const timeConfig = createStudioServices(backendDb, config).settings.timeConfig(draft.actor_id, config);
   const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
   const registered = registeredPostTargetIds(backendDb);
-  const targetRows = registered.size ? TARGETS.filter(({ id }) => registered.has(id)) : TARGETS;
+  const targetRows = TARGETS.filter(({ id }) => registered.has(id));
   // A language this Studio has connected nothing for has no screens: no slot
   // grid, no schedule line, no text to edit. Offering them is how a draft ends
   // up waiting forever for a date in a language that can never publish.

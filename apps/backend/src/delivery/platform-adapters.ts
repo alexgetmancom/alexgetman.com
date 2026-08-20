@@ -14,7 +14,7 @@ import { publishInstagramStory, verifyInstagramPublication } from "./social/inst
 import { publishToTelegram } from "./social/telegram.js";
 import { publishToThreads, verifyThreadsPost } from "./social/threads.js";
 import { publishToX, publishXArticle, verifyXPost } from "./social/x.js";
-import { zernioPublisher } from "./zernio.js";
+import { verifyZernioPost, type ZernioPlatform, zernioPublisher } from "./zernio.js";
 
 type PreparePlatformJob = (job: ClaimedPublishJob, config: BackendConfig) => Promise<ClaimedPublishJob>;
 
@@ -35,14 +35,18 @@ export function createPlatformAdapters(
   const publishers: Record<string, DeliveryPublisher> = {
     telegram: (job) => publishToTelegram(job.payload, config, fetchImpl),
   };
-  for (const target of TARGET_GROUPS.threads)
+  const providerPlatforms = new Map<string, ZernioPlatform>();
+  for (const target of TARGET_GROUPS.threads) {
+    if (throughProvider(target)) providerPlatforms.set(target, "threads");
     publishers[target] = throughProvider(target)
       ? zernioPublisher(config, fetchImpl, target, "threads", accountFor(target))
       : (job) => publishToThreads(job.payload, config, fetchImpl, target);
+  }
   for (const target of TARGET_GROUPS.x) publishers[target] = (job) => publishToX(job.payload, config, fetchImpl);
   for (const target of TARGET_GROUPS.xArticle) publishers[target] = (job) => publishXArticle(job.payload, config, fetchImpl);
   for (const target of TARGET_GROUPS.discord) publishers[target] = (job) => publishToDiscord(job.payload, config, fetchImpl);
-  for (const target of TARGET_GROUPS.instagramStory)
+  for (const target of TARGET_GROUPS.instagramStory) {
+    if (throughProvider(target)) providerPlatforms.set(target, "instagram");
     publishers[target] = throughProvider(target)
       ? zernioPublisher(config, fetchImpl, target, "instagram", accountFor(target), "story")
       : (job) =>
@@ -52,6 +56,7 @@ export function createPlatformAdapters(
             instagramCredentialsForLocale(config, target === "instagram_stories" ? "en" : "ru"),
             fetchImpl,
           );
+  }
   for (const target of TARGET_GROUPS.telegramStory)
     publishers[target] = (job) =>
       import("./social/telegramStories.js").then(({ publishTelegramStory }) => publishTelegramStory(job.payload, config));
@@ -63,12 +68,44 @@ export function createPlatformAdapters(
         publish,
         validate: async () => validatePlatformTarget(target, config, throughProvider(target)),
         prepare: async (job) => (target === "telegram" ? job : prepare(job, config)),
-        verify: async (_job, result) => verifyPlatformPublication(target, result, config, fetchImpl),
+        verify: async (_job, result) => {
+          const providerPlatform = providerPlatforms.get(target);
+          return providerPlatform
+            ? verifyZernioPublication(result, providerPlatform, config, fetchImpl)
+            : verifyPlatformPublication(target, result, config, fetchImpl);
+        },
         ...mutations[target],
       };
       return [target, adapter];
     }),
   ) as DeliveryPorts;
+}
+
+async function verifyZernioPublication(
+  result: PublishResult,
+  platform: ZernioPlatform,
+  config: BackendConfig,
+  fetchImpl: typeof fetch,
+): Promise<PublishResult> {
+  if (!result.ok) return result;
+  const providerPostId = typeof result.providerPostId === "string" ? result.providerPostId : null;
+  if (!providerPostId) return { ...result, verification: { status: "unavailable", error: "Zernio did not return a provider post ID" } };
+  try {
+    const verified = await verifyZernioPost(config, providerPostId, platform, fetchImpl);
+    if (!verified.externalId)
+      return { ...result, verification: { status: "unavailable", error: `${platform} publication is still pending at Zernio` } };
+    return {
+      ...result,
+      id: verified.externalId,
+      url: verified.url ?? result.url ?? null,
+      verification: { status: "verified", providerId: verified.externalId },
+    };
+  } catch (error) {
+    return {
+      ...result,
+      verification: { status: "unavailable", error: error instanceof Error ? error.message : String(error) },
+    };
+  }
 }
 
 function platformMutations(config: BackendConfig, fetchImpl: typeof fetch): Partial<Record<string, Partial<DeliveryAdapter>>> {

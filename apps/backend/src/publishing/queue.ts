@@ -6,7 +6,6 @@ import { recordPublishedXActivity } from "../analytics/x-activity-store.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
 import { type JsonObject, publishJobs } from "../db/schema.js";
 import { insertPublishJobSchema } from "../db/validation.js";
-import type { BackendConfig } from "../foundation/config.js";
 import { PUBLISH_LOCK_TIMEOUT_SECONDS } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { recordAuthFailure, recordAuthSuccess } from "../observability/auth-circuit.js";
@@ -219,13 +218,7 @@ export function recoverStalePublishJobs(backendDb: BackendDb, maxLockAgeSeconds 
   return stale.length;
 }
 
-export function completePublishJob(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  jobId: number,
-  result: PublishResult,
-  lockId?: string,
-): void {
+export function completePublishJob(backendDb: BackendDb, jobId: number, result: PublishResult, lockId?: string): void {
   const now = new Date().toISOString();
   const job = unsafeDb(backendDb).db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return;
@@ -239,7 +232,6 @@ export function completePublishJob(
     const ids = Array.isArray(result.ids) ? result.ids.map(String).filter(Boolean) : [];
     const retry = settleRetryableIds(
       backendDb,
-      config,
       job,
       jobId,
       publicationKey,
@@ -258,7 +250,6 @@ export function completePublishJob(
   if (result.retryable && !result.ok && !result.skipped && reconciliationIds.length > 0) {
     const retry = settleRetryableIds(
       backendDb,
-      config,
       job,
       jobId,
       publicationKey,
@@ -338,7 +329,6 @@ export function completePublishJob(
 
 function settleRetryableIds(
   backendDb: BackendDb,
-  config: BackendConfig,
   job: typeof publishJobs.$inferSelect,
   jobId: number,
   publicationKey: string,
@@ -350,7 +340,7 @@ function settleRetryableIds(
   now: string,
   lockId: string | undefined,
 ): boolean {
-  const { attempt, status, nextAttemptAt } = reconciliationTransition(job.attemptCount, publishRetryPolicy(config));
+  const { attempt, status, nextAttemptAt } = reconciliationTransition(job.attemptCount, publishRetryPolicy());
   const retry = status === "queued";
   const error = String(result.error ?? fallbackError);
   const payload = { ...parsePayload(job.payloadJson), [payloadKey]: ids };
@@ -390,17 +380,12 @@ function settleRetryableIds(
   return retry;
 }
 
-export function failPublishJob(backendDb: BackendDb, config: BackendConfig, jobId: number, error: unknown, lockId?: string): void {
+export function failPublishJob(backendDb: BackendDb, jobId: number, error: unknown, lockId?: string): void {
   const now = new Date().toISOString();
   const job = unsafeDb(backendDb).db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return;
   const publicationKey = job.publicationKey;
-  const {
-    attempt,
-    errorClass,
-    status,
-    nextAttemptAt: nextAttempt,
-  } = failedJobTransition(error, job.attemptCount, publishRetryPolicy(config));
+  const { attempt, errorClass, status, nextAttemptAt: nextAttempt } = failedJobTransition(error, job.attemptCount, publishRetryPolicy());
   const shouldRetry = status === "queued";
   const errorText = String(error instanceof Error ? error.message : error);
   const settled = withLease(backendDb, jobId, (tx) => {

@@ -15,8 +15,16 @@ docker compose exec app bun /app/ops/cli.js doctor
 ```
 
 `doctor` names the exact settings that destination is missing and never prints
-the ones it has. Put them in `.env`, `docker compose up -d`, run it again. The
-same two steps work from the Telegram bot and from an MCP client.
+the ones it has. Put deployment credentials in `.env`, restart, and run it
+again. The destination itself can be enabled from Command Center → Studio →
+Channels, Telegram → Settings → Channels, the CLI, or the corresponding MCP
+operation. Host credentials and the interactive Telegram Stories login remain
+CLI-only; MCP never receives a secret or a local session.
+
+Command Center and Telegram show `ready` or the number of missing credentials
+beside every connected channel. Disable it from the same screen, or use
+`channel-disable` / `ops_channel_disable`; disabled routes disappear from draft
+targets without losing their publication history.
 
 ## What you can connect
 
@@ -25,15 +33,15 @@ are connected by naming their platform and language.
 
 | Destination | Connect with | Needs |
 | --- | --- | --- |
-| Website | `--target site_ru` / `site_en` | nothing, plus `ops studio-profile-set --site-enabled` |
-| Telegram channel | `--target telegram` | `CONTROLLER_BOT_TOKEN` |
-| Discord | `--target discord` | `DISCORD_CHANNEL_ID`, then `ops credential-set --target discord` |
-| Threads | Studio → Channels, RU or EN | `THREADS_APP_ID`, `THREADS_APP_SECRET`, `TOKEN_ENCRYPTION_KEY`, or a stored Zernio key |
-| X | `--target x` | `X_CLIENT_ID`, `X_CLIENT_SECRET`, then connect in Studio → Channels |
-| Instagram Stories | Studio → Channels, RU or EN | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `TOKEN_ENCRYPTION_KEY`, or a stored Zernio key |
-| Telegram Stories | `--target telegram_stories` | `TELEGRAM_CHANNEL_STORIES_API_ID`, `_API_HASH`, `_SESSION` |
-| YouTube | `connect-link --platform youtube --locale ru` | `YOUTUBE_*_CLIENT_ID`, `_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY` |
-| Instagram feed and Reels | Studio → Channels, RU or EN | same native Instagram login, or a stored Zernio key |
+| Website | `--target site_ru` / `site_en` | nothing, plus `docker compose exec app bun /app/ops/cli.js studio-profile-set --site-enabled` |
+| Telegram channel | Channels or `--target telegram` | `CONTROLLER_BOT_TOKEN` |
+| Discord | Channels or `--target discord` | `DISCORD_CHANNEL_ID`, then CLI `credential-set --target discord` |
+| Threads | Channels or `connect-link --platform threads` | native app credentials or a stored Zernio key |
+| X | Channels or `connect-link --platform x` | `X_CLIENT_ID`, `X_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY` |
+| Instagram Stories | Enable the Story in Channels after native Instagram login, or select its Zernio route | native Instagram credentials or a stored Zernio key |
+| Telegram Stories | Channels or `--target telegram_stories` | CLI `telegram-stories-login` with `TELEGRAM_CHANNEL_STORIES_API_ID`, `_API_HASH`, `_SESSION` |
+| YouTube | Channels or `connect-link --platform youtube --locale ru` | `YOUTUBE_*_CLIENT_ID`, `_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY` |
+| Instagram feed and Reels | Channels or `connect-link --platform instagram` | native Instagram credentials or a stored Zernio key |
 | TikTok | `--platform tiktok --provider zernio` | a stored Zernio key — analytics only, never published to |
 
 ## Native or through a provider
@@ -52,9 +60,10 @@ https://your-domain.example/oauth/instagram
 
 Then open Command Center → Studio → Channels, or Telegram → Settings → Channels,
 and click the RU or EN native button. The browser returns to Studio, which
-exchanges the code, seals the long-lived token in the database, records the
-account id and connects every native route that account serves. No URL copying,
-CLI token exchange, `.env` token edit or restart is involved. An app in
+exchanges the code, seals the long-lived token in the database and records the
+account id. An Instagram login enables Reels; enable its separate Story target
+on the same screen only when that Studio publishes Stories. No URL copying, CLI
+token exchange, `.env` token edit or restart is involved. An app in
 Development mode works for accounts assigned a role on that app; serving other
 people's accounts is the point at which Meta review matters.
 
@@ -70,8 +79,12 @@ and stored sealed in this Studio's database, the way an OAuth token is.
 
 ```bash
 printf %s "$ZERNIO_KEY" | docker compose exec -T app bun /app/ops/cli.js credential-set --target zernio
-``` In the Telegram bot, Settings → Channels lists
-the accounts the provider reports so you can pick one instead of typing an id.
+```
+
+Command Center and Telegram Settings → Channels list the publishable routes
+the provider reports so you can pick one instead of typing an id. MCP lists the
+same choices with `studio_zernio_connection_options`; connect the selected route
+with `ops_channel_connect`.
 
 Native remains the default: a destination no provider carries is delivered
 straight to the platform, as it always was.

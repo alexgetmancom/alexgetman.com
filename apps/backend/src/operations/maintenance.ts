@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import { freezeDisabledMetricSchedules } from "../analytics/collection/metric-schedule.js";
+import { parsePublicationRef, publicationRef } from "../application/publication-ref.js";
 import { registeredPostTargetIds } from "../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import {
@@ -266,10 +267,11 @@ type PublicationConsistencyReport = {
 
 function publicationConsistencyScope(ref: string | undefined): PublicationConsistencyScope | null {
   if (!ref) return null;
-  const match = ref.match(/^(post|video):(\d+)$/);
-  const id = Number(match?.[2]);
-  if (!match || !Number.isSafeInteger(id) || id <= 0) throw new Error("--ref must look like post:1 or video:1");
-  return match[1] === "post" ? { kind: "post", id, publicationKey: `post:${id}` } : { kind: "video", id };
+  const parsed = parsePublicationRef(ref);
+  if (!parsed || !["post", "video"].includes(parsed.kind) || parsed.id <= 0) throw new Error("--ref must look like post:1 or video:1");
+  return parsed.kind === "post"
+    ? { kind: "post", id: parsed.id, publicationKey: publicationRef("post", parsed.id) }
+    : { kind: "video", id: parsed.id };
 }
 
 export function publicationConsistencyReport(

@@ -4,7 +4,7 @@ import { targetLocale } from "../src/botTargets.js";
 import { type BackendDb, unsafeDb } from "../src/db/client.js";
 import { publishJobs, siteJobs } from "../src/db/schema.js";
 import type { DeliveryPorts } from "../src/delivery/ports.js";
-import { runPublishCycle } from "../src/runtime/workers.js";
+import { runDeliveryPublishCycle } from "../src/delivery/publish-workflow.js";
 import { postService } from "../src/studio/services/posts.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
@@ -157,7 +157,7 @@ describe("partial locale scheduling", () => {
       ]),
     );
     await Bun.sleep(100);
-    expect(await runPublishCycle(config, backendDb, publishers)).toBe(3);
+    expect(await runDeliveryPublishCycle(config, backendDb, publishers)).toBe(3);
     expect(calls).toHaveLength(3);
     expect(new Set(calls)).toEqual(new Set(["telegram", "threads_ru", "threads_en"]));
     expect(
@@ -169,7 +169,7 @@ describe("partial locale scheduling", () => {
         .every((job) => job.status === "published"),
     ).toBe(true);
 
-    expect(await runPublishCycle(config, backendDb, publishers)).toBe(0);
+    expect(await runDeliveryPublishCycle(config, backendDb, publishers)).toBe(0);
     expect(calls).toHaveLength(3);
   });
 });

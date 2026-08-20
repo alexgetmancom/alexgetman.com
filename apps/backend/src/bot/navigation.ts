@@ -8,7 +8,7 @@ import { settingsService } from "../studio/services/settings.js";
 import { showAnalyticsDashboard } from "./analytics-screen.js";
 import { openIntake } from "./intake.js";
 import { showQueue } from "./queue.js";
-import { SETTINGS_MENU_ID } from "./settings-screen.js";
+import { SETTINGS_MENU_ID } from "./settings/index.js";
 
 const MAIN_MENU_ID = "main-menu";
 

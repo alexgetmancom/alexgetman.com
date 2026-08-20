@@ -206,20 +206,16 @@ async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job:
   if (!filePath) throw new Error("Video source was removed before publication completed.");
   const metadata = target.metadataJson as VideoMetadata;
   const locale = draft.locale === "en" ? "en" : "ru";
-  // The channel's own credentials, when it has them, stand in for the
-  // deployment's before any publisher sees the configuration.
-  const youtubeConfig = config;
-  const instagramConfig = config;
-  const instagramCredentials = instagramCredentialsForLocale(instagramConfig, locale);
+  const instagramCredentials = instagramCredentialsForLocale(config, locale);
   if (job.kind === "prepare") {
-    if (target.target === "youtube_shorts") await prepareYouTube(youtubeConfig, backendDb, job, target, draft, filePath, locale);
+    if (target.target === "youtube_shorts") await prepareYouTube(config, backendDb, job, target, draft, filePath, locale);
     else if (target.deliveryProvider === "zernio") prepareZernio(backendDb, target);
-    else await prepareInstagram(instagramConfig, backendDb, job, target, draft, metadata, instagramCredentials);
+    else await prepareInstagram(config, backendDb, job, target, draft, metadata, instagramCredentials);
     return;
   }
   if (target.target === "youtube_shorts") publishYouTube(backendDb, job, target);
-  else if (target.deliveryProvider === "zernio") await publishZernio(instagramConfig, backendDb, job, target, draft, metadata);
-  else await publishInstagram(instagramConfig, backendDb, job, target, instagramCredentials);
+  else if (target.deliveryProvider === "zernio") await publishZernio(config, backendDb, job, target, draft, metadata);
+  else await publishInstagram(config, backendDb, job, target, instagramCredentials);
   refreshVideoDraftStatus(backendDb, draft.id, config.VIDEO_MEDIA_RETENTION_HOURS);
 }
 

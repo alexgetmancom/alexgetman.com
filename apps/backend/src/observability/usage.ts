@@ -40,6 +40,7 @@ const TRACKED_FEATURES = [
   "studio.media.import",
   "studio.channel.list",
   "studio.channel.connect",
+  "studio.channel.disable",
   "studio.channel.discover",
   "studio.analytics.dashboard.read",
   "studio.analytics.milestones.read",

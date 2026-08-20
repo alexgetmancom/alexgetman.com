@@ -146,6 +146,29 @@ const studioToolDefs = {
         source,
       })),
   }),
+  studio_zernio_connection_options: tool({
+    description: "List publishable Zernio account routes for one language without exposing the stored API key.",
+    schema: z.object({ locale: z.enum(["ru", "en"]) }),
+    handler: async (studio, _actorId, input) =>
+      (await studio.channels.discoverZernioConnections(input.locale)).map((option) => ({
+        connection: option.key,
+        label: option.label,
+        channel_connect: option.input.targetId
+          ? {
+              target: option.input.targetId,
+              provider: "zernio",
+              account_id: option.accountId,
+              label: option.label,
+            }
+          : {
+              platform: option.input.platform,
+              locale: option.locale,
+              provider: "zernio",
+              account_id: option.accountId,
+              label: option.label,
+            },
+      })),
+  }),
   studio_locale_update: tool({
     description: "Update the authenticated owner's shared interface locale.",
     schema: z.object({ locale: uiLocaleSchema }),

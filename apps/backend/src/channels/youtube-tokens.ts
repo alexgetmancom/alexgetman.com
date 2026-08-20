@@ -1,16 +1,16 @@
-import { eq } from "drizzle-orm";
-import { type BackendDb, unsafeDb } from "../db/client.js";
-import { platformTokens } from "../db/schema.js";
+import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { log } from "../foundation/logger.js";
 import { encryptionKey, open, seal } from "../foundation/secret-box.js";
 import type { VideoLocale } from "../publishing/video-types.js";
+import { channelIdentity } from "./identity.js";
+import { platformToken, storePlatformToken } from "./platform-token-store.js";
 
 /** Where a connected YouTube channel's renewal credential lives, by language.
  * The name matches the registry's channel id, which is how every other surface
  * already speaks about the same account. */
 export function youtubeTokenTarget(locale: VideoLocale): string {
-  return `youtube_${locale}`;
+  return channelIdentity("youtube", locale);
 }
 
 function refreshTokenSetting(locale: VideoLocale): "YOUTUBE_RU_REFRESH_TOKEN" | "YOUTUBE_EN_REFRESH_TOKEN" {
@@ -29,11 +29,7 @@ export function applyStoredYouTubeTokens(config: BackendConfig, backendDb: Backe
   const key = encryptionKey(config.TOKEN_ENCRYPTION_KEY);
   if (!key) return;
   for (const locale of ["ru", "en"] as const) {
-    const row = unsafeDb(backendDb)
-      .db.select()
-      .from(platformTokens)
-      .where(eq(platformTokens.target, youtubeTokenTarget(locale)))
-      .get();
+    const row = platformToken(backendDb, youtubeTokenTarget(locale));
     if (!row) continue;
     try {
       config[refreshTokenSetting(locale)] = open(row.sealedToken, key);
@@ -64,10 +60,6 @@ export function installYouTubeToken(
     refreshedAt: timestamp,
     updatedAt: timestamp,
   };
-  unsafeDb(backendDb)
-    .db.insert(platformTokens)
-    .values({ target, ...row })
-    .onConflictDoUpdate({ target: platformTokens.target, set: row })
-    .run();
+  storePlatformToken(backendDb, target, row);
   config[refreshTokenSetting(locale)] = refreshToken;
 }

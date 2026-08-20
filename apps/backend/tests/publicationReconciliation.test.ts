@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { and, eq } from "drizzle-orm";
+import { registerChannel } from "../src/channels/registry.js";
 import {
   credentialChecks,
   drafts,
@@ -256,6 +257,59 @@ describe("publication reconciliation", () => {
           .where(and(eq(publicationTargets.publicationKey, "post:81"), eq(publicationTargets.target, "threads_ru")))
           .get(),
       ).toEqual({ status: "published", confirmationSource: "provider_verify" });
+    }));
+
+  it("reconciles a Zernio Threads target through Zernio rather than treating its provider id as a Threads id", () =>
+    withDb(async (backendDb) => {
+      registerChannel(backendDb, {
+        platform: "threads",
+        locale: "ru",
+        provider: "zernio",
+        providerAccountId: "account-82",
+        targetId: "threads_ru",
+      });
+      const jobId = enqueuePublishJobTx(backendDb.db, {
+        publicationId: 82,
+        publicationKey: "post:82",
+        target: "threads_ru",
+        payload: { text: "published through Zernio" },
+      });
+      const now = new Date().toISOString();
+      backendDb.db.update(publishJobs).set({ status: "verification_required", updatedAt: now }).where(eq(publishJobs.jobId, jobId)).run();
+      backendDb.db
+        .insert(publicationTargets)
+        .values({
+          publicationKey: "post:82",
+          target: "threads_ru",
+          status: "verification_required",
+          externalId: "zernio-82",
+          rawJson: JSON.stringify({ ok: true, providerPostId: "zernio-82" }),
+          updatedAt: now,
+        })
+        .run();
+
+      const requests: string[] = [];
+      const fetchImpl = (async (input: string | URL | Request) => {
+        requests.push(String(input));
+        return new Response(
+          JSON.stringify({
+            _id: "zernio-82",
+            platforms: [{ platform: "threads", platformPostId: "thread-82", platformPostUrl: "https://threads.net/post/82" }],
+          }),
+          { status: 200 },
+        );
+      }) as unknown as typeof fetch;
+      const config = Object.assign(loadTestConfig({}), { ZERNIO_API_KEY: "z".repeat(16) });
+
+      expect(await runPublicationReconciliation(backendDb, config, fetchImpl)).toMatchObject({ checked: 1, resolved: 1 });
+      expect(requests).toEqual(["https://zernio.com/api/v1/posts/zernio-82"]);
+      expect(
+        backendDb.db
+          .select({ externalId: publicationTargets.externalId, url: publicationTargets.url })
+          .from(publicationTargets)
+          .where(and(eq(publicationTargets.publicationKey, "post:82"), eq(publicationTargets.target, "threads_ru")))
+          .get(),
+      ).toEqual({ externalId: "thread-82", url: "https://threads.net/post/82" });
     }));
 
   it("polls a job that already spent its publish attempts", () =>

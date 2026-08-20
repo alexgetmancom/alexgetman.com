@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
+import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { postLocales, postMetrics, posts, publications, publicationTargets, publishJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -193,7 +194,7 @@ function fetchPostRows(backendDb: BackendDb, start: string, end: string, include
     .orderBy(desc(publicationMoment))
     .limit(rowLimit)
     .all() as PublicationQueryRow[];
-  const publicationKeys = publicationRows.map((row) => `post:${row.postId}`);
+  const publicationKeys = publicationRows.map((row) => publicationRef("post", row.postId));
   const publicationPosts = publicationKeys.length
     ? unsafeDb(backendDb)
         .db.select({
@@ -208,9 +209,9 @@ function fetchPostRows(backendDb: BackendDb, start: string, end: string, include
     : [];
   const postByKey = new Map(publicationPosts.map((post) => [post.publicationKey, post]));
   return publicationRows.map((row) => {
-    const post = postByKey.get(`post:${row.postId}`);
+    const post = postByKey.get(publicationRef("post", row.postId));
     return {
-      publication_key: `post:${row.postId}`,
+      publication_key: publicationRef("post", row.postId),
       post_id: row.postId,
       telegram_message_id: row.telegramMessageId,
       created_at: row.createdAt,

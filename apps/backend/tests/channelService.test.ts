@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
+import { listChannels } from "../src/channels/registry.js";
 import type { BackendDb } from "../src/db/client.js";
 import { channelService } from "../src/studio/services/channels.js";
+import { withDb } from "./helpers/db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("Studio channel service", () => {
@@ -20,4 +22,30 @@ describe("Studio channel service", () => {
     await expect(service.discoverZernioAccounts()).resolves.toEqual([{ _id: "account-1", username: "alex" }]);
     expect(calls).toEqual([{ url: "https://zernio.com/api/v1/accounts", authorization: `Bearer ${"z".repeat(16)}` }]);
   });
+
+  it("connects a selected provider account only to the requested publication route", () =>
+    withDb(async (backendDb) => {
+      const fetchImpl = (async () =>
+        Response.json({ accounts: [{ _id: "account-1", platform: "Instagram", username: "alex" }] })) as unknown as typeof fetch;
+      const config = loadTestConfig({});
+      config.ZERNIO_API_KEY = "z".repeat(16);
+      const service = channelService(backendDb, config, fetchImpl);
+
+      await service.connectZernio("account-1", "ru", "instagram_stories");
+
+      expect(listChannels(backendDb)).toMatchObject([
+        { id: "instagram_stories_ru", provider: "zernio", providerAccountId: "account-1", targetId: "instagram_stories_ru" },
+      ]);
+    }));
+
+  it("reports missing credentials beside a connection and can disable it", () =>
+    withDb((backendDb) => {
+      const service = channelService(backendDb, loadTestConfig({}));
+      service.connectTarget("telegram_stories");
+
+      expect(service.report()).toMatchObject([{ id: "telegram_stories", status: "missing" }]);
+      service.disable("telegram_stories");
+      expect(service.report()).toEqual([]);
+      expect(service.report(false)).toMatchObject([{ id: "telegram_stories", enabled: 0 }]);
+    }));
 });

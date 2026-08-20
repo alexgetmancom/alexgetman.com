@@ -18,12 +18,18 @@ function job(overrides: Record<string, unknown> = {}): ClaimedPublishJob {
 
 function captureRequest() {
   const sent: { url: string; body: unknown }[] = [];
+  let platform = "instagram";
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
-    sent.push({ url: String(input), body: JSON.parse(String(init?.body ?? "{}")) });
-    return new Response(JSON.stringify({ _id: "zernio-post-1", platforms: [{ platformPostId: "p1", platformPostUrl: "https://t" }] }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
+    const body = JSON.parse(String(init?.body ?? "{}"));
+    sent.push({ url: String(input), body });
+    platform = body.platforms?.[0]?.platform ?? platform;
+    return new Response(
+      JSON.stringify({ _id: "zernio-post-1", platforms: [{ platform, platformPostId: "p1", platformPostUrl: "https://t" }] }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    );
   }) as unknown as typeof fetch;
   return { sent, fetchImpl };
 }
@@ -38,13 +44,19 @@ describe("delivery through a provider", () => {
       threads_ru: { provider: "zernio", accountId: "acc-1" },
     });
 
-    const result = await adapters.threads_ru?.publish(job());
+    const publishJob = job();
+    const result = await adapters.threads_ru?.publish(publishJob);
+    if (!result) throw new Error("Threads adapter is missing");
     expect(result?.ok).toBe(true);
+    expect(result?.id).toBe("p1");
     expect(sent).toHaveLength(1);
     expect(sent[0]?.url).toContain("zernio.com/api/v1/posts");
     const body = sent[0]?.body as { platforms: { platform: string; accountId: string }[]; mediaItems: unknown[] };
     expect(body.platforms[0]).toMatchObject({ platform: "threads", accountId: "acc-1" });
     expect(body.mediaItems).toHaveLength(1);
+    const verified = await adapters.threads_ru?.verify(publishJob, result);
+    expect(verified).toMatchObject({ id: "p1", verification: { status: "verified", providerId: "p1" } });
+    expect(sent.map(({ url }) => url)).toEqual(["https://zernio.com/api/v1/posts", "https://zernio.com/api/v1/posts/zernio-post-1"]);
   });
 
   it("sends an Instagram Story as a story, with one visual", async () => {

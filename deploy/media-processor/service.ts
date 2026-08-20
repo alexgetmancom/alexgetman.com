@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, rmSync, statfsSync, statSync } from "node:fs";
 import { mkdir, rename } from "node:fs/promises";
-import { createSerialQueue } from "./serial-queue.js";
+import { createSerialQueue } from "../../shared/serial-queue.js";
 import { needsVerticalBlur, remoteSiteVideoFfmpegArgs, remoteStoryFfmpegArgs, verticalImageFfmpegArgs } from "./story-encode.js";
 
 /**

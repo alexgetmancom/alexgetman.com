@@ -1,5 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { drafts, publicationEvents, publications, publicationTargets, publishJobs, siteJobs } from "../src/db/schema.js";
+import {
+  drafts,
+  publicationEvents,
+  publicationSources,
+  publications,
+  publicationTargets,
+  publishJobs,
+  siteJobs,
+} from "../src/db/schema.js";
 import { createStudioServices } from "../src/studio/services/index.js";
 import { withDb } from "./helpers/db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
@@ -20,6 +28,10 @@ describe("post publication retry", () => {
           createdAt: now,
           updatedAt: now,
         })
+        .run();
+      backendDb.db
+        .insert(publicationSources)
+        .values({ postId: 700, itemJson: { text: "Retryable post", text_ru: "Retryable post", media: [] }, createdAt: now, updatedAt: now })
         .run();
       backendDb.db
         .insert(publishJobs)

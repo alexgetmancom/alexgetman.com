@@ -103,6 +103,32 @@ describe("creator analytics deltas", () => {
     });
   });
 
+  it("does not mix a replaced account's audience history into the current account", async () => {
+    await withDb(async (backendDb) => {
+      const now = new Date();
+      const since = new Date(now.getTime() - 7 * 24 * 60 * 60_000);
+      const sample = (account: string, followers: number, at: Date) => ({
+        platform: "instagram_ru",
+        account,
+        sampledOn: at.toISOString().slice(0, 10),
+        metricsJson: { followersCount: followers },
+        source: "test",
+        sampledAt: at.toISOString(),
+      });
+      backendDb.db
+        .insert(creatorProfileSnapshots)
+        .values([
+          sample("old-account", 100, new Date(since.getTime() - 24 * 60 * 60_000)),
+          sample("old-account", 140, new Date(since.getTime() + 24 * 60 * 60_000)),
+          sample("current-account", 20, new Date(since.getTime() - 60_000)),
+          sample("current-account", 25, now),
+        ])
+        .run();
+
+      expect(audienceGrowthByPlatform(backendDb, since.toISOString(), 7, now.toISOString(), false).get("instagram_ru")).toBe(5);
+    });
+  });
+
   it("uses YouTube's native gained and lost subscriber reports for each selected period", async () => {
     await withDb(async (backendDb) => {
       const now = new Date().toISOString();
@@ -264,6 +290,39 @@ describe("creator analytics deltas", () => {
         source: "test",
         metrics: { followersCount: 600 },
       });
+      expect(evaluateAudienceMilestones(backendDb)).toBe(0);
+    });
+  });
+
+  it("rebases milestones when a route is connected to another account", async () => {
+    await withDb(async (backendDb) => {
+      registerChannel(backendDb, {
+        platform: "instagram",
+        locale: "ru",
+        provider: "zernio",
+        providerAccountId: "old-account",
+      });
+      recordProfileSnapshot(backendDb, {
+        platform: "instagram_ru",
+        account: "old-account",
+        source: "test",
+        metrics: { followersCount: 100 },
+      });
+      expect(evaluateAudienceMilestones(backendDb)).toBe(0);
+
+      registerChannel(backendDb, {
+        platform: "instagram",
+        locale: "ru",
+        provider: "zernio",
+        providerAccountId: "new-account",
+      });
+      recordProfileSnapshot(backendDb, {
+        platform: "instagram_ru",
+        account: "new-account",
+        source: "test",
+        metrics: { followersCount: 10_000 },
+      });
+
       expect(evaluateAudienceMilestones(backendDb)).toBe(0);
     });
   });

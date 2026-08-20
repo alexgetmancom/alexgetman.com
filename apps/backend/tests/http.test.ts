@@ -3,9 +3,11 @@ import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApiHandler } from "../src/api.js";
+import { listChannels } from "../src/channels/registry.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { BackendConfig } from "../src/foundation/config.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
+import { channelService } from "../src/studio/services/channels.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
@@ -109,6 +111,68 @@ describe("Astro endpoint controller", () => {
     }
   });
 
+  it("connects a direct publication target from an authenticated Command Center form", async () => {
+    const backendDb = openBackendDb(join(tempDir("alexgetman-channel-connect-"), "pipeline.db"), 5000);
+    try {
+      const config = loadTestConfig({ COMMAND_CENTER_TOKEN: "secret" });
+      const app = createApiApp(config, backendDb);
+      const body = new FormData();
+      body.set("target", "telegram_stories");
+      const response = await app.request("/command-center/channels/connect", {
+        method: "POST",
+        body,
+        headers: { cookie: "command_token=secret", origin: new URL(config.COMMAND_CENTER_URL).origin },
+      });
+
+      expect(response.status).toBe(303);
+      expect(response.headers.get("location")).toBe("/command-center?tab=studio");
+      expect(listChannels(backendDb).map(({ id }) => id)).toEqual(["telegram_stories"]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("rejects a cross-origin channel connection form", async () => {
+    const backendDb = openBackendDb(join(tempDir("alexgetman-channel-csrf-"), "pipeline.db"), 5000);
+    try {
+      const app = createApiApp(loadTestConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb);
+      const body = new FormData();
+      body.set("target", "telegram");
+      const response = await app.request("/command-center/channels/connect", {
+        method: "POST",
+        body,
+        headers: { cookie: "command_token=secret", origin: "https://attacker.example" },
+      });
+
+      expect(response.status).toBe(403);
+      expect(listChannels(backendDb)).toEqual([]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("disables a channel from an authenticated Command Center form", async () => {
+    const backendDb = openBackendDb(join(tempDir("alexgetman-channel-disable-"), "pipeline.db"), 5000);
+    try {
+      const config = loadTestConfig({ COMMAND_CENTER_TOKEN: "secret" });
+      const app = createApiApp(config, backendDb);
+      channelService(backendDb, config).connectTarget("telegram");
+      const body = new FormData();
+      body.set("channel", "telegram");
+      const response = await app.request("/command-center/channels/disable", {
+        method: "POST",
+        body,
+        headers: { cookie: "command_token=secret", origin: new URL(config.COMMAND_CENTER_URL).origin },
+      });
+
+      expect(response.status).toBe(303);
+      expect(listChannels(backendDb)).toEqual([]);
+      expect(listChannels(backendDb, false)).toMatchObject([{ id: "telegram", enabled: 0 }]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("stops a run of command-center login guesses", async () => {
     const backendDb = tempDb();
     try {
@@ -155,6 +219,7 @@ describe("Astro endpoint controller", () => {
         latestEventAt: null,
         videoRevision: null,
         analyticsRevision: null,
+        studioRevision: expect.any(String),
       });
       expect(second).toEqual(first);
       expect(JSON.stringify(first).length).toBeLessThan(200);

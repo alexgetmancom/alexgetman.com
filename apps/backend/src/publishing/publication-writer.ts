@@ -1,17 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { isSiteTarget, targetLocale } from "../botTargets.js";
 import type { UnsafeBackendDb } from "../db/client.js";
-import {
-  drafts,
-  postLocales,
-  posts,
-  publicationPlans,
-  publicationSources,
-  publications,
-  publishJobs,
-  siteJobs,
-  siteSourceItems,
-} from "../db/schema.js";
+import { drafts, postLocales, posts, publicationPlans, publicationSources, publications, publishJobs, siteJobs } from "../db/schema.js";
 import { localizeTargetPayload } from "./payload.js";
 import type { PublicationPlan } from "./publication-plan.js";
 import { enqueuePublishJobTx } from "./queue.js";
@@ -29,7 +19,6 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
     mediaCount: plan.mediaRu.length,
     createdAt: plan.now,
     updatedAt: plan.now,
-    rawJson: JSON.stringify(plan.payload),
   };
   tx.insert(posts)
     .values({ publicationKey: plan.publicationKey, ...postValues })
@@ -43,7 +32,6 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
         mediaJson: postValues.mediaJson,
         mediaCount: plan.mediaRu.length,
         updatedAt: plan.now,
-        rawJson: postValues.rawJson,
       },
     })
     .run();
@@ -79,10 +67,6 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
   tx.insert(publicationSources)
     .values({ postId: plan.postId, itemJson: plan.payload, createdAt: plan.now, updatedAt: plan.now })
     .onConflictDoUpdate({ target: publicationSources.postId, set: { itemJson: plan.payload, updatedAt: plan.now } })
-    .run();
-  tx.insert(siteSourceItems)
-    .values({ messageId: plan.messageId, itemJson: plan.payload, createdAt: plan.now, updatedAt: plan.now })
-    .onConflictDoUpdate({ target: siteSourceItems.messageId, set: { itemJson: plan.payload, updatedAt: plan.now } })
     .run();
   tx.delete(publishJobs)
     .where(and(eq(publishJobs.publicationId, plan.postId), inArray(publishJobs.status, ["queued", "failed"])))

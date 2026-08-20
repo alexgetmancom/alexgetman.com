@@ -94,7 +94,6 @@ describe("openBackendDb", () => {
         "publish_jobs",
         "runtime_usage",
         "site_jobs",
-        "site_source_items",
         "studio_media_assets",
         "studio_news_digest_settings",
         "studio_weekly_digest_settings",

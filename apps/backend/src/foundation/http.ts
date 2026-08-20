@@ -34,15 +34,7 @@ export function retryAfterSecondsFromHeaders(headers: Headers): number | null {
 
 export async function requestJson<T = Record<string, unknown>>(fetchImpl: typeof fetch, url: string, init: RequestInit = {}): Promise<T> {
   const response = await externalFetch(fetchImpl, url, init);
-  const body = await response.text();
-  if (!response.ok) {
-    throw new ExternalHttpError(
-      `${init.method ?? "GET"} ${safeUrl(url)} failed: ${response.status} ${redactExternalSecrets(body)}`,
-      response.status,
-      redactExternalSecrets(body),
-      retryAfterSecondsFromHeaders(response.headers),
-    );
-  }
+  const body = await successfulResponseText(response, url, init.method);
   if (!body) return {} as T;
   try {
     return JSON.parse(body) as T;
@@ -60,10 +52,14 @@ export async function requestJson<T = Record<string, unknown>>(fetchImpl: typeof
 
 export async function requestText(fetchImpl: typeof fetch, url: string, init: RequestInit = {}): Promise<string> {
   const response = await externalFetch(fetchImpl, url, init);
+  return successfulResponseText(response, url, init.method);
+}
+
+async function successfulResponseText(response: Response, url: string, method?: string): Promise<string> {
   const body = await response.text();
   if (!response.ok) {
     throw new ExternalHttpError(
-      `${init.method ?? "GET"} ${safeUrl(url)} failed: ${response.status} ${redactExternalSecrets(body)}`,
+      `${method ?? "GET"} ${safeUrl(url)} failed: ${response.status} ${redactExternalSecrets(body)}`,
       response.status,
       redactExternalSecrets(body),
       retryAfterSecondsFromHeaders(response.headers),

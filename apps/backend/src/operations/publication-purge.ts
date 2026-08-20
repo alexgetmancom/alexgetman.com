@@ -1,5 +1,5 @@
 import { existsSync, unlinkSync } from "node:fs";
-import { parsePublicationRef } from "../application/publication-ref.js";
+import { parsePublicationRef, publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { textTargetIsAbsent } from "../delivery/platform-adapters.js";
 import { videoTargetIsAbsent } from "../delivery/video-publishers.js";
@@ -25,13 +25,9 @@ export async function purgePublication(backendDb: BackendDb, config: BackendConf
   if (!publication?.draftId) throw new Error(`purge requires a Studio publication: ${resolved.publicationKey}`);
   const draftId = publication.draftId;
   const postId = resolved.postId;
-  const refs = [`post:${postId}`, `draft:${draftId}`];
-  const statements = purgeStatements(postId, draftId, resolved.publicationKey, resolved.messageId, refs);
-  const rows = Object.fromEntries(
-    statements
-      .map((statement) => [statement.name, count(sqlite.query(statement.countSql).get(...statement.args))] as const)
-      .filter(([, value]) => value > 0),
-  );
+  const refs = [publicationRef("post", postId), publicationRef("draft", draftId)];
+  const statements = purgeStatements(postId, draftId, resolved.publicationKey, refs);
+  const rows = affectedRows(sqlite, statements);
   const files = (
     sqlite
       .query(
@@ -51,27 +47,13 @@ export async function purgePublication(backendDb: BackendDb, config: BackendConf
       // back rather than erasing the record of a post that just went out.
       if (targetSignature(targetStates(sqlite, resolved.publicationKey)) !== targetSignature(verified))
         throw new Error(`targets for ${resolved.publicationKey} changed while it was being verified; nothing was deleted`);
-      const result: Record<string, number> = {};
-      for (const statement of statements) {
-        const changes = sqlite.query(statement.deleteSql).run(...statement.args).changes;
-        if (changes > 0) result[statement.name] = changes;
-      }
+      const result = executePurge(sqlite, statements);
       const remaining = sqlite.query("SELECT COUNT(*) AS count FROM publications WHERE post_id=? OR draft_id=?").get(postId, draftId);
       if (count(remaining) !== 0) throw new Error(`purge did not remove ${resolved.publicationKey}`);
       return result;
     })
     .immediate();
-  const removedFiles: string[] = [];
-  const failedFiles: string[] = [];
-  for (const path of files) {
-    if (!existsSync(path)) continue;
-    try {
-      unlinkSync(path);
-      removedFiles.push(path);
-    } catch {
-      failedFiles.push(path);
-    }
-  }
+  const { removedFiles, failedFiles } = removeFiles(files);
   return {
     ok: failedFiles.length === 0,
     applied: true,
@@ -96,18 +78,14 @@ async function purgeVideoPublication(
   fetchImpl: typeof fetch,
 ) {
   const sqlite = unsafeDb(backendDb).sqlite;
-  const ref = `video:${videoDraftId}`;
+  const ref = publicationRef("video", videoDraftId);
   const draft = sqlite.query("SELECT studio_media_asset_id AS assetId, locale FROM video_drafts WHERE id=?").get(videoDraftId) as {
     assetId: number;
     locale: string;
   } | null;
   if (!draft) throw new Error(`publication not found: ${ref}`);
   const statements = videoPurgeStatements(videoDraftId, ref);
-  const rows = Object.fromEntries(
-    statements
-      .map((statement) => [statement.name, count(sqlite.query(statement.countSql).get(...statement.args))] as const)
-      .filter(([, value]) => value > 0),
-  );
+  const rows = affectedRows(sqlite, statements);
   const files = orphanedAssetFiles(backendDb, draft.assetId, videoDraftId);
   if (!apply) return { ok: true, applied: false, action: "purge", ref, video_draft_id: videoDraftId, rows, files };
 
@@ -120,11 +98,7 @@ async function purgeVideoPublication(
       // were checked.
       if (targetSignature(videoTargetStates(sqlite, videoDraftId)) !== targetSignature(verified))
         throw new Error(`targets for ${ref} changed while it was being verified; nothing was deleted`);
-      const result: Record<string, number> = {};
-      for (const statement of statements) {
-        const changes = sqlite.query(statement.deleteSql).run(...statement.args).changes;
-        if (changes > 0) result[statement.name] = changes;
-      }
+      const result = executePurge(sqlite, statements);
       const remaining = sqlite.query("SELECT COUNT(*) AS count FROM video_drafts WHERE id=?").get(videoDraftId);
       if (count(remaining) !== 0) throw new Error(`purge did not remove ${ref}`);
       // The asset row goes only when this draft was the last thing holding it;
@@ -133,17 +107,7 @@ async function purgeVideoPublication(
       return result;
     })
     .immediate();
-  const removedFiles: string[] = [];
-  const failedFiles: string[] = [];
-  for (const path of files) {
-    if (!existsSync(path)) continue;
-    try {
-      unlinkSync(path);
-      removedFiles.push(path);
-    } catch {
-      failedFiles.push(path);
-    }
-  }
+  const { removedFiles, failedFiles } = removeFiles(files);
   return {
     ok: failedFiles.length === 0,
     applied: true,
@@ -160,21 +124,15 @@ async function purgeVideoPublication(
  * plan can report what it is about to remove, one line per table. */
 function videoPurgeStatements(videoDraftId: number, ref: string): PurgeStatement[] {
   const ofDraft = "video_target_id IN (SELECT id FROM video_targets WHERE video_draft_id=?)";
-  const direct = (name: string, table: string, where: string, args: SqlArgs): PurgeStatement => ({
-    name,
-    countSql: `SELECT COUNT(*) AS count FROM ${table} WHERE ${where}`,
-    deleteSql: `DELETE FROM ${table} WHERE ${where}`,
-    args,
-  });
   return [
-    direct("notification_jobs", "studio_notification_jobs", "ref=?", [ref]),
-    direct("publication_events", "publication_events", "publication_key=?", [ref]),
-    direct("social_comments", "social_comments", ofDraft, [videoDraftId]),
-    direct("video_metric_snapshots", "video_metric_snapshots", ofDraft, [videoDraftId]),
-    direct("video_metric_schedule", "video_metric_schedule", ofDraft, [videoDraftId]),
-    direct("video_jobs", "video_jobs", "video_draft_id=?", [videoDraftId]),
-    direct("video_targets", "video_targets", "video_draft_id=?", [videoDraftId]),
-    direct("video_drafts", "video_drafts", "id=?", [videoDraftId]),
+    purgeStatement("notification_jobs", "studio_notification_jobs", "ref=?", [ref]),
+    purgeStatement("publication_events", "publication_events", "publication_key=?", [ref]),
+    purgeStatement("social_comments", "social_comments", ofDraft, [videoDraftId]),
+    purgeStatement("video_metric_snapshots", "video_metric_snapshots", ofDraft, [videoDraftId]),
+    purgeStatement("video_metric_schedule", "video_metric_schedule", ofDraft, [videoDraftId]),
+    purgeStatement("video_jobs", "video_jobs", "video_draft_id=?", [videoDraftId]),
+    purgeStatement("video_targets", "video_targets", "video_draft_id=?", [videoDraftId]),
+    purgeStatement("video_drafts", "video_drafts", "id=?", [videoDraftId]),
   ];
 }
 
@@ -280,42 +238,78 @@ async function assertTargetsAbsent(targets: TargetState[], config: BackendConfig
   return targets;
 }
 
-function purgeStatements(postId: number, draftId: number, publicationKey: string, messageId: number, refs: string[]): PurgeStatement[] {
+function purgeStatements(postId: number, draftId: number, publicationKey: string, refs: string[]): PurgeStatement[] {
   const refMarks = refs.map(() => "?").join(",");
-  const direct = (name: string, table: string, where: string, args: SqlArgs): PurgeStatement => ({
-    name,
-    countSql: `SELECT COUNT(*) AS count FROM ${table} WHERE ${where}`,
-    deleteSql: `DELETE FROM ${table} WHERE ${where}`,
-    args,
-  });
   return [
-    direct("notification_jobs", "studio_notification_jobs", `ref IN (${refMarks})`, refs),
-    direct("publication_events", "publication_events", `publication_key IN (${refMarks})`, refs),
-    direct("draft_story_cards", "draft_story_cards", "draft_id=?", [draftId]),
-    direct("draft_entity_candidates", "draft_entity_candidates", "draft_id=?", [draftId]),
-    direct("conversation_sessions", "conversation_sessions", "draft_id=?", [draftId]),
-    direct("pending_albums", "pending_albums", "draft_id=?", [draftId]),
-    direct("post_metrics", "post_metrics", "publication_key=?", [publicationKey]),
-    direct("metric_samples", "metric_samples", "publication_key=?", [publicationKey]),
-    direct("metric_schedule", "metric_schedule", "publication_key=?", [publicationKey]),
+    purgeStatement("notification_jobs", "studio_notification_jobs", `ref IN (${refMarks})`, refs),
+    purgeStatement("publication_events", "publication_events", `publication_key IN (${refMarks})`, refs),
+    purgeStatement("draft_story_cards", "draft_story_cards", "draft_id=?", [draftId]),
+    purgeStatement("draft_entity_candidates", "draft_entity_candidates", "draft_id=?", [draftId]),
+    purgeStatement("conversation_sessions", "conversation_sessions", "draft_id=?", [draftId]),
+    purgeStatement("pending_albums", "pending_albums", "draft_id=?", [draftId]),
+    purgeStatement("post_metrics", "post_metrics", "publication_key=?", [publicationKey]),
+    purgeStatement("metric_samples", "metric_samples", "publication_key=?", [publicationKey]),
+    purgeStatement("metric_schedule", "metric_schedule", "publication_key=?", [publicationKey]),
     {
       name: "x_activity_links",
       countSql: "SELECT COUNT(*) AS count FROM x_activity_items WHERE linked_publication_key=?",
       deleteSql: "UPDATE x_activity_items SET linked_publication_key=NULL WHERE linked_publication_key=?",
       args: [publicationKey],
     },
-    direct("post_entity_links", "post_entity_links", "post_id=?", [postId]),
-    direct("post_locales", "post_locales", "post_id=?", [postId]),
-    direct("publication_targets", "publication_targets", "publication_key=?", [publicationKey]),
-    direct("site_jobs", "site_jobs", "post_id=?", [postId]),
-    direct("site_source_items", "site_source_items", "message_id=? AND json_extract(item_json,'$.post_id')=?", [messageId, postId]),
-    direct("publish_jobs", "publish_jobs", "publication_id=? OR publication_key=?", [postId, publicationKey]),
-    direct("publication_plans", "publication_plans", "post_id=?", [postId]),
-    direct("publication_sources", "publication_sources", "post_id=?", [postId]),
-    direct("posts", "posts", "post_id=? OR publication_key=?", [postId, publicationKey]),
-    direct("publications", "publications", "post_id=? AND draft_id=?", [postId, draftId]),
-    direct("drafts", "drafts", "id=? AND post_id=?", [draftId, postId]),
+    purgeStatement("post_entity_links", "post_entity_links", "post_id=?", [postId]),
+    purgeStatement("post_locales", "post_locales", "post_id=?", [postId]),
+    purgeStatement("publication_targets", "publication_targets", "publication_key=?", [publicationKey]),
+    purgeStatement("site_jobs", "site_jobs", "post_id=?", [postId]),
+    purgeStatement("publish_jobs", "publish_jobs", "publication_id=? OR publication_key=?", [postId, publicationKey]),
+    purgeStatement("publication_plans", "publication_plans", "post_id=?", [postId]),
+    purgeStatement("publication_sources", "publication_sources", "post_id=?", [postId]),
+    purgeStatement("posts", "posts", "post_id=? OR publication_key=?", [postId, publicationKey]),
+    purgeStatement("publications", "publications", "post_id=? AND draft_id=?", [postId, draftId]),
+    purgeStatement("drafts", "drafts", "id=? AND post_id=?", [draftId, postId]),
   ];
+}
+
+type Sqlite = ReturnType<typeof unsafeDb>["sqlite"];
+
+function purgeStatement(name: string, table: string, where: string, args: SqlArgs): PurgeStatement {
+  return {
+    name,
+    countSql: `SELECT COUNT(*) AS count FROM ${table} WHERE ${where}`,
+    deleteSql: `DELETE FROM ${table} WHERE ${where}`,
+    args,
+  };
+}
+
+function affectedRows(sqlite: Sqlite, statements: PurgeStatement[]): Record<string, number> {
+  return Object.fromEntries(
+    statements
+      .map((statement) => [statement.name, count(sqlite.query(statement.countSql).get(...statement.args))] as const)
+      .filter(([, value]) => value > 0),
+  );
+}
+
+function executePurge(sqlite: Sqlite, statements: PurgeStatement[]): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const statement of statements) {
+    const changes = sqlite.query(statement.deleteSql).run(...statement.args).changes;
+    if (changes > 0) result[statement.name] = changes;
+  }
+  return result;
+}
+
+function removeFiles(files: string[]): { removedFiles: string[]; failedFiles: string[] } {
+  const removedFiles: string[] = [];
+  const failedFiles: string[] = [];
+  for (const path of files) {
+    if (!existsSync(path)) continue;
+    try {
+      unlinkSync(path);
+      removedFiles.push(path);
+    } catch {
+      failedFiles.push(path);
+    }
+  }
+  return { removedFiles, failedFiles };
 }
 
 function count(row: unknown): number {

@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { channelIdentity } from "../../channels/identity.js";
 import { listChannels } from "../../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { creatorProfiles, socialComments } from "../../db/schema.js";
@@ -153,13 +154,13 @@ type CreatorProfileMetrics = {
 };
 
 function profile(backendDb: BackendDb, platform: string): CreatorProfileMetrics | null {
-  const profiles = ["ru", "en"]
+  const profiles = (["ru", "en"] as const)
     .map(
       (locale) =>
         unsafeDb(backendDb)
           .db.select()
           .from(creatorProfiles)
-          .where(eq(creatorProfiles.platform, `${platform}_${locale}`))
+          .where(eq(creatorProfiles.platform, channelIdentity(platform, locale)))
           .get()?.dataJson,
     )
     .filter((data): data is Record<string, unknown> => data != null && typeof data === "object" && !Array.isArray(data));

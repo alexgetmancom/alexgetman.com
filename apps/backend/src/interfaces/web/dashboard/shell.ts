@@ -92,9 +92,28 @@ export function renderDashboardShell(body: string, locale: StudioLocale): string
     .danger { color:var(--danger); font-weight:700; }
     .dashboard-locale { display:inline-flex; gap:4px; }
     .studio-toolbar { display:flex; justify-content:flex-end; margin:0 0 6px; }
+    .studio-toolbar--wrap { flex-wrap:wrap; gap:4px; }
+    .studio-toolbar--wrap form { margin:0; }
     .dashboard-locale a { border:1px solid var(--border); border-radius:14px; padding:3px 8px; font-size:12px; text-decoration:none; }
     .dashboard-locale a.active { background:var(--accent-strong); border-color:var(--accent-strong); color:var(--accent-contrast); }
     .studio-analytics { white-space:normal; line-height:1.6; }
+    .studio-analytics table { min-width:640px; }
+    .first-run { max-width:900px; margin:44px auto 0; padding:0; border:0; background:transparent; overflow:visible; }
+    .first-run__intro { max-width:720px; margin-bottom:28px; }
+    .first-run__eyebrow { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.11em; text-transform:uppercase; }
+    .first-run__intro h1 { margin:8px 0 10px; font-size:38px; line-height:1.08; letter-spacing:-.035em; }
+    .first-run__intro p { margin:0; color:var(--text-secondary); font-size:18px; line-height:1.55; }
+    .first-run__steps { display:grid; gap:10px; margin:0; padding:0; list-style:none; }
+    .first-run__step { display:grid; grid-template-columns:36px minmax(0,1fr); gap:14px; padding:18px; border:1px solid var(--border); border-radius:10px; background:var(--surface); }
+    .first-run__number { display:flex; width:30px; height:30px; align-items:center; justify-content:center; border-radius:50%; background:var(--accent-glow); color:var(--accent-soft-text); font-size:14px; font-weight:750; }
+    .first-run__step--done .first-run__number { background:var(--accent-glow); color:var(--success); }
+    .first-run__step h2 { margin:2px 0 5px; font-size:18px; }
+    .first-run__step p { margin:0 0 10px; color:var(--text-secondary); line-height:1.5; }
+    .first-run code { display:inline-block; max-width:100%; padding:6px 8px; border:1px solid var(--border-soft); border-radius:6px; background:var(--surface-sunken); color:var(--text-main); font-size:13px; overflow-wrap:anywhere; }
+    .first-run__or { margin:0 7px; color:var(--text-muted); font-size:13px; }
+    .first-run__action { display:inline-flex; padding:7px 11px; border-radius:7px; background:var(--accent-strong); color:var(--accent-contrast); font-size:14px; font-weight:700; text-decoration:none; }
+    .first-run__optional { display:grid; gap:7px; margin-top:14px; padding:16px 18px; border-left:3px solid var(--accent); background:var(--surface); color:var(--text-secondary); }
+    .first-run__optional strong { color:var(--text-header); }
     .attention-list { list-style:none; margin:0; padding:0; }
     .attention-list li { padding:6px 0; border-bottom:1px solid var(--surface-raised); }
     /* Overview-specific surface. Rules shared with the other tabs (body, main,
@@ -197,6 +216,11 @@ export function renderDashboardShell(body: string, locale: StudioLocale): string
 
     @media (max-width: 760px) {
       body { padding:10px; }
+      .first-run { margin-top:22px; }
+      .first-run__intro h1 { font-size:31px; }
+      .first-run__intro p { font-size:16px; }
+      .first-run__step { grid-template-columns:30px minmax(0,1fr); gap:10px; padding:14px; }
+      .first-run__or { display:block; margin:7px 0; }
       main { max-width:none; }
       .hero-metrics { grid-template-columns:1fr; }
       .hero-card:first-child { padding-right:0; }
@@ -573,6 +597,7 @@ ${DASHBOARD_THEME_TOGGLE_SCRIPT}
           payload.latestEventAt,
           payload.videoRevision,
           payload.analyticsRevision,
+          payload.studioRevision,
         ]);
         const editingForm = document.activeElement instanceof Element && document.activeElement.closest('form');
         if (editingForm) return;

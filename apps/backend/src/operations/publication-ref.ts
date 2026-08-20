@@ -1,4 +1,5 @@
 import { eq, or } from "drizzle-orm";
+import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { posts, publicationSources, publications } from "../db/schema.js";
 import { jsonObject } from "../json.js";
@@ -25,19 +26,19 @@ export function resolvePublicationRef(backendDb: BackendDb, ref: string): Resolv
     const post = unsafeDb(backendDb)
       .db.select()
       .from(posts)
-      .where(eq(posts.publicationKey, `post:${publication.postId}`))
+      .where(eq(posts.publicationKey, publicationRef("post", publication.postId)))
       .get();
     return {
       input: ref,
       postId: publication.postId,
-      publicationKey: `post:${publication.postId}`,
+      publicationKey: publicationRef("post", publication.postId),
       messageId: post?.messageId ?? publication.postId,
     };
   }
   const post = unsafeDb(backendDb)
     .db.select()
     .from(posts)
-    .where(or(eq(posts.messageId, id), eq(posts.postId, id), eq(posts.publicationKey, `post:${id}`)))
+    .where(or(eq(posts.messageId, id), eq(posts.postId, id), eq(posts.publicationKey, publicationRef("post", id))))
     .get();
   return post ? { input: ref, postId: post.postId, publicationKey: post.publicationKey, messageId: post.messageId } : null;
 }
@@ -51,28 +52,6 @@ export function sourcePayload(backendDb: BackendDb, ref: ResolvedPublicationRef)
       .where(eq(publicationSources.postId, ref.postId))
       .get()?.itemJson,
   );
-  if (Object.keys(stored).length > 0) return stored;
-  const post = unsafeDb(backendDb).db.select().from(posts).where(eq(posts.publicationKey, ref.publicationKey)).get();
-  const source = post
-    ? {
-        post_id: post.postId,
-        message_id: post.messageId,
-        text: post.text,
-        text_ru: post.text,
-        text_en: post.textEn,
-        media: parseMedia(post.mediaJson),
-      }
-    : {};
-  if (Object.keys(source).length === 0) throw new Error(`publication ${ref.postId} has no source payload`);
-  return source;
-}
-
-function parseMedia(value: string | null): unknown[] {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  if (Object.keys(stored).length === 0) throw new Error(`publication ${ref.postId} has no source payload`);
+  return stored;
 }

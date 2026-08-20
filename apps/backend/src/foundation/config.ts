@@ -12,6 +12,16 @@ const booleanFlag = (fallback: boolean) =>
     .default(fallback ? "1" : "0")
     .transform((value) => !["0", "false", "no", "off"].includes(value.toLowerCase()));
 
+const positiveIdList = z
+  .string()
+  .default("")
+  .transform((value) =>
+    value
+      .split(",")
+      .map((part) => Number(part.trim()))
+      .filter((value) => Number.isSafeInteger(value) && value > 0),
+  );
+
 /** An .env file states a key it has no value for by leaving it empty, and Docker
  * passes that through as "". Without this, every `KEY=` line in the shipped
  * .env.example reaches an `.optional()` field as a present-but-invalid value and
@@ -64,26 +74,10 @@ const envSchema = z
     MCP_STUDIO_ACTOR_ID: z.coerce.number().int().positive().optional(),
     DEEPSEEK_API_KEY: z.string().optional(),
     GROK_CLI_PATH: z.string().default("grok"),
-    CONTROLLER_ADMIN_IDS: z
-      .string()
-      .default("")
-      .transform((value) =>
-        value
-          .split(",")
-          .map((part) => Number(part.trim()))
-          .filter((value) => Number.isSafeInteger(value) && value > 0),
-      ),
+    CONTROLLER_ADMIN_IDS: positiveIdList,
     /** Leaving the Studio roster unset uses the Telegram controller roster.
      * Setting it lets Studio own work without granting Telegram access. */
-    STUDIO_ACTOR_IDS: z
-      .string()
-      .default("")
-      .transform((value) =>
-        value
-          .split(",")
-          .map((part) => Number(part.trim()))
-          .filter((value) => Number.isSafeInteger(value) && value > 0),
-      ),
+    STUDIO_ACTOR_IDS: positiveIdList,
     // Empty means this Studio has no Telegram channel, which is a Studio that
     // serves only its website. It used to default to a real, live channel, and
     // the production guard below existed to stop a second Studio publishing

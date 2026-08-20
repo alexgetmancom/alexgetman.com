@@ -80,9 +80,9 @@ export function loadPublicSiteFeed(backendDb: BackendDb): FeedItem[] {
   return loadPublicSiteSnapshot(backendDb).items;
 }
 
-/** Loads one published item without building the surrounding archive. */
+/** Loads one published item from the same cached snapshot as the archive. */
 export function loadPublicSiteItem(backendDb: BackendDb, postId: number): FeedItem | undefined {
-  return buildPublicSiteFeed(backendDb, postId)[0];
+  return loadPublicSiteSnapshot(backendDb).byPostId.get(postId);
 }
 
 function loadPublicSiteSnapshot(backendDb: BackendDb): PublicSiteSnapshot {

@@ -6,11 +6,11 @@ type DoctorConfig = Pick<BackendConfig, "COMMAND_CENTER_TOKEN" | "controllerBotT
 /** Computes deployment checks without touching the database or filesystem. */
 export function doctorChecks(config: DoctorConfig, dataDirectories: DataDirectoryCheck[]) {
   const requiredChecks = {
-    telegramBot: Boolean(config.controllerBotToken),
     dataDirectoriesWritable: dataDirectories.every((check) => check.writable),
   };
   const checks = {
     ...requiredChecks,
+    telegramBot: Boolean(config.controllerBotToken),
     commandCenterTokenConfigured: Boolean(config.COMMAND_CENTER_TOKEN),
     // A Studio operated from its own machine reaches this deployment over MCP
     // only, and both halves must be present: the token authorizes nothing

@@ -1,3 +1,4 @@
+import { directConnectTargets } from "../../botTargets.js";
 import type { BackendDb } from "../../db/client.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { escapeHtml } from "../../foundation/html.js";
@@ -9,29 +10,61 @@ import { localeQuery, renderLocaleSwitcher } from "./dashboard/locale-links.js";
 
 /**
  * Studio section of the Command Center: a second adapter over the same
- * createStudioServices Telegram and MCP use. Read-only beyond acknowledging a
- * no business logic lives here, only rendering of what the services return.
+ * createStudioServices Telegram and MCP use. Business logic stays in those
+ * services; this module only renders their results.
  */
-export function renderStudioSection(config: BackendConfig, backendDb: BackendDb, actorId: number, locale: StudioLocale): string {
-  const data = createStudioServices(backendDb, config).dashboard(actorId, locale);
-  const channels = createStudioServices(backendDb, config).channels;
+export function renderStudioSection(config: BackendConfig, backendDb: BackendDb, actorId: number | null, locale: StudioLocale): string {
+  const services = createStudioServices(backendDb, config);
+  const channels = services.channels;
+  const analytics = services.analytics.dashboard("overview", 7, locale);
+  const queue = actorId ? services.queue.snapshot(actorId) : null;
   const zone = { timeZone: config.TIMEZONE, label: config.TIMEZONE_LABEL };
   return `
     <nav class="studio-toolbar">${renderLocaleSwitcher(locale, (target) => `/command-center?tab=studio${localeQuery(target)}`)}</nav>
-    ${renderChannels(channels, locale)}
-    <section class="studio-analytics">${mdToHtml(data.analytics.text)}</section>
-    <section>
+    ${renderChannels(channels, config, locale)}
+    <section class="studio-analytics">${analytics.richHtml}</section>
+    ${
+      queue
+        ? `<section>
       <h2>${t(locale, "cc.studio.queue")}</h2>
-      ${renderQueueTable(t(locale, "cc.studio.upcoming"), data.queue.upcoming, zone, locale)}
-      ${renderQueueTable(t(locale, "cc.studio.drafts"), data.queue.drafts, zone, locale)}
-      ${renderAttention(data.queue.attention, locale)}
-    </section>`;
+      ${renderQueueTable(t(locale, "cc.studio.upcoming"), queue.upcoming, zone, locale)}
+      ${renderQueueTable(t(locale, "cc.studio.drafts"), queue.drafts, zone, locale)}
+      ${renderAttention(queue.attention, locale)}
+    </section>`
+        : `<section class="studio-owner-missing"><h2>${t(locale, "cc.studio.authoring")}</h2><p class="note">${t(locale, "cc.studio.authoring-missing")}</p></section>`
+    }`;
 }
 
-function renderChannels(channels: ReturnType<typeof createStudioServices>["channels"], locale: StudioLocale): string {
-  const connected = channels
-    .list()
-    .map((channel) => `<li>${escapeHtml(channel.label)} — ${escapeHtml(channel.provider)}</li>`)
+export function renderStudioOnboarding(config: BackendConfig, connectedChannelCount: number, locale: StudioLocale): string {
+  const telegramReady = Boolean(config.controllerBotToken && config.CONTROLLER_ADMIN_IDS.length);
+  const mcpReady = Boolean(config.MCP_STUDIO_TOKEN && config.MCP_STUDIO_ACTOR_ID);
+  const authoringReady = telegramReady || mcpReady;
+  const authoring = telegramReady && mcpReady ? "Telegram + MCP" : telegramReady ? "Telegram" : mcpReady ? "MCP" : null;
+  const ops = "docker compose exec app bun /app/ops/cli.js";
+  const siteTarget = locale === "ru" ? "site_ru" : "site_en";
+  return `<section class="first-run">
+    <div class="first-run__intro"><span class="first-run__eyebrow">${t(locale, "cc.first-run.eyebrow")}</span><h1>${t(locale, "cc.first-run.title")}</h1><p>${t(locale, "cc.first-run.body")}</p></div>
+    <ol class="first-run__steps">
+      <li class="first-run__step${authoringReady ? " first-run__step--done" : ""}"><span class="first-run__number">${authoringReady ? "✓" : "1"}</span><div><h2>${t(locale, "cc.first-run.authoring-title")}</h2><p>${authoring ? t(locale, "cc.first-run.authoring-ready", { interface: authoring }) : t(locale, "cc.first-run.authoring-body")}</p>${authoring ? "" : `<code>CONTROLLER_BOT_TOKEN=… &nbsp; CONTROLLER_ADMIN_IDS=…</code><span class="first-run__or">${t(locale, "cc.first-run.or")}</span><code>MCP_STUDIO_TOKEN=… &nbsp; MCP_STUDIO_ACTOR_ID=…</code>`}</div></li>
+      <li class="first-run__step${connectedChannelCount ? " first-run__step--done" : ""}"><span class="first-run__number">${connectedChannelCount ? "✓" : "2"}</span><div><h2>${t(locale, "cc.first-run.channel-title")}</h2><p>${connectedChannelCount ? t(locale, "cc.first-run.channel-ready", { count: connectedChannelCount }) : t(locale, "cc.first-run.channel-body")}</p><a class="first-run__action" href="/command-center?tab=studio">${t(locale, "cc.first-run.channel-action")}</a></div></li>
+      <li class="first-run__step"><span class="first-run__number">3</span><div><h2>${t(locale, "cc.first-run.draft-title")}</h2><p>${t(locale, "cc.first-run.draft-body")}</p></div></li>
+    </ol>
+    <aside class="first-run__optional"><strong>${t(locale, "cc.first-run.site-title")}</strong><span>${t(locale, "cc.first-run.site-body")}</span><code>${ops} studio-profile-set --site-enabled<br>${ops} channel-connect --target ${siteTarget}</code></aside>
+  </section>`;
+}
+
+function renderChannels(
+  channels: ReturnType<typeof createStudioServices>["channels"],
+  config: BackendConfig,
+  locale: StudioLocale,
+): string {
+  const channelRows = channels.report();
+  const connectedIds = new Set(channelRows.map(({ id }) => id));
+  const connected = channelRows
+    .map(
+      (channel) =>
+        `<li>${escapeHtml(channel.label)} — ${escapeHtml(channel.provider)} · ${t(locale, channel.status === "ready" ? "cc.studio.channel-ready" : "cc.studio.channel-missing", { count: channel.missing.length })}<form method="post" action="/command-center/channels/disable"><input type="hidden" name="channel" value="${escapeHtml(channel.id)}"><button class="period-quick-link" type="submit">${t(locale, "cc.studio.disable-channel")}</button></form></li>`,
+    )
     .join("");
   const metaButtons = (["threads", "instagram"] as const)
     .flatMap((platform) =>
@@ -46,15 +79,34 @@ function renderChannels(channels: ReturnType<typeof createStudioServices>["chann
     )
     .join(" ");
   const xUrl = channels.xConnectPath();
+  const directButtons = directConnectTargets()
+    .filter(({ id }) => !connectedIds.has(id))
+    .map(
+      ({ id, label }) =>
+        `<form method="post" action="/command-center/channels/connect"><input type="hidden" name="target" value="${id}"><button class="period-quick-link" type="submit">${t(locale, "cc.studio.enable-target", { target: label })}</button></form>`,
+    )
+    .join("");
+  const youtubeButtons = (["ru", "en"] as const)
+    .filter((targetLocale) => !connectedIds.has(`youtube_${targetLocale}`))
+    .map(
+      (targetLocale) =>
+        `<form method="post" action="/command-center/channels/connect"><input type="hidden" name="platform" value="youtube"><input type="hidden" name="locale" value="${targetLocale}"><button class="period-quick-link" type="submit">${t(locale, "cc.studio.connect-native", { platform: "YouTube", locale: targetLocale.toUpperCase() })}</button></form>`,
+    )
+    .join("");
   const buttons = [
     metaButtons,
     xUrl
       ? `<a class="period-quick-link" href="${escapeHtml(xUrl)}">${t(locale, "cc.studio.connect-native", { platform: "X", locale: "EN" })}</a>`
       : "",
+    youtubeButtons,
+    directButtons,
+    config.ZERNIO_API_KEY
+      ? `<a class="period-quick-link" href="/command-center/channels/zernio?locale=ru">Zernio RU</a><a class="period-quick-link" href="/command-center/channels/zernio?locale=en">Zernio EN</a>`
+      : "",
   ]
     .filter(Boolean)
     .join(" ");
-  return `<section><h2>${t(locale, "cc.studio.channels")}</h2>${connected ? `<ul>${connected}</ul>` : `<p class="note">${t(locale, "settings.channels-none")}</p>`}${buttons ? `<nav class="studio-toolbar">${buttons}</nav>` : `<p class="note">${t(locale, "cc.studio.native-unconfigured")}</p>`}</section>`;
+  return `<section><h2>${t(locale, "cc.studio.channels")}</h2>${connected ? `<ul>${connected}</ul>` : `<p class="note">${t(locale, "settings.channels-none")}</p>`}${buttons ? `<nav class="studio-toolbar studio-toolbar--wrap">${buttons}</nav>` : `<p class="note">${t(locale, "cc.studio.native-unconfigured")}</p>`}</section>`;
 }
 
 type QueueItem = { id: number; label: string; time: Date; kind: "post" | "video"; targets: number };
@@ -75,11 +127,4 @@ function renderAttention(items: AttentionItem[], locale: StudioLocale): string {
   if (!items.length) return "";
   const rows = items.map((item) => `<li>${item.kind === "video" ? "🎬" : "📝"} ${escapeHtml(item.label)}</li>`).join("");
   return `<h3>${t(locale, "cc.studio.attention")}</h3><ul class="attention-list">${rows}</ul>`;
-}
-
-/** The analytics text is Telegram Markdown (bold + newlines only); render just enough of it. */
-function mdToHtml(text: string): string {
-  return escapeHtml(text)
-    .replace(/\*(.+?)\*/g, "<strong>$1</strong>")
-    .replace(/\n/g, "<br>");
 }

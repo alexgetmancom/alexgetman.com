@@ -3,12 +3,7 @@ import * as z from "zod";
 import type { UnsafeBackendDb } from "../db/client.js";
 import type { JsonObject } from "../db/schema.js";
 import { publicationEvents, publicationTargets, publishJobs } from "../db/schema.js";
-import {
-  type BackendConfig,
-  PUBLISH_BACKOFF_BASE_SECONDS,
-  PUBLISH_BACKOFF_MAX_SECONDS,
-  PUBLISH_MAX_ATTEMPTS,
-} from "../foundation/config.js";
+import { PUBLISH_BACKOFF_BASE_SECONDS, PUBLISH_BACKOFF_MAX_SECONDS, PUBLISH_MAX_ATTEMPTS } from "../foundation/config.js";
 import type { PublishResult } from "./errors.js";
 
 export function publicationConfirmationSource(result: PublishResult): string {
@@ -31,7 +26,7 @@ export function durationSince(startedAt: string | null, finishedAt: string): num
   return Number.isFinite(duration) && duration >= 0 ? duration : null;
 }
 
-export function publishRetryPolicy(config: BackendConfig) {
+export function publishRetryPolicy() {
   return {
     maxAttempts: PUBLISH_MAX_ATTEMPTS,
     backoffBaseSeconds: PUBLISH_BACKOFF_BASE_SECONDS,

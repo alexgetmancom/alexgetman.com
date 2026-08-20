@@ -4,19 +4,10 @@ import { mediaItemsFromAssets } from "../../content/assets.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { drafts } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
+import { mediaContentType } from "../../foundation/media-types.js";
 import { createStudioServices } from "../../studio/services/index.js";
+import { runOperationCommand } from "../commands.js";
 import { resolvePublicationRef } from "../publication-ref.js";
-import { createOperationsService } from "../service.js";
-
-const IMAGE_TYPES: Record<string, string> = {
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".png": "image/png",
-  ".webp": "image/webp",
-  ".gif": "image/gif",
-  ".avif": "image/avif",
-  ".mp4": "video/mp4",
-};
 
 /** Swaps the media a published post carries in one locale: the file on this host
  * becomes a Content asset, the target is deleted and queued again, and the site
@@ -37,18 +28,21 @@ export async function replacePublishedMedia(
   // The scope report comes before the file is imported: a plan should not leave
   // an asset behind for a replacement the caller may never ask for.
   if (!input.apply)
-    return createOperationsService(backendDb, config).command(
+    return runOperationCommand(
+      backendDb,
       { action: "replace_media", ref: input.ref, locale: input.locale, target: input.target },
+      config,
       fetchImpl,
     );
   const filename = path.basename(input.file);
   const asset = await createStudioServices(backendDb, config).media.importFile(draft.actorId, {
     filename,
-    contentType: IMAGE_TYPES[path.extname(filename).toLowerCase()] ?? "",
+    contentType: mediaContentType(filename) ?? "",
     localPath: input.file,
     source: "ops_upload",
   });
-  const result = await createOperationsService(backendDb, config).command(
+  const result = await runOperationCommand(
+    backendDb,
     {
       action: "replace_media",
       ref: input.ref,
@@ -58,6 +52,7 @@ export async function replacePublishedMedia(
       media_json: JSON.stringify(mediaItemsFromAssets([asset])),
       actor_type: actorType,
     },
+    config,
     fetchImpl,
   );
   return { ...result, asset_id: asset.id, filename: asset.filename, byte_size: asset.byteSize };

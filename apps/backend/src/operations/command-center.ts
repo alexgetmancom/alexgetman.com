@@ -159,6 +159,7 @@ type CommandCenterFingerprint = {
   latestEventAt: string | null;
   videoRevision: string | null;
   analyticsRevision: string | null;
+  studioRevision: string;
 };
 
 export function commandCenterFingerprint(backendDb: BackendDb): CommandCenterFingerprint {
@@ -186,7 +187,9 @@ export function commandCenterFingerprint(backendDb: BackendDb): CommandCenterFin
            UNION ALL SELECT MAX(sampled_at) FROM creator_profile_snapshots
            UNION ALL SELECT MAX(updated_at) FROM creator_profiles
            UNION ALL SELECT MAX(last_checked_at) FROM credential_checks
-         )) AS analyticsRevision`,
+         )) AS analyticsRevision,
+         (SELECT COALESCE(MAX(updated_at), '') || ':' || COUNT(*) FROM channel_connections)
+           || ':' || COALESCE((SELECT updated_at FROM studio_profile WHERE id = 1), '') AS studioRevision`,
     )
     .get() as CommandCenterFingerprint;
 }

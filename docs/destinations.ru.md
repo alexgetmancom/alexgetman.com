@@ -15,8 +15,16 @@ docker compose exec app bun /app/ops/cli.js doctor
 ```
 
 `doctor` называет ровно те настройки, которых площадке недостаёт, и никогда не
-печатает те, что уже есть. Впишите их в `.env`, выполните `docker compose up -d`,
-повторите. Те же два шага доступны из Telegram-бота и из MCP-клиента.
+печатает те, что уже есть. Впишите deployment credentials в `.env`,
+перезапустите сервис и повторите проверку. Само направление можно включить в
+Command Center → Studio → Каналы, Telegram → Настройки → Каналы, через CLI или
+одноимённую MCP-операцию. Host credentials и интерактивный вход в Telegram
+Stories остаются CLI-only: MCP не получает секрет и локальную сессию.
+
+Command Center и Telegram показывают рядом с каждым каналом `готов` либо число
+недостающих credentials. Отключить канал можно там же или через
+`channel-disable` / `ops_channel_disable`; отключённый маршрут исчезает из целей
+черновика, а история публикаций остаётся.
 
 ## Что можно подключить
 
@@ -25,15 +33,15 @@ docker compose exec app bun /app/ops/cli.js doctor
 
 | Площадка | Чем подключить | Что нужно |
 | --- | --- | --- |
-| Сайт | `--target site_ru` / `site_en` | ничего, плюс `ops studio-profile-set --site-enabled` |
-| Telegram-канал | `--target telegram` | `CONTROLLER_BOT_TOKEN` |
-| Discord | `--target discord` | `DISCORD_CHANNEL_ID`, затем `ops credential-set --target discord` |
-| Threads | Studio → Каналы, RU или EN | `THREADS_APP_ID`, `THREADS_APP_SECRET`, `TOKEN_ENCRYPTION_KEY` либо сохранённый ключ Zernio |
-| X | `--target x` | `X_CLIENT_ID`, `X_CLIENT_SECRET`, затем подключить в Studio → Channels |
-| Instagram Stories | Studio → Каналы, RU или EN | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `TOKEN_ENCRYPTION_KEY` либо сохранённый ключ Zernio |
-| Telegram Stories | `--target telegram_stories` | `TELEGRAM_CHANNEL_STORIES_API_ID`, `_API_HASH`, `_SESSION` |
-| YouTube | `connect-link --platform youtube --locale ru` | `YOUTUBE_*_CLIENT_ID`, `_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY` |
-| Instagram лента и Reels | Studio → Каналы, RU или EN | тот же native-вход Instagram либо сохранённый ключ Zernio |
+| Сайт | `--target site_ru` / `site_en` | ничего, плюс `docker compose exec app bun /app/ops/cli.js studio-profile-set --site-enabled` |
+| Telegram-канал | Каналы или `--target telegram` | `CONTROLLER_BOT_TOKEN` |
+| Discord | Каналы или `--target discord` | `DISCORD_CHANNEL_ID`, затем CLI `credential-set --target discord` |
+| Threads | Каналы или `connect-link --platform threads` | native app credentials либо сохранённый ключ Zernio |
+| X | Каналы или `connect-link --platform x` | `X_CLIENT_ID`, `X_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY` |
+| Instagram Stories | Включить Story в Каналах после native-входа Instagram либо выбрать её маршрут Zernio | native credentials Instagram либо сохранённый ключ Zernio |
+| Telegram Stories | Каналы или `--target telegram_stories` | CLI `telegram-stories-login` с `TELEGRAM_CHANNEL_STORIES_API_ID`, `_API_HASH`, `_SESSION` |
+| YouTube | Каналы или `connect-link --platform youtube --locale ru` | `YOUTUBE_*_CLIENT_ID`, `_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY` |
+| Instagram лента и Reels | Каналы или `connect-link --platform instagram` | native credentials Instagram либо сохранённый ключ Zernio |
 | TikTok | `--platform tiktok --provider zernio` | сохранённый ключ Zernio — только аналитика, публикации нет |
 
 ## Нативно или через провайдера
@@ -52,8 +60,9 @@ https://ваш-домен.example/oauth/instagram
 
 После этого откройте Command Center → Studio → Каналы или Telegram → Настройки →
 Каналы и нажмите native-кнопку RU либо EN. Браузер вернётся в Studio, она сама
-обменяет code, запечатает долгоживущий токен в БД, сохранит account id и
-подключит все native-маршруты аккаунта. Копировать URL, запускать CLI, менять
+обменяет code, запечатает долгоживущий токен в БД и сохранит account id. Вход в
+Instagram включает Reels; отдельную цель Stories включите на том же экране,
+только если эта Studio публикует Stories. Копировать URL, запускать CLI, менять
 token в `.env` и перезапускать сервис больше не нужно. Development mode работает
 для аккаунтов, которым назначена роль в приложении; Meta review нужен, когда
 приложение начинает подключать чужие аккаунты.
@@ -72,9 +81,11 @@ docker compose exec app bun /app/ops/cli.js channel-connect --target threads_en 
 printf %s "$ZERNIO_KEY" | docker compose exec -T app bun /app/ops/cli.js credential-set --target zernio
 ```
 
-В Telegram-боте
-Настройки → Каналы показывают аккаунты, которые вернул провайдер, так что id
-можно выбрать, а не вводить.
+Command Center и Telegram → Настройки → Каналы показывают публикационные
+маршруты найденных у провайдера аккаунтов: нужный можно выбрать вместо ручного
+ввода id. MCP получает тот же список через
+`studio_zernio_connection_options`, выбранный маршрут подключается через
+`ops_channel_connect`.
 
 Нативный путь остаётся по умолчанию: площадка, которую не несёт провайдер,
 доставляется прямо на платформу, как и раньше.

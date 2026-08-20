@@ -3,12 +3,11 @@ import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
-import type { BackendConfig } from "../foundation/config.js";
 import { PUBLISH_LOCK_TIMEOUT_SECONDS } from "../foundation/config.js";
 import { ALERT_COOLDOWN_SECONDS } from "./alerts.js";
 
 /** Records Delivery failures as durable domain events; no alert transport is used here. */
-export function recordPublicationFailures(config: BackendConfig, backendDb: BackendDb): void {
+export function recordPublicationFailures(backendDb: BackendDb): void {
   const staleBefore = new Date(Date.now() - PUBLISH_LOCK_TIMEOUT_SECONDS * 1000).toISOString();
   const stale = unsafeDb(backendDb)
     .db.select()

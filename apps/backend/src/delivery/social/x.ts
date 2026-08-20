@@ -2,7 +2,7 @@ import fs from "node:fs";
 import type { BackendConfig } from "../../foundation/config.js";
 import { externalFetch } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
-import { type HttpPublishError, httpPublishError, publishJson } from "../../publishing/errors.js";
+import { httpPublishError, publishJson } from "../../publishing/errors.js";
 import { formatPlatformText } from "../../publishing/platform-profiles.js";
 import { ambiguousExternalMutation, isAmbiguousPublicationError } from "../ambiguous-publication.js";
 import { guessContentType, payloadMedia, payloadText } from "./payload.js";
@@ -154,7 +154,7 @@ async function uploadMedia(
       const segment = Buffer.from(chunk.subarray(0, bytesRead));
       form.set("media", new Blob([segment], { type: "application/octet-stream" }), `segment-${segmentIndex}`);
       const response = await xFetch(`${UPLOAD_URL}/${mediaId}/append`, config, fetchImpl, { method: "POST", body: form });
-      if (!response.ok) throw await responseError(response, `X media APPEND ${segmentIndex}`);
+      if (!response.ok) throw httpPublishError(response, await response.text(), `X media APPEND ${segmentIndex}`);
       position += bytesRead;
       segmentIndex += 1;
     }
@@ -202,8 +202,4 @@ async function xFetch(url: string, config: BackendConfig, fetchImpl: typeof fetc
 
 function assertXAccessToken(config: BackendConfig): void {
   if (!config.X_ACCESS_TOKEN) throw new Error("missing X OAuth access token; connect X in Studio > Channels");
-}
-
-async function responseError(response: Response, label: string): Promise<HttpPublishError> {
-  return httpPublishError(response, await response.text(), label);
 }

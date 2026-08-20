@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { registerChannel } from "../src/channels/registry.js";
 import { postLocales, posts, publications, publishJobs } from "../src/db/schema.js";
 import { renderDashboard } from "../src/interfaces/web/dashboard.js";
 import { commandCenterFingerprint } from "../src/operations/command-center.js";
@@ -35,6 +36,7 @@ describe("dashboard render cache", () => {
   it("keeps publications from the current local day in the combined history", () => {
     const backendDb = openBackendDb(":memory:");
     try {
+      registerChannel(backendDb, { platform: "site", locale: "ru", provider: "native", targetId: "site_ru", source: "test" });
       const now = new Date().toISOString();
       backendDb.db
         .insert(publications)
@@ -46,7 +48,27 @@ describe("dashboard render cache", () => {
         .run();
       backendDb.db.insert(postLocales).values({ postId: 1, locale: "ru", slug: "today", text: "Current local day", updatedAt: now }).run();
 
-      expect(renderDashboard(loadTestConfig({ COMMAND_CENTER_TOKEN: "secret" }), backendDb, 0)).toContain("Current local day");
+      expect(
+        renderDashboard(
+          loadTestConfig({ COMMAND_CENTER_TOKEN: "secret", CONTROLLER_BOT_TOKEN: "bot", CONTROLLER_ADMIN_IDS: "42" }),
+          backendDb,
+          0,
+        ),
+      ).toContain("Current local day");
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("replaces first-run guidance after a channel is connected outside the dashboard", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const config = loadTestConfig({ COMMAND_CENTER_TOKEN: "secret", CONTROLLER_BOT_TOKEN: "bot", CONTROLLER_ADMIN_IDS: "42" });
+      expect(renderDashboard(config, backendDb, 0)).toContain("Опубликуйте первый черновик");
+
+      registerChannel(backendDb, { platform: "telegram", locale: "ru", provider: "native", targetId: "telegram", source: "test" });
+
+      expect(renderDashboard(config, backendDb, 0)).not.toContain("Опубликуйте первый черновик");
     } finally {
       backendDb.close();
     }

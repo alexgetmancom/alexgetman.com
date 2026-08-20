@@ -23,7 +23,6 @@ export const posts = sqliteTable(
     telegramUrl: text(),
     status: text().notNull().default("active"),
     ...timestamps(),
-    rawJson: text(),
   },
   (table) => [index("idx_posts_updated_at").on(table.updatedAt)],
 );

@@ -1,7 +1,9 @@
+import { publicationRef } from "../application/publication-ref.js";
 import { isStoryTarget, targetLocale } from "../botTargets.js";
 import { effectivePostTargets } from "../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { primaryStudioActorId } from "../studio/access.js";
 import { createStudioServices } from "../studio/services/index.js";
 
 type PublishTextInput = {
@@ -28,7 +30,7 @@ export function publishText(backendDb: BackendDb, config: BackendConfig, input: 
   const deliverable = effectivePostTargets(backendDb, Object.fromEntries(targets.map((target) => [target, true])));
   const unconnected = targets.filter((target) => !deliverable[target]);
   if (unconnected.length) throw new Error(`no connected channel for ${unconnected.join(", ")}; run \`channels\` to see what is connected`);
-  const actorId = config.MCP_STUDIO_ACTOR_ID ?? config.STUDIO_ACTOR_IDS[0] ?? config.CONTROLLER_ADMIN_IDS[0];
+  const actorId = primaryStudioActorId(config);
   if (!actorId) throw new Error("publish needs a configured Studio actor");
   const posts = createStudioServices(backendDb, config).posts;
   return unsafeDb(backendDb)
@@ -52,7 +54,7 @@ export function publishText(backendDb: BackendDb, config: BackendConfig, input: 
         ok: true,
         draft_id: draftId,
         post_id: postId,
-        ref: `post:${postId}`,
+        ref: publicationRef("post", postId),
         targets,
         queued: true,
       };

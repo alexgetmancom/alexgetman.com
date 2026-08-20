@@ -24,7 +24,23 @@ export const TARGETS = [
   { id: "instagram_stories", label: "Instagram Stories EN", locale: "en", kind: "social", carries: ["post"] },
 ] as const;
 
-type TargetId = (typeof TARGETS)[number]["id"];
+export type TargetId = (typeof TARGETS)[number]["id"];
+
+/** Routes whose credentials are provisioned separately and whose remaining
+ * connection step is enabling the publication target. OAuth account routes
+ * are absent because their consent callback registers them itself. */
+export const DIRECT_CONNECT_TARGET_IDS = [
+  "telegram",
+  "discord",
+  "telegram_stories",
+  "instagram_stories_ru",
+  "instagram_stories",
+] as const satisfies readonly TargetId[];
+
+export function directConnectTargets(): (typeof TARGETS)[number][] {
+  const ids = new Set<string>(DIRECT_CONNECT_TARGET_IDS);
+  return TARGETS.filter(({ id }) => ids.has(id));
+}
 
 /** The connection that delivers a target. A target is its own connection
  * unless it says otherwise: `x_article` rides the X account already connected

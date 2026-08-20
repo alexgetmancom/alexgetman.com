@@ -7,8 +7,15 @@ import { escapeHtml } from "../../foundation/html.js";
 import { t } from "../../foundation/i18n/index.js";
 import { DEFAULT_STUDIO_LOCALE, parseStudioLocale, type StudioLocale } from "../../foundation/locale.js";
 import { log } from "../../foundation/logger.js";
-import type { CommandCenterAttention } from "../../operations/command-center.js";
-import { createOperationsService } from "../../operations/service.js";
+import {
+  type CommandCenterAttention,
+  commandCenterAttention,
+  commandCenterFingerprint,
+  commandCenterPayload,
+} from "../../operations/command-center.js";
+import { pipelineOverviewPayload } from "../../operations/read-model.js";
+import { hasStudioAuthoringInterface, primaryStudioActorId } from "../../studio/access.js";
+import { createStudioServices } from "../../studio/services/index.js";
 import { type PlatformMetric, renderCombinedSection } from "./dashboard/combined-section.js";
 import { localeQuery, renderLocaleSwitcher } from "./dashboard/locale-links.js";
 import { renderCredentialsSection, renderDiagnosticsSection, renderQueueSection, renderRepairSection } from "./dashboard/ops-sections.js";
@@ -20,7 +27,7 @@ import { dashboardThemeToggleHtml } from "./dashboard/theme.js";
 import type { OpsPayload } from "./dashboard/types.js";
 import { createVideoOverviewCache, invalidateVideoOverviewCache } from "./dashboard/video-overview.js";
 import { additionalXActivityPosts } from "./dashboard/x-activity-posts.js";
-import { renderStudioSection } from "./studio.js";
+import { renderStudioOnboarding, renderStudioSection } from "./studio.js";
 
 type DashboardTab = "posts" | "studio";
 type DashboardPanel = "overview" | "queue" | "health" | "repair";
@@ -97,9 +104,8 @@ export function renderDashboard(
   requestedVideoView?: string,
 ): string {
   const renderStartedAt = Date.now();
-  const service = createOperationsService(backendDb, config);
   const fingerprintStartedAt = Date.now();
-  const revision = JSON.stringify(service.fingerprint());
+  const revision = JSON.stringify(commandCenterFingerprint(backendDb));
   const fingerprintMs = Date.now() - fingerprintStartedAt;
   const cache = dashboardCacheFor(backendDb);
   const cacheKey = dashboardCacheKey(
@@ -128,19 +134,21 @@ export function renderDashboard(
     return cached.html;
   }
   const videoCache = createVideoOverviewCache();
-  const studioActorId = config.MCP_STUDIO_ACTOR_ID;
+  const studioActorId = primaryStudioActorId(config);
+  const connectedChannelCount = createStudioServices(backendDb, config).channels.list().length;
+  const needsOnboarding = connectedChannelCount === 0 || !hasStudioAuthoringInterface(config);
   // The unified overview is the landing screen of every Studio, whichever
   // halves it publishes.
-  const tab: DashboardTab = requestedTab === "studio" && studioActorId ? "studio" : "posts";
+  const tab: DashboardTab = requestedTab === "studio" ? "studio" : "posts";
   const showPosts = tab === "posts";
-  const showStudio = tab === "studio" && Boolean(studioActorId);
+  const showStudio = tab === "studio";
   const activeTab = showStudio ? "studio" : "posts";
   const locale = parseStudioLocale(requestedLocale);
   const panel: DashboardPanel =
     requestedPanel === "queue" || requestedPanel === "health" || requestedPanel === "repair" ? requestedPanel : "overview";
   const attentionStartedAt = Date.now();
-  const ops = panel === "queue" || panel === "health" ? service.dashboard() : null;
-  const hasAttention = ops ? opsNeedsAttention(ops) : commandCenterAttentionState(service.attention());
+  const ops = panel === "queue" || panel === "health" ? commandCenterPayload(config, backendDb) : null;
+  const hasAttention = ops ? opsNeedsAttention(ops) : commandCenterAttentionState(commandCenterAttention(config, backendDb));
   const attentionMs = Date.now() - attentionStartedAt;
   const periodDays = [1, 7, 30, 90, 365].includes(Number(requestedPeriod)) ? Number(requestedPeriod) : 1;
   const activeView = showPosts && AUDIENCE_VIEWS.includes(requestedView as AudienceView) ? (requestedView as AudienceView) : undefined;
@@ -162,7 +170,7 @@ export function renderDashboard(
   };
   const overviewFilterQuery = platformMetric === "followers" ? "&metric=followers" : "";
   const overviewControls =
-    panel === "overview" && showPosts
+    panel === "overview" && showPosts && !needsOnboarding
       ? renderPeriodControls(locale, weekOffset, periodDays, config.TIMEZONE, activeView, videoView, overviewFilterQuery)
       : "";
   const contentStartedAt = Date.now();
@@ -184,10 +192,11 @@ export function renderDashboard(
 
   function renderOverview(): string {
     if (showPosts) {
-      const readModel = loadDashboardReadModel(config, backendDb, service, videoCache, weekOffset, periodDays, videoView);
+      if (needsOnboarding) return renderStudioOnboarding(config, connectedChannelCount, locale);
+      const readModel = loadDashboardReadModel(config, backendDb, videoCache, weekOffset, periodDays, videoView);
       return renderCombinedSection(buildOverviewData(readModel, activeView, platformMetric), locale);
     }
-    if (showStudio && studioActorId) return renderStudioSection(config, backendDb, studioActorId, locale);
+    if (showStudio) return renderStudioSection(config, backendDb, studioActorId, locale);
     return "";
   }
 
@@ -199,15 +208,11 @@ export function renderDashboard(
     { label: t(locale, "cc.nav.queue"), href: panelLink("queue"), active: panel === "queue" },
     { label: t(locale, "cc.nav.health"), href: panelLink("health"), active: panel === "health", attention: hasAttention },
     { label: t(locale, "cc.nav.repair"), href: panelLink("repair"), active: panel === "repair" },
-    ...(studioActorId
-      ? [
-          {
-            label: t(locale, "cc.nav.studio"),
-            href: `/command-center?tab=studio${localeParam}`,
-            active: panel === "overview" && activeTab === "studio",
-          },
-        ]
-      : []),
+    {
+      label: t(locale, "cc.nav.studio"),
+      href: `/command-center?tab=studio${localeParam}`,
+      active: panel === "overview" && activeTab === "studio",
+    },
   ];
   const activeSecondary = secondaryTabs.find((tab) => tab.active);
   const menuAttention = secondaryTabs.some((tab) => tab.attention);
@@ -265,7 +270,7 @@ export function renderDashboardPublicationDetails(
   const wantsText = track !== "video";
   const targetIds = dashboardTargetIds(requestedView);
   const data = wantsText
-    ? createOperationsService(backendDb, config).pipelineOverview(weekOffset, periodDays, 0, undefined, {
+    ? pipelineOverviewPayload(config, backendDb, weekOffset, periodDays, 0, undefined, {
         includeSamples: false,
         includeContent: true,
       })

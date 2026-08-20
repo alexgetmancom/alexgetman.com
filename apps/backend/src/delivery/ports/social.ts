@@ -1,7 +1,7 @@
+import { createSerialQueue } from "../../../../../shared/serial-queue.js";
 import { isStoryTarget } from "../../botTargets.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { log } from "../../foundation/logger.js";
-import { createSerialQueue } from "../../foundation/serial-queue.js";
 import { selectMediaForTarget } from "../../publishing/media-policy.js";
 import type { ClaimedPublishJob } from "../../publishing/queue.js";
 import { prepareMediaItems } from "../media-prepare.js";

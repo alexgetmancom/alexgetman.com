@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { and, asc, desc, eq, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
+import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
 import { postLocales, publicationEvents, publicationSources, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -303,7 +304,7 @@ function sourceItems(backendDb: BackendDb): Record<string, unknown>[] {
     if (!item) return [];
     const state = localeStates.get(row.postId);
     const localized = state && state.seen.size > 0 ? { ...item, has_ru: state.active.has("ru"), has_en: state.active.has("en") } : item;
-    return [{ ...localized, id: `post:${row.postId}`, post_id: row.postId }];
+    return [{ ...localized, id: publicationRef("post", row.postId), post_id: row.postId }];
   });
 }
 

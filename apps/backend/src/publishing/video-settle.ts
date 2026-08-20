@@ -1,4 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
+import { publicationRef } from "../application/publication-ref.js";
 import { videoPublicUrl } from "../content/video-assets.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { videoJobs, videoTargets } from "../db/schema.js";
@@ -44,7 +45,7 @@ export async function settleVideoTarget(
     .from(videoTargets)
     .where(and(eq(videoTargets.videoDraftId, input.videoDraftId), eq(videoTargets.target, input.target)))
     .get();
-  if (!row) throw new Error(`video:${input.videoDraftId} has no ${input.target} target`);
+  if (!row) throw new Error(`${publicationRef("video", input.videoDraftId)} has no ${input.target} target`);
   // What this answers is "the provider took it, the platform has not confirmed",
   // which a target wears either as verification_required or as a published row
   // with nothing to link to. Anything carrying a link is already settled.
@@ -66,7 +67,7 @@ export async function settleVideoTarget(
       url: input.known.url ?? null,
       failure: null,
     };
-    if (!input.apply) return { ref: `video:${input.videoDraftId}`, target: input.target, observed, applied: false };
+    if (!input.apply) return { ref: publicationRef("video", input.videoDraftId), target: input.target, observed, applied: false };
     return { ...record(backendDb, config, row, input.videoDraftId, observed), observed };
   }
 
@@ -78,14 +79,14 @@ export async function settleVideoTarget(
     .get();
   if (!publishJob) throw new Error(`${input.target} has no publish job to ask about`);
   const requestId = zernioPublishFence(publishJob);
-  const plan = { ref: `video:${input.videoDraftId}`, target: input.target, provider: "zernio", requestId, applied: false };
+  const plan = { ref: publicationRef("video", input.videoDraftId), target: input.target, provider: "zernio", requestId, applied: false };
   if (!input.apply) return plan;
 
   // A publication we already know the id of is asked about; one we do not is
   // asked for, under the fence that makes asking indistinguishable from having
   // asked before.
   const result = row.providerPostId
-    ? await zernioPostOutcome(config, row.providerPostId, fetchImpl)
+    ? await zernioPostOutcome(config, row.providerPostId, "instagram", fetchImpl)
     : {
         ...(await publishZernioInstagramReel(
           config,

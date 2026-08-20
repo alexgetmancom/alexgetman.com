@@ -3,7 +3,7 @@ import type { BackendConfig } from "../../foundation/config.js";
 import { externalFetch } from "../../foundation/http.js";
 import { log } from "../../foundation/logger.js";
 import type { PublishResult } from "../../publishing/errors.js";
-import { type HttpPublishError, httpPublishError, publishJson } from "../../publishing/errors.js";
+import { httpPublishError, publishJson } from "../../publishing/errors.js";
 import { platformProfile } from "../../publishing/platform-profiles.js";
 import { ambiguousExternalMutation } from "../ambiguous-publication.js";
 import { guessContentType, mediaExtension, payloadMedia, payloadText, splitText } from "./payload.js";
@@ -83,7 +83,7 @@ export async function deleteDiscordMessage(id: string, config: BackendConfig, fe
   const response = await discordFetch(credentials, `/channels/${credentials.channelId}/messages/${encodeURIComponent(id)}`, fetchImpl, {
     method: "DELETE",
   });
-  if (!response.ok) throw await responseError(response, "Discord message delete");
+  if (!response.ok) throw httpPublishError(response, await response.text(), "Discord message delete");
 }
 
 export async function editDiscordMessage(
@@ -125,7 +125,7 @@ async function crosspost(credentials: DiscordCredentials, id: string, fetchImpl:
   const path = `/channels/${credentials.channelId}/messages/${encodeURIComponent(id)}/crosspost`;
   try {
     const response = await discordFetch(credentials, path, fetchImpl, { method: "POST" });
-    if (!response.ok) throw await responseError(response, "Discord crosspost");
+    if (!response.ok) throw httpPublishError(response, await response.text(), "Discord crosspost");
   } catch (error) {
     log("warn", "Discord crosspost failed", { messageId: id, channelId: credentials.channelId, error: String(error) });
   }
@@ -157,8 +157,4 @@ function discordFetch(credentials: DiscordCredentials, path: string, fetchImpl: 
     ...init,
     headers: { ...init.headers, Authorization: `Bot ${credentials.token}` },
   });
-}
-
-async function responseError(response: Response, label: string): Promise<HttpPublishError> {
-  return httpPublishError(response, await response.text(), label);
 }

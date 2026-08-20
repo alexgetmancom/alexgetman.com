@@ -234,8 +234,10 @@ export function sum(rows: VideoMetricRow[], field: string): number {
   return rows.reduce((total, row) => total + metricNumber(row.metrics[field]), 0);
 }
 
-/** Current projection minus the last observation at or before `since`, keyed by
- * `platform${KEY_SEP}account`. A profile with no baseline is omitted rather than
+/** The current account's latest projection minus its own last observation at
+ * or before `since`, keyed by `platform${KEY_SEP}account`. Reconnecting a route
+ * to another account keeps the old snapshots attributable without mixing their
+ * growth into the replacement account. A profile with no baseline is omitted rather than
  * counting its lifetime follower number as growth. `until` makes the same
  * calculation safe for historical dashboard dates: the latest sample must be
  * inside the selected period, not whatever was collected today. */
@@ -250,7 +252,7 @@ function audienceGrowthByAccount(backendDb: BackendDb, since: string, until: str
        ),
        ranked_latest AS (
          SELECT platform, account, value,
-                ROW_NUMBER() OVER (PARTITION BY platform, account ORDER BY sampled_at DESC, id DESC) AS rn
+                ROW_NUMBER() OVER (PARTITION BY platform ORDER BY sampled_at DESC, id DESC) AS rn
          FROM samples
        ),
        ranked_baseline AS (

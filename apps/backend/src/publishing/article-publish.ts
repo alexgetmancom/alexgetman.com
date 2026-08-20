@@ -6,6 +6,7 @@ import { slugify } from "../content/message.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { articleLocales, articles } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { primaryStudioActorId } from "../studio/access.js";
 import { enqueuePublishJobTx } from "./queue.js";
 
 type PublishArticleInput = {
@@ -36,7 +37,7 @@ export function publishArticle(backendDb: BackendDb, config: BackendConfig, inpu
   // The title is a field, not the first line of the body. Without one there is
   // nothing to publish under, and X refuses an untitled Article outright.
   if (!title) throw new Error("an article needs a `# Title` heading");
-  const actorId = config.MCP_STUDIO_ACTOR_ID ?? config.STUDIO_ACTOR_IDS[0] ?? config.CONTROLLER_ADMIN_IDS[0];
+  const actorId = primaryStudioActorId(config);
   if (!actorId) throw new Error("publish needs a configured Studio actor");
   const now = new Date().toISOString();
 

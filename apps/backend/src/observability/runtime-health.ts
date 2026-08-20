@@ -3,7 +3,6 @@ import { eq } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { type JsonValue, workerState } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
-import type { BackendConfig } from "../foundation/config.js";
 import { ALERT_COOLDOWN_SECONDS } from "./alerts.js";
 
 const RUNTIME_STATE_KEY = "runtime";
@@ -52,7 +51,7 @@ function writeRuntimeState(backendDb: BackendDb, state: { bootId: string; booted
  * kill that keeps recurring, or a healthcheck that cannot stay green. That is
  * the only case escalated to `error`.
  */
-export function recordProcessRestart(config: BackendConfig, backendDb: BackendDb): boolean {
+export function recordProcessRestart(backendDb: BackendDb): boolean {
   const previous = readRuntimeState(backendDb);
   const bootedAt = new Date(Date.now() - process.uptime() * 1000).toISOString();
   if (previous.bootId === BOOT_ID) return false;
@@ -112,11 +111,7 @@ function cgroupMemoryLimitBytes(): number | null {
  * trace to report afterwards — by the time anything could alert, the process is
  * gone — so the usable signal is rss crossing a fraction of the cgroup ceiling.
  */
-export function recordMemoryPressure(
-  config: BackendConfig,
-  backendDb: BackendDb,
-  limitBytes: number | null = cgroupMemoryLimitBytes(),
-): boolean {
+export function recordMemoryPressure(backendDb: BackendDb, limitBytes: number | null = cgroupMemoryLimitBytes()): boolean {
   if (!limitBytes) return false;
   const rss = process.memoryUsage().rss;
   const usedPercent = Math.round((rss / limitBytes) * 100);

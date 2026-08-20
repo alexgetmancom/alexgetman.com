@@ -188,7 +188,7 @@ export async function videoTargetIsAbsent(
 ): Promise<boolean> {
   if (target.deliveryProvider === "zernio") {
     if (!target.providerPostId) throw new Error("cannot ask the provider about a target with no provider post id");
-    return absentIfMissing(() => verifyZernioPost(config, target.providerPostId as string));
+    return absentIfMissing(() => verifyZernioPost(config, target.providerPostId as string, "instagram"));
   }
   if (!target.externalId) throw new Error(`cannot ask ${target.target} about a target with no external id`);
   if (target.target === "youtube_shorts") return absentIfMissing(() => verifyYouTubeVideo(config, target.externalId as string, locale));

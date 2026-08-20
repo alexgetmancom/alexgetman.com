@@ -63,7 +63,7 @@ jobs:
 
           while IFS= read -r path; do
             case "$path" in
-              deploy/media-processor/compose.yml|deploy/media-processor/Dockerfile|deploy/media-processor/Dockerfile.runtime-base|deploy/media-processor/server.ts|deploy/media-processor/service.ts|deploy/media-processor/serial-queue.ts|deploy/media-processor/story-encode.ts)
+              deploy/media-processor/compose.yml|deploy/media-processor/Dockerfile|deploy/media-processor/Dockerfile.runtime-base|deploy/media-processor/server.ts|deploy/media-processor/service.ts|deploy/media-processor/story-encode.ts|shared/serial-queue.ts)
                 media=true
                 deployment=true
                 ;;

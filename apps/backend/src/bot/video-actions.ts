@@ -9,7 +9,7 @@ import { manualScheduleExample } from "../foundation/time.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import type { StudioServices } from "../studio/services/index.js";
 import { VIDEO_FLOW } from "../studio/video-fsm.js";
-import { appendCancelButton, cancelPromptKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
+import { appendCancelButton, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
 import { mainMenuText } from "./menu-render.js";
 import type {

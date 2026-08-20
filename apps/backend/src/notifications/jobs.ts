@@ -1,5 +1,4 @@
-import { and, asc, eq, inArray, lte } from "drizzle-orm";
-import { parsePublicationRef } from "../application/publication-ref.js";
+import { and, asc, eq, lte } from "drizzle-orm";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { recordEvent } from "../db/repositories/events.js";
 import { studioNotificationJobs } from "../db/schema.js";
@@ -51,12 +50,10 @@ export function scheduleReminder(
 }
 
 export function cancelScheduledNotifications(backendDb: BackendDb, ref: string): void {
-  const parsed = parsePublicationRef(ref);
-  const refs = parsed ? [ref, `${parsed.kind}:${parsed.id}`] : [ref];
   unsafeDb(backendDb)
     .db.update(studioNotificationJobs)
     .set({ status: "cancelled", updatedAt: new Date().toISOString() })
-    .where(and(inArray(studioNotificationJobs.ref, refs), eq(studioNotificationJobs.status, "queued")))
+    .where(and(eq(studioNotificationJobs.ref, ref), eq(studioNotificationJobs.status, "queued")))
     .run();
 }
 

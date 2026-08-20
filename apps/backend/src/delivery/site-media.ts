@@ -10,6 +10,7 @@ import {
 } from "../content/site-media-naming.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { materializeTelegramFile } from "../foundation/external/telegram-files.js";
+import { imageExtension } from "../foundation/media-types.js";
 import { runFfmpeg } from "../foundation/runtime/ffmpeg.js";
 import { processVerticalMediaRemotely } from "./remote-media-processor.js";
 import {
@@ -223,9 +224,7 @@ async function materializeResponsiveVariants(config: BackendConfig, source: stri
 function mediaExtension(item: SiteMedia, kind: "image" | "video"): string {
   if (kind === "video") return "mp4";
   const source = stringValue(item.local_path) || stringValue(item.localPath) || stringValue(item.path);
-  const extension = path.extname(source).slice(1).toLowerCase();
-  if (["jpg", "jpeg", "png", "webp", "gif", "avif"].includes(extension)) return extension === "jpeg" ? "jpg" : extension;
-  return "jpg";
+  return (imageExtension(source) ?? ".jpg").slice(1);
 }
 
 async function copyOrDownload(config: BackendConfig, item: SiteMedia, target: string, fetchImpl: typeof fetch): Promise<void> {

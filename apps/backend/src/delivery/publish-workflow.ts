@@ -61,7 +61,7 @@ export async function runDeliveryPublishCycle(
         const port = publishers[job.target];
         if (!port) {
           try {
-            failPublishJob(backendDb, config, job.jobId, new Error(`unsupported delivery target: ${job.target}`), job.lockId);
+            failPublishJob(backendDb, job.jobId, new Error(`unsupported delivery target: ${job.target}`), job.lockId);
           } catch (error) {
             settleUnexpectedFinalization(backendDb, job, error);
           }
@@ -121,11 +121,11 @@ export async function runDeliveryPublishCycle(
           });
         } catch (error) {
           if (isAmbiguousPublicationError(error)) requirePublishVerification(backendDb, job.jobId, error, job.lockId);
-          else failPublishJob(backendDb, config, job.jobId, error, job.lockId);
+          else failPublishJob(backendDb, job.jobId, error, job.lockId);
           return;
         }
         try {
-          completePublishJob(backendDb, config, job.jobId, result, job.lockId);
+          completePublishJob(backendDb, job.jobId, result, job.lockId);
         } catch (error) {
           settleUnexpectedFinalization(backendDb, job, error, result);
         }

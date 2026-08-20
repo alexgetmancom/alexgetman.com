@@ -60,17 +60,25 @@ openssl rand -hex 32
 docker compose up -d
 ```
 
-Caddy obtains and renews the TLS certificate itself, so there is no certbot and no renewal timer to set up. Within a minute the Command Center is at `https://your-domain/command-center`.
+Caddy obtains and renews the TLS certificate itself, so there is no certbot and no renewal timer to set up. Within a minute the Command Center is at `https://your-domain/command-center`. Sign in with the `COMMAND_CENTER_TOKEN` from `.env`; an empty Studio opens with the three steps to its first draft instead of an empty analytics screen.
 
-The public website is off by default — most Studios publish to channels they already have and do not want another site to look after. Run `ops studio-profile-set --site-enabled` to serve one at `https://your-domain/`, with its feeds, sitemap and Markdown endpoints. It takes effect on the next request.
+The public website is off by default — most Studios publish to channels they already have and do not want another site to look after. Enable it with the operations CLI shipped in the container:
+
+```bash
+docker compose exec app bun /app/ops/cli.js studio-profile-set --site-enabled
+```
+
+It appears at `https://your-domain/`, with its feeds, sitemap and Markdown endpoints, on the next request.
 
 Temporary media that an external platform fetches during publishing is staged under `/data/media`, automatically created and owned by the container before the app drops privileges. The `/media/staging/` route remains available when the public site is off, so a fresh self-host does not need a manual directory or permission step.
 
-Only Caddy publishes ports; the application is reachable through it alone. Nothing else in `.env` is required to start — a Studio with no credentials serves its site and its Command Center and publishes nowhere. Add a Telegram bot, then connect destinations from the Command Center or over MCP; `docker compose exec app bun /app/ops/cli.js doctor` lists what each one still needs.
+Only Caddy publishes ports; the application is reachable through it alone. Nothing else in `.env` is required to start — a Studio with no platform credentials serves its Command Center and publishes nowhere. Add Telegram or MCP as the authoring interface, then connect destinations from Command Center → Studio; `docker compose exec app bun /app/ops/cli.js doctor` lists what each enabled destination still needs.
 
-`ops studio-profile` shows what this Studio publishes as, its time zone, whether it serves a public site, and video timing; `ops studio-profile-set` changes them. They live in the database, so they survive a redeploy and need no restart. Update the image with `docker compose pull && docker compose up -d`; diagnose with `docker compose logs -f app`.
+`docker compose exec app bun /app/ops/cli.js studio-profile` shows what this Studio publishes as, its time zone, whether it serves a public site, and video timing; `studio-profile-set` on the same CLI changes them. They live in the database, so they survive a redeploy and need no restart.
 
-Two things worth knowing on day one. The Studio sends you a copy of its database
+Before an update, `docker compose exec app bun /app/ops/cli.js status` reports the running `gitRevision`. `latest` follows the revision running in the maintainer's production; set `SOLO_PUBLISHER_IMAGE=ghcr.io/alexgetmancom/solo-publisher:<full-gitRevision>` in `.env` when you want the verified installation to stay fixed. Update with `docker compose pull && docker compose up -d`; diagnose with `docker compose logs -f app`.
+
+Two things worth knowing on day one. When Telegram is configured, the Studio sends you a copy of its database
 every day, silently, in the same Telegram chat you author from; it covers posts,
 schedules, delivery state and analytics, but **not** media files, which are far
 larger than Telegram accepts and need a backup of the `app-data` volume. Turn it
@@ -127,7 +135,7 @@ Copy the secret template:
 cp apps/backend/secrets.env.example apps/backend/secrets.env
 ```
 
-What a Studio publishes as, whether it serves the public site, its time zone and video timing live in its own database, read and written with `ops studio-profile`. Credentials stay in the ignored `apps/backend/secrets.env`; connected destinations live in the channel registry. Text posting, video posting and analytics always run.
+What a Studio publishes as, whether it serves the public site, its time zone and video timing live in its own database, read and written with `bun run --filter @alexgetman/backend ops -- studio-profile`. Credentials stay in the ignored `apps/backend/secrets.env`; connected destinations live in the channel registry. Text posting, video posting and analytics always run.
 
 The private Telegram bot and MCP endpoint operate the same Studio services. Posts created through either interface land in the same drafts, schedules, publication jobs, and analytics.
 

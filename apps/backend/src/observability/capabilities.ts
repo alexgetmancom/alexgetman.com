@@ -4,7 +4,7 @@ import type { BackendConfig } from "../foundation/config.js";
 import { PLATFORM_PROFILES } from "../publishing/platform-profiles.js";
 
 type CapabilityStatus = "ready" | "missing";
-type CapabilityReportEntry = { target: string; required: readonly string[]; missing: string[]; status: CapabilityStatus };
+export type CapabilityReportEntry = { target: string; required: readonly string[]; missing: string[]; status: CapabilityStatus };
 
 const controllerRequirements = ["CONTROLLER_BOT_TOKEN", "CONTROLLER_ADMIN_IDS"] as const;
 
@@ -18,8 +18,13 @@ export function capabilityReport(config: BackendConfig, backendDb?: BackendDb): 
   });
 }
 
+export function channelReadiness(config: BackendConfig, backendDb: BackendDb): Map<string, CapabilityReportEntry> {
+  return new Map(capabilityReport(config, backendDb).map((entry) => [entry.target, entry]));
+}
+
 function capabilityRequirements(config: BackendConfig): Map<string, readonly string[]> {
-  const requirements = new Map<string, readonly string[]>([["controller_bot", controllerRequirements]]);
+  const requirements = new Map<string, readonly string[]>();
+  if (config.controllerBotToken || config.CONTROLLER_ADMIN_IDS.length) requirements.set("controller_bot", controllerRequirements);
   if (config.MEDIA_PROCESSOR_PROVIDER === "remote_http")
     requirements.set("media_processor", ["MEDIA_PROCESSOR_URL", "MEDIA_PROCESSOR_TOKEN"]);
   for (const profile of Object.values(PLATFORM_PROFILES))
@@ -33,7 +38,8 @@ function capabilityRequirements(config: BackendConfig): Map<string, readonly str
  * actionable health failure, even when the shared image knows its env names.
  */
 function registeredRequirements(config: BackendConfig, backendDb: BackendDb): Map<string, readonly string[]> {
-  const requirements = new Map<string, readonly string[]>([["controller_bot", controllerRequirements]]);
+  const requirements = new Map<string, readonly string[]>();
+  if (config.controllerBotToken || config.CONTROLLER_ADMIN_IDS.length) requirements.set("controller_bot", controllerRequirements);
   for (const channel of listChannels(backendDb)) {
     // A target delivered through a provider needs the provider key, not the
     // platform tokens it would have needed natively. Reporting the tokens as

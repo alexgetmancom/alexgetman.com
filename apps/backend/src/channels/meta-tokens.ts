@@ -1,10 +1,9 @@
-import { eq } from "drizzle-orm";
-import { type BackendDb, unsafeDb } from "../db/client.js";
-import { platformTokens } from "../db/schema.js";
+import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { requestJson } from "../foundation/http.js";
 import { log } from "../foundation/logger.js";
 import { encryptionKey, fingerprint, open, seal } from "../foundation/secret-box.js";
+import { platformToken, storePlatformToken } from "./platform-token-store.js";
 
 /**
  * Meta's long-lived tokens last 60 days and are renewed by asking for a new
@@ -60,16 +59,12 @@ const TOKENS: MetaToken[] = [
 type StoredToken = { sealedToken: string; seedFingerprint: string | null; accountId: string | null; refreshedAt: string };
 
 function stored(backendDb: BackendDb, target: string): StoredToken | null {
-  return unsafeDb(backendDb).db.select().from(platformTokens).where(eq(platformTokens.target, target)).get() ?? null;
+  return platformToken(backendDb, target);
 }
 
 function store(backendDb: BackendDb, target: string, row: StoredToken): void {
   const now = new Date().toISOString();
-  unsafeDb(backendDb)
-    .db.insert(platformTokens)
-    .values({ target, ...row, updatedAt: now })
-    .onConflictDoUpdate({ target: platformTokens.target, set: { ...row, updatedAt: now } })
-    .run();
+  storePlatformToken(backendDb, target, { ...row, updatedAt: now });
 }
 
 /**

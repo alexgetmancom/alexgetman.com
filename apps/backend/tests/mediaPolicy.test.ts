@@ -20,5 +20,7 @@ test("social payload media helpers stay browser-safe without changing extension 
   expect(mediaExtension({ type: "VIDEO", localPath: String.raw`C:\media\clip.mov` })).toBe(".mov");
   expect(mediaExtension({ type: "VIDEO", localPath: "/tmp/.hidden" })).toBe(".mp4");
   expect(guessContentType("/tmp/IMAGE.PNG")).toBe("image/png");
+  expect(guessContentType("/tmp/photo.avif")).toBe("image/avif");
   expect(guessContentType("/tmp/clip.mov")).toBe("video/quicktime");
+  expect(guessContentType("/tmp/no-extension")).toBe("application/octet-stream");
 });

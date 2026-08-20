@@ -1,14 +1,11 @@
 import type { ChannelConnectionRecord } from "../application/ports.js";
-import { TARGETS, targetConnection } from "../botTargets.js";
+import { TARGETS, type TargetId, targetConnection, targetDefinition } from "../botTargets.js";
 import type { BackendDb } from "../db/client.js";
 import type { VideoLocale } from "../foundation/external/youtube.js";
 import { ACCOUNT_PLATFORMS, VIDEO_TARGET_PLATFORM, type VideoTarget } from "../publishing/video-types.js";
+import { channelIdentity } from "./identity.js";
 
 export type ChannelConnection = ChannelConnectionRecord;
-
-function channelId(platform: string, locale: VideoLocale): string {
-  return `${platform}_${locale}`;
-}
 
 export function listChannels(backendDb: BackendDb, enabledOnly = true): ChannelConnection[] {
   return backendDb.channels
@@ -36,7 +33,7 @@ export function registerChannel(backendDb: BackendDb, input: ChannelInput): Chan
     throw new Error(`Unknown platform: ${input.platform}. Account platforms are ${known}; a text channel names its target instead.`);
   }
   const now = new Date().toISOString();
-  const id = input.targetId ?? channelId(input.platform, input.locale);
+  const id = input.targetId ?? channelIdentity(input.platform, input.locale);
   backendDb.channels.upsert(
     {
       id,
@@ -54,6 +51,27 @@ export function registerChannel(backendDb: BackendDb, input: ChannelInput): Chan
   const connection = backendDb.channels.get(id);
   if (!connection) throw new Error(`Channel registration did not persist: ${id}`);
   return connection;
+}
+
+/** Registers a text or Story route from the target that already owns its
+ * platform identity and language. Every interface uses this entry point, so no
+ * surface can persist a target under a conflicting locale. */
+export function registerTargetChannel(
+  backendDb: BackendDb,
+  targetId: TargetId,
+  input: { provider: string; providerAccountId?: string; label?: string; source?: string },
+): ChannelConnection {
+  const target = targetDefinition(targetId);
+  if (!target) throw new Error(`Unknown publication target: ${targetId}`);
+  return registerChannel(backendDb, {
+    platform: targetId,
+    locale: target.locale,
+    provider: input.provider,
+    targetId,
+    ...(input.providerAccountId ? { providerAccountId: input.providerAccountId } : {}),
+    label: input.label ?? target.label,
+    ...(input.source ? { source: input.source } : {}),
+  });
 }
 
 /** How each connected text or story target is delivered, by target id.

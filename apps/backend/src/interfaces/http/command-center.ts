@@ -1,10 +1,14 @@
+import { DIRECT_CONNECT_TARGET_IDS, type TargetId } from "../../botTargets.js";
+import type { ZernioConnectionKey } from "../../channels/zernio-connections.js";
 import { allowPublicRequest } from "../../engagement/rate-limit.js";
+import { escapeHtml } from "../../foundation/html.js";
 import { commandAllowed, sameOriginCommandLogin } from "../../foundation/http-auth.js";
 import { html, json, loginRedirect, queryTokenRedirect, text } from "../../foundation/http-response.js";
 import { parseStudioLocale } from "../../foundation/locale.js";
 import { measureMemorySync } from "../../observability/memory.js";
 import { trackUsageAsync, trackUsageSync } from "../../observability/usage.js";
-import { type CommandAction, commandActionSchema } from "../../operations/commands.js";
+import { commandCenterFingerprint } from "../../operations/command-center.js";
+import { type CommandAction, commandActionSchema, runOperationCommand } from "../../operations/commands.js";
 import {
   invalidateDashboardRenderCache,
   renderCommandCenterLogin,
@@ -17,7 +21,7 @@ import type { RouteModule } from "./context.js";
 const LOGIN_ATTEMPT_LIMIT = 10;
 const LOGIN_ATTEMPT_WINDOW_SECONDS = 300;
 
-export const commandCenterRoutes: RouteModule = (app, { config, backendDb, engagement, operations }) => {
+export const commandCenterRoutes: RouteModule = (app, { config, backendDb, studio, engagement }) => {
   app.get("/command-center", (c) => {
     const request = c.req.raw;
     const url = new URL(request.url);
@@ -74,7 +78,7 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, engag
 
   app.get("/api/command-center/fingerprint", (c) =>
     commandAllowed(c.req.raw, config)
-      ? json(trackUsageSync(backendDb, "command_center.fingerprint.poll", () => operations.fingerprint()))
+      ? json(trackUsageSync(backendDb, "command_center.fingerprint.poll", () => commandCenterFingerprint(backendDb)))
       : json({ detail: "forbidden" }, 403),
   );
 
@@ -117,14 +121,100 @@ export const commandCenterRoutes: RouteModule = (app, { config, backendDb, engag
     const explicitToken = Boolean(body.token?.trim() || c.req.header("X-Command-Token") || c.req.header("X-Admin-Token"));
     if (!explicitToken && !sameOriginCommandLogin(c.req.raw, config)) return json({ detail: "forbidden" }, 403);
     try {
-      const result = await trackUsageAsync(backendDb, "command_center.action.execute", () => operations.command(body));
+      const result = await trackUsageAsync(backendDb, "command_center.action.execute", () => runOperationCommand(backendDb, body, config));
       invalidateDashboardRenderCache(backendDb);
       return json(result);
     } catch {
       return json({ detail: "Action failed" }, 400);
     }
   });
+
+  app.post("/command-center/channels/connect", async (c) => {
+    const request = c.req.raw;
+    if (!commandAllowed(request, config) || !sameOriginCommandLogin(request, config)) return text("forbidden\n", 403);
+    const form = await request.formData().catch(() => new FormData());
+    try {
+      const provider = form.get("provider");
+      const accountId = form.get("account_id");
+      const zernioKey = form.get("connection");
+      const zernioLocale = form.get("locale");
+      if (
+        provider === "zernio" &&
+        typeof accountId === "string" &&
+        typeof zernioKey === "string" &&
+        (zernioLocale === "ru" || zernioLocale === "en")
+      ) {
+        await studio.channels.connectZernio(accountId, zernioLocale, zernioKey as ZernioConnectionKey);
+        invalidateDashboardRenderCache(backendDb);
+        return new Response(null, { status: 303, headers: { location: "/command-center?tab=studio" } });
+      }
+      const target = form.get("target");
+      if (typeof target === "string" && (DIRECT_CONNECT_TARGET_IDS as readonly string[]).includes(target)) {
+        studio.channels.connectTarget(target as TargetId);
+        invalidateDashboardRenderCache(backendDb);
+        return new Response(null, { status: 303, headers: { location: "/command-center?tab=studio" } });
+      }
+      const platform = form.get("platform");
+      const locale = form.get("locale");
+      if (platform !== "youtube" || (locale !== "ru" && locale !== "en")) throw new Error("Unknown channel connection");
+      const started = await studio.channels.startConnect("youtube", locale);
+      if (started.kind !== "device") throw new Error("YouTube did not return a device code");
+      return connectionPage(
+        "YouTube authorization",
+        `Open ${started.verificationUrl}, enter the code ${started.userCode}, and approve access within ${Math.round(started.expiresInSeconds / 60)} minutes. The channel will connect itself.`,
+        200,
+      );
+    } catch (error) {
+      return connectionPage("Channel connection failed", error instanceof Error ? error.message : String(error), 400);
+    }
+  });
+
+  app.post("/command-center/channels/disable", async (c) => {
+    const request = c.req.raw;
+    if (!commandAllowed(request, config) || !sameOriginCommandLogin(request, config)) return text("forbidden\n", 403);
+    const form = await request.formData().catch(() => new FormData());
+    const channel = form.get("channel");
+    if (typeof channel !== "string" || !channel) return text("invalid channel\n", 400);
+    try {
+      studio.channels.disable(channel);
+      invalidateDashboardRenderCache(backendDb);
+      return new Response(null, { status: 303, headers: { location: "/command-center?tab=studio" } });
+    } catch (error) {
+      return connectionPage("Channel disable failed", error instanceof Error ? error.message : String(error), 400);
+    }
+  });
+
+  app.get("/command-center/channels/zernio", async (c) => {
+    if (!commandAllowed(c.req.raw, config)) return text("forbidden\n", 403);
+    const locale = c.req.query("locale");
+    if (locale !== "ru" && locale !== "en") return connectionPage("Zernio connection failed", "Choose RU or EN.", 400);
+    try {
+      const options = await studio.channels.discoverZernioConnections(locale);
+      const forms = options.length
+        ? options
+            .map(
+              (option) =>
+                `<form method="post" action="/command-center/channels/connect"><input type="hidden" name="provider" value="zernio"><input type="hidden" name="account_id" value="${escapeHtml(option.accountId)}"><input type="hidden" name="connection" value="${option.key}"><input type="hidden" name="locale" value="${locale}"><button type="submit">${escapeHtml(option.label)}</button></form>`,
+            )
+            .join("")
+        : "<p>No publishable Zernio accounts found.</p>";
+      return connectionHtmlPage("Connect a Zernio route", forms, 200);
+    } catch (error) {
+      return connectionPage("Zernio connection failed", error instanceof Error ? error.message : String(error), 400);
+    }
+  });
 };
+
+function connectionPage(title: string, message: string, status: number): Response {
+  return connectionHtmlPage(title, `<p>${escapeHtml(message)}</p>`, status);
+}
+
+function connectionHtmlPage(title: string, body: string, status: number): Response {
+  return new Response(
+    `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(title)}</title><body><main><h1>${escapeHtml(title)}</h1>${body}<p><a href="/command-center?tab=studio">Return to Studio</a></p></main></body></html>`,
+    { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" } },
+  );
+}
 
 function dashboardMemoryContext(url: URL): Record<string, string | null> {
   return {

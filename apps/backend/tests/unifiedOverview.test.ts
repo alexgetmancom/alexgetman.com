@@ -14,7 +14,6 @@ import {
   videoOverview,
 } from "../src/interfaces/web/dashboard/video-overview.js";
 import { xActivityPost } from "../src/interfaces/web/dashboard/x-activity-posts.js";
-import { createOperationsService } from "../src/operations/service.js";
 import { registerTestChannels, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
@@ -271,31 +270,13 @@ function seedCrosspostedVideo(backendDb: ReturnType<typeof openBackendDb>): void
 }
 
 describe("unified overview video read model", () => {
-  it("reuses the operations service for one database and configuration", () => {
-    const backendDb = openOverviewDb();
-    try {
-      const config = loadTestConfig({});
-      expect(createOperationsService(backendDb, config)).toBe(createOperationsService(backendDb, config));
-    } finally {
-      backendDb.close();
-    }
-  });
-
   it("includes videos published during the selected current day", () => {
     const backendDb = openOverviewDb();
     try {
       seedVideo(backendDb, new Date().toISOString());
       const config = loadTestConfig({});
 
-      const readModel = loadDashboardReadModel(
-        config,
-        backendDb,
-        createOperationsService(backendDb, config),
-        createVideoOverviewCache(),
-        0,
-        1,
-        undefined,
-      );
+      const readModel = loadDashboardReadModel(config, backendDb, createVideoOverviewCache(), 0, 1, undefined);
       const overview = buildOverviewData(readModel, undefined, "reach");
 
       expect(overview.video.items).toHaveLength(1);

@@ -3,7 +3,7 @@ import type { Menu } from "@grammyjs/menu";
 import type { Context } from "grammy";
 import { renderMainMenuHeadline, showMainMenu } from "../src/bot/menu-render.js";
 import { buildMainMenu } from "../src/bot/navigation.js";
-import { buildSettingsMenu } from "../src/bot/settings-screen.js";
+import { buildSettingsMenu } from "../src/bot/settings/index.js";
 import { isAdmin } from "../src/bot.js";
 import { registerChannel } from "../src/channels/registry.js";
 import type { BackendDb } from "../src/db/client.js";
@@ -168,5 +168,29 @@ describe("buildSettingsMenu", () => {
 
     const labels = await settingsMenuLabels(config, backendDb, "settings-publishing");
     expect(labels.some((text) => /youtube/i.test(text))).toBe(false);
+  });
+
+  it("offers every direct publication route and YouTube from the channels screen", async () => {
+    backendDb = openBackendDb(":memory:");
+    const labels = await settingsMenuLabels(loadTestConfig({}), backendDb, "settings-channels");
+
+    for (const target of ["Telegram", "Discord", "Telegram Stories", "Instagram Stories RU", "Instagram Stories EN"])
+      expect(labels.some((text) => text.includes(target))).toBe(true);
+    expect(labels.some((text) => text.includes("YouTube RU"))).toBe(true);
+    expect(labels.some((text) => text.includes("YouTube EN"))).toBe(true);
+  });
+
+  it("offers channel disable controls and no unconnected default targets", async () => {
+    backendDb = openBackendDb(":memory:");
+    const config = loadTestConfig({});
+    registerChannel(backendDb, { platform: "telegram", locale: "ru", provider: "native", targetId: "telegram", label: "Telegram" });
+
+    expect(await settingsMenuLabels(config, backendDb, "settings-channels")).toContain("Disable Telegram");
+    expect(await settingsMenuLabels(config, backendDb, "settings-default-targets")).toEqual(["✓ Telegram", "← Publishing"]);
+  });
+
+  it("does not offer default targets before a channel is connected", async () => {
+    backendDb = openBackendDb(":memory:");
+    expect(await settingsMenuLabels(loadTestConfig({}), backendDb, "settings-default-targets")).toEqual(["← Publishing"]);
   });
 });

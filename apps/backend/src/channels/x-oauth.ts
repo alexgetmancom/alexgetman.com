@@ -1,10 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
-import { eq } from "drizzle-orm";
-import { type BackendDb, unsafeDb } from "../db/client.js";
-import { platformTokens } from "../db/schema.js";
+import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { formBody, requestJson } from "../foundation/http.js";
 import { encryptionKey, open, seal } from "../foundation/secret-box.js";
+import { platformToken, storePlatformToken } from "./platform-token-store.js";
 
 const AUTHORIZE_URL = "https://x.com/i/oauth2/authorize";
 const TOKEN_URL = "https://api.x.com/2/oauth2/token";
@@ -72,7 +71,7 @@ export async function exchangeXCode(
 export function applyStoredXTokens(config: BackendConfig, backendDb: BackendDb): void {
   const key = encryptionKey(config.TOKEN_ENCRYPTION_KEY);
   if (!key) return;
-  const row = unsafeDb(backendDb).db.select().from(platformTokens).where(eq(platformTokens.target, "x")).get();
+  const row = platformToken(backendDb, "x");
   if (!row?.sealedRefreshToken) return;
   config.X_ACCESS_TOKEN = open(row.sealedToken, key);
   config.X_REFRESH_TOKEN = open(row.sealedRefreshToken, key);
@@ -85,7 +84,7 @@ export async function refreshXToken(
   now = new Date(),
 ): Promise<"fresh" | "refreshed" | "unconfigured"> {
   if (!config.X_CLIENT_ID || !config.X_CLIENT_SECRET || !config.X_REFRESH_TOKEN) return "unconfigured";
-  const row = unsafeDb(backendDb).db.select().from(platformTokens).where(eq(platformTokens.target, "x")).get();
+  const row = platformToken(backendDb, "x");
   if (row?.expiresAt && new Date(row.expiresAt).getTime() - now.getTime() > REFRESH_AHEAD_MS) return "fresh";
   const tokens = await tokenRequest(config, formBody({ grant_type: "refresh_token", refresh_token: config.X_REFRESH_TOKEN }), fetchImpl);
   installXTokens(config, backendDb, tokens, now);
@@ -112,30 +111,16 @@ function installXTokens(config: BackendConfig, backendDb: BackendDb, tokens: XTo
   if (!tokens.access_token || !tokens.refresh_token) throw new Error("X returned no renewable token pair");
   const key = requiredKey(config);
   const expiresAt = new Date(now.getTime() + (tokens.expires_in ?? 7200) * 1000).toISOString();
-  unsafeDb(backendDb)
-    .db.insert(platformTokens)
-    .values({
-      target: "x",
-      sealedToken: seal(tokens.access_token, key),
-      sealedRefreshToken: seal(tokens.refresh_token, key),
-      seedFingerprint: null,
-      accountId: accountId ?? null,
-      expiresAt,
-      refreshedAt: now.toISOString(),
-      updatedAt: now.toISOString(),
-    })
-    .onConflictDoUpdate({
-      target: platformTokens.target,
-      set: {
-        sealedToken: seal(tokens.access_token, key),
-        sealedRefreshToken: seal(tokens.refresh_token, key),
-        ...(accountId ? { accountId } : {}),
-        expiresAt,
-        refreshedAt: now.toISOString(),
-        updatedAt: now.toISOString(),
-      },
-    })
-    .run();
+  const timestamp = now.toISOString();
+  storePlatformToken(backendDb, "x", {
+    sealedToken: seal(tokens.access_token, key),
+    sealedRefreshToken: seal(tokens.refresh_token, key),
+    seedFingerprint: null,
+    accountId: accountId ?? platformToken(backendDb, "x")?.accountId ?? null,
+    expiresAt,
+    refreshedAt: timestamp,
+    updatedAt: timestamp,
+  });
   config.X_ACCESS_TOKEN = tokens.access_token;
   config.X_REFRESH_TOKEN = tokens.refresh_token;
 }

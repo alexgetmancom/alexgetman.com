@@ -3,7 +3,6 @@ import { isSiteTarget, targetLocale } from "../botTargets.js";
 import { textLocale } from "../content/text-locale.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
 import { publications, publicationTargets, publishJobs, siteJobs } from "../db/schema.js";
-import { jsonObject } from "../json.js";
 import { requeuedPostTarget, requeuedPublishJobColumns } from "./job-policy.js";
 import { localizeTargetPayload } from "./payload.js";
 import { insertEvent } from "./queue-state.js";
@@ -151,7 +150,7 @@ function requeueSocialTarget(
     return options.createMissing ? createPublishJob(tx, scope, target, source(), now) : { target, outcome: "not_retryable", status: null };
   if (row.status === "queued") return { target, outcome: "already_queued", status: row.status };
   if (!options.from.includes(row.status)) return { target, outcome: "not_retryable", status: row.status };
-  const payload = localizeTargetPayload(pickPayload(source(), row.payloadJson), target);
+  const payload = localizeTargetPayload(source(), target);
   const refused = unpublishable(payload, target);
   if (refused) return { target, outcome: "not_retryable", status: row.status, reason: refused };
   // Fenced on the status this decision was made from: a worker claiming the job
@@ -195,12 +194,6 @@ function createPublishJob(tx: RequeueDb, scope: RequeueScope, target: string, so
     .run();
   mirrorRequeuedTarget(tx, scope.publicationKey, target, now);
   return { target, outcome: "requeued", status: null };
-}
-
-/** The durable publication source, falling back to what the job last carried
- * for a publication that predates the source table. */
-function pickPayload(source: Record<string, unknown>, payloadJson: unknown): Record<string, unknown> {
-  return Object.keys(source).length > 0 ? source : jsonObject(payloadJson);
 }
 
 function mirrorRequeuedTarget(tx: RequeueDb, publicationKey: string, target: string, now: string): void {

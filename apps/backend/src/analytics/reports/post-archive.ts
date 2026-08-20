@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, max, sql } from "drizzle-orm";
+import { publicationRef } from "../../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { metricSamples, postLocales, posts, publications, videoTargets } from "../../db/schema.js";
 import { t } from "../../foundation/i18n/index.js";
@@ -46,7 +47,7 @@ export function creatorPostArchive(
 }
 
 export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale: StudioLocale = "en"): string {
-  const publicationKey = `post:${postId}`;
+  const publicationKey = publicationRef("post", postId);
   const post = unsafeDb(backendDb)
     .db.select({ text: posts.text, mediaCount: posts.mediaCount, dateMsk: posts.dateMsk })
     .from(posts)

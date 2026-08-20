@@ -132,17 +132,11 @@ function normalizeSpans(text: string, entities: Record<string, unknown>[]): Span
 
 function linkUrl(span: Span, text: string): string | null {
   const type = String(span.entity.type ?? "");
-  if (type === "text_link") return typeof span.entity.url === "string" && safeHttpUrl(span.entity.url) ? span.entity.url : null;
+  if (type === "text_link") return typeof span.entity.url === "string" && isHttpUrl(span.entity.url) ? span.entity.url : null;
   if (type !== "url") return null;
   const raw = text.slice(span.start, span.end);
-  if (safeHttpUrl(raw)) return raw;
-  return safeHttpUrl(`https://${raw}`) ? `https://${raw}` : null;
+  if (isHttpUrl(raw)) return raw;
+  return isHttpUrl(`https://${raw}`) ? `https://${raw}` : null;
 }
 
-function safeHttpUrl(value: string): boolean {
-  try {
-    return ["http:", "https:"].includes(new URL(value).protocol);
-  } catch {
-    return false;
-  }
-}
+import { isHttpUrl } from "../../foundation/url.js";

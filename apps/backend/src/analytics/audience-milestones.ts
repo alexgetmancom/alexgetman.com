@@ -3,7 +3,7 @@ import { type ChannelConnection, listChannels } from "../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { alertDedup, analyticsRollups, creatorProfiles } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
-import { type AudienceGroup, audienceGroup } from "./audience-groups.js";
+import { type AudienceGroup, audienceConnectionIdentity, audienceGroup, uniqueAudienceConnections } from "./audience-groups.js";
 import { metricNumber } from "./snapshots/creator-store.js";
 
 const FOLLOWER_MILESTONES = [100, 250, 500, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10_000] as const;
@@ -11,11 +11,11 @@ const ROLLUP_PREFIX = "audience_milestone:";
 
 type AudienceEntry = {
   id: string;
+  identity: string;
   label: string;
   locale: "ru" | "en";
   group: AudienceGroup;
   followers: number;
-  isNew: boolean;
 };
 
 type MilestoneScope = {
@@ -77,7 +77,7 @@ function audienceEntries(backendDb: BackendDb): AudienceEntry[] {
       .map((profile) => [profile.platform, profile]),
   );
   const seen = new Set<string>();
-  return listChannels(backendDb).flatMap((connection) => {
+  return uniqueAudienceConnections(listChannels(backendDb)).flatMap((connection) => {
     const group = audienceGroup(connection.platform) ?? audienceGroup(connection.id);
     const profile = profiles.get(connection.id) ?? profiles.get(connection.platform);
     if (!group || !profile || seen.has(connection.id)) return [];
@@ -85,11 +85,11 @@ function audienceEntries(backendDb: BackendDb): AudienceEntry[] {
     return [
       {
         id: connection.id,
+        identity: audienceConnectionIdentity(connection),
         label: displayLabel(connection),
         locale: connection.locale === "en" ? "en" : "ru",
         group,
         followers: followerCount(profile.dataJson),
-        isNew: readState(backendDb, `channel:${connection.id}`) == null,
       },
     ];
   });
@@ -98,18 +98,17 @@ function audienceEntries(backendDb: BackendDb): AudienceEntry[] {
 function evaluateScope(backendDb: BackendDb, scope: MilestoneScope): number {
   if (!scope.entries.length) return 0;
   const current = scope.entries.reduce((sum, entry) => sum + entry.followers, 0);
+  const members = scope.entries.map((entry) => entry.identity).sort();
   const stored = readState(backendDb, scope.id);
-  // Adding a channel is not audience growth. Move the comparison baseline by
-  // that channel's complete first observation so only later organic growth can
-  // cross a threshold.
-  const baseline =
-    stored == null ? current : stored + scope.entries.filter((entry) => entry.isNew).reduce((sum, entry) => sum + entry.followers, 0);
+  // Connecting, removing or replacing an account is not audience growth. A
+  // membership change establishes a new baseline for every affected scope.
+  const baseline = !stored || !sameMembers(stored.members, members) ? current : stored.followers;
   markReachedThrough(backendDb, scope.id, baseline);
   let emitted = 0;
   if (current > baseline)
     for (const threshold of FOLLOWER_MILESTONES)
       if (baseline < threshold && current >= threshold && recordMilestone(backendDb, scope, threshold)) emitted += 1;
-  writeState(backendDb, scope.id, current);
+  writeState(backendDb, scope.id, current, members);
   return emitted;
 }
 
@@ -139,7 +138,7 @@ function markReachedThrough(backendDb: BackendDb, scope: string, value: number):
   }
 }
 
-function readState(backendDb: BackendDb, scope: string): number | null {
+function readState(backendDb: BackendDb, scope: string): { followers: number; members: string[] } | null {
   const row = unsafeDb(backendDb)
     .db.select({ metricJson: analyticsRollups.metricJson })
     .from(analyticsRollups)
@@ -147,13 +146,17 @@ function readState(backendDb: BackendDb, scope: string): number | null {
     .get();
   if (!row) return null;
   try {
-    return metricNumber((JSON.parse(row.metricJson) as { followers?: unknown }).followers);
+    const value = JSON.parse(row.metricJson) as { followers?: unknown; members?: unknown };
+    return {
+      followers: metricNumber(value.followers),
+      members: Array.isArray(value.members) ? value.members.filter((member): member is string => typeof member === "string").sort() : [],
+    };
   } catch {
     return null;
   }
 }
 
-function writeState(backendDb: BackendDb, scope: string, followers: number): void {
+function writeState(backendDb: BackendDb, scope: string, followers: number, members: string[]): void {
   const now = new Date().toISOString();
   unsafeDb(backendDb)
     .db.insert(analyticsRollups)
@@ -161,14 +164,18 @@ function writeState(backendDb: BackendDb, scope: string, followers: number): voi
       rollupKey: `${ROLLUP_PREFIX}${scope}`,
       scope: "audience_milestone",
       subject: scope,
-      metricJson: JSON.stringify({ followers }),
+      metricJson: JSON.stringify({ followers, members }),
       updatedAt: now,
     })
     .onConflictDoUpdate({
       target: analyticsRollups.rollupKey,
-      set: { metricJson: JSON.stringify({ followers }), updatedAt: now },
+      set: { metricJson: JSON.stringify({ followers, members }), updatedAt: now },
     })
     .run();
+}
+
+function sameMembers(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((member, index) => member === right[index]);
 }
 
 function followerCount(data: Record<string, unknown>): number {

@@ -31,12 +31,6 @@ export const publishJobs = sqliteTable(
   ],
 );
 
-export const siteSourceItems = sqliteTable("site_source_items", {
-  messageId: integer().primaryKey(),
-  itemJson: json<JsonObject>().notNull(),
-  ...timestamps(),
-});
-
 export const publicationPlans = sqliteTable("publication_plans", {
   postId: integer().primaryKey(),
   planJson: json<JsonObject>().notNull(),

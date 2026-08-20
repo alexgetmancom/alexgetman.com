@@ -8,7 +8,6 @@ import { refreshXToken } from "../channels/x-oauth.js";
 import type { BackendDb } from "../db/client.js";
 import { pruneMediaCache } from "../delivery/media-prepare.js";
 import { createPlatformPorts } from "../delivery/ports/social.js";
-import type { DeliveryPorts } from "../delivery/ports.js";
 import { runPublicationReconciliation } from "../delivery/publication-reconciliation.js";
 import { runDeliveryPublishCycle } from "../delivery/publish-workflow.js";
 import { recoverStaleSiteJobs, runSiteJobCycle, SITE_JOB_RESTART_LOCK_GRACE_SECONDS } from "../delivery/site-jobs.js";
@@ -31,21 +30,6 @@ const WATCHDOG_INTERVAL_SECONDS = 60;
 const SITE_JOB_POLL_INTERVAL_SECONDS = 10;
 const PROFILE_POLL_INTERVAL_SECONDS = 300;
 const PUBLISH_RESTART_LOCK_GRACE_SECONDS = 30;
-
-/** Delivery-only publish cycle. Interfaces learn about settled work through durable events. */
-export async function runPublishCycle(
-  config: BackendConfig,
-  backendDb: BackendDb,
-  publishers: DeliveryPorts = createPlatformPorts(config, fetch, targetRouting(backendDb)),
-): Promise<number> {
-  return runDeliveryPublishCycle(config, backendDb, publishers);
-}
-
-/** Runs independently from delivery. A hung provider promise must never prevent
- * stale publishing locks from returning to the bounded retry policy. */
-export function runPublishWatchdog(backendDb: BackendDb): number {
-  return recoverStalePublishJobs(backendDb);
-}
 
 async function runTimedCycle(
   operation: string,
@@ -124,10 +108,14 @@ export function startCoreWorkers(config: BackendConfig, backendDb: BackendDb): S
       await runTimedCycle("content.story_card.cycle", "claimed", () => runStoryCardCycle(config, backendDb));
     }),
     startWorkerLoop("queue", config.IDLE_POLL_INTERVAL_SECONDS * 1000, async () => {
-      await runTimedCycle("publishing.social.cycle", "claimed", () => runPublishCycle(config, backendDb));
+      await runTimedCycle("publishing.social.cycle", "claimed", () =>
+        runDeliveryPublishCycle(config, backendDb, createPlatformPorts(config, fetch, targetRouting(backendDb))),
+      );
     }),
     startWorkerLoop("publish-watchdog", WATCHDOG_INTERVAL_SECONDS * 1000, async () => {
-      const recovered = runPublishWatchdog(backendDb);
+      // Independent from delivery: a hung provider promise must not prevent
+      // stale publishing locks from returning to the bounded retry policy.
+      const recovered = recoverStalePublishJobs(backendDb);
       if (recovered) log("warn", "recovered stale publishing locks", { recovered });
     }),
     startWorkerLoop("publication-reconciliation", Math.max(60, config.IDLE_POLL_INTERVAL_SECONDS) * 1000, async () => {

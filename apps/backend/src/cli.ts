@@ -38,6 +38,7 @@ async function main(): Promise<void> {
     const result = await runOperation(args.command, context, operationInput(args.command, args));
     const format = def.format;
     console.log(format && !args.flags.has("json") ? format(result as never) : JSON.stringify(result, null, 2));
+    if (args.command === "doctor" && result && typeof result === "object" && "ok" in result && result.ok === false) process.exitCode = 1;
   } finally {
     opened.db?.close();
   }

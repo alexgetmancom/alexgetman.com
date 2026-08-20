@@ -1,4 +1,4 @@
-import { type Context, InlineKeyboard } from "grammy";
+import { InlineKeyboard } from "grammy";
 import { backFlow } from "../application/conversation-flow.js";
 import { videoDestinations } from "../channels/destinations.js";
 import type { BackendDb } from "../db/client.js";

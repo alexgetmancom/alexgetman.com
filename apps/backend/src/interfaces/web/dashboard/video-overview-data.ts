@@ -1,5 +1,6 @@
 import { audienceGrowthByPlatform } from "../../../analytics/metric-deltas.js";
 import { metricNumber } from "../../../analytics/snapshots/creator-store.js";
+import { publicationRef } from "../../../application/publication-ref.js";
 import { videoDestinations } from "../../../channels/destinations.js";
 import { type BackendDb, unsafeDb } from "../../../db/client.js";
 import { creatorProfiles } from "../../../db/schema.js";
@@ -430,7 +431,7 @@ export function viewEvents(rows: TargetRow[], snapshots: Map<number, VideoSnapsh
       const baseline = latestAtOrBefore(history, start)?.metrics.views ?? 0;
       return history
         .filter((sample) => sample.at >= start && sample.at <= end)
-        .map((sample) => ({ at: sample.at, key: `video:${row.id}`, value: Math.max(0, sample.metrics.views - baseline) }));
+        .map((sample) => ({ at: sample.at, key: publicationRef("video", row.id), value: Math.max(0, sample.metrics.views - baseline) }));
     })
     .sort((left, right) => left.at.getTime() - right.at.getTime());
 }

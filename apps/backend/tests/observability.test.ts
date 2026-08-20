@@ -71,7 +71,7 @@ describe("observability", () => {
   });
 
   it("reserves alerts before delivery and continues after a transport failure", async () => {
-    const { backendDb, config } = testHarness();
+    const { backendDb } = testHarness();
     try {
       recordFailure(backendDb, "first failure");
       recordFailure(backendDb, "second failure");
@@ -88,9 +88,9 @@ describe("observability", () => {
         if (attempts === 1) throw new Error("ambiguous Telegram response");
       });
 
-      expect(await deliverPendingAlerts(config, backendDb, { sendAlert })).toBe(1);
+      expect(await deliverPendingAlerts(backendDb, { sendAlert })).toBe(1);
       expect(sendAlert).toHaveBeenCalledTimes(2);
-      expect(await deliverPendingAlerts(config, backendDb, { sendAlert })).toBe(0);
+      expect(await deliverPendingAlerts(backendDb, { sendAlert })).toBe(0);
       expect(sendAlert).toHaveBeenCalledTimes(2);
     } finally {
       backendDb.close();
@@ -252,11 +252,11 @@ describe("runtime health", () => {
   });
 
   it("warns once when rss crosses the container limit threshold", () => {
-    const { backendDb, config } = testHarness();
+    const { backendDb } = testHarness();
     try {
       const tightLimit = Math.round(process.memoryUsage().rss / 0.99);
-      expect(recordMemoryPressure(config, backendDb, tightLimit)).toBe(true);
-      expect(recordMemoryPressure(config, backendDb, tightLimit)).toBe(false);
+      expect(recordMemoryPressure(backendDb, tightLimit)).toBe(true);
+      expect(recordMemoryPressure(backendDb, tightLimit)).toBe(false);
       expect(countEvents(backendDb, "runtime.memory.pressure")).toBe(1);
     } finally {
       backendDb.close();
@@ -264,10 +264,10 @@ describe("runtime health", () => {
   });
 
   it("stays quiet below the threshold and when no cgroup limit applies", () => {
-    const { backendDb, config } = testHarness();
+    const { backendDb } = testHarness();
     try {
-      expect(recordMemoryPressure(config, backendDb, process.memoryUsage().rss * 100)).toBe(false);
-      expect(recordMemoryPressure(config, backendDb, null)).toBe(false);
+      expect(recordMemoryPressure(backendDb, process.memoryUsage().rss * 100)).toBe(false);
+      expect(recordMemoryPressure(backendDb, null)).toBe(false);
       expect(countEvents(backendDb, "runtime.memory.pressure")).toBe(0);
     } finally {
       backendDb.close();

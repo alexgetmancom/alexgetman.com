@@ -3,7 +3,7 @@ import type { Bot, Context } from "grammy";
 import { runCallbackBoundary } from "../src/bot/callback-boundary.js";
 import { handlePublicationCallback } from "../src/bot/callback-router.js";
 import { publicationCallback } from "../src/bot/publication-callback.js";
-import { drafts, publications, publicationTargets, publishJobs } from "../src/db/schema.js";
+import { drafts, publicationSources, publications, publicationTargets, publishJobs } from "../src/db/schema.js";
 import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
 import { claimDuePublishJobs, enqueuePublishJobTx, failPublishJob } from "../src/publishing/queue.js";
@@ -31,6 +31,10 @@ describe("post recovery scenario", () => {
         })
         .run();
       backendDb.db.insert(publications).values({ postId: 700, draftId: 7, status: "scheduled", createdAt: now, updatedAt: now }).run();
+      backendDb.db
+        .insert(publicationSources)
+        .values({ postId: 700, itemJson: { text: "Night post", text_ru: "Night post", media: [] }, createdAt: now, updatedAt: now })
+        .run();
       for (const target of ["telegram", "threads_ru"])
         enqueuePublishJobTx(backendDb.db, {
           publicationId: 700,
@@ -41,8 +45,7 @@ describe("post recovery scenario", () => {
 
       const claimed = claimDuePublishJobs(backendDb, 2, "scenario-worker");
       expect(claimed).toHaveLength(2);
-      for (const job of claimed)
-        failPublishJob(backendDb, config, job.jobId, new HttpPublishError("Provider rejected the post", 400), job.lockId);
+      for (const job of claimed) failPublishJob(backendDb, job.jobId, new HttpPublishError("Provider rejected the post", 400), job.lockId);
 
       const messages: Array<{ chatId: number; text: string; options: unknown }> = [];
       const bot = {

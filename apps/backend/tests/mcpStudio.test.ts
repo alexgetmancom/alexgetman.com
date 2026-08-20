@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApiHandler } from "../src/api.js";
 import { studioMediaAssets } from "../src/db/schema.js";
+import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 import { loadTestConfig, SITE_STUDIO_PROFILE } from "./helpers/studio-config.js";
 
@@ -29,6 +30,7 @@ describe("Studio MCP", () => {
         },
         SITE_STUDIO_PROFILE,
       );
+      registerTestChannels(backendDb, ["threads_ru"]);
       const app = createApiHandler({ config, backendDb });
       const anonymousTools = await request(app, { jsonrpc: "2.0", id: 1, method: "tools/list" });
       expect(JSON.stringify(await anonymousTools.json())).not.toContain("studio_post_create");
@@ -233,6 +235,7 @@ describe("Studio MCP", () => {
         },
         SITE_STUDIO_PROFILE,
       );
+      registerTestChannels(backendDb, ["telegram"]);
       const app = createApiHandler({ config, backendDb });
       const authorization = `Bearer ${token}`;
       const created = await request(

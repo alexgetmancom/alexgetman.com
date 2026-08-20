@@ -4,7 +4,7 @@ import { creatorProfiles, socialComments } from "../../db/schema.js";
 import { escapeHtml } from "../../foundation/html.js";
 import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale } from "../../foundation/locale.js";
-import { audienceGroup } from "../audience-groups.js";
+import { audienceGroup, uniqueAudienceConnections } from "../audience-groups.js";
 import {
   audienceGrowthByPlatform,
   type ContentMetrics,
@@ -25,9 +25,9 @@ type StudioAnalyticsDashboard = {
 };
 
 /** A dashboard is built once as a list of blocks and rendered twice — as plain
- * text (Markdown-flavored tables, for MCP/web) and as Telegram Rich Message
- * HTML. Building the structure once avoids re-parsing the text form to
- * produce the HTML form. */
+ * text with Markdown-flavored tables for MCP, and as structured HTML for
+ * Telegram and Web Studio. Building the structure once avoids re-parsing the
+ * text form to produce the HTML form. */
 type Block = { kind: "text"; text: string } | { kind: "table"; headers: string[]; rows: string[][] };
 
 function textBlock(text: string): Block {
@@ -314,7 +314,7 @@ function shortLabel(value: string): string {
 
 function dashboardVideoPlatforms(backendDb: BackendDb): Set<string> {
   return new Set(
-    listChannels(backendDb)
+    uniqueAudienceConnections(listChannels(backendDb))
       .filter((channel) => audienceGroup(channel.platform) === "video")
       .map((channel) => channel.id),
   );
@@ -326,7 +326,7 @@ function dashboardAudiencePlatforms(backendDb: BackendDb): Set<string> {
 
 function dashboardTextPlatforms(backendDb: BackendDb): Set<string> {
   return new Set(
-    listChannels(backendDb)
+    uniqueAudienceConnections(listChannels(backendDb))
       .filter((channel) => channel.targetId && audienceGroup(channel.platform) === "text")
       .map((channel) => channel.id),
   );
