@@ -232,10 +232,12 @@ export function completePublishJob(
   const job = unsafeDb(backendDb).db.select().from(publishJobs).where(eq(publishJobs.jobId, jobId)).get();
   if (!job || (lockId != null && (job.status !== "publishing" || job.lockedBy !== lockId))) return;
   const publicationKey = job.publicationKey;
-  // Threads partial-publish and generic reconciliation both resume from a set of
+  // A partial publication and generic reconciliation both resume from a set of
   // external ids on the next attempt; they only differ in which payload key the
-  // platform's publisher reads back and in the event type recorded.
-  if (result.partial && job.target.startsWith("threads")) {
+  // publisher reads back and in the event type recorded. The adapter names its
+  // own key, because which platform publishes in more than one call is the
+  // adapter's business and never the queue's.
+  if (result.partial && typeof result.resumeKey === "string" && result.resumeKey.length > 0) {
     const ids = Array.isArray(result.ids) ? result.ids.map(String).filter(Boolean) : [];
     const retry = settleRetryableIds(
       backendDb,
@@ -244,9 +246,9 @@ export function completePublishJob(
       jobId,
       publicationKey,
       ids,
-      "_threadsPublishedIds",
+      result.resumeKey,
       "publish.job.partial",
-      "Threads partial publication",
+      `${job.target} partial publication`,
       result,
       now,
       lockId,
@@ -343,7 +345,7 @@ function settleRetryableIds(
   jobId: number,
   publicationKey: string,
   ids: string[],
-  payloadKey: "_threadsPublishedIds" | "_reconcile_ids",
+  payloadKey: string,
   retryEventType: string,
   fallbackError: string,
   result: PublishResult,

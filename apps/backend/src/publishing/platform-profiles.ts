@@ -37,6 +37,7 @@ const requirements: Record<string, readonly string[]> = {
   threads_ru: ["THREADS_RU_ACCESS_TOKEN"],
   threads_en: ["THREADS_EN_ACCESS_TOKEN"],
   x: ["X_CLIENT_ID", "X_CLIENT_SECRET", "X_ACCESS_TOKEN", "X_REFRESH_TOKEN"],
+  x_article: ["X_CLIENT_ID", "X_CLIENT_SECRET", "X_ACCESS_TOKEN", "X_REFRESH_TOKEN"],
   discord: ["DISCORD_BOT_TOKEN", "DISCORD_CHANNEL_ID"],
   telegram_stories: ["TELEGRAM_CHANNEL_STORIES_API_ID", "TELEGRAM_CHANNEL_STORIES_API_HASH", "TELEGRAM_CHANNEL_STORIES_SESSION"],
   instagram_stories: ["INSTAGRAM_EN_USER_ID", "INSTAGRAM_EN_ACCESS_TOKEN"],
@@ -75,6 +76,11 @@ const platformOverrides: Record<PlatformId, Omit<PlatformProfile, "id" | "label"
     video: threadsVideo,
   },
   x: { capabilities: { text: true, image: true, video: true }, text: { removeUrls: true }, media: { mode: "all" } },
+  // An Article carries its links inside the body's entities rather than in the
+  // post text, so the URL stripping that `x` needs would delete the article's
+  // own references. No text limit is declared: X does not publish one, and a
+  // guessed cap would reject long form for no reason.
+  x_article: { capabilities: { text: true, image: true, video: false }, media: { mode: "all" } },
   // 2000 is Discord's own cap on `content`. Unlike Threads, going over it is not
   // a preflight rejection: the adapter splits the text across consecutive
   // messages in the same channel, which is how a Discord channel reads anyway.

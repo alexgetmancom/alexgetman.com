@@ -4,7 +4,7 @@ import { importXAnalyticsCsv } from "../analytics/import-x-csv.js";
 import { attachXActivityToPosts } from "../analytics/x-activity-linking.js";
 import { xAnalyticsReport } from "../analytics/x-activity-report.js";
 import type { LocalizedProfiles, LocalizedText } from "../application/ports.js";
-import { POST_TARGET_IDS, targetDefinition } from "../botTargets.js";
+import { targetDefinition, targetIdsFor } from "../botTargets.js";
 import { API_KEY_TARGETS, storeApiKey } from "../channels/api-keys.js";
 import { CONNECT_PLATFORMS, type ConnectStart, startConnect } from "../channels/connect.js";
 import { type BackendDb, baselineDrizzleMigrations, migrationStatus, unsafeDb } from "../db/client.js";
@@ -685,7 +685,7 @@ const operationDefs = {
       platform: example(z.string().min(1), "youtube|instagram").describe("platform to connect").optional(),
       locale: z.enum(["ru", "en"]).optional(),
       provider: example(z.string().default("native"), "native|zernio").describe("delivery provider"),
-      target: z.enum(POST_TARGET_IDS).optional(),
+      target: z.enum(targetIdsFor("post")).optional(),
       account_id: z.string().optional(),
       label: z.string().optional(),
     }),

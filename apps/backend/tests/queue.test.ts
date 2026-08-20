@@ -766,12 +766,13 @@ describe("publish queue", () => {
       });
     }));
 
-  it("persists Threads partial state and requeues only the unfinished tail", () =>
+  it("persists a partial publication under the key its adapter named, and requeues only the unfinished tail", () =>
     withDb((backendDb) => {
       const id = enqueuePublishJob(backendDb, { messageId: 301, target: "threads_en", payload: { text_en: "One\n\nTwo" } });
       claimDuePublishJobs(backendDb, 1, "test-worker");
       completePublishJob(backendDb, loadTestConfig({ PUBLISH_BACKOFF_BASE_SECONDS: "1" }), id, {
         partial: true,
+        resumeKey: "_threadsPublishedIds",
         ids: ["root-id"],
         error: "reply container missing",
       });

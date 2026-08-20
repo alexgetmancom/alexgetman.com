@@ -1,7 +1,7 @@
 import type { DraftPatch, DraftRecord, StoryPublishMode } from "../../application/ports.js";
 import type { PublicationPipeline, PublicationSchedule } from "../../application/publication-pipeline.js";
 import { publicationRef } from "../../application/publication-ref.js";
-import { isStoryTarget, PRESETS, presetName, TARGETS, targetLocale } from "../../botTargets.js";
+import { isStoryTarget, PRESETS, presetName, TARGETS, targetLocale, targetsFor } from "../../botTargets.js";
 import { postLocales } from "../../channels/locales.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../../channels/registry.js";
 import { listStudioMediaAssets, mediaItemsFromAssets, requireStudioMediaAssets } from "../../content/assets.js";
@@ -589,7 +589,7 @@ function assertKnownTarget(backendDb: BackendDb, target: string): void {
 function exactTargets(backendDb: BackendDb, selected: string[]): Record<string, boolean> {
   const unique = new Set(selected);
   for (const target of unique) assertKnownTarget(backendDb, target);
-  return Object.fromEntries(TARGETS.map(({ id }) => [id, unique.has(id)]));
+  return Object.fromEntries(targetsFor("post").map(({ id }) => [id, unique.has(id)]));
 }
 
 function localeTargets(backendDb: BackendDb, json: string, locale: "ru" | "en"): string[] {

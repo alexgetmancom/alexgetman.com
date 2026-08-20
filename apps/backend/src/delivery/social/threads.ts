@@ -15,6 +15,9 @@ type ThreadsResponse = {
 type SleepImplementation = (milliseconds: number) => Promise<void>;
 type NowImplementation = () => number;
 type ThreadsRuntime = { accessToken: string; retryDelayMs: number; containerTimeoutSeconds: number };
+/** Where a half-finished chain leaves the ids it already published. */
+const THREADS_RESUME_KEY = "_threadsPublishedIds";
+
 const defaultSleep: SleepImplementation = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 export async function publishToThreads(
@@ -37,8 +40,8 @@ export async function publishToThreads(
   if (text.length > limit && !chainApproved) return { ok: false, error: `threads_text_too_long:${text.length}/${limit}` };
   const parts = chainApproved ? splitText(text, limit) : [text];
   const mediaItems = payloadMedia(payload).filter((item) => item.vpsUrl);
-  const ids = Array.isArray(payload._threadsPublishedIds)
-    ? payload._threadsPublishedIds.filter((id): id is string => typeof id === "string" && id.length > 0)
+  const ids = Array.isArray(payload[THREADS_RESUME_KEY])
+    ? (payload[THREADS_RESUME_KEY] as unknown[]).filter((id): id is string => typeof id === "string" && id.length > 0)
     : [];
   let firstContainer: string | null = null;
 
@@ -137,16 +140,24 @@ export async function publishToThreads(
         "POST",
         sleepImpl,
       );
-      if (!reply.id) return { partial: true, ids, error: "threads_reply_container_missing", retryable: true };
+      if (!reply.id)
+        return { partial: true, resumeKey: THREADS_RESUME_KEY, ids, error: "threads_reply_container_missing", retryable: true };
       await waitForThreadsContainer(runtime, reply.id, fetchImpl, sleepImpl, nowImpl);
       const replyPublish = await ambiguousExternalMutation("threads", () =>
         callThreadsWithRetry(runtime, "me/threads_publish", { creation_id: reply.id }, fetchImpl, "POST", sleepImpl),
       );
-      if (!replyPublish.id) return { partial: true, ids, error: "threads_reply_publish_missing", retryable: true };
+      if (!replyPublish.id)
+        return { partial: true, resumeKey: THREADS_RESUME_KEY, ids, error: "threads_reply_publish_missing", retryable: true };
       ids.push(replyPublish.id);
       parentId = replyPublish.id;
     } catch (error) {
-      return { partial: true, ids, error: String(error instanceof Error ? error.message : error), retryable: true };
+      return {
+        partial: true,
+        resumeKey: THREADS_RESUME_KEY,
+        ids,
+        error: String(error instanceof Error ? error.message : error),
+        retryable: true,
+      };
     }
   }
   return {
@@ -156,6 +167,7 @@ export async function publishToThreads(
     url: null,
     urls: [],
     partial: ids.length < parts.length,
+    resumeKey: THREADS_RESUME_KEY,
   };
 }
 

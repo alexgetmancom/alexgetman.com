@@ -116,6 +116,10 @@ export type PublishResult = {
   reason?: string | null;
   retryable?: boolean;
   partial?: boolean;
+  /** Where a partially finished publication leaves what it already did, so the
+   * next attempt resumes instead of repeating it. The adapter names its own
+   * payload key; the queue only stores and returns it. */
+  resumeKey?: string;
   [key: string]: unknown;
 };
 

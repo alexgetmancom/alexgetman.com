@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { TARGETS } from "../src/botTargets.js";
 import { metricSchedule } from "../src/db/schema.js";
 import { formatSupportSummary, seedFormatSupport } from "../src/operations/format-support.js";
 import {
@@ -113,7 +114,11 @@ describe("TypeScript operations tooling", () => {
     try {
       seedFormatSupport(backendDb);
       expect(formatSupportSummary(backendDb)).toHaveLength(9);
-      expect((backendDb.sqlite.prepare("SELECT count(*) AS count FROM format_support").get() as { count: number }).count).toBe(90);
+      // One row per (target, format), derived rather than restated: a new target
+      // must widen the grid instead of failing an arithmetic assertion.
+      expect((backendDb.sqlite.prepare("SELECT count(*) AS count FROM format_support").get() as { count: number }).count).toBe(
+        TARGETS.length * 9,
+      );
     } finally {
       backendDb.close();
     }

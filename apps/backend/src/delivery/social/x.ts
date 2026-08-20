@@ -4,8 +4,9 @@ import { externalFetch } from "../../foundation/http.js";
 import type { PublishResult } from "../../publishing/errors.js";
 import { type HttpPublishError, httpPublishError, publishJson } from "../../publishing/errors.js";
 import { formatPlatformText } from "../../publishing/platform-profiles.js";
-import { ambiguousExternalMutation } from "../ambiguous-publication.js";
+import { ambiguousExternalMutation, isAmbiguousPublicationError } from "../ambiguous-publication.js";
 import { guessContentType, payloadMedia, payloadText } from "./payload.js";
+import { toContentState } from "./x-content-state.js";
 
 const UPLOAD_URL = "https://api.x.com/2/media/upload";
 type SleepImplementation = (milliseconds: number) => Promise<void>;
@@ -41,6 +42,72 @@ export async function publishToX(
   const result = await publishJson<{ data?: { id?: string } }>(response, "X tweet create");
   const id = result.data?.id;
   return { ok: Boolean(id), id: id ?? null, url: id ? `https://x.com/i/web/status/${id}` : null, raw: result };
+}
+
+/** Where a half-published Article leaves the draft it already created. */
+const ARTICLE_RESUME_KEY = "_xArticleDraftId";
+
+/** Publishes an Article in the two calls X requires: a draft carrying the body,
+ * then the publish that puts it in front of an audience.
+ *
+ * Only the second call can reach anyone, so only it is ambiguous when the
+ * transport is lost. The draft id is handed back on a retryable failure so the
+ * next attempt publishes the draft it already made instead of writing a second
+ * one -- the same resume the Threads chain uses, under its own key. */
+export async function publishXArticle(
+  payload: Record<string, unknown>,
+  config: BackendConfig,
+  fetchImpl: typeof fetch = fetch,
+  sleepImpl: SleepImplementation = defaultSleep,
+): Promise<PublishResult> {
+  assertXAccessToken(config);
+  // The queue stores a resume under its key as the id list it settled with.
+  const resumed = payload[ARTICLE_RESUME_KEY];
+  let articleId = Array.isArray(resumed) ? String(resumed.find((id) => typeof id === "string" && id.length > 0) ?? "") : "";
+
+  if (!articleId) {
+    const mediaIds: string[] = [];
+    for (const item of payloadMedia(payload)) {
+      if (item.type === "VIDEO" || !item.localPath || !fs.existsSync(item.localPath)) continue;
+      mediaIds.push(await uploadMedia(item.localPath, "tweet_image", config, fetchImpl, sleepImpl));
+    }
+    const entities = Array.isArray(payload.entities) ? (payload.entities as Record<string, unknown>[]) : [];
+    const title = typeof payload.title === "string" ? payload.title.trim() : "";
+    if (!title) return { ok: false, error: "x_article_title_missing" };
+    // A lost draft call has reached nobody: it is an ordinary retryable failure,
+    // and the retry writes a fresh draft rather than adopting an unknown one.
+    const draft = await publishJson<{ data?: { id?: string } }>(
+      await xFetch("https://api.x.com/2/articles/draft", config, fetchImpl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, content_state: toContentState(payloadText(payload), entities, mediaIds) }),
+      }),
+      "X article draft",
+    );
+    articleId = draft.data?.id ?? "";
+    if (!articleId) return { ok: false, error: "x_article_draft_missing_id" };
+  }
+
+  try {
+    const response = await ambiguousExternalMutation("x_article", () =>
+      xFetch(`https://api.x.com/2/articles/${encodeURIComponent(articleId)}/publish`, config, fetchImpl, { method: "POST" }),
+    );
+    const result = await publishJson<{ data?: { id?: string } }>(response, "X article publish");
+    const id = result.data?.id ?? articleId;
+    return { ok: true, id, url: `https://x.com/i/article/${id}`, raw: result };
+  } catch (error) {
+    if (isAmbiguousPublicationError(error)) throw error;
+    // The draft exists and nobody has seen it. Carrying its id forward is what
+    // keeps a retry from leaving a second unpublished article behind.
+    return {
+      ok: false,
+      partial: true,
+      retryable: true,
+      resumeKey: ARTICLE_RESUME_KEY,
+      ids: [articleId],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 export async function verifyXPost(id: string, config: BackendConfig, fetchImpl: typeof fetch = fetch): Promise<{ id: string }> {

@@ -13,7 +13,7 @@ import { deleteDiscordMessage, editDiscordMessage, publishToDiscord, verifyDisco
 import { publishInstagramStory, verifyInstagramPublication } from "./social/instagram.js";
 import { publishToTelegram } from "./social/telegram.js";
 import { publishToThreads, verifyThreadsPost } from "./social/threads.js";
-import { publishToX, verifyXPost } from "./social/x.js";
+import { publishToX, publishXArticle, verifyXPost } from "./social/x.js";
 import { zernioPublisher } from "./zernio.js";
 
 type PreparePlatformJob = (job: ClaimedPublishJob, config: BackendConfig) => Promise<ClaimedPublishJob>;
@@ -40,6 +40,7 @@ export function createPlatformAdapters(
       ? zernioPublisher(config, fetchImpl, target, "threads", accountFor(target))
       : (job) => publishToThreads(job.payload, config, fetchImpl, target);
   for (const target of TARGET_GROUPS.x) publishers[target] = (job) => publishToX(job.payload, config, fetchImpl);
+  for (const target of TARGET_GROUPS.xArticle) publishers[target] = (job) => publishXArticle(job.payload, config, fetchImpl);
   for (const target of TARGET_GROUPS.discord) publishers[target] = (job) => publishToDiscord(job.payload, config, fetchImpl);
   for (const target of TARGET_GROUPS.instagramStory)
     publishers[target] = throughProvider(target)
@@ -152,6 +153,10 @@ export async function verifyPlatformPublication(
       );
       return { ...result, url: result.url ?? verified.url, verification: { status: "verified", providerId: verified.id } };
     }
+    // x_article deliberately falls through to "unsupported": whether the publish
+    // response carries a readable post id is not documented, and asking the posts
+    // endpoint for an article id would report every article as unverifiable.
+    // One live publication settles it; until then the status says what is true.
     if (targetInGroup(TARGET_GROUPS.x, target)) {
       const verified = await verifyXPost(id, config, fetchImpl);
       return { ...result, verification: { status: "verified", providerId: verified.id } };
