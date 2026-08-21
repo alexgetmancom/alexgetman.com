@@ -39,8 +39,10 @@ services:
       PUBLIC_MEDIA_BASE_URL: ${STUDIO_PUBLIC_BASE_URL:?set this Studio's public base URL}/media/staging
       # Empty means this Studio publishes to no Telegram channel.
       TELEGRAM_CHANNEL_USERNAME: ${TELEGRAM_CHANNEL_USERNAME:-}
-      # The host's single Bot API server, deployed from deploy/bot-api.compose.yaml.
-      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-http://telegram-bot-api:8081}
+      # The host's single Bot API server, reached by its network alias. The
+      # alias is the name every Studio uses; the container name carries the
+      # compose project it happens to have been created under and is not it.
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-http://bot-api:8081}
       GROK_HOME: /home/deploy/.grok
       GROK_CLI_PATH: /home/deploy/.grok/bin/grok
     volumes:
