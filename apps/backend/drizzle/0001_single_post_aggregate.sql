@@ -18,12 +18,37 @@ INSERT INTO `drafts_new` (
 	`id`, `actor_id`, `status`, `targets_json`, `channel_message_id`, `scheduled_at`, `scheduled_en_at`,
 	`publish_mode`, `post_id`, `threads_chain_approved`, `story_publish_mode`, `created_at`, `updated_at`
 )
-SELECT d.`id`, d.`actor_id`, coalesce(p.`status`, d.`status`), d.`targets_json`,
-	coalesce(d.`channel_message_id`, p.`telegram_message_id`), d.`scheduled_at`, d.`scheduled_en_at`, d.`publish_mode`,
-	coalesce(d.`post_id`, p.`post_id`), d.`threads_chain_approved`, d.`story_publish_mode`, d.`created_at`,
-	CASE WHEN p.`updated_at` > d.`updated_at` THEN p.`updated_at` ELSE d.`updated_at` END
-FROM `drafts` d
-LEFT JOIN `publications` p ON p.`draft_id` = d.`id`;
+WITH `latest_publications` AS (
+	SELECT p.*, row_number() OVER (PARTITION BY p.`draft_id` ORDER BY p.`updated_at` DESC, p.`post_id` DESC) AS `draft_rank`
+	FROM `publications` p
+	WHERE p.`draft_id` IS NOT NULL
+),
+`draft_publications` AS (
+	SELECT d.*, coalesce(exact.`post_id`, latest.`post_id`) AS `publication_post_id`,
+		coalesce(exact.`status`, latest.`status`) AS `publication_status`,
+		coalesce(exact.`telegram_message_id`, latest.`telegram_message_id`) AS `publication_message_id`,
+		coalesce(exact.`updated_at`, latest.`updated_at`) AS `publication_updated_at`
+	FROM `drafts` d
+	LEFT JOIN `publications` exact ON exact.`post_id` = d.`post_id` AND exact.`draft_id` = d.`id`
+	LEFT JOIN `latest_publications` latest ON latest.`draft_id` = d.`id` AND latest.`draft_rank` = 1
+),
+`ranked_drafts` AS (
+	SELECT d.*,
+		coalesce(d.`post_id`, d.`publication_post_id`) AS `candidate_post_id`,
+		row_number() OVER (
+			PARTITION BY coalesce(d.`post_id`, d.`publication_post_id`)
+			ORDER BY CASE WHEN d.`publication_post_id` = coalesce(d.`post_id`, d.`publication_post_id`) THEN 0 ELSE 1 END,
+				CASE WHEN d.`publication_updated_at` > d.`updated_at` THEN d.`publication_updated_at` ELSE d.`updated_at` END DESC,
+				d.`id`
+		) AS `candidate_rank`
+	FROM `draft_publications` d
+)
+SELECT d.`id`, d.`actor_id`, coalesce(d.`publication_status`, d.`status`), d.`targets_json`,
+	coalesce(d.`channel_message_id`, d.`publication_message_id`), d.`scheduled_at`, d.`scheduled_en_at`, d.`publish_mode`,
+	CASE WHEN d.`candidate_post_id` IS NULL OR d.`candidate_rank` = 1 THEN d.`candidate_post_id` ELSE NULL END,
+	d.`threads_chain_approved`, d.`story_publish_mode`, d.`created_at`,
+	CASE WHEN d.`publication_updated_at` > d.`updated_at` THEN d.`publication_updated_at` ELSE d.`updated_at` END
+FROM `ranked_drafts` d;
 --> statement-breakpoint
 INSERT INTO `drafts_new` (
 	`actor_id`, `status`, `targets_json`, `channel_message_id`, `post_id`, `created_at`, `updated_at`

@@ -78,6 +78,14 @@ describe("openBackendDb", () => {
       );
       INSERT INTO publications (post_id, draft_id, status, telegram_message_id, created_at, updated_at)
       VALUES (42, 7, 'published', 100, '2026-08-19T00:00:00.000Z', '2026-08-21T00:00:00.000Z');
+      INSERT INTO drafts (
+        id, actor_id, status, text_ru, targets_json, post_id, threads_chain_approved, created_at, updated_at
+      ) VALUES (
+        8, 42, 'draft', 'Duplicate draft', '{}', 42, 0,
+        '2026-08-20T00:00:00.000Z', '2026-08-22T00:00:00.000Z'
+      );
+      INSERT INTO publications (post_id, draft_id, status, telegram_message_id, created_at, updated_at)
+      VALUES (43, 7, 'failed', 101, '2026-08-20T00:00:00.000Z', '2026-08-22T00:00:00.000Z');
       INSERT INTO posts (
         publication_key, post_id, channel, message_id, text, text_en, media_json, status, created_at, updated_at
       ) VALUES (
@@ -136,6 +144,12 @@ describe("openBackendDb", () => {
           .prepare("SELECT source_text FROM post_locales JOIN drafts ON drafts.id=post_locales.draft_id WHERE post_id=55 AND locale='ru'")
           .get(),
       ).toEqual({ source_text: "Orphan RU" });
+      expect(backendDb.sqlite.prepare("SELECT count(*) AS count FROM drafts WHERE post_id=42").get()).toEqual({ count: 1 });
+      expect(backendDb.sqlite.prepare("SELECT post_id FROM drafts WHERE id=8").get()).toEqual({ post_id: null });
+      expect(backendDb.sqlite.prepare("SELECT actor_id, status FROM drafts WHERE post_id=43").get()).toEqual({
+        actor_id: 0,
+        status: "failed",
+      });
       for (const table of ["posts", "publications", "publication_plans", "publication_sources"])
         expect(backendDb.sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table)).toBeNull();
     } finally {
