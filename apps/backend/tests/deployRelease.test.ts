@@ -15,12 +15,13 @@ const inputs: DeployInputs = {
   controlPath: "/tmp/deploy-ssh-%C",
 };
 
-function recorder(fail?: (script: string) => boolean) {
+function recorder(fail?: (script: string) => boolean, failureOutput = "") {
   const commands: Command[] = [];
   const run = async (command: Command): Promise<CommandResult> => {
     commands.push(command);
     const script = command.argv.join(" ");
-    return { code: fail?.(script) ? 1 : 0, stdout: new Uint8Array() };
+    const failed = fail?.(script) ?? false;
+    return { code: failed ? 1 : 0, stdout: new TextEncoder().encode(failed ? failureOutput : "") };
   };
   return {
     commands,
@@ -96,8 +97,8 @@ describe("production deployment", () => {
   });
 
   it("stops when the host refuses a step instead of carrying on", async () => {
-    const { run } = recorder((script) => script.includes("/v1/deploy"));
-    await expect(deployRelease(inputs, run, () => {})).rejects.toThrow("remote command failed");
+    const { run } = recorder((script) => script.includes("/v1/deploy"), "container preflight failed");
+    await expect(deployRelease(inputs, run, () => {})).rejects.toThrow("container preflight failed");
   });
 
   it("names what it cannot proceed without", async () => {

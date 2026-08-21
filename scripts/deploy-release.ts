@@ -76,7 +76,10 @@ export async function deployRelease(inputs: DeployInputs, run: Runner, log: (mes
       argv: ["ssh", ...sshOptions, remote, script],
       ...(stdin === undefined ? {} : { stdin }),
     });
-    if (result.code !== 0) throw new Error(`remote command failed (${result.code}): ${script.slice(0, 120)}`);
+    if (result.code !== 0) {
+      const detail = new TextDecoder().decode(result.stdout).trim().slice(-4_000);
+      throw new Error(`remote command failed (${result.code}): ${script.slice(0, 120)}${detail ? `\n${detail}` : ""}`);
+    }
   };
 
   const mediaRelease = JSON.stringify({
