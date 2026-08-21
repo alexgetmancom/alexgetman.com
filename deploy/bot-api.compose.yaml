@@ -2,12 +2,14 @@
 # over the shared network and mounts its download directory read-only; it is
 # not part of any Studio, which is why it used to make one compose file
 # different from the other.
-name: telegram-bot-api
+name: bot-api
 
 services:
-  telegram-bot-api:
+  # The service key is the network alias every Studio resolves, so it, the
+  # project and the container carry one name and not three.
+  bot-api:
     image: aiogram/telegram-bot-api:10.2@sha256:6ab985144d46d024c723f4def72419d949b88ba97bf234dadf415051367a1b69
-    container_name: telegram-bot-api
+    container_name: bot-api
     restart: unless-stopped
     env_file:
       - ./telegram-bot-api.env

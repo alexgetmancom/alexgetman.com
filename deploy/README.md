@@ -43,7 +43,7 @@ socket and can only request a rollback using a private bearer-authenticated rout
 
    The host's single Telegram Bot API server is deployed once from
    `deploy/bot-api.compose.yaml` and is not part of any Studio. Both backends
-   reach it at `http://telegram-bot-api:8081` over `agent_default` and mount its
+   reach it at `http://bot-api:8081` over `agent_default` and mount its
    download directory read-only via `BOT_API_DATA_DIR_HOST`.
 
    The backend containers also use the host's existing Grok CLI installation. Keep
