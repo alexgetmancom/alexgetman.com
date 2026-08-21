@@ -33,6 +33,7 @@ if (!image) {
 
 const container = `image-smoke-${process.pid}`;
 const volume = `image-smoke-${process.pid}`;
+const backupVolume = `image-smoke-backup-${process.pid}`;
 const port = 18000 + (process.pid % 20000);
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "image-smoke-"));
 const dataDir = path.join(root, "data");
@@ -63,6 +64,7 @@ async function run(command: string[]): Promise<{ code: number; out: string }> {
 async function cleanup(): Promise<void> {
   await run(["docker", "rm", "-f", container]);
   await run(["docker", "volume", "rm", "-f", volume]);
+  await run(["docker", "volume", "rm", "-f", backupVolume]);
   fs.rmSync(root, { recursive: true, force: true });
 }
 
@@ -106,6 +108,8 @@ try {
     `127.0.0.1:${port}:8788`,
     "-v",
     `${volume}:/data`,
+    "-v",
+    `${backupVolume}:/backups`,
     "-e",
     "DATA_DIR=/data",
     "-e",
@@ -116,6 +120,8 @@ try {
     "MEDIA_CACHE_DIR=/data/media-cache",
     "-e",
     "VIDEO_MEDIA_DIR=/data/video-media",
+    "-e",
+    "BACKUP_DIR=/backups",
     "-e",
     "BIND_HOST=0.0.0.0",
     "-e",
@@ -138,15 +144,16 @@ try {
     "--user",
     "0",
     "--entrypoint",
-    "chown",
+    "sh",
     "-v",
     `${volume}:/data`,
+    "-v",
+    `${backupVolume}:/backups`,
     image,
-    "-R",
-    "1000:1000",
-    "/data",
+    "-c",
+    "chown -R 1000:1000 /data /backups && printf smoke > /backups/media-smoke.tar.gz && chown 1000:1000 /backups/media-smoke.tar.gz",
   ]);
-  if (owned.code !== 0) throw new Error(`chown failed: ${owned.out}`);
+  if (owned.code !== 0) throw new Error(`smoke volume preparation failed: ${owned.out}`);
 
   const started = await run(["docker", "start", container]);
   if (started.code !== 0) throw new Error(`docker start failed: ${started.out}`);
