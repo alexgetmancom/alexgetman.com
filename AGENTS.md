@@ -29,6 +29,9 @@ Getting these wrong publishes to a live audience twice, and no reviewer or type 
 - Anything that reached an audience is idempotent on retry or is settled as ambiguous. A second post
   is worse than an unclear status.
 - Taking a publication down, putting it back, and journalling either is one transaction.
+- A migration is rehearsed on a fresh copy of the production database before it is pushed: the
+  squashed baseline is generated from the ORM schema and cannot show what production's own
+  schema and data carry.
 
 # Language
 
