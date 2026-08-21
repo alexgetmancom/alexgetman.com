@@ -94,6 +94,13 @@ jobs:
             esac
           done < <(git diff --name-only --no-renames "$base_sha" "$HEAD_SHA")
 
+          # A failed deployment deliberately leaves :latest on production's
+          # previous image. Every later deployment revision therefore needs
+          # its own image; reusing :latest here would silently roll code back.
+          if [ "$deployment" = "true" ]; then
+            backend_image=true
+          fi
+
           {
             echo "media=$media"
             echo "dependencies=$dependencies"
