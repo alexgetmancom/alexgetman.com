@@ -42,7 +42,7 @@ const IMAGE_PATTERN = "^ghcr.io/alexgetmancom/solo-publisher@sha256:[0-9a-fA-F]{
  * it: a run that fails after the commit that changed it would otherwise leave
  * the host on a configuration the repository has moved past, and no later run
  * would ever mention those files again. */
-const ALWAYS_SHIPPED = ["deploy/studio.compose.yaml"];
+const ALWAYS_SHIPPED = ["deploy/studio.compose.yaml", "deploy/alex.env", "deploy/maru.env"];
 
 export async function deployRelease(inputs: DeployInputs, run: Runner, log: (message: string) => void = console.log): Promise<void> {
   for (const [name, value] of [
@@ -72,11 +72,17 @@ export async function deployRelease(inputs: DeployInputs, run: Runner, log: (mes
   };
 
   const ssh = async (script: string, stdin?: Uint8Array): Promise<void> => {
-    const result = await run({ argv: ["ssh", ...sshOptions, remote, script], ...(stdin === undefined ? {} : { stdin }) });
+    const result = await run({
+      argv: ["ssh", ...sshOptions, remote, script],
+      ...(stdin === undefined ? {} : { stdin }),
+    });
     if (result.code !== 0) throw new Error(`remote command failed (${result.code}): ${script.slice(0, 120)}`);
   };
 
-  const mediaRelease = JSON.stringify({ release: inputs.release, image: inputs.mediaProcessorImage });
+  const mediaRelease = JSON.stringify({
+    release: inputs.release,
+    image: inputs.mediaProcessorImage,
+  });
   await ssh(`install -d -m 0700 ${STATE_DIR}`);
   await ssh(`umask 077; cat > ${STATE_DIR}/media-processor-release.json`, new TextEncoder().encode(`${mediaRelease}\n`));
   await ssh(`install -d -m 0700 '${releaseFiles}'`);
@@ -88,11 +94,19 @@ export async function deployRelease(inputs: DeployInputs, run: Runner, log: (mes
   if (archive.code !== 0) throw new Error("could not archive the release files");
   await ssh(`tar -xf - -C '${releaseFiles}'`, archive.stdout);
 
-  await ssh(
-    `set -e; cp '${releaseFiles}/deploy/studio.compose.yaml' ${RUNTIME}/compose.yaml.next; ` +
-      `docker compose --env-file ${RUNTIME}/deploy-image.env -f ${RUNTIME}/compose.yaml.next config --quiet; ` +
-      `mv ${RUNTIME}/compose.yaml.next ${RUNTIME}/compose.yaml`,
-  );
+  const installStudioConfig = async (runtime: string, deployment: "alex" | "maru"): Promise<void> =>
+    ssh(
+      `set -e; image=$(sed -n 's/^BACKEND_IMAGE=//p' ${runtime}/deploy-image.env | tail -n 1); ` +
+        `printf '%s\n' "$image" | grep -Eq '${IMAGE_PATTERN}' || exit 1; ` +
+        `cat '${releaseFiles}/deploy/${deployment}.env' > ${runtime}/deploy-image.env.next; ` +
+        `printf 'BACKEND_IMAGE=%s\n' "$image" >> ${runtime}/deploy-image.env.next; ` +
+        `cp '${releaseFiles}/deploy/studio.compose.yaml' ${runtime}/compose.yaml.next; ` +
+        `docker compose --env-file ${runtime}/deploy-image.env.next -f ${runtime}/compose.yaml.next config --quiet; ` +
+        `mv ${runtime}/deploy-image.env.next ${runtime}/deploy-image.env; ` +
+        `mv ${runtime}/compose.yaml.next ${runtime}/compose.yaml`,
+    );
+
+  await installStudioConfig(RUNTIME, "alex");
   if (inputs.deployAgentChanged)
     await ssh(
       `set -e; install -m 0644 '${releaseFiles}/deploy/deploy-agent.ts' /home/deploy/repos/alexgetman.com/deploy/deploy-agent.ts; ` +
@@ -100,12 +114,7 @@ export async function deployRelease(inputs: DeployInputs, run: Runner, log: (mes
         `sudo systemctl restart alexgetman-deploy-agent; ` +
         `for attempt in 1 2 3 4 5; do curl --fail --silent ${AGENT}/healthz && exit 0; sleep 1; done; exit 1`,
     );
-  if (inputs.maruDeployEnabled)
-    await ssh(
-      `set -e; cp '${releaseFiles}/deploy/studio.compose.yaml' ${MARU_RUNTIME}/compose.yaml.next; ` +
-        `docker compose --env-file ${MARU_RUNTIME}/deploy-image.env -f ${MARU_RUNTIME}/compose.yaml.next config --quiet; ` +
-        `mv ${MARU_RUNTIME}/compose.yaml.next ${MARU_RUNTIME}/compose.yaml`,
-    );
+  if (inputs.maruDeployEnabled) await installStudioConfig(MARU_RUNTIME, "maru");
   phase("runtime-config");
 
   if (inputs.caddyConfigChanged)
@@ -128,7 +137,10 @@ export async function deployRelease(inputs: DeployInputs, run: Runner, log: (mes
     );
   phase("caddy-config");
 
-  const payload = JSON.stringify({ image: inputs.image, release: inputs.release });
+  const payload = JSON.stringify({
+    image: inputs.image,
+    release: inputs.release,
+  });
   await ssh(
     `curl --fail-with-body --silent --show-error --max-time 180 -H 'Authorization: Bearer ${inputs.agentToken}' ` +
       `-H 'Content-Type: application/json' --data '${payload}' ${AGENT}/v1/deploy`,
@@ -137,7 +149,9 @@ export async function deployRelease(inputs: DeployInputs, run: Runner, log: (mes
 
   // Both Studios, together: a slow one must not hide a broken one behind it.
   const readiness = await Promise.all([
-    run({ argv: ["curl", "--fail", "--silent", "--show-error", "--retry", "3", "--retry-all-errors", inputs.publicReadyUrl] }),
+    run({
+      argv: ["curl", "--fail", "--silent", "--show-error", "--retry", "3", "--retry-all-errors", inputs.publicReadyUrl],
+    }),
     run({
       argv: ["ssh", ...sshOptions, remote, `curl --fail --silent --show-error --retry 3 --retry-all-errors http://127.0.0.1:8789/readyz`],
     }),
@@ -171,7 +185,11 @@ export async function deployRelease(inputs: DeployInputs, run: Runner, log: (mes
 async function main(): Promise<void> {
   const env = Bun.env;
   const runner: Runner = async ({ argv, stdin }) => {
-    const proc = Bun.spawn(argv, { stdin: stdin ?? "ignore", stdout: "pipe", stderr: "inherit" });
+    const proc = Bun.spawn(argv, {
+      stdin: stdin ?? "ignore",
+      stdout: "pipe",
+      stderr: "inherit",
+    });
     const stdout = new Uint8Array(await new Response(proc.stdout).arrayBuffer());
     return { code: await proc.exited, stdout };
   };

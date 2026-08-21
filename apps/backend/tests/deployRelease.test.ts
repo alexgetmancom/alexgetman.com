@@ -22,7 +22,11 @@ function recorder(fail?: (script: string) => boolean) {
     const script = command.argv.join(" ");
     return { code: fail?.(script) ? 1 : 0, stdout: new Uint8Array() };
   };
-  return { commands, run, scripts: () => commands.map((command) => command.argv.join(" ")) };
+  return {
+    commands,
+    run,
+    scripts: () => commands.map((command) => command.argv.join(" ")),
+  };
 }
 
 describe("production deployment", () => {
@@ -33,12 +37,26 @@ describe("production deployment", () => {
     const { run, scripts } = recorder();
     await deployRelease(inputs, run, () => {});
 
-    // One file describes every Studio; each host renders it with its own .env.
+    // One compose file describes every Studio; the committed non-secret env
+    // makes the repository, rather than one-time host setup, authoritative.
     const archive = scripts().find((script) => script.startsWith("tar -cf -"));
     expect(archive).toContain("deploy/studio.compose.yaml");
+    expect(archive).toContain("deploy/alex.env");
+    expect(archive).toContain("deploy/maru.env");
     expect(
       scripts().some((script) => script.includes("cp '/home/deploy/alexgetman-runtime/release-files/abc1234/deploy/studio.compose.yaml'")),
     ).toBe(true);
+    expect(scripts().some((script) => script.includes("deploy/alex.env' > /home/deploy/alexgetman-runtime/deploy-image.env.next"))).toBe(
+      true,
+    );
+  });
+
+  it("installs Maru's own committed environment when Maru is enabled", async () => {
+    const { run, scripts } = recorder();
+    await deployRelease({ ...inputs, maruDeployEnabled: true }, run, () => {});
+
+    expect(scripts().some((script) => script.includes("deploy/maru.env' > /home/deploy/maru/deploy-image.env.next"))).toBe(true);
+    expect(scripts().some((script) => script.includes("-f /home/deploy/maru/compose.yaml.next config --quiet"))).toBe(true);
   });
 
   it("activates only after the configuration is in place, and verifies only after that", async () => {
@@ -51,8 +69,8 @@ describe("production deployment", () => {
     const at = (needle: string) => scripts().findIndex((script) => script.includes(needle));
     expect(at("compose.yaml.next")).toBeLessThan(at("/v1/deploy"));
     expect(at("/v1/deploy")).toBeLessThan(at("readyz"));
-    expect(at("readyz")).toBeLessThan(at("deploy-image.env.next"));
-    expect(at("deploy-image.env.next")).toBeLessThan(at("rm -rf"));
+    expect(at("readyz")).toBeLessThan(at(`test "$image" = '${inputs.image}'`));
+    expect(at(`test "$image" = '${inputs.image}'`)).toBeLessThan(at("rm -rf"));
   });
 
   it("leaves the proxy and the agent alone unless they changed", async () => {
@@ -74,7 +92,7 @@ describe("production deployment", () => {
     // proved was serving.
     const { run, scripts } = recorder((script) => script.includes("readyz"));
     await expect(deployRelease(inputs, run, () => {})).rejects.toThrow("did not become ready");
-    expect(scripts().some((script) => script.includes("deploy-image.env.next"))).toBe(false);
+    expect(scripts().some((script) => script.includes(`test "$image" = '${inputs.image}'`))).toBe(false);
   });
 
   it("stops when the host refuses a step instead of carrying on", async () => {

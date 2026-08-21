@@ -76,7 +76,7 @@ jobs:
                 backend_image=true
                 deployment=true
                 ;;
-              deploy/alex.compose.yaml | deploy/maru.compose.yaml)
+              deploy/studio.compose.yaml | deploy/alex.env | deploy/maru.env)
                 deployment=true
                 ;;
               deploy/deploy-agent.ts | deploy/retry.ts)

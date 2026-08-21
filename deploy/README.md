@@ -13,7 +13,7 @@ socket and can only request a rollback using a private bearer-authenticated rout
    /home/deploy/alexgetman-runtime/compose.yaml
    /home/deploy/alexgetman-runtime/secrets.env
    /home/deploy/alexgetman-runtime/deploy-image.env
-   /home/deploy/maru/maru.compose.yaml
+   /home/deploy/maru/compose.yaml
    /home/deploy/maru/secrets.env
    /home/deploy/maru/deploy-image.env
    ```
@@ -22,10 +22,11 @@ socket and can only request a rollback using a private bearer-authenticated rout
    working, for example `BACKEND_IMAGE=ghcr.io/alexgetmancom/solo-publisher@sha256:...`.
    Never seed it with `latest`; rollback is deliberately refused without a digest.
 
-   Both compose files are committed — [alex.compose.yaml](alex.compose.yaml) and
-   [maru.compose.yaml](maru.compose.yaml) — and CI copies them to the paths above
-   whenever they change, validating each with `docker compose config` before the
-   move. Edit them here, never on the host.
+   The shared [studio.compose.yaml](studio.compose.yaml) and each Studio's
+   non-secret environment ([alex.env](alex.env), [maru.env](maru.env)) are
+   committed. CI installs and validates them atomically on every deployment.
+   `deploy-image.env` keeps the currently deployed immutable image alongside
+   those committed values; edit the files here, never on the host.
 
 2. Copy `deploy-agent.env.example` to `/etc/alexgetman/deploy-agent.env`, fill the
    token/chat values, and set mode `0600`. Set `DEPLOY_AGENT_HOST` to the gateway
@@ -34,45 +35,11 @@ socket and can only request a rollback using a private bearer-authenticated rout
    shown in that example: it gives Alex and Maru independent health checks and
    rollback histories. Maru's host health endpoint must be bound to `127.0.0.1:8789`.
 
-   Add the following non-secret host paths to the corresponding `deploy-image.env`
-   files before the first deployment. Put the media paths on the mounted
-   `/mnt/alex-media` disk; the backend creates missing directories and fixes
-   their ownership before dropping privileges:
-
-   ```dotenv
-   # /home/deploy/alexgetman-runtime/deploy-image.env
-   STUDIO=alexgetman
-   STUDIO_PUBLIC_BASE_URL=https://alexgetman.com
-   STUDIO_PORT=8788
-   STUDIO_CPUS=1.0
-   TELEGRAM_CHANNEL_USERNAME=alexgetmancom
-   STUDIO_DATA_DIR_HOST=/home/deploy/alexgetman-runtime/data
-   STUDIO_MEDIA_CACHE_DIR_HOST=/mnt/alex-media/alex/media-cache
-   STUDIO_VIDEO_MEDIA_DIR_HOST=/mnt/alex-media/alex/video-media
-   STUDIO_MEDIA_STAGING_DIR_HOST=/mnt/alex-media/alex/media-staging
-   STUDIO_SITE_MEDIA_DIR_HOST=/home/deploy/ialexey-web/media
-   STUDIO_BACKUP_DIR_HOST=/mnt/backups/alex
-   DEPLOY_AGENT_HOST_GATEWAY=<agent_default gateway>
-
-   # /home/deploy/maru/deploy-image.env
-   STUDIO=maru
-   STUDIO_PUBLIC_BASE_URL=<maru's own public base URL>
-   STUDIO_PORT=8789
-   STUDIO_CPUS=0.75
-   STUDIO_DATA_DIR_HOST=/home/deploy/maru/data
-   STUDIO_MEDIA_CACHE_DIR_HOST=/mnt/alex-media/maru/media-cache
-   STUDIO_VIDEO_MEDIA_DIR_HOST=/mnt/alex-media/maru/video-media
-   STUDIO_MEDIA_STAGING_DIR_HOST=/mnt/alex-media/maru/media-staging
-   STUDIO_SITE_MEDIA_DIR_HOST=/home/deploy/maru/site-media
-   STUDIO_BACKUP_DIR_HOST=/mnt/backups/maru
-   DEPLOY_AGENT_HOST_GATEWAY=<agent_default gateway>
-   ```
-
-   Both deployments render `deploy/studio.compose.yaml`; there is no per-Studio
-   compose file, and every difference above is a value in that host's own
-   `deploy-image.env`. `STUDIO_BACKUP_DIR_HOST` must not sit under the data
-   directory — `doctor` fails a deployment whose media backup lives on the
-   volume it exists to survive.
+   The media paths in the committed environments live on the mounted
+   `/mnt/alex-media` disk. `STUDIO_BACKUP_DIR_HOST` stays outside the data
+   directory: `doctor` fails a deployment whose media backup lives on the
+   volume it exists to survive. Docker resolves the deploy agent through its
+   `host-gateway` default, so no host-specific gateway value is required.
 
    The host's single Telegram Bot API server is deployed once from
    `deploy/bot-api.compose.yaml` and is not part of any Studio. Both backends
