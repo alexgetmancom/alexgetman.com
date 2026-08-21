@@ -15,6 +15,13 @@
       "when": 1787300000000,
       "tag": "0001_single_post_aggregate",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787400000000,
+      "tag": "0002_drop_dangling_post_foreign_keys",
+      "breakpoints": true
     }
   ]
 }

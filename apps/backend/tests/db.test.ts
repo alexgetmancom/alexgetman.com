@@ -40,10 +40,45 @@ describe("openBackendDb", () => {
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-squashed-baseline-"));
     const dbPath = join(dir, "pipeline.db");
     const sqlite = new Database(dbPath);
+    // The analytics tables carry a foreign key to `posts` that predates the
+    // squash, so the baseline never expresses it and only a database that came
+    // through the old chain has it. Dropping `posts` leaves it dangling, and a
+    // dangling parent fails every write to these tables while reads stay green.
     sqlite.exec(`
       CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, hash text NOT NULL, created_at numeric);
       INSERT INTO __drizzle_migrations(hash, created_at) VALUES ('old-chain', 1787310000000);
       CREATE TABLE old_chain_marker (id integer PRIMARY KEY);
+      CREATE TABLE posts (publication_key TEXT PRIMARY KEY, post_id INTEGER);
+      CREATE TABLE metric_samples (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, publication_key TEXT NOT NULL, target TEXT NOT NULL,
+        metric_name TEXT NOT NULL DEFAULT 'views', value INTEGER, sampled_at TEXT NOT NULL, source TEXT, raw_json TEXT,
+        FOREIGN KEY (publication_key) REFERENCES posts(publication_key) ON DELETE CASCADE
+      );
+      CREATE TABLE metric_schedule (
+        publication_key TEXT NOT NULL, target TEXT NOT NULL, next_check_at TEXT, last_checked_at TEXT,
+        check_count INTEGER NOT NULL DEFAULT 0, frozen_at TEXT, last_error TEXT, updated_at TEXT NOT NULL,
+        locked_by TEXT, locked_at TEXT, PRIMARY KEY (publication_key, target),
+        FOREIGN KEY (publication_key) REFERENCES posts(publication_key) ON DELETE CASCADE
+      );
+      CREATE TABLE post_metrics (
+        publication_key TEXT NOT NULL, target TEXT NOT NULL, metric_name TEXT NOT NULL DEFAULT 'views',
+        value INTEGER, unit TEXT NOT NULL DEFAULT 'count', source TEXT, sampled_at TEXT, error TEXT, raw_json TEXT,
+        PRIMARY KEY (publication_key, target, metric_name),
+        FOREIGN KEY (publication_key) REFERENCES posts(publication_key) ON DELETE CASCADE
+      );
+      CREATE TABLE publication_targets (
+        publication_key TEXT NOT NULL, target TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'unknown',
+        external_id TEXT, external_ids_json TEXT, url TEXT, error TEXT, skipped INTEGER NOT NULL DEFAULT 0,
+        published_at TEXT, updated_at TEXT NOT NULL, raw_json TEXT, confirmation_source TEXT, verified_at TEXT,
+        PRIMARY KEY (publication_key, target),
+        FOREIGN KEY (publication_key) REFERENCES posts(publication_key) ON DELETE CASCADE
+      );
+      INSERT INTO posts (publication_key, post_id) VALUES ('post:1', 1);
+      INSERT INTO metric_samples (publication_key, target, sampled_at) VALUES ('post:1', 'telegram', '2026-08-01T00:00:00.000Z');
+      INSERT INTO metric_schedule (publication_key, target, updated_at) VALUES ('post:1', 'telegram', '2026-08-01T00:00:00.000Z');
+      INSERT INTO post_metrics (publication_key, target, value) VALUES ('post:1', 'telegram', 5);
+      INSERT INTO publication_targets (publication_key, target, updated_at) VALUES ('post:1', 'telegram', '2026-08-01T00:00:00.000Z');
+      DROP TABLE posts;
     `);
     sqlite.close();
 
@@ -51,6 +86,16 @@ describe("openBackendDb", () => {
     try {
       expect(backendDb.sqlite.query("SELECT name FROM sqlite_master WHERE name='old_chain_marker'").get()).toBeDefined();
       expect(backendDb.sqlite.query("SELECT name FROM sqlite_master WHERE name='posts'").get()).toBeNull();
+      expect(backendDb.sqlite.query("PRAGMA foreign_key_check").all()).toEqual([]);
+      // Rows survive the rebuild, and every write the workers make now lands
+      // instead of failing on the dropped parent.
+      for (const table of ["metric_samples", "metric_schedule", "post_metrics", "publication_targets"]) {
+        expect(backendDb.sqlite.query(`SELECT count(*) c FROM ${table}`).get()).toMatchObject({ c: 1 });
+      }
+      backendDb.sqlite.query("DELETE FROM metric_samples").run();
+      backendDb.sqlite.query("UPDATE metric_schedule SET updated_at = '2026-08-02T00:00:00.000Z'").run();
+      backendDb.sqlite.query("UPDATE post_metrics SET value = 6").run();
+      backendDb.sqlite.query("UPDATE publication_targets SET status = 'published'").run();
     } finally {
       backendDb.close();
     }
