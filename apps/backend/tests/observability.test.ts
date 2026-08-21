@@ -15,7 +15,7 @@ import { renderDashboard } from "../src/interfaces/web/dashboard.js";
 import { deliverPendingAlerts } from "../src/observability/alerts.js";
 import { runObservabilityCycle } from "../src/observability/cycle.js";
 import { healthReport } from "../src/observability/health.js";
-import { recordMemoryPressure } from "../src/observability/runtime-health.js";
+import { recordMemoryPressure, recordProcessRestart } from "../src/observability/runtime-health.js";
 import { commandCenterPayload } from "../src/operations/command-center.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
@@ -172,16 +172,13 @@ describe("observability", () => {
   });
 });
 
-function seedPreviousBoot(backendDb: ReturnType<typeof openBackendDb>, restartsAt: string[]): void {
+function seedPreviousBoot(backendDb: ReturnType<typeof openBackendDb>, restartsAt: string[], revision: string | null = null): void {
   const now = new Date().toISOString();
+  const stateJson = { bootId: "previous-process", bootedAt: new Date(Date.now() - 60_000).toISOString(), revision, restartsAt };
   backendDb.db
     .insert(workerState)
-    .values({
-      name: "runtime",
-      stateJson: { bootId: "previous-process", bootedAt: new Date(Date.now() - 60_000).toISOString(), restartsAt },
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({ target: workerState.name, set: { updatedAt: now } })
+    .values({ name: "runtime", stateJson, updatedAt: now })
+    .onConflictDoUpdate({ target: workerState.name, set: { stateJson, updatedAt: now } })
     .run();
 }
 
@@ -231,6 +228,36 @@ describe("runtime health", () => {
       await runObservabilityCycle(config, backendDb, alertsPort);
       expect(countEvents(backendDb, "runtime.restart.looping")).toBe(1);
       expect(sendMessage).toHaveBeenCalledTimes(1);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("does not call a burst of deployments a crash loop", () => {
+    // Three deployments inside half an hour is an afternoon of work. Production
+    // raised this alert 26 times without the backend ever having crashed: the
+    // window counted restarts, and every deployment is one.
+    const { backendDb } = testHarness();
+    try {
+      const recent = [new Date(Date.now() - 120_000).toISOString(), new Date(Date.now() - 60_000).toISOString()];
+      seedPreviousBoot(backendDb, recent, "1111111");
+      recordProcessRestart(backendDb, "2222222");
+      expect(countEvents(backendDb, "runtime.restart.looping")).toBe(0);
+      expect(countEvents(backendDb, "runtime.restarted")).toBe(1);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("still alerts when one build keeps restarting", () => {
+    // The same digest coming back three times is the crash loop the alert
+    // exists for, and it has to survive the deployment exemption above.
+    const { backendDb } = testHarness();
+    try {
+      const recent = [new Date(Date.now() - 120_000).toISOString(), new Date(Date.now() - 60_000).toISOString()];
+      seedPreviousBoot(backendDb, recent, "1111111");
+      recordProcessRestart(backendDb, "1111111");
+      expect(countEvents(backendDb, "runtime.restart.looping")).toBe(1);
     } finally {
       backendDb.close();
     }
