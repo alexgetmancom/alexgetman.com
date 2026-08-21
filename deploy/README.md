@@ -38,8 +38,11 @@ socket and can only request a rollback using a private bearer-authenticated rout
    The media paths in the committed environments live on the mounted
    `/mnt/alex-media` disk. `STUDIO_BACKUP_DIR_HOST` stays outside the data
    directory: `doctor` fails a deployment whose media backup lives on the
-   volume it exists to survive. Docker resolves the deploy agent through its
-   `host-gateway` default, so no host-specific gateway value is required.
+   volume it exists to survive. `DEPLOY_AGENT_HOST_GATEWAY` in each Studio's
+   environment must name the same address the agent binds: Docker's own
+   `host-gateway` points at the default bridge, while the agent listens on the
+   gateway of `agent_default`, and a container aimed at the wrong one reaches
+   nothing.
 
    The host's single Telegram Bot API server is deployed once from
    `deploy/bot-api.compose.yaml` and is not part of any Studio. Both backends
