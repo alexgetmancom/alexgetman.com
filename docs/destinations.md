@@ -44,6 +44,21 @@ are connected by naming their platform and language.
 | Instagram feed and Reels | Channels or `connect-link --platform instagram` | native Instagram credentials or a stored Zernio key |
 | TikTok | `--platform tiktok --provider zernio` | a stored Zernio key — analytics only, never published to |
 
+## What each destination carries
+
+| Destination | Text | Media | Short video | Analytics |
+| --- | :---: | :---: | :---: | :---: |
+| Website | ✓ | ✓ | — | ✓ |
+| Telegram channel | ✓ | ✓ | — | ✓ |
+| Telegram Stories | — | ✓ | ✓ | — |
+| X | ✓ | ✓ | — | ✓ |
+| Threads | ✓ | ✓ | — | ✓ |
+| YouTube Shorts | — | — | ✓ | ✓ |
+| Instagram Reels / Stories | — | ✓ | ✓ | ✓ |
+
+Solo Publisher uses your own platform accounts and API credentials; it is not an
+aggregator sitting between you and your audience.
+
 ## Native or through a provider
 
 Meta's platforms can be reached two ways, and the channel remembers which one it

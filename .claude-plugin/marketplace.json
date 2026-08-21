@@ -1,7 +1,7 @@
 {
-  "name": "alexgetman",
-  "description": "Plugins for operating a self-hosted alexgetman.com publishing system.",
-  "owner": { "name": "Alex Getman", "url": "https://alexgetman.com" },
+  "name": "solo-publisher",
+  "description": "Plugins for operating a self-hosted Solo Publisher publishing system.",
+  "owner": { "name": "Alex Getman", "url": "https://github.com/alexgetmancom/solo-publisher" },
   "plugins": [
     {
       "name": "studio",

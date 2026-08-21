@@ -3,10 +3,10 @@
   "name": "studio",
   "version": "1.0.0",
   "description": "Operate a self-hosted Studio deployment over MCP: write, publish and schedule posts and video, read analytics, and diagnose delivery.",
-  "author": { "name": "Alex Getman", "url": "https://alexgetman.com" },
-  "homepage": "https://github.com/alexgetmancom/alexgetman.com",
-  "repository": "https://github.com/alexgetmancom/alexgetman.com",
-  "license": "MIT",
+  "author": { "name": "Alex Getman", "url": "https://github.com/alexgetmancom/solo-publisher" },
+  "homepage": "https://github.com/alexgetmancom/solo-publisher",
+  "repository": "https://github.com/alexgetmancom/solo-publisher",
+  "license": "Apache-2.0",
   "keywords": ["publishing", "telegram", "analytics", "self-hosted", "studio"],
   "userConfig": {
     "studio_url": {

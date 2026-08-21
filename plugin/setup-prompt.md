@@ -1,5 +1,5 @@
 You are setting up the `studio` plugin so that I can operate my self-hosted publishing system
-(github.com/alexgetmancom/alexgetman.com) from this machine by talking to you. Work through this
+(github.com/alexgetmancom/solo-publisher) from this machine by talking to you. Work through this
 end to end, verifying each step by running something rather than by assuming. Ask me only for what
 you genuinely cannot determine yourself.
 
@@ -92,8 +92,8 @@ wrong.
 
 ## Step 5 — install the plugin on this machine
 
-    claude plugin marketplace add alexgetmancom/alexgetman.com
-    claude plugin install studio@alexgetman --scope user \
+    claude plugin marketplace add alexgetmancom/solo-publisher
+    claude plugin install studio@solo-publisher --scope user \
       --config studio_url=https://<domain>/api/mcp \
       --config studio_token="$TOKEN"
 

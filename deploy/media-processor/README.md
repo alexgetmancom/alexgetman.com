@@ -20,7 +20,7 @@ media processor must not be confused with the optional second backend runtime;
 starting both backend runtimes against one SQLite database and bot token is not
 the normal deployment mode.
 
-In the current alexgetman.com deployment, the backend runs on the VPS and the
+In the maintainer's production deployment, the backend runs on the VPS and the
 remote media processor runs on VM-106 (`agent106`) with VAAPI. The backend does
 not use its local encoder for the heavy Story and short-form video transform in
 that mode. Small auxiliary work such as upload normalization, poster extraction,

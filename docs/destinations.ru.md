@@ -44,6 +44,21 @@ Command Center и Telegram показывают рядом с каждым ка�
 | Instagram лента и Reels | Каналы или `connect-link --platform instagram` | native credentials Instagram либо сохранённый ключ Zernio |
 | TikTok | `--platform tiktok --provider zernio` | сохранённый ключ Zernio — только аналитика, публикации нет |
 
+## Что несёт каждая площадка
+
+| Площадка | Текст | Медиа | Короткие видео | Аналитика |
+| --- | :---: | :---: | :---: | :---: |
+| Сайт | ✓ | ✓ | — | ✓ |
+| Telegram-канал | ✓ | ✓ | — | ✓ |
+| Telegram Stories | — | ✓ | ✓ | — |
+| X | ✓ | ✓ | — | ✓ |
+| Threads | ✓ | ✓ | — | ✓ |
+| YouTube Shorts | — | — | ✓ | ✓ |
+| Instagram Reels / Stories | — | ✓ | ✓ | ✓ |
+
+Solo Publisher использует ваши собственные аккаунты и API credentials и не
+становится посредником между вами и аудиторией.
+
 ## Нативно или через провайдера
 
 Площадки Meta достижимы двумя путями, и канал помнит, каким именно он

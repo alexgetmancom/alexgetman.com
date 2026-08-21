@@ -31,8 +31,8 @@
       "runtimeArgs": ["--bun", "astro", "dev", "--port", "4322", "--force"],
       "port": 4322,
       "env": {
-        "PIPELINE_DB": "/Users/alex/projects/alexgetman.com/.dev-fixture-mock/pipeline.db",
-        "SITE_PUBLIC_DIR": "/Users/alex/projects/alexgetman.com/.dev-fixture-mock/site",
+        "PIPELINE_DB": "/Users/alex/projects/solo-publisher/.dev-fixture-mock/pipeline.db",
+        "SITE_PUBLIC_DIR": "/Users/alex/projects/solo-publisher/.dev-fixture-mock/site",
         "COMMAND_CENTER_TOKEN": "dev",
         "PUBLIC_BASE_URL": "http://localhost:4322",
         "CONTROLLER_BOT_TOKEN": "mock",
