@@ -45,22 +45,12 @@ Solo Publisher deliberately serves one owner instead of reproducing agency softw
 Requirements: Docker, and a domain whose DNS already points at the machine. The image is published for linux/amd64 and linux/arm64, so an ARM server needs no build.
 
 ```bash
-git clone https://github.com/alexgetmancom/solo-publisher.git
-cd solo-publisher
-cp .env.example .env
+curl -fsSL https://raw.githubusercontent.com/alexgetmancom/solo-publisher/main/install.sh | sh -s -- publisher.example.com
 ```
 
-Set `DOMAIN` in `.env`, then generate the two secrets it asks for:
+The installer refuses before it touches anything if Docker is missing or the domain does not resolve to this machine — the two reasons an install fails after it looks like it worked. It then writes `.env` with the three secrets generated, starts the stack, waits for `/readyz` through Caddy, and prints the Command Center URL with its token. Run it again to update: an existing `.env` is kept as it is.
 
-```bash
-openssl rand -hex 32
-```
-
-```bash
-docker compose up -d
-```
-
-Caddy obtains and renews the TLS certificate itself, so there is no certbot and no renewal timer to set up. Within a minute the Command Center is at `https://your-domain/command-center`. Sign in with the `COMMAND_CENTER_TOKEN` from `.env`; an empty Studio opens with the three steps to its first draft instead of an empty analytics screen.
+Caddy obtains and renews the TLS certificate itself, so there is no certbot and no renewal timer to set up. The Command Center link the installer prints signs you in with the `COMMAND_CENTER_TOKEN` it wrote to `.env`; an empty Studio opens with the three steps to its first draft instead of an empty analytics screen.
 
 The public website is off by default — most Studios publish to channels they already have and do not want another site to look after. Enable it with the operations CLI shipped in the container:
 
