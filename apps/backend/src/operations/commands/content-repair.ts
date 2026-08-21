@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { entitiesToHtml } from "../../content/text.js";
 import type { UnsafeBackendDb } from "../../db/client.js";
 import { drafts, postLocales, siteJobs } from "../../db/schema.js";

@@ -326,7 +326,7 @@ describe("openBackendDb", () => {
         entities: [],
         media: [],
       });
-      const postId = publishDraftToQueue(backendDb, draftId);
+      publishDraftToQueue(backendDb, draftId);
       const linked = backendDb.db
         .select({ slug: knowledgeEntities.slug, role: draftEntityLinks.linkRole })
         .from(draftEntityLinks)
@@ -353,7 +353,7 @@ describe("openBackendDb", () => {
         entities: [],
         media: [],
       });
-      const postId = publishDraftToQueue(backendDb, draftId);
+      publishDraftToQueue(backendDb, draftId);
       const links = backendDb.db
         .select({ slug: knowledgeEntities.slug, role: draftEntityLinks.linkRole })
         .from(draftEntityLinks)
@@ -377,7 +377,7 @@ describe("openBackendDb", () => {
         entities: [],
         media: [],
       });
-      const postId = publishDraftToQueue(backendDb, draftId);
+      publishDraftToQueue(backendDb, draftId);
       const link = backendDb.db
         .select({ role: draftEntityLinks.linkRole })
         .from(draftEntityLinks)

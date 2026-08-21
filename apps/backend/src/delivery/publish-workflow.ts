@@ -1,6 +1,5 @@
 import { and, eq } from "drizzle-orm";
 import pLimit from "p-limit";
-import { publicationRef } from "../application/publication-ref.js";
 import { targetRouting } from "../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { publishJobs } from "../db/schema.js";

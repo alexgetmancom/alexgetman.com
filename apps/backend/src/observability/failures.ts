@@ -1,5 +1,4 @@
 import { and, desc, eq, gte, lt } from "drizzle-orm";
-import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
 import { publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
