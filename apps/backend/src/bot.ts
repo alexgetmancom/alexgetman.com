@@ -2,8 +2,10 @@ import { autoRetry } from "@grammyjs/auto-retry";
 import { Bot, type Context } from "grammy";
 import { handleAnalyticsCallback } from "./bot/analytics-screen.js";
 import { runCallbackBoundary } from "./bot/callback-boundary.js";
+import { runCallbackAction } from "./bot/callback-effects.js";
 import { handlePublicationCallback, handlePublicationMessage } from "./bot/callback-router.js";
-import { executePublicationEffects } from "./bot/effects.js";
+import { resultNavigationKeyboard } from "./bot/dialog-ui.js";
+import { executePublicationEffects, type PublicationEffect } from "./bot/effects.js";
 import {
   applyIntakeKind,
   applyIntakeVideoLocale,
@@ -15,7 +17,7 @@ import {
   openIntake,
   publishReviewedArticle,
 } from "./bot/intake.js";
-import { persistentKeyboard, showMainMenu } from "./bot/menu-render.js";
+import { mainMenuText, persistentKeyboard, showMainMenu } from "./bot/menu-render.js";
 import { buildMainMenu } from "./bot/navigation.js";
 import { handleOperationsCallback } from "./bot/operations-screen.js";
 import { handleProgressCallback } from "./bot/progress-screen.js";
@@ -25,7 +27,7 @@ import { buildSettingsMenu, handleSettingsMessage, showSettings } from "./bot/se
 import type { BackendDb } from "./db/client.js";
 import { actorFromTelegramUser } from "./foundation/actors.js";
 import type { BackendConfig } from "./foundation/config.js";
-import { type MessageKey, t } from "./foundation/i18n/index.js";
+import { describeError, type MessageKey, t } from "./foundation/i18n/index.js";
 import type { StudioLocale } from "./foundation/locale.js";
 import { log } from "./foundation/logger.js";
 import { clearTelegramAnalyticsDashboard } from "./interfaces/telegram/control-cards.js";
@@ -79,16 +81,13 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       });
     }
   });
-  // The menu plugin installs its own callback_query:data middleware, so the
-  // admin gate that used to sit at the top of the single callback handler
-  // below must also run in front of it, or a non-admin's tap on a menu
-  // button would be processed before ever reaching that check.
+  // One gate for the whole bot. It has to sit in front of the menu plugin's own
+  // callback_query:data middleware, or a non-admin's tap on a menu button would
+  // be processed before ever reaching it; commands, text and albums pass the
+  // same check, so no handler below repeats it.
   bot.use(async (ctx, next) => {
-    if (ctx.callbackQuery?.data !== undefined && !isAdmin(config, ctx.from?.id)) {
-      await ctx.answerCallbackQuery();
-      return;
-    }
-    await next();
+    if (isAdmin(config, ctx.from?.id)) return next();
+    if (ctx.callbackQuery?.data !== undefined) await ctx.answerCallbackQuery();
   });
   bot.use(async (ctx, next) => {
     if (!ctx.callbackQuery?.data) return next();
@@ -98,7 +97,6 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
 
   const showBotMenu = async (ctx: Context) => {
     const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
-    if (!isAdmin(config, ctx.from?.id)) return;
     await ctx.reply(t(locale, "start.menu-hint"), {
       reply_markup: persistentKeyboard(locale),
     });
@@ -106,19 +104,15 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   };
   bot.command("start", showBotMenu);
   bot.hears(localizedTextVariants(["menu.button"]), async (ctx) => {
-    if (!isAdmin(config, ctx.from?.id)) return;
     await showMainMenu(ctx, backendDb, config, mainMenu);
   });
   bot.hears("⚙️", async (ctx) => {
-    if (!isAdmin(config, ctx.from?.id)) return;
     await showSettings(ctx, backendDb, settingsMenu);
   });
   bot.hears(localizedTextVariants(["menu.new-material"]), async (ctx) => {
-    if (!isAdmin(config, ctx.from?.id)) return;
     await openIntake(ctx, backendDb);
   });
   bot.on("message", async (ctx) => {
-    if (!isAdmin(config, ctx.from?.id)) return;
     if (await handleSettingsMessage(ctx, backendDb, config, settingsMenu)) return;
     // The intake owns the first message only while it is still deciding what
     // that message is; anything it declines falls through unchanged.
@@ -134,17 +128,21 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       matches: (data) => data.startsWith(INTAKE_KIND_PREFIX),
       handle: async (ctx) => {
         const choice = callbackData(ctx).slice(INTAKE_KIND_PREFIX.length);
-        await ctx.answerCallbackQuery();
-        if (choice === "article_confirm") {
-          const actorId = Number(ctx.from?.id);
-          const locale = settingsService(backendDb).locale(actorId);
-          const { title } = publishReviewedArticle(backendDb, config, actorId);
-          await ctx.reply(t(locale, "intake.article-published", { title }));
-          return true;
-        }
-        if (choice !== "post" && choice !== "article" && choice !== "video") return true;
-        await executePublicationEffects(ctx, backendDb, await applyIntakeKind(ctx, backendDb, config, choice));
-        return true;
+        return runIntakeAction(ctx, async (actorId, locale) => {
+          if (choice === "article_confirm") {
+            const { title } = publishReviewedArticle(backendDb, config, actorId);
+            return [
+              {
+                type: "screen",
+                mode: "reply",
+                text: t(locale, "intake.article-published", { title }),
+                options: { reply_markup: resultNavigationKeyboard(locale) },
+              },
+            ];
+          }
+          if (choice !== "post" && choice !== "article" && choice !== "video") return [];
+          return applyIntakeKind(ctx, backendDb, config, choice);
+        });
       },
     },
     {
@@ -152,26 +150,24 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
       matches: (data) => data.startsWith(INTAKE_LOCALE_PREFIX),
       handle: async (ctx) => {
         const choice = callbackData(ctx).slice(INTAKE_LOCALE_PREFIX.length);
-        await ctx.answerCallbackQuery();
-        if (choice !== "ru" && choice !== "en") return true;
-        const effects = await applyIntakeVideoLocale(ctx, backendDb, config, Number(ctx.from?.id), choice);
-        await executePublicationEffects(ctx, backendDb, effects);
-        return true;
+        return runIntakeAction(ctx, async (actorId) => {
+          if (choice !== "ru" && choice !== "en") return [];
+          return applyIntakeVideoLocale(ctx, backendDb, config, actorId, choice);
+        });
       },
     },
     {
       name: "intake-cancel",
       matches: (data) => data === INTAKE_CANCEL,
-      handle: async (ctx) => {
-        cancelIntake(backendDb, Number(ctx.from?.id));
-        await ctx.answerCallbackQuery();
-        await showMainMenu(ctx, backendDb, config, mainMenu, true);
-        return true;
-      },
+      handle: async (ctx) =>
+        runIntakeAction(ctx, async (actorId) => {
+          cancelIntake(backendDb, actorId);
+          return [{ type: "main-menu", menu: mainMenu, text: mainMenuText(backendDb, config, actorId), edit: true }];
+        }),
     },
     {
       name: "queue",
-      matches: (data) => data === "queue_home" || data === "queue_drafts",
+      matches: (data) => data === "queue_home",
       handle: async (ctx) => {
         await ctx.answerCallbackQuery();
         await showQueue(ctx, backendDb, config);
@@ -247,15 +243,33 @@ function bindBotHandlers(bot: Bot, config: BackendConfig, backendDb: BackendDb):
   ];
 
   bot.on("callback_query:data", async (ctx) => {
-    if (!isAdmin(config, ctx.from?.id)) return;
     const routeData = parseCallbackData(ctx);
     const route = callbackRoutes.find((candidate) => candidate.matches(routeData));
-    if (route) await route.handle(ctx);
-    else {
-      const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
-      await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") });
-    }
+    // A route that declines the tap leaves it unanswered, and an unanswered tap
+    // spins in the client until it times out. Say so instead.
+    if (route && (await route.handle(ctx))) return;
+    const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
+    await ctx.answerCallbackQuery({ text: t(locale, "action.unknown") });
   });
+
+  /** The intake's own controls, run the way every publication control is: one
+   * acknowledgement, one tap at a time, and a failure the operator can read.
+   * The whole intake shares a lock key, because two of its buttons pressed
+   * together would otherwise both store a video and open two drafts. */
+  async function runIntakeAction(
+    ctx: Context,
+    produce: (actorId: number, locale: StudioLocale) => Promise<readonly PublicationEffect[]>,
+  ): Promise<boolean> {
+    const actorId = Number(ctx.from?.id);
+    const locale = settingsService(backendDb).locale(actorId);
+    await runCallbackAction(
+      ctx,
+      backendDb,
+      { locale, lockKey: `${actorId}:intake`, describe: (error) => describeError(locale, error) },
+      () => produce(actorId, locale),
+    );
+    return true;
+  }
 }
 
 type CallbackRoute = {

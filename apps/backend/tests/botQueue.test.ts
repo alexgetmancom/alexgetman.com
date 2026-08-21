@@ -11,6 +11,30 @@ import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoAsset } from "./helpers/video.js";
 
 describe("Telegram work queue", () => {
+  it("keeps a scheduled publication whose time has passed, marked as overdue", () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      registerTestChannels(backendDb, ["telegram"]);
+      const past = new Date(Date.now() - 60 * 60_000).toISOString();
+      seedTextPost(backendDb, {
+        draftId: 11,
+        actorId: 7,
+        status: "scheduled",
+        targets: { telegram: true },
+        ru: "Nobody sent this",
+        scheduledAt: past,
+      });
+
+      // Filtering the queue to future times made a publication that never went
+      // out disappear from every screen there is.
+      const snapshot = queueService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "7" })).snapshot(7);
+      expect(snapshot.upcoming).toMatchObject([{ id: 11, kind: "post", overdue: true }]);
+      expect(JSON.stringify(queueScreen(snapshot, "en", "UTC"))).toContain("Nobody sent this");
+    } finally {
+      backendDb.close();
+    }
+  });
+
   it("finds the latest successful publication across posts and videos", () => {
     const backendDb = openBackendDb(":memory:");
     try {

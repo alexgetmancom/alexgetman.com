@@ -114,9 +114,11 @@ export async function handleTelegramDeliveryPreviewCallback(ctx: Context, backen
         ? createStudioServices(backendDb, config).posts.preview(actorId, id).delivery
         : null;
   const projection = delivery?.projections.find((item) => item.id === projectionId);
-  await ctx.answerCallbackQuery();
-  if (!projection) return true;
   const locale = settingsService(backendDb).locale(actorId);
+  // The preview belongs to a draft that has changed since: say so rather than
+  // acknowledging a tap that then does nothing.
+  await ctx.answerCallbackQuery(projection ? undefined : { text: t(locale, "action.card-stale") });
+  if (!projection) return true;
   if (view.name === "threads") {
     const target = projection.targets.find((item) => item === "threads_ru" || item === "threads_en");
     if (!target) return true;

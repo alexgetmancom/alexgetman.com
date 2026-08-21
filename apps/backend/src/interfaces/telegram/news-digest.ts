@@ -6,6 +6,7 @@ import type { BackendConfig } from "../../foundation/config.js";
 import { t } from "../../foundation/i18n/index.js";
 import { log } from "../../foundation/logger.js";
 import { zonedDateTimeParts } from "../../foundation/time.js";
+import { primaryStudioActorId } from "../../studio/access.js";
 import { settingsService } from "../../studio/services/settings.js";
 
 /** The Grok CLI is a subprocess; past this it is not coming back. */
@@ -53,17 +54,22 @@ export async function sendDailyNewsDigest(
   if (!options.force && !settings.enabled) return { status: "disabled" };
   if (!settings.prompt) return { status: "missing_prompt" };
 
-  const date = zonedDateTimeParts(now, config.TIMEZONE);
+  // The hour on the settings screen is the hour the operator set, in the zone
+  // they set: reading the deployment default here fired the digest in a
+  // different zone than the one the screen showed.
+  const owner = primaryStudioActorId(config);
+  const timeConfig = settingsService(backendDb).timeConfig(owner ?? 0, config);
+  const date = zonedDateTimeParts(now, timeConfig.TIMEZONE);
   if (!options.force && date.hour * 60 + date.minute < settings.hour * 60 + settings.minute) return { status: "not_due" };
 
   const key = `news_digest:${date.day}`;
-  const owner = "telegram:news-digest";
+  const claimOwner = "telegram:news-digest";
   if (
     !options.force &&
     !claimSync(backendDb, key, {
       intervalSeconds: 24 * 60 * 60,
       leaseSeconds: NEWS_DIGEST_EFFORTS.length * GROK_CLI_TIMEOUT_SECONDS + 60,
-      owner,
+      owner: claimOwner,
     })
   )
     return { status: "already_sent" };
@@ -84,11 +90,11 @@ export async function sendDailyNewsDigest(
       }
     }
     if (delivered === 0) throw new Error("Telegram rejected the news digest for every administrator");
-    if (!options.force) markSynced(backendDb, key, null, owner);
+    if (!options.force) markSynced(backendDb, key, null, claimOwner);
     return { status: "sent" };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (!options.force) markSynced(backendDb, key, message.slice(0, 500), owner);
+    if (!options.force) markSynced(backendDb, key, message.slice(0, 500), claimOwner);
     log("warn", "daily news digest failed", { error: message });
     return { status: "failed", error: message };
   }

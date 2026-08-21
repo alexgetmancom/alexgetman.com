@@ -41,7 +41,7 @@ export function publicationRenderers(
     post: {
       card: (input) => {
         const view = input.view && isDraftView(input.view) ? input.view : undefined;
-        const preview = draftPreview(backendDb, input.publicationId, config, view);
+        const preview = draftPreview(backendDb, input.publicationId, config, input.locale, view);
         return { kind: "post", draftId: input.publicationId, ...preview };
       },
     },
@@ -77,6 +77,21 @@ function cardRef(card: PublicationCard): { kind: "post" | "video"; draftId: numb
  * of them could have drifted on which locale it passed. */
 export function postPreviewCard(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number) {
   return publicationRenderers(backendDb, config).post.card({
+    actorId,
+    publicationId: draftId,
+    locale: settingsService(backendDb).locale(actorId),
+  });
+}
+
+/** The same for a video draft. */
+export function videoPreviewCard(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+  services = createStudioServices(backendDb, config),
+) {
+  return publicationRenderers(backendDb, config, services).video.card({
     actorId,
     publicationId: draftId,
     locale: settingsService(backendDb).locale(actorId),

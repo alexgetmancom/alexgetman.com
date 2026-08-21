@@ -14,6 +14,9 @@ export type StudioQueueItem = {
   time: Date;
   kind: "post" | "video";
   targets: number;
+  /** Its time has passed and it has not published: the operator is looking at
+   * work that is stuck, not at work that is coming. */
+  overdue?: true;
 };
 
 export type StudioQueueAttentionItem = {
@@ -29,7 +32,7 @@ export type StudioQueueSnapshot = {
   attention: StudioQueueAttentionItem[];
 };
 
-export type StudioQueueActivity = Pick<StudioQueueItem, "id" | "label" | "time" | "kind">;
+export type StudioQueueActivity = Pick<StudioQueueItem, "id" | "label" | "time" | "kind" | "overdue">;
 
 const MAX_QUEUE_ROWS = 100;
 
@@ -37,11 +40,16 @@ const MAX_QUEUE_ROWS = 100;
  * entity references, not Telegram callbacks or display markup. */
 export function queueService(backendDb: BackendDb, config: BackendConfig) {
   return {
-    headline(actorId: number): { upcoming: StudioQueueActivity | null; published: StudioQueueActivity | null } {
+    /** The one-line state of the work inbox, plus how much of it is open. Both
+     * the menu headline and the queue button read this, so they cannot disagree
+     * about what is waiting. */
+    headline(actorId: number): { upcoming: StudioQueueActivity | null; published: StudioQueueActivity | null; pending: number } {
       const actorIds = accessibleStudioActorIds(config, actorId);
-      const upcoming = this.snapshot(actorId).upcoming[0] ?? null;
+      const snapshot = queueService(backendDb, config).snapshot(actorId);
+      const upcoming = snapshot.upcoming[0] ?? null;
       const published = backendDb.studioQueue.latestPublished(actorIds);
       return {
+        pending: snapshot.upcoming.length + snapshot.drafts.length,
         upcoming,
         published: published
           ? {
@@ -75,7 +83,10 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
           const scheduleGap =
             draft.status === "scheduled" && draftScheduleGap(backendDb, draft.targetsJson, draft.scheduledAt, draft.scheduledEnAt);
           if (draft.status === "scheduled" && !scheduleGap) {
-            const scheduledAt = earliestFutureDate(nowMs, draft.scheduledAt, draft.scheduledEnAt);
+            // A time that has already passed keeps its place at the head of the
+            // queue: a publication nobody sent is exactly what the operator has
+            // to see, and dropping it made it invisible everywhere.
+            const scheduledAt = earliestDate(draft.scheduledAt, draft.scheduledEnAt);
             if (scheduledAt)
               upcoming.push({
                 id: draft.id,
@@ -83,6 +94,7 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
                 time: scheduledAt,
                 kind: "post",
                 targets: enabledPostTargets(backendDb, draft.targetsJson),
+                ...(scheduledAt.getTime() <= nowMs ? { overdue: true as const } : {}),
               });
           }
           if (scheduleGap)
@@ -105,12 +117,19 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
           const targets = targetsByDraft.get(video.id) ?? [];
           const scheduled = targets.filter(
             (target): target is (typeof targets)[number] & { scheduledAt: string } =>
-              target.status === "scheduled" && target.scheduledAt != null && new Date(target.scheduledAt).getTime() > nowMs,
+              target.status === "scheduled" && target.scheduledAt != null,
           );
           const label = shorten(video.label.trim() || `Video #${video.id}`);
           if (video.status === "scheduled" && scheduled.length) {
             const time = new Date(Math.min(...scheduled.map((target) => new Date(target.scheduledAt).getTime())));
-            upcoming.push({ id: video.id, label, time, kind: "video", targets: scheduled.length });
+            upcoming.push({
+              id: video.id,
+              label,
+              time,
+              kind: "video",
+              targets: scheduled.length,
+              ...(time.getTime() <= nowMs ? { overdue: true as const } : {}),
+            });
           }
           if (video.status === "draft" || video.status === "editing")
             draftItems.push({ id: video.id, label, time: new Date(video.updatedAt), kind: "video", targets: 0 });
@@ -131,11 +150,11 @@ function enabledPostTargets(backendDb: BackendDb, value: string): number {
   return Object.values(effectivePostTargets(backendDb, parseTargets(value))).filter(Boolean).length;
 }
 
-function earliestFutureDate(nowMs: number, ...values: Array<string | null>): Date | null {
+function earliestDate(...values: Array<string | null>): Date | null {
   const dates = values
     .filter((value): value is string => value != null)
     .map((value) => new Date(value))
-    .filter((date) => !Number.isNaN(date.getTime()) && date.getTime() > nowMs);
+    .filter((date) => !Number.isNaN(date.getTime()));
   return dates.length ? new Date(Math.min(...dates.map((date) => date.getTime()))) : null;
 }
 

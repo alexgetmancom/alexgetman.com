@@ -598,6 +598,13 @@ describe("video publication queue", () => {
     expect(preview.text).toContain("Игра: https://store.steampowered.com/app/123");
     expect(preview.text).toContain("📸 *Instagram Reels*");
     expect(preview.text).toContain("Описание: Описание для Instagram");
+    // Each platform owns its own row of controls. Written out per platform,
+    // YouTube's buttons used to leak into Instagram's row whenever the status
+    // offered a time but no removal.
+    const rows = preview.keyboard.inline_keyboard.map((row) => row.map((button) => String(button.text)).join(" | "));
+    expect(rows.filter((row) => row.includes("YouTube Shorts"))).toHaveLength(1);
+    expect(rows.filter((row) => row.includes("Instagram Reels"))).toHaveLength(1);
+    expect(rows.some((row) => row.includes("YouTube Shorts") && row.includes("Instagram Reels"))).toBe(false);
   });
 
   it("retries only a failed platform without touching the other target", () => {

@@ -28,7 +28,7 @@ describe("locale-aware post edit lock", () => {
       expect(requirePostEditAllowed(backendDb, config, 42, 8, now, "en").id).toBe(8);
       expect(() => requirePostEditAllowed(backendDb, config, 42, 8, now)).toThrow("err.post-too-close-to-publish");
 
-      const preview = JSON.stringify(draftPreview(backendDb, 8, config));
+      const preview = JSON.stringify(draftPreview(backendDb, 8, config, "en"));
       expect(preview).toContain(`edit_menu:8`);
       expect(preview).not.toContain(`edit_ru:8`);
     }));

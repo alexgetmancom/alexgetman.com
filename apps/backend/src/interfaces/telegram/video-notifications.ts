@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
 import { parsePublicationRef, publicationRef } from "../../application/publication-ref.js";
 import { publicationCallback } from "../../bot/publication-callback.js";
+import { appendUnlandedControls } from "../../bot/unlanded-controls.js";
 import { isSiteTarget, targetDefinition, targetLocale } from "../../botTargets.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
 import { drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../../db/schema.js";
@@ -183,38 +184,25 @@ function completionKeyboard(
   failedTargets: Array<{ target: string; status: string; error: string | null }>,
   partial: boolean,
 ): InlineKeyboard | undefined {
-  const keyboard = new InlineKeyboard();
-  let hasButtons = false;
   const publication = parsePublicationRef(publicationKey);
   const kind = publication?.kind === "post" || publication?.kind === "video" ? publication.kind : null;
-  // Only a post can requeue every failed target in one call; a video is retried
-  // per target because each upload carries its own metadata.
-  const bulkRetry = kind === "post" && retryableTargets.length > 0;
-  // Skipping is a post operation: a video target is given up on by cancelling
-  // the video, which the video card already offers.
-  const skippable = kind === "post" ? failedTargets : [];
-  if (kind && draftId != null && (retryableTargets.length || skippable.length || (kind === "post" && partial))) {
-    hasButtons = true;
-    if (bulkRetry) keyboard.text(t(locale, "notif.retry-failed"), publicationCallback(kind, "retry", [draftId, "all", "notice"]));
-    if (skippable.length) keyboard.text(t(locale, "notif.skip-failed"), publicationCallback("post", "skip", [draftId, "all", "notice"]));
-    if (bulkRetry || skippable.length) keyboard.row();
-    keyboard.text(t(locale, "notif.open"), publicationCallback(kind, "view", [draftId, "overview"])).row();
-    for (const target of retryableTargets)
-      keyboard
-        .text(
-          t(locale, "notif.retry-target", { target: friendlyTarget(target.target) }),
-          publicationCallback(kind, "retry", [draftId, target.target, "notice"]),
-        )
-        .row();
-    for (const target of skippable)
-      keyboard
-        .text(
-          t(locale, "notif.skip-target", { target: friendlyTarget(target.target) }),
-          publicationCallback("post", "skip", [draftId, target.target, "notice"]),
-        )
-        .row();
-  }
-  return hasButtons ? keyboard : undefined;
+  if (!kind || draftId == null) return undefined;
+  const retryable = new Set(retryableTargets.map((target) => target.target));
+  const unlanded = [...new Set([...retryable, ...failedTargets.map((target) => target.target)])].map((target) => ({
+    target,
+    label: friendlyTarget(target),
+    retryable: retryable.has(target),
+    // Skipping is a post operation; a video target is given up on by cancelling
+    // the video, which the video card already offers.
+    skippable: kind === "post",
+  }));
+  const keyboard = new InlineKeyboard();
+  const decisions = appendUnlandedControls(keyboard, { locale, kind, draftId, origin: "notice", targets: unlanded });
+  // A partially scheduled post is worth opening even when nothing failed: the
+  // rest of it still needs a time.
+  if (!decisions && !(kind === "post" && partial)) return undefined;
+  keyboard.text(t(locale, "notif.open"), publicationCallback(kind, "view", [draftId, "overview"]));
+  return keyboard;
 }
 
 async function forEachAdmin(actorIds: number[], deliver: (actorId: number) => Promise<void>): Promise<void> {

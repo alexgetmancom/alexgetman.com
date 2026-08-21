@@ -37,7 +37,7 @@ import { settingsService } from "./settings.js";
 export function videoService(backendDb: BackendDb, config: BackendConfig) {
   const service = {
     kind: "video" as const,
-    capabilities: { hasMetadataWizard: true, hasStoryCards: false, scheduleAxis: "target" as const },
+    capabilities: { scheduleAxis: "target" as const },
     create(actorId: number, studioMediaAssetId: number, locale: VideoLocale = "ru"): number {
       return trackUsageSync(backendDb, "studio.video.create", () => {
         videoAssetPath(backendDb, config, actorId, studioMediaAssetId);

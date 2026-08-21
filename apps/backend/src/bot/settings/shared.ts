@@ -50,6 +50,30 @@ export function backToSettings(backendDb: BackendDb) {
   };
 }
 
+/** One tapped settings control: apply the change, acknowledge the tap, and
+ * re-render the screen it lives on. Every toggle, preset and picker in settings
+ * does exactly this, and spelling it out per button is how one of them ends up
+ * without its answerCallbackQuery -- these menus do not auto-answer. */
+export function settingsUpdate(options: {
+  apply: () => void;
+  body: () => string;
+  toast?: string;
+  /** Screens whose text is assembled from channel and account names, which are
+   * not written as Markdown and must not be parsed as it. */
+  plainText?: true;
+}) {
+  return async (ctx: Context): Promise<void> => {
+    options.apply();
+    await ctx.answerCallbackQuery(options.toast ? { text: options.toast } : undefined);
+    await ctx.editMessageText(options.body(), options.plainText ? undefined : { parse_mode: "Markdown" });
+  };
+}
+
+/** The same, for a control that only navigates: no change to apply. */
+export function settingsScreen(body: () => string, plainText?: true) {
+  return settingsUpdate({ apply: () => undefined, body, ...(plainText ? { plainText } : {}) });
+}
+
 export function formatTime(hour: number, minute: number): string {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }

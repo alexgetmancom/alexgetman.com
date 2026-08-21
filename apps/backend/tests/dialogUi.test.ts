@@ -21,13 +21,13 @@ describe("Telegram dialog UI", () => {
   it("appends shared cancel and result navigation without disturbing existing rows", () => {
     const keyboard = new InlineKeyboard().text("Action", "action").row();
     appendCancelButton(keyboard, "en", "cancel", 2);
-    appendResultNavigation(keyboard, "en", "drafts");
+    appendResultNavigation(keyboard, "en");
 
     expect(keyboard.inline_keyboard).toEqual([
       [{ text: "Action", callback_data: "action" }],
       [
         { text: "← Cancel", callback_data: "sv2|cancel" },
-        { text: t("en", "action.back-to-drafts"), callback_data: "queue_drafts" },
+        { text: t("en", "queue.back-btn"), callback_data: "queue_home" },
         { text: t("en", "common.menu"), callback_data: "menu_home" },
       ],
     ]);

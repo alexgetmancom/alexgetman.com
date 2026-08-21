@@ -1,6 +1,10 @@
 import { describe, expect, it } from "bun:test";
+import { handlePublicationMessage } from "../src/bot/callback-router.js";
 import { getConversationState } from "../src/bot/conversation-state.js";
 import { applyIntakeKind, handleIntakeMessage, openIntake, publishReviewedArticle } from "../src/bot/intake.js";
+import { pendingAlbums } from "../src/db/schema.js";
+import { unsafeDb } from "../src/db/unsafe.js";
+import { t } from "../src/foundation/i18n/index.js";
 import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
@@ -141,6 +145,47 @@ describe("bot intake", () => {
       expect(backendDb.sqlite.query("SELECT source_text AS text_ru FROM post_locales WHERE locale='ru'").all()).toEqual([
         { text_ru: "x".repeat(901) },
       ]);
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("hands an album to the album collector instead of keeping its first photo", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      const album = (fileId: string) => ({
+        media_group_id: "album-1",
+        caption: "",
+        caption_entities: [],
+        photo: [{ file_id: fileId, width: 100, height: 100 }],
+      });
+      const first = await capture(backendDb, album("photo-1"));
+      // The intake declines every part of the album, so each one reaches the
+      // collector: keeping the first message here left the rest with nowhere to
+      // go and published a single-photo post.
+      expect(first.handled).toBe(false);
+      expect(getConversationState(backendDb, 42, "intake")).toBeNull();
+      expect(await handlePublicationMessage(ctxWith(album("photo-1")), backendDb, config)).toBe(true);
+      expect(await handlePublicationMessage(ctxWith(album("photo-2")), backendDb, config)).toBe(true);
+
+      const rows = unsafeDb(backendDb).db.select().from(pendingAlbums).all();
+      expect(rows).toHaveLength(1);
+      expect(JSON.parse(String(rows[0]?.mediaJson))).toHaveLength(2);
+      expect(backendDb.sqlite.query("SELECT count(*) AS count FROM drafts").get()).toEqual({ count: 0 });
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("refuses material no publication can carry, and keeps waiting", async () => {
+    const backendDb = openBackendDb(":memory:");
+    try {
+      // A voice note has no text and no media the bot can publish; capturing it
+      // used to produce an empty draft with an empty card.
+      const result = await capture(backendDb, { voice: { file_id: "voice-1", duration: 3 } });
+      expect(result.effects).toEqual([{ type: "screen", mode: "reply", text: t("en", "intake.unsupported") }]);
+      expect(getConversationState(backendDb, 42, "intake")?.step).toBe("awaiting");
+      expect(backendDb.sqlite.query("SELECT count(*) AS count FROM drafts").get()).toEqual({ count: 0 });
     } finally {
       backendDb.close();
     }

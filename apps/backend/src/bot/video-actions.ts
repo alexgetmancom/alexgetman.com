@@ -4,12 +4,11 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { StudioError } from "../foundation/errors.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
-import type { StudioLocale } from "../foundation/locale.js";
 import { manualScheduleExample } from "../foundation/time.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import type { StudioServices } from "../studio/services/index.js";
 import { VIDEO_FLOW } from "../studio/video-fsm.js";
-import { appendCancelButton, resultNavigationKeyboard } from "./dialog-ui.js";
+import { appendCancelButton, promptEffect, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
 import { mainMenuText } from "./menu-render.js";
 import type {
@@ -20,7 +19,7 @@ import type {
 } from "./publication-action-contract.js";
 import { publicationCallback } from "./publication-callback.js";
 import { advancePublicationFlow } from "./publication-flow.js";
-import { publicationCardEffect, publicationRenderers } from "./publication-renderers.js";
+import { publicationCardEffect, publicationRenderers, videoPreviewCard } from "./publication-renderers.js";
 import { callbackMessageId } from "./telegram-context.js";
 import { startVideoDraft } from "./video-conversation.js";
 import { applyVideoScheduleDate, finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";
@@ -32,7 +31,6 @@ import {
   targetKeyboard,
   type VideoConversationInput,
   type VideoConversationState,
-  videoPromptEffect,
   videoStepEffects,
 } from "./video-ui.js";
 
@@ -117,19 +115,8 @@ function requireVideoSession(
 
 /** Renders an owned video draft's card in place. Used by every action that ends
  * by returning to (or refreshing) the same card. */
-function showVideoCard(
-  backendDb: BackendDb,
-  config: BackendConfig,
-  actorId: number,
-  id: number,
-  locale: StudioLocale,
-): PublicationEffect[] {
-  const card = publicationRenderers(backendDb, config).video.card({
-    actorId,
-    publicationId: id,
-    locale,
-  });
-  return publicationCardEffect(card);
+function showVideoCard(backendDb: BackendDb, config: BackendConfig, actorId: number, id: number): PublicationEffect[] {
+  return publicationCardEffect(videoPreviewCard(backendDb, config, actorId, id));
 }
 
 /** Asks a yes/no question on top of the draft's own card. "Back" always returns
@@ -152,14 +139,14 @@ function videoConfirmationEffect(
   return publicationCardEffect(card);
 }
 
-async function handleCancelDialog({ backendDb, config, actorId, locale, mainMenu }: VideoActionArgs): Promise<VideoActionResult> {
+async function handleCancelDialog({ backendDb, config, actorId, mainMenu }: VideoActionArgs): Promise<VideoActionResult> {
   const session = getVideoState(backendDb, actorId);
   clearVideoState(backendDb, actorId);
   // The draft already exists once a video file was uploaded (even mid-wizard):
   // cancel returns to that draft's own card so nothing is lost or orphaned,
   // rather than dropping into a menu with no way back to it.
   if (session?.draftId != null) {
-    return showVideoCard(backendDb, config, actorId, session.draftId, locale);
+    return showVideoCard(backendDb, config, actorId, session.draftId);
   }
   if (!mainMenu) throw new StudioError("err.video-restart");
   // Cancelling is pure navigation, not a content change: turn this same
@@ -183,8 +170,10 @@ async function handleToggle({ backendDb, actorId, locale, args, services }: Vide
   const session = getVideoState(backendDb, actorId);
   requireFlowStep(session?.step, ["targets"], "err.video-restart");
   if (!session?.draftId || !target) throw new StudioError("err.video-restart");
-  const selected = session.selected.includes(target) ? session.selected.filter((item) => item !== target) : [...session.selected, target];
   services.videos.toggleTarget(actorId, session.draftId, target);
+  // The draft's own targets are the answer; recomputing the toggle in the
+  // session as well is how the ticks and the stored platforms drift apart.
+  const selected = getVideoTargets(services, actorId, session.draftId);
   const next = saveVideoState(backendDb, actorId, { ...session, selected });
   return [{ type: "edit-reply-markup", keyboard: targetKeyboard(backendDb, selected, locale, next.revision) }];
 }
@@ -335,7 +324,7 @@ async function handleCancel({ backendDb, config, actorId, locale, draftId, servi
       type: "screen",
       mode: "edit",
       text: `${t(locale, "video.cancelled-local", { hours: config.VIDEO_MEDIA_RETENTION_HOURS })}${heldPrivate}${attention}${manualRemoval ? `\n\n${t(locale, "video.already-published")}\n${manualRemoval}` : ""}`,
-      options: { reply_markup: resultNavigationKeyboard(locale, "drafts") },
+      options: { reply_markup: resultNavigationKeyboard(locale) },
     },
   ];
 }
@@ -383,9 +372,10 @@ async function handleScheduleManual({
   requireVideoSession(backendDb, actorId, draftId, SCHEDULE_SESSION_STEPS, "action.schedule-expired");
   const timeConfig = services.settings.timeConfig(actorId, config);
   return [
-    videoPromptEffect(
+    promptEffect(
       backendDb,
       actorId,
+      "video",
       t(locale, "video.enter-datetime", {
         timezone: timeConfig.TIMEZONE_LABEL,
         example: manualScheduleExample(timeConfig.TIMEZONE, backendDb.clock.now()),
@@ -405,12 +395,12 @@ async function handleRemove({ backendDb, config, actorId, locale, args, draftId,
         type: "screen",
         mode: "edit",
         text: t(locale, "video.all-removed"),
-        options: { reply_markup: resultNavigationKeyboard(locale, "drafts") },
+        options: { reply_markup: resultNavigationKeyboard(locale) },
       },
     ];
   }
   return [
-    ...showVideoCard(backendDb, config, actorId, draftId, locale),
+    ...showVideoCard(backendDb, config, actorId, draftId),
     { type: "toast", text: t(locale, "video.removed", { label: videoTargetLabel(target) }) },
   ];
 }
@@ -419,7 +409,7 @@ async function handleSettle({ backendDb, config, actorId, locale, args, draftId,
   const target = requireVideoTarget(args.target ?? "");
   const settled = await services.videos.settleTarget(actorId, draftId, target);
   return [
-    ...showVideoCard(backendDb, config, actorId, draftId, locale),
+    ...showVideoCard(backendDb, config, actorId, draftId),
     { type: "toast", text: t(locale, settled.url ? "video.settled" : "video.settled-unconfirmed") },
   ];
 }
@@ -463,7 +453,7 @@ async function handleEditField({ ctx, backendDb, actorId, locale, args, draftId,
     controlMessageId: callbackMessageId(ctx),
   };
   saveVideoState(backendDb, actorId, session);
-  return [videoPromptEffect(backendDb, actorId, t(locale, definition.prompt))];
+  return [promptEffect(backendDb, actorId, "video", t(locale, definition.prompt))];
 }
 
 /** Asks for a replacement upload. The answer is a file rather than text, so the
@@ -479,7 +469,7 @@ async function handleEditMedia({ ctx, backendDb, actorId, locale, draftId, servi
     controlMessageId: callbackMessageId(ctx),
   };
   saveVideoState(backendDb, actorId, session);
-  return [videoPromptEffect(backendDb, actorId, t(locale, "video.edit-media-prompt"))];
+  return [promptEffect(backendDb, actorId, "video", t(locale, "video.edit-media-prompt"))];
 }
 
 function scheduleValues(value: unknown): Record<string, string> | undefined {

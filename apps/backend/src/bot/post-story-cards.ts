@@ -3,9 +3,9 @@ import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
-import { telegramPostCard } from "../interfaces/telegram/control-cards.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
+import { isSupersededCard } from "./card-freshness.js";
 import { executePublicationEffects, type PublicationEffect } from "./effects.js";
 import { publicationCallback } from "./publication-callback.js";
 
@@ -61,15 +61,34 @@ async function waitForStoryCards(
   intent: "publish" | "schedule",
 ): Promise<void> {
   const posts = createStudioServices(backendDb, config).posts;
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+  for (let attempt = 0; attempt < STORY_CARD_WAIT_SECONDS; attempt += 1) {
     await delay(1_000);
     const cards = posts.preview(actorId, draftId).storyCards;
     if (!cardsReady(cards)) continue;
-    if (isStalePostCard(ctx, backendDb, draftId)) return;
+    if (isSupersededCard(ctx, backendDb, "post", draftId)) return;
     await executePublicationEffects(ctx, backendDb, sendStoryCardChoice(backendDb, actorId, draftId, intent, cards));
     return;
   }
+  // The renderer never finished. The operator tapped Publish and is owed an
+  // answer either way, or the publication silently waits on a question that
+  // was never asked.
+  if (isSupersededCard(ctx, backendDb, "post", draftId)) return;
+  const locale = settingsService(backendDb).locale(actorId);
+  await executePublicationEffects(ctx, backendDb, [
+    {
+      type: "prompt",
+      text: t(locale, "post.story-cards-timeout"),
+      options: {
+        reply_markup: new InlineKeyboard().text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"])),
+      },
+      card: { kind: "post", draftId },
+    },
+  ]);
 }
+
+/** How long the Story renderer is given before the operator is told it did not
+ * finish. Rendering both cards is seconds of work; a minute means it is stuck. */
+const STORY_CARD_WAIT_SECONDS = 60;
 
 function sendStoryCardChoice(
   backendDb: BackendDb,
@@ -121,11 +140,4 @@ function logStoryCardChoiceFailure(error: unknown, actorId: number, draftId: num
  * does not publish — and the choice was then never sent. */
 function cardsReady(cards: StoryCard[]): boolean {
   return cards.every((card) => card.status === "ready" && card.localPath);
-}
-
-function isStalePostCard(ctx: Context, backendDb: BackendDb, draftId: number): boolean {
-  const current = telegramPostCard(backendDb, draftId)?.messageId;
-  const callbackMessage = ctx.callbackQuery?.message;
-  const messageId = callbackMessage && "message_id" in callbackMessage ? callbackMessage.message_id : null;
-  return messageId != null && current != null && messageId !== current;
 }

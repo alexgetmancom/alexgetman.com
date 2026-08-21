@@ -3,9 +3,10 @@ import type { Context } from "grammy";
 import { handlePublicationMessage } from "../src/bot/callback-router.js";
 import { saveConversationState } from "../src/bot/conversation-state.js";
 import { saveVideoState } from "../src/bot/video-ui.js";
-import { createDraftFromMessage } from "../src/content/drafts.js";
+import { createDraftFromMessage, requireDraft } from "../src/content/drafts.js";
 import { pendingAlbums } from "../src/db/schema.js";
 import { unsafeDb } from "../src/db/unsafe.js";
+import { t } from "../src/foundation/i18n/index.js";
 import { openBackendDb } from "./helpers/open-db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
@@ -14,12 +15,21 @@ describe("Telegram publication message routing", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       saveVideoState(backendDb, 42, { draftId: null, step: "targets", selected: [], data: {} });
+      const replies: string[] = [];
       const ctx = {
         from: { id: 42 },
+        chat: { id: 100 },
         message: { text: "This must stay in the video flow" },
+        reply: async (text: string) => {
+          replies.push(text);
+          return { message_id: 1 };
+        },
       } as unknown as Context;
 
-      expect(await handlePublicationMessage(ctx, backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }))).toBe(false);
+      // The step is answered with buttons, so the wizard says so and keeps the
+      // message: it must never fall through and become a post.
+      expect(await handlePublicationMessage(ctx, backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }))).toBe(true);
+      expect(replies).toEqual([t("en", "video.awaiting-button")]);
       expect(unsafeDb(backendDb).sqlite.prepare("SELECT count(*) AS count FROM drafts").get()).toEqual({ count: 0 });
     } finally {
       backendDb.close();
@@ -29,7 +39,8 @@ describe("Telegram publication message routing", () => {
   it("does not send a text message from an active post session to the video handler", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      saveConversationState(backendDb, 42, { kind: "post", draftId: null, step: "new_post", data: {}, controlMessageId: null });
+      const draftId = createDraftFromMessage(backendDb, 42, { text: "Before", textEn: "Before", entities: [], media: [] });
+      saveConversationState(backendDb, 42, { kind: "post", draftId, step: "edit_text", data: { locale: "ru" }, controlMessageId: null });
       const ctx = {
         from: { id: 42 },
         chat: { id: 100 },
@@ -38,7 +49,7 @@ describe("Telegram publication message routing", () => {
       } as unknown as Context;
 
       expect(await handlePublicationMessage(ctx, backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" }))).toBe(true);
-      expect(unsafeDb(backendDb).sqlite.prepare("SELECT count(*) AS count FROM drafts").get()).toEqual({ count: 1 });
+      expect(requireDraft(backendDb, draftId).text_ru).toBe("This must stay in the post flow");
       expect(unsafeDb(backendDb).sqlite.prepare("SELECT count(*) AS count FROM video_drafts").get()).toEqual({ count: 0 });
     } finally {
       backendDb.close();

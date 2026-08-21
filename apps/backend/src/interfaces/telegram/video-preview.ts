@@ -12,7 +12,13 @@ import {
   isVideoTargetMetadataEditable,
   isVideoTargetSchedulable,
 } from "../../publishing/state.js";
-import { type InstagramMetadata, type VideoTarget, videoTargetLabel, type YouTubeMetadata } from "../../publishing/video-types.js";
+import {
+  type InstagramMetadata,
+  VIDEO_TARGETS,
+  type VideoTarget,
+  videoTargetLabel,
+  type YouTubeMetadata,
+} from "../../publishing/video-types.js";
 import { formatVideoTime } from "./video-time.js";
 
 type VideoPreviewData = {
@@ -58,42 +64,36 @@ export function videoPreview(
   ];
   const keyboard = new InlineKeyboard();
   const view = options.view ?? "overview";
-  const ytTarget = targets.find((target) => target.target === "youtube_shorts");
-  const igTarget = targets.find((target) => target.target === "instagram_reels");
-  if (ytTarget) {
-    const metadata = (ytTarget.metadataJson ?? {}) as Partial<YouTubeMetadata>;
-    lines.push("", "▶️ *YouTube Shorts*", `${t(locale, "vpreview.yt-title-label")}: ${escapeMarkdown(metadata.title || "—")}`);
-    if (metadata.description) lines.push(`${t(locale, "vpreview.description")}: ${escapeMarkdown(metadata.description)}`);
-    if (metadata.gameUrl) lines.push(`${t(locale, "vpreview.game")}: ${escapeMarkdown(metadata.gameUrl)}`);
-    if (metadata.tags?.length) lines.push(`${t(locale, "vpreview.tags")}: ${escapeMarkdown(metadata.tags.join(", "))}`);
+  // One pass over the platforms this publication has, in catalogue order: the
+  // controls are the same question for each of them, and written out per
+  // platform they drifted -- YouTube's retry landed under Instagram's row, and
+  // a scheduled target emitted its button without closing the row.
+  for (const target of VIDEO_TARGETS) {
+    const row = targets.find((candidate) => candidate.target === target);
+    if (!row) continue;
+    const label = videoTargetLabel(target);
+    lines.push("", ...targetLines(target, row.metadataJson, locale));
     lines.push(
-      `${t(locale, "vpreview.state")}: ${videoStatusLabel(ytTarget.status, locale)}${ytTarget.scheduledAt ? ` · ${formatVideoTime(ytTarget.scheduledAt, locale, config)}` : ""}`,
+      `${t(locale, "vpreview.state")}: ${videoStatusLabel(row.status, locale)}${row.scheduledAt ? ` · ${formatVideoTime(row.scheduledAt, locale, config)}` : ""}`,
     );
-    if (isVideoTargetSchedulable(ytTarget.status))
-      keyboard.text(t(locale, "vpreview.yt-time"), publicationCallback("video", "time", [draft.id, "youtube_shorts"]));
-    if (isVideoTargetEditable(ytTarget.status))
-      keyboard.text(t(locale, "vpreview.yt-remove"), publicationCallback("video", "remove_ask", [draft.id, "youtube_shorts"])).row();
-  }
-  if (igTarget) {
-    const metadata = (igTarget.metadataJson ?? {}) as Partial<InstagramMetadata>;
-    lines.push("", "📸 *Instagram Reels*", `${t(locale, "vpreview.description")}: ${escapeMarkdown(metadata.caption || "—")}`);
-    lines.push(
-      `${t(locale, "vpreview.state")}: ${videoStatusLabel(igTarget.status, locale)}${igTarget.scheduledAt ? ` · ${formatVideoTime(igTarget.scheduledAt, locale, config)}` : ""}`,
-    );
-    if (isVideoTargetSchedulable(igTarget.status))
-      keyboard.text(t(locale, "vpreview.ig-time"), publicationCallback("video", "time", [draft.id, "instagram_reels"]));
-    if (isVideoTargetEditable(igTarget.status))
-      keyboard.text(t(locale, "vpreview.ig-remove"), publicationCallback("video", "remove_ask", [draft.id, "instagram_reels"])).row();
-    if (isAudienceMutationRetryable(igTarget.status))
-      keyboard.text(t(locale, "vpreview.ig-retry"), publicationCallback("video", "retry", [draft.id, "instagram_reels", "card"])).row();
-    // A publication that lost its worker cannot be retried — nobody knows
-    // whether it landed — but a provider route can be asked, because the same
+    let controls = 0;
+    const control = (text: string, callback: string) => {
+      keyboard.text(text, callback);
+      controls += 1;
+    };
+    if (isVideoTargetSchedulable(row.status))
+      control(t(locale, "vpreview.time", { target: label }), publicationCallback("video", "time", [draft.id, target]));
+    if (isVideoTargetEditable(row.status))
+      control(t(locale, "vpreview.remove", { target: label }), publicationCallback("video", "remove_ask", [draft.id, target]));
+    if (isAudienceMutationRetryable(row.status))
+      control(t(locale, "vpreview.retry", { target: label }), publicationCallback("video", "retry", [draft.id, target, "card"]));
+    // A publication that lost its worker cannot be retried -- nobody knows
+    // whether it landed -- but a provider route can be asked, because the same
     // fenced request returns the post it already has instead of a second one.
-    if (igTarget.status === "verification_required" && igTarget.deliveryProvider === "zernio")
-      keyboard.text(t(locale, "vpreview.ig-settle"), publicationCallback("video", "settle", [draft.id, "instagram_reels"])).row();
+    if (row.status === "verification_required" && row.deliveryProvider === "zernio")
+      control(t(locale, "vpreview.settle", { target: label }), publicationCallback("video", "settle", [draft.id, target]));
+    if (controls) keyboard.row();
   }
-  if (ytTarget && isAudienceMutationRetryable(ytTarget.status))
-    keyboard.text(t(locale, "vpreview.yt-retry"), publicationCallback("video", "retry", [draft.id, "youtube_shorts", "card"])).row();
   if (view !== "overview") return videoConfirmationPreview(draft.id, lines.join("\n"), locale, view, options);
   // Publishing now and scheduling are the same pair of choices a text post
   // offers on its own card, and both use the shared publication actions.
@@ -105,9 +105,27 @@ export function videoPreview(
       .row();
   if (["draft", "editing", "scheduled"].includes(draft.status) && targets.some((target) => isVideoTargetMetadataEditable(target.status)))
     keyboard.text(t(locale, "vpreview.edit-details"), publicationCallback("video", "edit_menu", [draft.id])).row();
-  keyboard.text(t(locale, "vpreview.cancel-pub"), publicationCallback("video", "cancel", [draft.id])).row();
+  // Nothing left to cancel once it is cancelled: the button would confirm a
+  // question and change nothing.
+  if (draft.status !== "cancelled")
+    keyboard.text(t(locale, "vpreview.cancel-pub"), publicationCallback("video", "cancel", [draft.id])).row();
   keyboard.text(t(locale, "queue.back-btn"), "queue_home");
   return { text: lines.join("\n"), keyboard };
+}
+
+/** The fields one platform carries, as its own card section. Only this differs
+ * between platforms; every control around it is the same. */
+function targetLines(target: VideoTarget, metadataJson: unknown, locale: StudioLocale): string[] {
+  if (target === "youtube_shorts") {
+    const metadata = (metadataJson ?? {}) as Partial<YouTubeMetadata>;
+    const lines = ["▶️ *YouTube Shorts*", `${t(locale, "vpreview.yt-title-label")}: ${escapeMarkdown(metadata.title || "—")}`];
+    if (metadata.description) lines.push(`${t(locale, "vpreview.description")}: ${escapeMarkdown(metadata.description)}`);
+    if (metadata.gameUrl) lines.push(`${t(locale, "vpreview.game")}: ${escapeMarkdown(metadata.gameUrl)}`);
+    if (metadata.tags?.length) lines.push(`${t(locale, "vpreview.tags")}: ${escapeMarkdown(metadata.tags.join(", "))}`);
+    return lines;
+  }
+  const metadata = (metadataJson ?? {}) as Partial<InstagramMetadata>;
+  return ["📸 *Instagram Reels*", `${t(locale, "vpreview.description")}: ${escapeMarkdown(metadata.caption || "—")}`];
 }
 
 function videoConfirmationPreview(

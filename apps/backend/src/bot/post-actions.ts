@@ -1,13 +1,12 @@
 import { InlineKeyboard } from "grammy";
 import { postLocales } from "../channels/locales.js";
-import type { BackendDb } from "../db/client.js";
 import { StudioError } from "../foundation/errors.js";
 import { plural, t } from "../foundation/i18n/index.js";
 import type { StudioLocale } from "../foundation/locale.js";
 import { manualScheduleExample } from "../foundation/time.js";
 import { settingsService } from "../studio/services/settings.js";
 import { clearConversationState, getConversationState } from "./conversation-state.js";
-import { cancelPromptKeyboard, resultNavigationKeyboard } from "./dialog-ui.js";
+import { promptEffect, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
 import { mainMenuText } from "./menu-render.js";
 import { type PostWizardStep, postStateStep, postStepData } from "./post-flow.js";
@@ -114,7 +113,7 @@ async function handleCancelConfirm(args: PostActionArgs): Promise<PublicationAct
       type: "screen",
       mode: "edit",
       text: t(args.locale, wasScheduled ? "action.publication-cancelled" : "action.draft-cancelled", { id: args.draftId }),
-      options: { reply_markup: resultNavigationKeyboard(args.locale, wasScheduled ? "upcoming" : "drafts") },
+      options: { reply_markup: resultNavigationKeyboard(args.locale) },
     },
   ];
 }
@@ -143,6 +142,7 @@ async function handleEdit({ ctx, backendDb, actorId, locale, action, draftId }: 
     promptEffect(
       backendDb,
       actorId,
+      "post",
       step.type === "replace_media" ? t(locale, "action.send-new-media") : t(locale, "action.send-new-text"),
     ),
   ];
@@ -273,6 +273,7 @@ async function handleManualSchedule(args: PostActionArgs): Promise<PublicationAc
     promptEffect(
       backendDb,
       actorId,
+      "post",
       t(locale, "action.enter-datetime", {
         timezone: timeConfig.TIMEZONE_LABEL,
         example: manualScheduleExample(timeConfig.TIMEZONE, backendDb.clock.now()),
@@ -406,19 +407,6 @@ function previewEffects(args: PostActionArgs, view: DraftView = "overview", call
   });
   const ack: PublicationEffect[] = callbackText ? [{ type: "toast", text: callbackText }] : [];
   return [...ack, ...publicationCardEffect(card)];
-}
-
-function promptEffect(backendDb: BackendDb, actorId: number, text: string): PublicationEffect {
-  const locale = settingsService(backendDb).locale(actorId);
-  const revision = getConversationState(backendDb, actorId, "post")?.revision;
-  return {
-    type: "prompt",
-    text,
-    options: {
-      parse_mode: "Markdown",
-      reply_markup: cancelPromptKeyboard(locale, publicationCallback("post", "cancel_dialog", [], revision)),
-    },
-  };
 }
 
 function requireScheduleLocale(value: string): "ru" | "en" {

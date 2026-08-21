@@ -8,11 +8,10 @@ import type { ConversationState } from "./conversation-state.js";
 import type { PublicationEffect } from "./effects.js";
 
 type PostWizardLocale = "ru" | "en";
-export type PostSessionStep = "new_post" | "edit_text" | "replace_media" | "schedule_manual" | "schedule_confirm";
+export type PostSessionStep = "edit_text" | "replace_media" | "schedule_manual" | "schedule_confirm";
 type PostFlowStep = PostSessionStep | "completed";
 
 export type PostWizardStep =
-  | { type: "new_post" }
   | { type: "edit_text"; locale: PostWizardLocale }
   | { type: "replace_media"; locale: PostWizardLocale }
   | { type: "schedule_manual"; locale: PostWizardLocale }
@@ -38,11 +37,6 @@ export function postStepData(step: PostWizardStep | null): Record<string, unknow
 }
 
 const POST_STEPS: Record<PostFlowStep, FlowStep<PostFlowData, PostFlowInput, PublicationEffect, PostFlowStep>> = {
-  new_post: {
-    name: "new_post",
-    next: () => "completed",
-    accept: (input, data) => ({ ...data, input: input.message }),
-  },
   edit_text: { name: "edit_text", input: "text", next: () => "completed", accept: acceptPostTextEdit },
   replace_media: { name: "replace_media", input: "media", next: () => "completed", accept: acceptPostMediaReplacement },
   schedule_manual: { name: "schedule_manual", input: "text", next: () => "schedule_confirm", accept: acceptManualPostSchedule },
@@ -58,7 +52,6 @@ export const POST_FLOW: Flow<PostFlowData, PostFlowInput, PublicationEffect, Pos
 
 export function postStateStep(state: Pick<ConversationState, "step" | "data"> | null): PostWizardStep | null {
   if (!state) return null;
-  if (state.step === "new_post") return { type: "new_post" };
   if (state.step === "edit_text") return localeStep("edit_text", state.data.locale);
   if (state.step === "replace_media") return localeStep("replace_media", state.data.locale);
   if (state.step === "schedule_manual") return localeStep("schedule_manual", state.data.locale);

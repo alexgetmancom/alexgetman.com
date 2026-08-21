@@ -1,16 +1,15 @@
 import type { Menu } from "@grammyjs/menu";
 import { type Context, InlineKeyboard } from "grammy";
 import type { BackendDb } from "../db/client.js";
-import { withActionLock } from "../foundation/action-lock.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
 import type { StudioLocale } from "../foundation/locale.js";
-import { truncateUnicode } from "../foundation/text.js";
-import { telegramPostCard, telegramVideoCard } from "../interfaces/telegram/control-cards.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
+import { runCallbackAction } from "./callback-effects.js";
+import { isSupersededCard } from "./card-freshness.js";
 import { getActiveConversationState, getConversationState } from "./conversation-state.js";
-import { executePublicationEffects, type PublicationMessageResult } from "./effects.js";
+import { executePublicationEffects, type PublicationEffect, type PublicationMessageResult } from "./effects.js";
 import { handlePostMessage } from "./post-screen.js";
 import type {
   PublicationActionContext,
@@ -80,78 +79,63 @@ export async function handlePublicationCallback(
   } satisfies CallbackRouterContext;
   const services = createStudioServices(backendDb, config);
 
-  try {
-    if (!action) {
-      await staleCallback(ctx, backendDb, locale, true);
-      return true;
-    }
+  await runCallbackAction(
+    ctx,
+    backendDb,
+    {
+      locale,
+      lockKey: `${actorId}:${parsed.data}`,
+      describe: (error) => describePublicationError(locale, error, services.settings.timeConfig(actorId, config)),
+      onError: (error) => logPublicationActionError(common, error),
+    },
+    async () => {
+      if (!action) return staleEffects(locale, true);
 
-    const pipeline = { post: services.posts, video: services.videos }[callback.kind];
-    const renderer = publicationRenderers(backendDb, config, services)[callback.kind];
-    const draftId = action.entity === "draft" ? parseDraftId(callback.args[0]) : undefined;
-    if (action.entity === "draft" && draftId == null) {
-      await answerCallback(ctx, backendDb, t(locale, INVALID_ENTITY_TEXT[callback.kind]));
-      return true;
-    }
-    if (!hasDeclaredArguments(action, callback.args, action.entity === "draft")) {
-      await staleCallback(ctx, backendDb, locale, false);
-      return true;
-    }
+      const pipeline = { post: services.posts, video: services.videos }[callback.kind];
+      const renderer = publicationRenderers(backendDb, config, services)[callback.kind];
+      const draftId = action.entity === "draft" ? parseDraftId(callback.args[0]) : undefined;
+      if (action.entity === "draft" && draftId == null)
+        return [{ type: "answer-callback", text: t(locale, INVALID_ENTITY_TEXT[callback.kind]) }];
+      if (!hasDeclaredArguments(action, callback.args, action.entity === "draft")) return staleEffects(locale, false);
 
-    const session = getConversationState(backendDb, actorId, callback.kind);
-    if (action.sessionRevision && parsed.revision == null) {
-      await staleCallback(ctx, backendDb, locale, false);
-      return true;
-    }
-    if (parsed.revision != null) requireSessionRevision(session?.revision, parsed.revision);
-    if (action.freshCard && isStaleCardCallback(ctx, backendDb, callback)) {
-      await staleCallback(ctx, backendDb, locale, false);
-      return true;
-    }
-    // Rejects a callback pointing at a draft this actor cannot open, before the handler runs.
-    if (draftId != null) pipeline.get(actorId, draftId);
+      const session = getConversationState(backendDb, actorId, callback.kind);
+      if (action.sessionRevision && parsed.revision == null) return staleEffects(locale, false);
+      if (parsed.revision != null) requireSessionRevision(session?.revision, parsed.revision);
+      if (action.freshCard && isStaleCardCallback(ctx, backendDb, callback)) return staleEffects(locale, false);
+      // Rejects a callback pointing at a draft this actor cannot open, before the handler runs.
+      if (draftId != null) pipeline.get(actorId, draftId);
 
-    const actionContext = {
-      ...common,
-      args: namedArguments(action, callback.args, action.entity === "draft"),
-      ...(draftId != null ? { draftId } : {}),
-      pipeline,
-      services,
-      renderer,
-      // Only "draft" actions carry a draft id; the handler type demands one, and the guards
-      // above guarantee it for exactly those actions.
-    } as PublicationDraftActionContext;
-    const locked = await withActionLock(`${actorId}:${parsed.data}`, () => action.handler(actionContext));
-    const effects = locked.ok ? [...(locked.value ?? [])] : [{ type: "toast" as const, text: t(locale, "action.in-flight") }];
-    if (!effects.some((effect) => effect.type === "answer-callback" || effect.type === "toast"))
-      effects.unshift({ type: "answer-callback" });
-    await executePublicationEffects(ctx, backendDb, effects);
-  } catch (error) {
-    logPublicationActionError(common, error);
-    const timeConfig = services.settings.timeConfig(actorId, config);
-    await executePublicationEffects(ctx, backendDb, [{ type: "toast", text: toast(describePublicationError(locale, error, timeConfig)) }]);
-  }
+      const actionContext = {
+        ...common,
+        args: namedArguments(action, callback.args, action.entity === "draft"),
+        ...(draftId != null ? { draftId } : {}),
+        pipeline,
+        services,
+        renderer,
+        // Only "draft" actions carry a draft id; the handler type demands one, and the guards
+        // above guarantee it for exactly those actions.
+      } as PublicationDraftActionContext;
+      return action.handler(actionContext);
+    },
+  );
   return true;
 }
 
 export function isStaleCardCallback(ctx: Context, backendDb: BackendDb, callback: PublicationCallback): boolean {
   if (!isFreshPublicationAction(callback.kind, callback.action)) return false;
   const draftId = parseDraftId(callback.args[0]);
-  if (draftId == null) return false;
-  const currentMessageId = {
-    post: telegramPostCard(backendDb, draftId)?.messageId,
-    video: telegramVideoCard(backendDb, draftId)?.messageId,
-  }[callback.kind];
-  const callbackMessage = ctx.callbackQuery?.message;
-  const messageId = callbackMessage && "message_id" in callbackMessage ? callbackMessage.message_id : null;
-  return messageId != null && currentMessageId != null && messageId !== currentMessageId;
+  return draftId != null && isSupersededCard(ctx, backendDb, callback.kind, draftId);
 }
 
 /** Routes a message through the active publication flow, or starts a post when no flow is open. */
 export async function handlePublicationMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<boolean> {
   const actorId = Number(ctx.from?.id);
   const active = getActiveConversationState(backendDb, actorId);
-  const result = await PUBLICATION_MESSAGE_HANDLERS[active?.kind ?? "post"](ctx, backendDb, config);
+  const opened = await PUBLICATION_MESSAGE_HANDLERS[active?.kind ?? "post"](ctx, backendDb, config);
+  // A conversation that declines its own message no longer exists: its session
+  // was retired between the two reads. The post screen owns what to say then,
+  // and a message must never end up answered by nobody.
+  const result = opened.handled ? opened : await handlePostMessage(ctx, backendDb, config);
   if (result.effects.length) await executePublicationEffects(ctx, backendDb, result.effects);
   return result.handled;
 }
@@ -170,18 +154,11 @@ function namedArguments(
   return Object.fromEntries(action.args.map((name, index) => [name, values[index]]));
 }
 
-async function staleCallback(ctx: Context, backendDb: BackendDb, locale: StudioLocale, includeQueue: boolean): Promise<void> {
-  await answerCallback(ctx, backendDb, t(locale, "action.card-stale"));
-  if (includeQueue) await ctx.reply(t(locale, "action.card-stale"), { reply_markup: UNKNOWN_KEYBOARD(locale) });
-}
-
-async function answerCallback(ctx: Context, backendDb: BackendDb, text?: string): Promise<void> {
-  await executePublicationEffects(ctx, backendDb, [{ type: "answer-callback", ...(text ? { text } : {}) }]);
-}
-
-const MAX_TOAST_LENGTH = 200;
-
-function toast(text: string): string {
-  const shortened = truncateUnicode(text, MAX_TOAST_LENGTH);
-  return shortened.length < text.length ? `${truncateUnicode(text, MAX_TOAST_LENGTH - 1)}…` : shortened;
+/** The one answer to a control that no longer means anything: the card was
+ * replaced, the dialog moved on, or the action itself is gone. */
+function staleEffects(locale: StudioLocale, includeQueue: boolean): PublicationEffect[] {
+  const text = t(locale, "action.card-stale");
+  const answer = { type: "answer-callback" as const, text };
+  if (!includeQueue) return [answer];
+  return [answer, { type: "screen", mode: "reply", text, options: { reply_markup: UNKNOWN_KEYBOARD(locale) } }];
 }

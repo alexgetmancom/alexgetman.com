@@ -5,6 +5,7 @@ import { getConversationState, saveConversationState } from "../src/bot/conversa
 import type { PostWizardStep } from "../src/bot/post-flow.js";
 import { draftPreview } from "../src/bot/preview.js";
 import { postProgress } from "../src/bot/progress.js";
+import { postPreviewCard } from "../src/bot/publication-renderers.js";
 import { TARGETS, targetLocale } from "../src/botTargets.js";
 import { createDraftFromMessage, requireDraft } from "../src/content/drafts.js";
 import { entitiesToHtml } from "../src/content/text.js";
@@ -53,13 +54,13 @@ describe("Telegram controller flow", () => {
   it("keeps mode and manual target controls on one ordinary-publication card", () => {
     backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Card", textEn: "Card", entities: [], media: [] });
-    const preview = draftPreview(backendDb, draftId, loadTestConfig({}));
+    const preview = draftPreview(backendDb, draftId, loadTestConfig({}), "en");
     expect(preview.text).toContain("Mode: *Manual*");
     expect(JSON.stringify(preview.keyboard)).toContain(`cycle_mode:${draftId}`);
-    expect(JSON.stringify(preview.keyboard)).toContain(`view:${draftId}:platforms`);
-    expect(JSON.stringify(preview.keyboard)).toContain(`edit_ru:${draftId}`);
-    expect(JSON.stringify(preview.keyboard)).toContain(`edit_en:${draftId}`);
-    expect(JSON.stringify(preview.keyboard)).not.toContain(`edit_menu:${draftId}`);
+    // Texts, their media and the platforms are all one button away, on this card
+    // and on a scheduled one alike.
+    expect(JSON.stringify(preview.keyboard)).toContain(`edit_menu:${draftId}`);
+    expect(JSON.stringify(preview.keyboard)).not.toContain(`edit_ru:${draftId}`);
     expect(JSON.stringify(preview.keyboard)).not.toContain("use_ru_media");
   });
 
@@ -67,7 +68,7 @@ describe("Telegram controller flow", () => {
     backendDb = openBotDb();
     backendDb.db.insert(botUiSettings).values({ actorId: 42, locale: "ru", updatedAt: new Date().toISOString() }).run();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Карточка", textEn: "Card", entities: [], media: [] });
-    const preview = draftPreview(backendDb, draftId, loadTestConfig({}));
+    const preview = postPreviewCard(backendDb, loadTestConfig({}), 42, draftId);
 
     expect(preview.text).toContain("Режим: *Ручной*");
     expect(JSON.stringify(preview.keyboard)).toContain("Опубликовать");
@@ -83,7 +84,7 @@ describe("Telegram controller flow", () => {
       media: [],
     });
 
-    const preview = draftPreview(backendDb, draftId, loadTestConfig({}));
+    const preview = draftPreview(backendDb, draftId, loadTestConfig({}), "en");
 
     expect(preview.text).toContain("\\*bold\\* \\[link\\] \\_under\\_ \\`code\\`");
     expect(preview.text).toContain("\\*English\\* \\[link\\] \\_under\\_ \\`code\\`");
@@ -169,17 +170,17 @@ describe("Telegram controller flow", () => {
     const at = new Date(Date.now() + 60 * 60_000);
     publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt: at, enAt: at });
 
-    const preview = draftPreview(backendDb, draftId, config);
+    const preview = draftPreview(backendDb, draftId, config, "en");
     const buttons = preview.keyboard.inline_keyboard.flat().map((button) => button.text);
     expect(buttons).toEqual(["🕒 Change time", "✏️ Edit details", "🗑 Cancel publication", "← Work queue"]);
     expect(buttons).not.toContain("▶️ Publish now");
     expect(buttons).not.toContain("🗑 Delete draft");
 
-    const confirmation = draftPreview(backendDb, draftId, config, "confirm_cancel");
+    const confirmation = draftPreview(backendDb, draftId, config, "en", "confirm_cancel");
     expect(confirmation.text).toContain("Cancel this publication?");
     expect(JSON.stringify(confirmation.keyboard)).toContain("cancel_confirm");
 
-    const schedule = draftPreview(backendDb, draftId, config, "schedule");
+    const schedule = draftPreview(backendDb, draftId, config, "en", "schedule");
     expect(JSON.stringify(schedule.keyboard)).toContain("schedule_ru");
     expect(JSON.stringify(schedule.keyboard)).toContain("schedule_en");
     expect(JSON.stringify(schedule.keyboard)).not.toContain("sched_scope");
@@ -191,13 +192,13 @@ describe("Telegram controller flow", () => {
     const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Только RU", textEn: "RU only", entities: [], media: [] });
 
-    const draft = draftPreview(backendDb, draftId, config);
+    const draft = draftPreview(backendDb, draftId, config, "en");
     expect(draft.text).not.toContain("EN:");
     expect(JSON.stringify(draft.keyboard)).not.toContain("edit_en");
 
     // A schedule screen that offers EN is what let a draft be dated in RU only
     // and then wait forever for the EN date its language never gets.
-    const schedule = draftPreview(backendDb, draftId, config, "schedule");
+    const schedule = draftPreview(backendDb, draftId, config, "en", "schedule");
     expect(JSON.stringify(schedule.keyboard)).toContain(`sched_scope:${draftId}:ru_now`);
     expect(JSON.stringify(schedule.keyboard)).not.toContain("en_now");
     expect(JSON.stringify(schedule.keyboard)).not.toContain("both");
@@ -205,16 +206,16 @@ describe("Telegram controller flow", () => {
     expect(JSON.stringify(schedule.keyboard)).toContain(`view:${draftId}:schedule_ru`);
 
     // And the EN slot grid is not reachable by callback either.
-    expect(draftPreview(backendDb, draftId, config, "schedule_en").text).toEqual(draft.text);
+    expect(draftPreview(backendDb, draftId, config, "en", "schedule_en").text).toEqual(draft.text);
 
     publishDraftToQueue(backendDb, draftId, { mode: "scheduled", ruAt: new Date(Date.now() + 60 * 60_000) });
-    const scheduled = draftPreview(backendDb, draftId, config);
+    const scheduled = draftPreview(backendDb, draftId, config, "en");
     expect(scheduled.text).toContain("Scheduled RU");
     expect(scheduled.text).not.toContain("Scheduled EN");
 
     // Changing the time of a one-language publication opens its grid, not a chooser of one.
-    const changeTime = draftPreview(backendDb, draftId, config, "schedule");
-    expect(changeTime).toEqual(draftPreview(backendDb, draftId, config, "schedule_ru"));
+    const changeTime = draftPreview(backendDb, draftId, config, "en", "schedule");
+    expect(changeTime).toEqual(draftPreview(backendDb, draftId, config, "en", "schedule_ru"));
     expect(JSON.stringify(changeTime.keyboard)).toContain(`sched_pick:${draftId}:ru`);
   });
 
@@ -493,7 +494,7 @@ describe("Telegram controller flow", () => {
     backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Text only", textEn: "Text only", entities: [], media: [] });
 
-    const preview = draftPreview(backendDb, draftId, loadTestConfig({}), "confirm_publish");
+    const preview = draftPreview(backendDb, draftId, loadTestConfig({}), "en", "confirm_publish");
     expect(preview.text).toContain("Will not be sent (no media): Telegram Stories, Instagram Stories RU, Instagram Stories EN.");
   });
 

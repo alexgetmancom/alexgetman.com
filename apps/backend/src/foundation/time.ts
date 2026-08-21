@@ -74,6 +74,36 @@ export function zonedCalendarDay(date: Date, timeZone: string): string {
   return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
+/** Whole days from `now` to `date`, both read as calendar dates in `timeZone`.
+ * Negative is in the past. This is what "today", "tomorrow" and "yesterday"
+ * mean to an operator, and it cannot be done in milliseconds: a day is not
+ * 86,400,000 ms across a DST change. */
+export function zonedDayDistance(date: Date, now: Date, timeZone: string): number {
+  return Math.round((zonedDayNumber(date, timeZone) - zonedDayNumber(now, timeZone)) / 86_400_000);
+}
+
+function zonedDayNumber(date: Date, timeZone: string): number {
+  const parts = zonedDateParts(date, timeZone);
+  return Date.UTC(parts.year, parts.month - 1, parts.day);
+}
+
+/** "18:30" as the operator's locale and zone read it. */
+export function formatZonedClock(date: Date, locale: StudioLocale, timeZone: string): string {
+  return formatter(`clock:${locale}:${timeZone}`, STUDIO_LOCALE_TAGS[locale], {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+}
+
+/** "5 Aug" / "5 авг." — a date close enough that the year is noise. */
+export function formatZonedDayMonth(date: Date, locale: StudioLocale, timeZone: string): string {
+  return formatter(`day-month:${locale}:${timeZone}`, STUDIO_LOCALE_TAGS[locale], { timeZone, day: "numeric", month: "short" }).format(
+    date,
+  );
+}
+
 export function zonedDateTimeParts(date: Date, timeZone: string): { day: string; hour: number; minute: number } {
   const parts = formatter(`date-time:${timeZone}`, "en-CA", {
     timeZone,

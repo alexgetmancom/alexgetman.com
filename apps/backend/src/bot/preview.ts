@@ -7,6 +7,7 @@ import { type BackendDb, unsafeDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { type MessageKey, t } from "../foundation/i18n/index.js";
 import type { StudioLocale } from "../foundation/locale.js";
+import { log } from "../foundation/logger.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
 import { truncateUnicode } from "../foundation/text.js";
 import { formatZonedDateTime } from "../foundation/time.js";
@@ -17,10 +18,10 @@ import { storyCardsForDraft } from "../story-cards/store.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { requirePostEditAllowed } from "../studio/services/post-access.js";
 import { postProgressState } from "../studio/services/post-progress.js";
-import { settingsService } from "../studio/services/settings.js";
 import { appendResultNavigation, confirmationKeyboard } from "./dialog-ui.js";
 import { publicationCallback } from "./publication-callback.js";
 import { createPublicationScheduleEngine, scheduleTimeKeyboard } from "./scheduling.js";
+import { appendUnlandedControls, type UnlandedTarget } from "./unlanded-controls.js";
 
 const DRAFT_VIEWS = [
   "overview",
@@ -88,10 +89,10 @@ export function draftPreview(
   backendDb: BackendDb,
   draftId: number,
   config: BackendConfig,
+  locale: StudioLocale,
   view: DraftView = "overview",
 ): { text: string; keyboard: InlineKeyboard } {
   const draft = requireDraft(backendDb, draftId);
-  const locale = settingsService(backendDb).locale(draft.actor_id);
   const timeConfig = createStudioServices(backendDb, config).settings.timeConfig(draft.actor_id, config);
   const targets = effectivePostTargets(backendDb, parseTargets(draft.targets_json));
   const registered = registeredPostTargetIds(backendDb);
@@ -105,8 +106,8 @@ export function draftPreview(
   const mutable = isPostDraftMutable(draft.status);
 
   // Every view except the overview edits or acts on the draft, so a frozen draft only ever shows the overview.
-  if (!mutable && view !== "overview") return draftPreview(backendDb, draftId, config, "overview");
-  if (!servesEn && view.startsWith("schedule_en")) return draftPreview(backendDb, draftId, config, "overview");
+  if (!mutable && view !== "overview") return draftPreview(backendDb, draftId, config, locale, "overview");
+  if (!servesEn && view.startsWith("schedule_en")) return draftPreview(backendDb, draftId, config, locale, "overview");
 
   if (view === "platforms") {
     for (let index = 0; index < targetRows.length; index += 2) {
@@ -125,7 +126,7 @@ export function draftPreview(
   if (view === "schedule") {
     if (draft.status === "scheduled") {
       // One language means one time: the chooser would be a single button in front of the grid it opens.
-      if (!servesEn) return draftPreview(backendDb, draftId, config, "schedule_ru");
+      if (!servesEn) return draftPreview(backendDb, draftId, config, locale, "schedule_ru");
       keyboard.text(t(locale, "post.change-time-ru"), publicationCallback("post", "view", [draftId, "schedule_ru"])).row();
       keyboard.text(t(locale, "post.change-time-en"), publicationCallback("post", "view", [draftId, "schedule_en"])).row();
       keyboard.text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"]));
@@ -238,38 +239,24 @@ export function draftPreview(
 
   const modeEmoji = mode === "manual" ? "🛞" : "⚙️";
   if (mutable) {
+    // One way in to editing, for a draft and for a scheduled publication alike:
+    // the texts, their media and the platforms all live behind this button, so
+    // a media replacement is never reachable from one card and not the other.
     keyboard
       .text(`${modeEmoji} ${t(locale, "post.mode")}: ${modeLabel(mode, locale)}`, publicationCallback("post", "cycle_mode", [draftId]))
-      .text(t(locale, "post.choose-platforms"), publicationCallback("post", "view", [draftId, "platforms"]))
+      .text(t(locale, "post.edit-button"), publicationCallback("post", "edit_menu", [draftId]))
       .row();
-    const canEditRu = canEditLocale(backendDb, config, draft.actor_id, draftId, "ru");
-    const canEditEn = servesEn && canEditLocale(backendDb, config, draft.actor_id, draftId, "en");
-    if (canEditRu) keyboard.text(t(locale, "post.edit-ru"), publicationCallback("post", "edit_ru", [draftId]));
-    if (canEditEn) keyboard.text(t(locale, "post.edit-en"), publicationCallback("post", "edit_en", [draftId]));
-    if (canEditRu || canEditEn) keyboard.row();
     keyboard
       .text(t(locale, "post.publish-btn"), publicationCallback("post", "publish", [draftId]))
       .text(t(locale, "post.schedule-btn"), publicationCallback("post", "schedule", [draftId]))
       .row();
-    keyboard.text(t(locale, "post.delete-btn"), publicationCallback("post", "cancel", [draftId, "confirm_delete"]));
+    keyboard.text(t(locale, "post.delete-btn"), publicationCallback("post", "cancel", [draftId, "confirm_delete"])).row();
+    // A draft opened from the queue has to lead back to it. Every other card in
+    // the bot ends with this row; without it the only way out was the keyboard.
+    appendResultNavigation(keyboard, locale);
   } else {
-    const unlanded = unlandedTargets(backendDb, draftId);
-    if (unlanded.length) {
-      if (unlanded.some((item) => isPostTargetRetryable(item.target, item.status)))
-        keyboard.text(t(locale, "notif.retry-failed"), publicationCallback("post", "retry", [draftId, "all", "card"]));
-      keyboard.text(t(locale, "notif.skip-failed"), publicationCallback("post", "skip", [draftId, "all", "card"])).row();
-      for (const item of unlanded) {
-        if (isPostTargetRetryable(item.target, item.status))
-          keyboard.text(
-            t(locale, "notif.retry-target", { target: item.label }),
-            publicationCallback("post", "retry", [draftId, item.target, "card"]),
-          );
-        keyboard
-          .text(t(locale, "notif.skip-target", { target: item.label }), publicationCallback("post", "skip", [draftId, item.target, "card"]))
-          .row();
-      }
-    }
-    appendResultNavigation(keyboard, locale, "upcoming");
+    appendUnlandedControls(keyboard, { locale, kind: "post", draftId, origin: "card", targets: unlandedTargets(backendDb, draftId) });
+    appendResultNavigation(keyboard, locale);
   }
 
   const media = mediaCounts(draft.media_ru_json, draft.media_en_json);
@@ -295,12 +282,15 @@ export function draftPreview(
 
 /** Every target that did not land, retryable or not: each one can be skipped,
  * and only some of them can be retried. */
-function unlandedTargets(backendDb: BackendDb, draftId: number): Array<{ target: string; label: string; status: string }> {
+function unlandedTargets(backendDb: BackendDb, draftId: number): UnlandedTarget[] {
   try {
     return postProgressState(backendDb, draftId)
       .targets.filter((item) => item.status === "failed" || item.status === "verification_required")
-      .map(({ target, label, status }) => ({ target, label, status }));
-  } catch {
+      .map(({ target, label, status }) => ({ target, label, retryable: isPostTargetRetryable(target, status), skippable: true }));
+  } catch (error) {
+    // A card without its retry buttons is still a card, but the reason the
+    // progress state could not be read must not disappear with them.
+    log("warn", "post card could not read publication progress", { draftId, error: String(error) });
     return [];
   }
 }

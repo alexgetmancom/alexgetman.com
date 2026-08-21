@@ -2,13 +2,12 @@ import type { Context } from "grammy";
 import type { BackendDb } from "../db/client.js";
 import { describeError } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
-import { truncateUnicode } from "../foundation/text.js";
 import { settingsService } from "../studio/services/settings.js";
+import { callbackToast } from "./callback-effects.js";
 
 const CALLBACK_DEDUPLICATION_TTL_MS = 15 * 60_000;
 const CALLBACK_DEDUPLICATION_LIMIT = 10_000;
 const seenCallbackQueries = new Map<string, number>();
-const MAX_CALLBACK_TOAST_LENGTH = 200;
 
 // This dedupe is intentionally process-local. It suppresses Telegram redelivery
 // within one bot process, but is not a distributed idempotency guarantee across
@@ -25,7 +24,7 @@ export async function runCallbackBoundary(ctx: Context, backendDb: BackendDb, ne
     await next();
   } catch (error) {
     const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
-    await answerCallbackSafely(ctx, { text: truncateCallbackToast(describeError(locale, error)) });
+    await answerCallbackSafely(ctx, { text: callbackToast(describeError(locale, error)) });
   }
 }
 
@@ -53,9 +52,4 @@ async function answerCallbackSafely(ctx: Context, options?: { text?: string }): 
     // into a second unhandled callback failure.
     log("warn", "Failed to answer Telegram callback query", { error: String(error) });
   }
-}
-
-function truncateCallbackToast(value: string): string {
-  const shortened = truncateUnicode(value, MAX_CALLBACK_TOAST_LENGTH);
-  return shortened.length < value.length ? `${truncateUnicode(value, MAX_CALLBACK_TOAST_LENGTH - 1)}…` : shortened;
 }

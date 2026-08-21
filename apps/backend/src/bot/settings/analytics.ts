@@ -10,7 +10,15 @@ import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 import { settingsService } from "../../studio/services/settings.js";
 import { clearConversationState } from "../conversation-state.js";
-import { ANALYTICS_MENU_ID, backToSettings, beginSettingsInput, THREADS_FOLLOWERS_MENU_ID, X_IMPORT_MENU_ID } from "./shared.js";
+import {
+  ANALYTICS_MENU_ID,
+  backToSettings,
+  beginSettingsInput,
+  settingsScreen,
+  settingsUpdate,
+  THREADS_FOLLOWERS_MENU_ID,
+  X_IMPORT_MENU_ID,
+} from "./shared.js";
 
 export function buildAnalyticsMenu(backendDb: BackendDb): Menu<Context> {
   const threadsFollowers = new Menu<Context>(THREADS_FOLLOWERS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
@@ -22,11 +30,13 @@ export function buildAnalyticsMenu(backendDb: BackendDb): Menu<Context> {
         await ctx.answerCallbackQuery();
         await ctx.reply(t(locale, "settings.threads-ask", { account: account.toUpperCase() }));
       });
-    range.row().back(t(locale, "settings.back-to-analytics"), async (ctx) => {
-      clearConversationState(backendDb, actorId, "settings");
-      await ctx.answerCallbackQuery();
-      await ctx.editMessageText(analyticsText(backendDb, locale), { parse_mode: "Markdown" });
-    });
+    range.row().back(
+      t(locale, "settings.back-to-analytics"),
+      settingsUpdate({
+        apply: () => clearConversationState(backendDb, actorId, "settings"),
+        body: () => analyticsText(backendDb, locale),
+      }),
+    );
   });
 
   const xImport = new Menu<Context>(X_IMPORT_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
@@ -39,25 +49,29 @@ export function buildAnalyticsMenu(backendDb: BackendDb): Menu<Context> {
         await ctx.reply(t(locale, "settings.x-import-ask"));
       })
       .row()
-      .back(t(locale, "settings.back-to-analytics"), async (ctx) => {
-        clearConversationState(backendDb, actorId, "settings");
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(analyticsText(backendDb, locale), { parse_mode: "Markdown" });
-      });
+      .back(
+        t(locale, "settings.back-to-analytics"),
+        settingsUpdate({
+          apply: () => clearConversationState(backendDb, actorId, "settings"),
+          body: () => analyticsText(backendDb, locale),
+        }),
+      );
   });
 
   const analytics = new Menu<Context>(ANALYTICS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
     range
-      .submenu(t(locale, "settings.threads-followers"), THREADS_FOLLOWERS_MENU_ID, async (ctx) => {
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(threadsFollowersText(backendDb, locale), { parse_mode: "Markdown" });
-      })
+      .submenu(
+        t(locale, "settings.threads-followers"),
+        THREADS_FOLLOWERS_MENU_ID,
+        settingsScreen(() => threadsFollowersText(backendDb, locale)),
+      )
       .row()
-      .submenu(t(locale, "settings.x-import"), X_IMPORT_MENU_ID, async (ctx) => {
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(t(locale, "settings.x-import-body"), { parse_mode: "Markdown" });
-      })
+      .submenu(
+        t(locale, "settings.x-import"),
+        X_IMPORT_MENU_ID,
+        settingsScreen(() => t(locale, "settings.x-import-body")),
+      )
       .row()
       .back(t(locale, "settings.back-to-settings"), backToSettings(backendDb));
   });
@@ -67,9 +81,14 @@ export function buildAnalyticsMenu(backendDb: BackendDb): Menu<Context> {
 }
 
 export function analyticsText(backendDb: BackendDb, locale: StudioLocale): string {
+  return t(locale, "settings.category-analytics-body", followerCounts(backendDb, locale));
+}
+
+/** The stored follower counts as both screens print them, unknown included. */
+function followerCounts(backendDb: BackendDb, locale: StudioLocale): { ru: string; en: string } {
   const followers = manualThreadsFollowers(backendDb);
   const value = (count: number | null) => (count == null ? t(locale, "settings.threads-unknown") : String(count));
-  return t(locale, "settings.category-analytics-body", { ru: value(followers.ru), en: value(followers.en) });
+  return { ru: value(followers.ru), en: value(followers.en) };
 }
 
 export async function collectThreadsFollowers(
@@ -111,11 +130,13 @@ export async function collectXAnalyticsCsv(
     await ctx.reply(t(locale, "settings.x-import-expects-file"));
     return true;
   }
-  clearConversationState(backendDb, actorId, "settings");
   if (!/\.csv$/iu.test(document.file_name ?? "")) {
     await ctx.reply(t(locale, "settings.x-import-expects-file"));
     return true;
   }
+  // Only once the file is the one being asked for: anything else leaves the
+  // import waiting, exactly as a message with no document does.
+  clearConversationState(backendDb, actorId, "settings");
   const apiFile = await ctx.api.getFile(document.file_id);
   if (!apiFile.file_path) {
     await ctx.reply(t(locale, "settings.x-import-failed", { error: "no file path" }));
@@ -144,12 +165,9 @@ export async function collectXAnalyticsCsv(
 }
 
 function threadsFollowersText(backendDb: BackendDb, locale: StudioLocale): string {
-  const followers = manualThreadsFollowers(backendDb);
-  const value = (count: number | null) => (count == null ? t(locale, "settings.threads-unknown") : String(count));
   return t(locale, "settings.threads-body", {
-    ru: value(followers.ru),
-    en: value(followers.en),
-    updated: followers.updatedAt?.slice(0, 16).replace("T", " ") ?? t(locale, "settings.threads-unknown"),
+    ...followerCounts(backendDb, locale),
+    updated: manualThreadsFollowers(backendDb).updatedAt?.slice(0, 16).replace("T", " ") ?? t(locale, "settings.threads-unknown"),
   });
 }
 

@@ -23,8 +23,7 @@ export function buildMainMenu(config: BackendConfig, backendDb: BackendDb, setti
   menu.text(
     (ctx) => {
       const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
-      const queue = createStudioServices(backendDb, config).queue.snapshot(Number(ctx.from?.id));
-      const pending = queue.upcoming.length + queue.drafts.length;
+      const { pending } = createStudioServices(backendDb, config).queue.headline(Number(ctx.from?.id));
       return pending ? t(locale, "menu.work-queue-count", { count: pending }) : t(locale, "menu.work-queue");
     },
     (ctx) => showQueue(ctx, backendDb, config),

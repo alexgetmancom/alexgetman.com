@@ -11,11 +11,11 @@ import type { StudioServices } from "../studio/services/index.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
 import { advanceVideoMetadata, isVideoWizardStep, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
-import { appendCancelButton } from "./dialog-ui.js";
+import { appendCancelButton, promptEffect } from "./dialog-ui.js";
 import type { PublicationEffect, PublicationMessageResult } from "./effects.js";
 import { publicationCallback } from "./publication-callback.js";
 import { advancePublicationFlow } from "./publication-flow.js";
-import { publicationCardEffect, publicationRenderers } from "./publication-renderers.js";
+import { publicationCardEffect, videoPreviewCard } from "./publication-renderers.js";
 import { applyVideoScheduleDate } from "./video-scheduling.js";
 import {
   clearVideoState,
@@ -26,7 +26,6 @@ import {
   type VideoConversationState,
   videoControlEffects,
   videoDurationLabel,
-  videoPromptEffect,
   videoStepEffects,
 } from "./video-ui.js";
 
@@ -51,14 +50,18 @@ export async function handleVideoConversationMessage(
   const session = getVideoState(backendDb, actorId);
   if (!session) return { handled: false, effects: [] };
   // A step that expects nothing from the operator is driven by its own
-  // controls, so an incoming message is not ours to consume.
+  // controls. The message is still ours -- the wizard is open -- so say what
+  // the step is waiting for rather than dropping it.
   const input = flowStepInput(VIDEO_FLOW, session.step);
-  if (!input) return { handled: false, effects: [] };
+  if (!input) {
+    const locale = settingsService(backendDb).locale(actorId);
+    return { handled: true, effects: [promptEffect(backendDb, actorId, "video", t(locale, "video.awaiting-button"))] };
+  }
   try {
     const text = ctx.message && "text" in ctx.message ? (ctx.message.text?.trim() ?? "") : "";
     if (input === "text" && !text) {
       const locale = settingsService(backendDb).locale(actorId);
-      return { handled: true, effects: [videoPromptEffect(backendDb, actorId, t(locale, "video.await-text"))] };
+      return { handled: true, effects: [promptEffect(backendDb, actorId, "video", t(locale, "video.await-text"))] };
     }
     const args = { ctx, backendDb, config, actorId, session, text };
     const services = createStudioServices(backendDb, config);
@@ -80,7 +83,11 @@ export async function handleVideoConversationMessage(
     });
     return {
       handled: true,
-      effects: [videoPromptEffect(backendDb, actorId, `🔴 ${t(locale, "video.value-error")}: ${describeError(locale, error)}`, true)],
+      effects: [
+        promptEffect(backendDb, actorId, "video", `🔴 ${t(locale, "video.value-error")}: ${describeError(locale, error)}`, {
+          plainText: true,
+        }),
+      ],
     };
   }
 }
@@ -261,7 +268,7 @@ async function acceptVideoScheduleDate({
       error instanceof StudioError && error.code === "common.schedule-parse-error"
         ? t(locale, "common.schedule-parse-error", { timezone: timeConfig.TIMEZONE_LABEL })
         : describeError(locale, error);
-    return [videoPromptEffect(backendDb, actorId, message, true)];
+    return [promptEffect(backendDb, actorId, "video", message, { plainText: true })];
   }
   return applyVideoScheduleDate(backendDb, config, actorId, session, date, services);
 }
@@ -303,10 +310,5 @@ function videoCardEffects(
   services: StudioServices,
 ): PublicationEffect[] {
   clearVideoState(backendDb, actorId);
-  const preview = publicationRenderers(backendDb, config, services).video.card({
-    actorId,
-    publicationId: draftId,
-    locale: settingsService(backendDb).locale(actorId),
-  });
-  return publicationCardEffect(preview, { mode: "reply" });
+  return publicationCardEffect(videoPreviewCard(backendDb, config, actorId, draftId, services), { mode: "reply" });
 }

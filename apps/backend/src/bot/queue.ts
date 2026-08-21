@@ -5,11 +5,13 @@ import { t } from "../foundation/i18n/index.js";
 import type { StudioLocale } from "../foundation/locale.js";
 import { escapeMarkdown } from "../foundation/markdown.js";
 import { truncateUnicode } from "../foundation/text.js";
+import { zonedCalendarDay } from "../foundation/time.js";
 import { createStudioServices } from "../studio/services/index.js";
 import type { StudioQueueAttentionItem, StudioQueueItem, StudioQueueSnapshot } from "../studio/services/queue.js";
 import { settingsService } from "../studio/services/settings.js";
 import { publicationCallback } from "./publication-callback.js";
-import { isUnchangedMessageEdit } from "./telegram-errors.js";
+import { formatQueueTime } from "./queue-time.js";
+import { ignoringUnchangedEdit } from "./telegram-errors.js";
 
 const QUEUE_PAGE_SIZE = 10;
 const ATTENTION_PAGE_SIZE = 10;
@@ -24,10 +26,11 @@ export async function showQueue(ctx: Context, backendDb: BackendDb, config: Back
   const services = createStudioServices(backendDb, config);
   const timeConfig = services.settings.timeConfig(actorId, config);
   const snapshot = services.queue.snapshot(actorId);
+  const now = backendDb.clock.now();
   const keyboard = new InlineKeyboard();
   const { text, items: pageItems, currentPage, pages } = queueScreen(snapshot, locale, timeConfig.TIMEZONE, page);
 
-  for (const item of pageItems.upcoming) keyboard.text(itemButton(item, locale, timeConfig.TIMEZONE), itemCallback(item)).row();
+  for (const item of pageItems.upcoming) keyboard.text(itemButton(item, now, locale, timeConfig.TIMEZONE), itemCallback(item)).row();
   for (const item of pageItems.drafts) keyboard.text(`${kindIcon(item.kind)} ${item.label}`, itemCallback(item)).row();
   if (snapshot.attention.length)
     keyboard.text(t(locale, "queue.attention-btn", { count: snapshot.attention.length }), "queue_attention").row();
@@ -48,6 +51,7 @@ export async function showQueueAttention(ctx: Context, backendDb: BackendDb, con
   const services = createStudioServices(backendDb, config);
   const timeConfig = services.settings.timeConfig(actorId, config);
   const snapshot = services.queue.snapshot(actorId);
+  const now = backendDb.clock.now();
   const pages = attentionPageCount(snapshot);
   const currentPage = Math.max(0, Math.min(Math.trunc(page), pages - 1));
   const items = pageSlice(snapshot.attention, currentPage, ATTENTION_PAGE_SIZE);
@@ -66,7 +70,9 @@ export async function showQueueAttention(ctx: Context, backendDb: BackendDb, con
   if (!items.length) lines.push(t(locale, "queue.no-attention"));
   else
     for (const item of items)
-      lines.push(`• ${formatQueueTime(item.time, locale, timeConfig.TIMEZONE)} — ${kindIcon(item.kind)} ${escapeMarkdown(item.label)}`);
+      lines.push(
+        `• ${formatQueueTime(item.time, now, locale, timeConfig.TIMEZONE)} — ${kindIcon(item.kind)} ${escapeMarkdown(item.label)}`,
+      );
   if (pages > 1) lines.push("", t(locale, "queue.page", { page: currentPage + 1, pages }));
   await replaceQueueMessage(ctx, lines.join("\n"), keyboard);
 }
@@ -95,9 +101,8 @@ function queuePages(snapshot: StudioQueueSnapshot, timeZone: string): QueuePage[
     current[section].push(item);
   };
   const groups = new Map<string, StudioQueueItem[]>();
-  const dayKey = dayKeyFormatter(timeZone);
   for (const item of snapshot.upcoming) {
-    const key = dayKey.format(item.time);
+    const key = zonedCalendarDay(item.time, timeZone);
     const group = groups.get(key);
     if (group) group.push(item);
     else groups.set(key, [item]);
@@ -115,9 +120,15 @@ function pageSlice<T>(items: T[], page: number, size: number): T[] {
   return items.slice(page * size, (page + 1) * size);
 }
 
-function itemButton(item: StudioQueueItem, locale: StudioLocale, timeZone: string): string {
+function itemButton(item: StudioQueueItem, now: Date, locale: StudioLocale, timeZone: string): string {
   const targets = item.targets ? ` · ${item.targets} ${t(locale, "queue.platforms-suffix")}` : "";
-  return truncateUnicode(`${formatQueueTime(item.time, locale, timeZone)} · ${kindIcon(item.kind)} ${item.label}${targets}`, 60);
+  // A publication whose time has gone by is marked where the operator reads it,
+  // not only sorted to the top where it looks like the next one due.
+  const overdue = item.overdue ? "⏰ " : "";
+  return truncateUnicode(
+    `${overdue}${formatQueueTime(item.time, now, locale, timeZone)} · ${kindIcon(item.kind)} ${item.label}${targets}`,
+    60,
+  );
 }
 
 function kindIcon(kind: StudioQueueItem["kind"]): string {
@@ -132,48 +143,7 @@ function itemCallback(item: Pick<StudioQueueItem | StudioQueueAttentionItem, "id
 
 async function replaceQueueMessage(ctx: Context, text: string, keyboard: InlineKeyboard): Promise<void> {
   const messageId = ctx.callbackQuery?.message?.message_id;
-  if (messageId && ctx.chat?.id) {
-    try {
-      await ctx.api.editMessageText(ctx.chat.id, messageId, text, { parse_mode: "Markdown", reply_markup: keyboard });
-    } catch (error) {
-      if (!isUnchangedMessageEdit(error)) throw error;
-    }
-  } else await ctx.reply(text, { parse_mode: "Markdown", reply_markup: keyboard });
-}
-
-/** Intl.DateTimeFormat construction is expensive and this runs per queue row,
- * so formatters are built once per cache key and reused. Day keys are a sortable
- * en-CA date that never varies by locale, so they are keyed by zone alone. */
-const formatterCache = new Map<string, Intl.DateTimeFormat>();
-
-function cachedFormatter(cacheKey: string, create: () => Intl.DateTimeFormat): Intl.DateTimeFormat {
-  const cached = formatterCache.get(cacheKey);
-  if (cached) return cached;
-  const created = create();
-  formatterCache.set(cacheKey, created);
-  return created;
-}
-
-function dayKeyFormatter(timeZone: string): Intl.DateTimeFormat {
-  return cachedFormatter(`day-key:${timeZone}`, () => new Intl.DateTimeFormat("en-CA", { timeZone }));
-}
-
-function formatter(kind: "clock" | "day", locale: StudioLocale, timeZone: string): Intl.DateTimeFormat {
-  const intlLocale = locale === "ru" ? "ru-RU" : "en-GB";
-  return cachedFormatter(`${kind}:${locale}:${timeZone}`, () =>
-    kind === "clock"
-      ? new Intl.DateTimeFormat(intlLocale, { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone })
-      : new Intl.DateTimeFormat(intlLocale, { day: "numeric", month: "short", timeZone }),
-  );
-}
-
-/** `timeZone` is the actor's own zone resolved by the settings service, falling back
- * to the studio default from config (see foundation/time.ts). */
-function formatQueueTime(date: Date, locale: StudioLocale, timeZone: string): string {
-  const now = new Date();
-  const dayKey = dayKeyFormatter(timeZone);
-  const time = formatter("clock", locale, timeZone).format(date);
-  if (dayKey.format(date) === dayKey.format(now)) return `${t(locale, "common.today")}, ${time}`;
-  if (dayKey.format(date) === dayKey.format(new Date(now.getTime() + 24 * 60 * 60_000))) return `${t(locale, "common.tomorrow")}, ${time}`;
-  return `${formatter("day", locale, timeZone).format(date)}, ${time}`;
+  const options = { parse_mode: "Markdown" as const, reply_markup: keyboard };
+  if (messageId && ctx.chat?.id) await ignoringUnchangedEdit(() => ctx.api.editMessageText(Number(ctx.chat?.id), messageId, text, options));
+  else await ctx.reply(text, options);
 }

@@ -3,8 +3,6 @@ import type { PublicationKind } from "./conversation-flow.js";
 export type PublicationScheduleAxis = "locale" | "target";
 
 type PublicationCapabilities = {
-  hasMetadataWizard: boolean;
-  hasStoryCards: boolean;
   scheduleAxis: PublicationScheduleAxis;
 };
 

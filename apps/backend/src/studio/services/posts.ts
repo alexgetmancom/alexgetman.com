@@ -133,7 +133,7 @@ export function postService(backendDb: BackendDb, config: BackendConfig) {
 
   const service = {
     kind: "post" as const,
-    capabilities: { hasMetadataWizard: false, hasStoryCards: true, scheduleAxis: "locale" as const },
+    capabilities: { scheduleAxis: "locale" as const },
     create(actorId: number, message: DraftMessage, configured?: { targets: string[]; storyMode?: StoryPublishMode }): number {
       return trackUsageSync(backendDb, "studio.post.create", () => {
         // Every transport creates drafts through here, so the languages this

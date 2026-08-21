@@ -12,7 +12,7 @@ import { createStudioServices, type StudioServices } from "../studio/services/in
 import { settingsService } from "../studio/services/settings.js";
 import { isVideoWizardStep, VIDEO_FLOW, type VideoConversationStep, type VideoWizardStep } from "../studio/video-fsm.js";
 import { type ConversationState, clearConversationState, getConversationState, saveConversationState } from "./conversation-state.js";
-import { appendCancelButton, cancelPromptKeyboard } from "./dialog-ui.js";
+import { appendCancelButton } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
 import { publicationCallback } from "./publication-callback.js";
 import { createPublicationScheduleEngine, SCHEDULE_SLOT_PRESETS, scheduleConfirmationEffects, scheduleTimeKeyboard } from "./scheduling.js";
@@ -79,19 +79,6 @@ export function clearVideoState(backendDb: BackendDb, actorId: number): void {
 /** `mm:ss`, the one way a clip's length is written to the operator. */
 export function videoDurationLabel(seconds: number): string {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-export function videoPromptEffect(backendDb: BackendDb, actorId: number, text: string, plainText = false): PublicationEffect {
-  const locale = settingsService(backendDb).locale(actorId);
-  const revision = getVideoState(backendDb, actorId)?.revision;
-  return {
-    type: "prompt",
-    text,
-    options: {
-      ...(plainText ? {} : { parse_mode: "Markdown" }),
-      reply_markup: cancelPromptKeyboard(locale, publicationCallback("video", "cancel_dialog"), revision),
-    },
-  };
 }
 
 /** Renders whatever the flow's current step asks the operator for. Every path

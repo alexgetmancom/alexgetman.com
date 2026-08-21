@@ -17,6 +17,8 @@ import {
   NEWS_DIGEST_TIME_MENU_ID,
   NOTIFICATION_SETTINGS_MENU_ID,
   NOTIFICATIONS_MENU_ID,
+  settingsScreen,
+  settingsUpdate,
   WEEKLY_DIGEST_MENU_ID,
   weekdayLabel,
 } from "./shared.js";
@@ -26,106 +28,120 @@ export function buildNotificationsMenu(config: BackendConfig, backendDb: Backend
     const actorId = Number(ctx.from?.id);
     const settings = createStudioServices(backendDb, config).settings.notifications(actorId);
     const locale = settingsService(backendDb).locale(actorId);
+    range;
+    const body = () => notificationSettingsText(backendDb, config, actorId, locale);
+    const setNotifications = (input: Parameters<ReturnType<typeof settingsService>["setNotifications"]>[1]) =>
+      createStudioServices(backendDb, config).settings.setNotifications(actorId, input);
     range
-      .text(`${settings.videoRemindersEnabled ? "✅" : "◻️"} ${t(locale, "settings.video-reminder-label")}`, async (ctx) => {
-        createStudioServices(backendDb, config).settings.setNotifications(actorId, {
-          videoRemindersEnabled: !settings.videoRemindersEnabled,
-        });
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(notificationSettingsText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
-      })
-      .text(`${settings.postRemindersEnabled ? "✅" : "◻️"} ${t(locale, "settings.post-reminder-label")}`, async (ctx) => {
-        createStudioServices(backendDb, config).settings.setNotifications(actorId, {
-          postRemindersEnabled: !settings.postRemindersEnabled,
-        });
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(notificationSettingsText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
-      })
+      .text(
+        `${settings.videoRemindersEnabled ? "✅" : "◻️"} ${t(locale, "settings.video-reminder-label")}`,
+        settingsUpdate({ apply: () => setNotifications({ videoRemindersEnabled: !settings.videoRemindersEnabled }), body }),
+      )
+      .text(
+        `${settings.postRemindersEnabled ? "✅" : "◻️"} ${t(locale, "settings.post-reminder-label")}`,
+        settingsUpdate({ apply: () => setNotifications({ postRemindersEnabled: !settings.postRemindersEnabled }), body }),
+      )
       .row()
-      .text(`${settings.completionEnabled ? "✅" : "◻️"} ${t(locale, "settings.completion-label")}`, async (ctx) => {
-        createStudioServices(backendDb, config).settings.setNotifications(actorId, { completionEnabled: !settings.completionEnabled });
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(notificationSettingsText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
-      })
+      .text(
+        `${settings.completionEnabled ? "✅" : "◻️"} ${t(locale, "settings.completion-label")}`,
+        settingsUpdate({ apply: () => setNotifications({ completionEnabled: !settings.completionEnabled }), body }),
+      )
       .row();
-    for (const minutes of [1, 5, 10, 15, 30] as const) {
-      range.text(String(minutes), async (ctx) => {
-        createStudioServices(backendDb, config).settings.setNotifications(actorId, { reminderMinutes: minutes });
-        await ctx.answerCallbackQuery({ text: t(locale, "settings.minutes-toast", { minutes }) });
-        await ctx.editMessageText(notificationSettingsText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
-      });
-    }
-    range.row().back(t(locale, "settings.back-to-notifications"), async (ctx) => {
-      await ctx.answerCallbackQuery();
-      await ctx.editMessageText(t(locale, "settings.category-notifications-body"));
-    });
+    for (const minutes of [1, 5, 10, 15, 30] as const)
+      range.text(
+        String(minutes),
+        settingsUpdate({
+          apply: () => setNotifications({ reminderMinutes: minutes }),
+          body,
+          toast: t(locale, "settings.minutes-toast", { minutes }),
+        }),
+      );
+    range.row().back(
+      t(locale, "settings.back-to-notifications"),
+      settingsScreen(() => t(locale, "settings.category-notifications-body"), true),
+    );
   });
 
   const weeklyDigest = new Menu<Context>(WEEKLY_DIGEST_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
     const settings = createStudioServices(backendDb, config).settings.weeklyDigest();
     const locale = settingsService(backendDb).locale(actorId);
+    range;
+    const body = () => weeklyDigestText(backendDb, config, locale);
     range
-      .text(`${settings.enabled ? "✅" : "◻️"} ${t(locale, "settings.weekly-digest-enabled")}`, async (ctx) => {
-        createStudioServices(backendDb, config).settings.setWeeklyDigest({ enabled: !settings.enabled });
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(weeklyDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
-      })
+      .text(
+        `${settings.enabled ? "✅" : "◻️"} ${t(locale, "settings.weekly-digest-enabled")}`,
+        settingsUpdate({
+          apply: () => createStudioServices(backendDb, config).settings.setWeeklyDigest({ enabled: !settings.enabled }),
+          body,
+        }),
+      )
       .row();
     for (const weekday of [1, 2, 3, 4, 5, 6, 0] as const) {
-      range.text(`${settings.weekday === weekday ? "● " : ""}${weekdayLabel(locale, weekday)}`, async (ctx) => {
-        createStudioServices(backendDb, config).settings.setWeeklyDigest({ weekday });
-        await ctx.answerCallbackQuery({ text: t(locale, "settings.weekly-digest-day-set", { day: weekdayLabel(locale, weekday) }) });
-        await ctx.editMessageText(weeklyDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
-      });
+      range.text(
+        `${settings.weekday === weekday ? "● " : ""}${weekdayLabel(locale, weekday)}`,
+        settingsUpdate({
+          apply: () => createStudioServices(backendDb, config).settings.setWeeklyDigest({ weekday }),
+          body,
+          toast: t(locale, "settings.weekly-digest-day-set", { day: weekdayLabel(locale, weekday) }),
+        }),
+      );
       if (weekday === 4) range.row();
     }
-    range.row().back(t(locale, "settings.back-to-notifications"), async (ctx) => {
-      await ctx.answerCallbackQuery();
-      await ctx.editMessageText(t(locale, "settings.category-notifications-body"));
-    });
+    range.row().back(
+      t(locale, "settings.back-to-notifications"),
+      settingsScreen(() => t(locale, "settings.category-notifications-body"), true),
+    );
   });
 
   const backup = new Menu<Context>(BACKUP_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
+
     const settings = createStudioServices(backendDb, config).settings.backup();
     range
-      .text(`${settings.enabled ? "✅" : "◻️"} ${t(locale, "settings.backup-enabled")}`, async (ctx) => {
-        createStudioServices(backendDb, config).settings.setBackup({ enabled: !settings.enabled });
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(backupText(backendDb, config, locale), { parse_mode: "Markdown" });
-      })
+      .text(
+        `${settings.enabled ? "✅" : "◻️"} ${t(locale, "settings.backup-enabled")}`,
+        settingsUpdate({
+          apply: () => createStudioServices(backendDb, config).settings.setBackup({ enabled: !settings.enabled }),
+          body: () => backupText(backendDb, config, locale),
+        }),
+      )
       .row()
-      .back(t(locale, "settings.back-to-notifications"), async (ctx) => {
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(t(locale, "settings.category-notifications-body"));
-      });
+      .back(
+        t(locale, "settings.back-to-notifications"),
+        settingsScreen(() => t(locale, "settings.category-notifications-body"), true),
+      );
   });
 
   const newsDigestTime = new Menu<Context>(NEWS_DIGEST_TIME_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
-    const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
+    const actorId = Number(ctx.from?.id);
+    const locale = settingsService(backendDb).locale(actorId);
     const settings = createStudioServices(backendDb, config).settings.newsDigest();
     for (let hour = 0; hour < 24; hour += 1) {
-      const label = `${settings.hour === hour && settings.minute === 0 ? "● " : ""}${formatTime(hour, 0)}`;
-      range.text(label, async (ctx) => {
-        createStudioServices(backendDb, config).settings.setNewsDigest({ hour, minute: 0 });
-        await ctx.answerCallbackQuery({ text: t(locale, "settings.news-digest-time-set", { time: formatTime(hour, 0) }) });
-        await ctx.editMessageText(newsDigestTimeText(backendDb, config, locale), { parse_mode: "Markdown" });
-      });
+      range.text(
+        `${settings.hour === hour && settings.minute === 0 ? "● " : ""}${formatTime(hour, 0)}`,
+        settingsUpdate({
+          apply: () => createStudioServices(backendDb, config).settings.setNewsDigest({ hour, minute: 0 }),
+          body: () => newsDigestTimeText(backendDb, config, actorId, locale),
+          toast: t(locale, "settings.news-digest-time-set", { time: formatTime(hour, 0) }),
+        }),
+      );
       if (hour % 4 === 3) range.row();
     }
     range
       .text(t(locale, "settings.news-digest-time-custom"), async (ctx) => {
-        beginSettingsInput(backendDb, Number(ctx.from?.id), "news_digest_time");
+        beginSettingsInput(backendDb, actorId, "news_digest_time");
         await ctx.answerCallbackQuery();
         await ctx.reply(t(locale, "settings.news-digest-time-input-prompt"));
       })
       .row()
-      .back(t(locale, "settings.back-to-news-digest"), async (ctx) => {
-        clearConversationState(backendDb, Number(ctx.from?.id), "settings");
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(newsDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
-      });
+      .back(
+        t(locale, "settings.back-to-news-digest"),
+        settingsUpdate({
+          apply: () => clearConversationState(backendDb, actorId, "settings"),
+          body: () => newsDigestText(backendDb, config, actorId, locale),
+        }),
+      );
   });
 
   const newsDigest = new Menu<Context>(NEWS_DIGEST_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
@@ -133,19 +149,18 @@ export function buildNotificationsMenu(config: BackendConfig, backendDb: Backend
     const locale = settingsService(backendDb).locale(actorId);
     const settings = createStudioServices(backendDb, config).settings.newsDigest();
     range
-      .text(`${settings.enabled ? "✅" : "◻️"} ${t(locale, "settings.news-digest-enabled")}`, async (ctx) => {
-        createStudioServices(backendDb, config).settings.setNewsDigest({ enabled: !settings.enabled });
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(newsDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
-      })
+      .text(
+        `${settings.enabled ? "✅" : "◻️"} ${t(locale, "settings.news-digest-enabled")}`,
+        settingsUpdate({
+          apply: () => createStudioServices(backendDb, config).settings.setNewsDigest({ enabled: !settings.enabled }),
+          body: () => newsDigestText(backendDb, config, actorId, locale),
+        }),
+      )
       .row()
       .submenu(
         `${t(locale, "settings.news-digest-time")}: ${formatTime(settings.hour, settings.minute)}`,
         NEWS_DIGEST_TIME_MENU_ID,
-        async (ctx) => {
-          await ctx.answerCallbackQuery();
-          await ctx.editMessageText(newsDigestTimeText(backendDb, config, locale), { parse_mode: "Markdown" });
-        },
+        settingsScreen(() => newsDigestTimeText(backendDb, config, actorId, locale)),
       )
       .row()
       .text(t(locale, "settings.news-digest-prompt-edit"), async (ctx) => {
@@ -166,36 +181,43 @@ export function buildNotificationsMenu(config: BackendConfig, backendDb: Backend
         else if (result.status === "already_sent") await ctx.reply(t(locale, "settings.news-digest-already-sent"));
       })
       .row()
-      .back(t(locale, "settings.back-to-notifications"), async (ctx) => {
-        clearConversationState(backendDb, actorId, "settings");
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(t(locale, "settings.category-notifications-body"));
-      });
+      .back(
+        t(locale, "settings.back-to-notifications"),
+        settingsUpdate({
+          apply: () => clearConversationState(backendDb, actorId, "settings"),
+          body: () => t(locale, "settings.category-notifications-body"),
+          plainText: true,
+        }),
+      );
   });
 
   const notifications = new Menu<Context>(NOTIFICATIONS_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
     const locale = settingsService(backendDb).locale(actorId);
     range
-      .submenu(t(locale, "settings.publication-notifications"), NOTIFICATION_SETTINGS_MENU_ID, async (ctx) => {
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(notificationSettingsText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
-      })
+      .submenu(
+        t(locale, "settings.publication-notifications"),
+        NOTIFICATION_SETTINGS_MENU_ID,
+        settingsScreen(() => notificationSettingsText(backendDb, config, actorId, locale)),
+      )
       .row()
-      .submenu(t(locale, "settings.weekly-digest"), WEEKLY_DIGEST_MENU_ID, async (ctx) => {
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(weeklyDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
-      })
+      .submenu(
+        t(locale, "settings.weekly-digest"),
+        WEEKLY_DIGEST_MENU_ID,
+        settingsScreen(() => weeklyDigestText(backendDb, config, locale)),
+      )
       .row()
-      .submenu(t(locale, "settings.news-digest"), NEWS_DIGEST_MENU_ID, async (ctx) => {
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(newsDigestText(backendDb, config, locale), { parse_mode: "Markdown" });
-      })
+      .submenu(
+        t(locale, "settings.news-digest"),
+        NEWS_DIGEST_MENU_ID,
+        settingsScreen(() => newsDigestText(backendDb, config, actorId, locale)),
+      )
       .row()
-      .submenu(t(locale, "settings.backup"), BACKUP_MENU_ID, async (ctx) => {
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(backupText(backendDb, config, locale), { parse_mode: "Markdown" });
-      })
+      .submenu(
+        t(locale, "settings.backup"),
+        BACKUP_MENU_ID,
+        settingsScreen(() => backupText(backendDb, config, locale)),
+      )
       .row()
       .back(t(locale, "settings.back-to-settings"), backToSettings(backendDb));
   });
@@ -219,7 +241,7 @@ export async function collectNewsDigestPrompt(
   try {
     createStudioServices(backendDb, config).settings.setNewsDigest({ prompt: text === "-" ? "" : text });
     await ctx.reply(t(locale, "settings.news-digest-prompt-saved"));
-    await ctx.reply(newsDigestText(backendDb, config, locale), {
+    await ctx.reply(newsDigestText(backendDb, config, actorId, locale), {
       parse_mode: "Markdown",
       reply_markup: settingsMenu.at(NEWS_DIGEST_MENU_ID),
     });
@@ -247,7 +269,7 @@ export async function collectNewsDigestTime(
   }
   createStudioServices(backendDb, config).settings.setNewsDigest({ hour, minute });
   await ctx.reply(t(locale, "settings.news-digest-time-set", { time: formatTime(hour, minute) }));
-  await ctx.reply(newsDigestTimeText(backendDb, config, locale), {
+  await ctx.reply(newsDigestTimeText(backendDb, config, actorId, locale), {
     parse_mode: "Markdown",
     reply_markup: settingsMenu.at(NEWS_DIGEST_TIME_MENU_ID),
   });
@@ -279,20 +301,24 @@ function backupText(backendDb: BackendDb, config: BackendConfig, locale: StudioL
   });
 }
 
-function newsDigestText(backendDb: BackendDb, config: BackendConfig, locale: StudioLocale): string {
-  const settings = createStudioServices(backendDb, config).settings.newsDigest();
+function newsDigestText(backendDb: BackendDb, config: BackendConfig, actorId: number, locale: StudioLocale): string {
+  const services = createStudioServices(backendDb, config);
+  const settings = services.settings.newsDigest();
   return t(locale, "settings.news-digest-body", {
     status: settings.enabled ? t(locale, "settings.on") : t(locale, "settings.off"),
     time: formatTime(settings.hour, settings.minute),
-    timezone: config.TIMEZONE_LABEL,
+    // The digest fires in the Studio's own zone, which is the one this operator
+    // set: printing the deployment default here made the two disagree on screen.
+    timezone: services.settings.timeConfig(actorId, config).TIMEZONE_LABEL,
     prompt: settings.prompt ? t(locale, "settings.news-digest-prompt-set") : t(locale, "settings.news-digest-prompt-missing"),
   });
 }
 
-function newsDigestTimeText(backendDb: BackendDb, config: BackendConfig, locale: StudioLocale): string {
-  const settings = createStudioServices(backendDb, config).settings.newsDigest();
+function newsDigestTimeText(backendDb: BackendDb, config: BackendConfig, actorId: number, locale: StudioLocale): string {
+  const services = createStudioServices(backendDb, config);
+  const settings = services.settings.newsDigest();
   return t(locale, "settings.news-digest-time-body", {
     time: formatTime(settings.hour, settings.minute),
-    timezone: config.TIMEZONE_LABEL,
+    timezone: services.settings.timeConfig(actorId, config).TIMEZONE_LABEL,
   });
 }

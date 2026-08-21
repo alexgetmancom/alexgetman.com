@@ -12,7 +12,7 @@ import {
 import { sendTelegramArchiveMedia } from "../interfaces/telegram/delivery-previews.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
-import { isUnchangedMessageEdit } from "./telegram-errors.js";
+import { ignoringUnchangedEdit, isUnchangedMessageEdit } from "./telegram-errors.js";
 
 /** The sections this screen offers. The analytics read model also renders an
  * "audience" section, which only MCP asks for — no button here produces it. */
@@ -43,12 +43,6 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
     await editScreen(ctx, summary.text, { parse_mode: "Markdown", reply_markup: keyboard });
     return true;
   }
-  if (data === "analytics_total" || data.startsWith("analytics_period:")) {
-    const days = data.startsWith("analytics_period:") ? Number(data.slice("analytics_period:".length)) : 7;
-    await ctx.answerCallbackQuery();
-    await showAnalyticsDashboard(ctx, backendDb, config, "overview", analyticsPeriod(days));
-    return true;
-  }
   if (data.startsWith("analytics_milestones:")) {
     const offset = Math.max(0, Number(data.slice("analytics_milestones:".length)) || 0);
     const history = analytics.milestoneHistory(offset, locale);
@@ -62,8 +56,7 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   }
   if (data.startsWith("analytics_section:")) {
     const [, sectionValue, daysValue] = data.split(":");
-    const requested: AnalyticsSection = sectionValue === "posts" || sectionValue === "video" ? sectionValue : "overview";
-    const section = requested;
+    const section: AnalyticsSection = sectionValue === "posts" || sectionValue === "video" ? sectionValue : "overview";
     await ctx.answerCallbackQuery();
     await showAnalyticsDashboard(ctx, backendDb, config, section, analyticsPeriod(Number(daysValue)));
     return true;
@@ -126,23 +119,15 @@ export async function handleAnalyticsCallback(ctx: Context, backendDb: BackendDb
   return false;
 }
 
-/** Telegram rejects an edit whose text and markup match what the message
- * already shows, and every screen here carries a button that re-renders its own
- * state: the active period, the active section, "← Archive" while page 0 is
- * open. A repeat tap is a no-op, not an error. */
 async function editScreen(ctx: Context, ...args: Parameters<Context["editMessageText"]>): Promise<void> {
-  try {
-    await ctx.editMessageText(...args);
-  } catch (error) {
-    if (!isUnchangedMessageEdit(error)) throw error;
-  }
+  await ignoringUnchangedEdit(() => ctx.editMessageText(...args));
 }
 
 /** Callback data is attacker-controlled text; an archive id is only usable once
  * it is a real integer. */
 function archiveItemId(data: string, prefix: string): number | null {
   const id = Number(data.slice(prefix.length));
-  return Number.isSafeInteger(id) ? id : null;
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
 function analyticsPeriod(value: number): 1 | 7 | 30 {
@@ -216,7 +201,12 @@ function analyticsKeyboard(locale: StudioLocale, section: AnalyticsSection, days
     t(locale, section === "video" ? "analytics.video-section-active" : "analytics.video-section"),
     `analytics_section:video:${days}`,
   );
-  keyboard.row().text(t(locale, "analytics.milestones-btn"), "analytics_milestones:0");
+  // The archive is reached from here or from nowhere: every screen under it
+  // links back to "archive_home", and nothing linked in.
+  keyboard
+    .row()
+    .text(t(locale, "analytics.milestones-btn"), "analytics_milestones:0")
+    .text(t(locale, "analytics.archive-btn"), "archive_home");
   keyboard.row().text(t(locale, "common.menu"), "menu_home");
   return keyboard;
 }

@@ -8,7 +8,16 @@ import { createStudioServices } from "../../studio/services/index.js";
 import { settingsService } from "../../studio/services/settings.js";
 import { clearConversationState } from "../conversation-state.js";
 import { persistentKeyboard } from "../menu-render.js";
-import { backToSettings, beginSettingsInput, GENERAL_MENU_ID, LANGUAGE_MENU_ID, SETTINGS_MENU_ID, TIMEZONE_MENU_ID } from "./shared.js";
+import {
+  backToSettings,
+  beginSettingsInput,
+  GENERAL_MENU_ID,
+  LANGUAGE_MENU_ID,
+  SETTINGS_MENU_ID,
+  settingsScreen,
+  settingsUpdate,
+  TIMEZONE_MENU_ID,
+} from "./shared.js";
 
 const TIMEZONE_OPTIONS = [
   ["UTC", "UTC"],
@@ -32,10 +41,10 @@ export function buildGeneralMenu(config: BackendConfig, backendDb: BackendDb): M
   const language = new Menu<Context>(LANGUAGE_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const locale = settingsService(backendDb).locale(Number(ctx.from?.id));
     for (const target of STUDIO_LOCALES) range.text(STUDIO_LOCALE_NAMES[target], (ctx) => switchLanguage(ctx, target));
-    range.row().back(t(locale, "settings.back-to-general"), async (ctx) => {
-      await ctx.answerCallbackQuery();
-      await ctx.editMessageText(t(locale, "settings.category-general-body"));
-    });
+    range.row().back(
+      t(locale, "settings.back-to-general"),
+      settingsScreen(() => t(locale, "settings.category-general-body"), true),
+    );
   });
 
   const timezone = new Menu<Context>(TIMEZONE_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
@@ -46,11 +55,14 @@ export function buildGeneralMenu(config: BackendConfig, backendDb: BackendDb): M
     const options = TIMEZONE_OPTIONS.some(([zone]) => zone === current) ? TIMEZONE_OPTIONS : [[current, current], ...TIMEZONE_OPTIONS];
     for (let index = 0; index < options.length; index += 2) {
       for (const [zone, label] of options.slice(index, index + 2))
-        range.text(`${zone === current ? "●" : "○"} ${label}`, async (ctx) => {
-          service.setTimezone(actorId, zone);
-          await ctx.answerCallbackQuery({ text: t(locale, "settings.timezone-set", { timezone: zone }) });
-          await ctx.editMessageText(timezoneText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
-        });
+        range.text(
+          `${zone === current ? "●" : "○"} ${label}`,
+          settingsUpdate({
+            apply: () => service.setTimezone(actorId, zone),
+            body: () => timezoneText(backendDb, config, actorId, locale),
+            toast: t(locale, "settings.timezone-set", { timezone: zone }),
+          }),
+        );
       if (index + 2 < options.length) range.row();
     }
     range.row().text(t(locale, "settings.timezone-custom"), async (ctx) => {
@@ -58,26 +70,31 @@ export function buildGeneralMenu(config: BackendConfig, backendDb: BackendDb): M
       await ctx.answerCallbackQuery();
       await ctx.reply(t(locale, "settings.timezone-input-prompt"));
     });
-    range.row().back(t(locale, "settings.back-to-general"), async (ctx) => {
-      clearConversationState(backendDb, actorId, "settings");
-      await ctx.answerCallbackQuery();
-      await ctx.editMessageText(t(locale, "settings.category-general-body"));
-    });
+    range.row().back(
+      t(locale, "settings.back-to-general"),
+      settingsUpdate({
+        apply: () => clearConversationState(backendDb, actorId, "settings"),
+        body: () => t(locale, "settings.category-general-body"),
+        plainText: true,
+      }),
+    );
   });
 
   const general = new Menu<Context>(GENERAL_MENU_ID, { autoAnswer: false }).dynamic((ctx, range) => {
     const actorId = Number(ctx.from?.id);
     const locale = settingsService(backendDb).locale(actorId);
     range
-      .submenu(t(locale, "settings.timezone"), TIMEZONE_MENU_ID, async (ctx) => {
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(timezoneText(backendDb, config, actorId, locale), { parse_mode: "Markdown" });
-      })
+      .submenu(
+        t(locale, "settings.timezone"),
+        TIMEZONE_MENU_ID,
+        settingsScreen(() => timezoneText(backendDb, config, actorId, locale)),
+      )
       .row()
-      .submenu(t(locale, "settings.language"), LANGUAGE_MENU_ID, async (ctx) => {
-        await ctx.answerCallbackQuery();
-        await ctx.editMessageText(t(locale, "settings.language-title"));
-      })
+      .submenu(
+        t(locale, "settings.language"),
+        LANGUAGE_MENU_ID,
+        settingsScreen(() => t(locale, "settings.language-title"), true),
+      )
       .row()
       .back(t(locale, "settings.back-to-settings"), backToSettings(backendDb));
   });

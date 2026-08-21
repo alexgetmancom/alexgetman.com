@@ -115,7 +115,7 @@ describe("Telegram card freshness", () => {
         editMessageText: async () => undefined,
       } as unknown as Context;
 
-      const preview = draftPreview(backendDb, draftId, loadTestConfig({}), "schedule");
+      const preview = draftPreview(backendDb, draftId, loadTestConfig({}), "en", "schedule");
       await executePublicationEffects(ctx, backendDb, [
         {
           type: "screen",
@@ -142,7 +142,7 @@ describe("Telegram card freshness", () => {
         reply: async () => ({ message_id: 21 }),
       } as unknown as Context;
 
-      const preview = draftPreview(backendDb, draftId, loadTestConfig({}));
+      const preview = draftPreview(backendDb, draftId, loadTestConfig({}), "en");
       await executePublicationEffects(ctx, backendDb, [
         {
           type: "prompt",
@@ -193,7 +193,7 @@ describe("Telegram card freshness", () => {
 
       await handlePublicationCallback(context(postAction("sched_pick", [draftId, "ru", "0800"]), 11), backendDb, config);
       await handlePublicationCallback(context(postAction("sched_pick", [draftId, "en", "1800"]), 11), backendDb, config);
-      expect(JSON.stringify(draftPreview(backendDb, draftId, config))).toContain(`edit_menu:${draftId}`);
+      expect(JSON.stringify(draftPreview(backendDb, draftId, config, "en"))).toContain(`edit_menu:${draftId}`);
     } finally {
       backendDb.close();
     }

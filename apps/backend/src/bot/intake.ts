@@ -1,9 +1,11 @@
 import type { Context } from "grammy";
 import { InlineKeyboard } from "grammy";
+import { targetsFor } from "../botTargets.js";
 import { parseMarkdownArticle } from "../content/markdown.js";
 import { type DraftMessage, firstNonEmptyLine } from "../content/message.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { StudioError } from "../foundation/errors.js";
 import { t } from "../foundation/i18n/index.js";
 import type { StudioLocale } from "../foundation/locale.js";
 import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
@@ -61,11 +63,23 @@ export async function openIntake(ctx: Context, backendDb: BackendDb, mode: "repl
 export async function handleIntakeMessage(ctx: Context, backendDb: BackendDb, config: BackendConfig): Promise<PublicationMessageResult> {
   const actorId = Number(ctx.from?.id);
   if (getConversationState(backendDb, actorId, "intake")?.step !== "awaiting") return { handled: false, effects: [] };
+  // An album arrives as several messages and can only be a post, so there is
+  // nothing to ask: the intake steps aside and the album collector assembles
+  // every part of it into one draft.
+  if (ctx.message && "media_group_id" in ctx.message && ctx.message.media_group_id) {
+    clearConversationState(backendDb, actorId, "intake");
+    return { handled: false, effects: [] };
+  }
   const locale = settingsService(backendDb).locale(actorId);
   const message = extractMessage(ctx);
   const document = ctx.message && "document" in ctx.message ? ctx.message.document : undefined;
   const markdown = document && isMarkdown(document) ? await downloadDocument(ctx, config, document.file_id) : null;
   const video = capturedVideo(ctx, message);
+  // A voice note, a sticker, a PDF: the bot has no publication that carries it,
+  // and capturing it anyway created an empty draft with an empty card. The
+  // intake stays open, so the next message is still the first one.
+  if (markdown === null && !message.text.trim() && message.media.length === 0)
+    return { handled: true, effects: [{ type: "screen", mode: "reply", text: t(locale, "intake.unsupported") }] };
   const captured: Captured = { message: markdown === null ? message : { ...message, text: markdown }, markdown, video };
   saveConversationState(backendDb, actorId, {
     kind: "intake",
@@ -129,7 +143,7 @@ export async function applyIntakeKind(
     ];
   }
 
-  if (!captured.video) throw new Error("no video was captured for a video publication");
+  if (!captured.video) throw new StudioError("intake.expired");
   saveConversationState(backendDb, actorId, {
     kind: "intake",
     draftId: null,
@@ -156,9 +170,9 @@ export async function applyIntakeVideoLocale(
   videoLocale: "ru" | "en",
 ): Promise<PublicationEffect[]> {
   const state = getConversationState(backendDb, actorId, "intake");
-  if (state?.step !== "video_locale") throw new Error("no video is waiting for a language");
+  if (state?.step !== "video_locale") throw new StudioError("intake.expired");
   const captured = capturedFrom(backendDb, actorId);
-  if (!captured.video) throw new Error("no video was captured for a video publication");
+  if (!captured.video) throw new StudioError("intake.expired");
   const { assetId } = await storeTelegramVideo(ctx, backendDb, config, actorId, captured.video);
   clearConversationState(backendDb, actorId, "intake");
   const session = saveVideoState(backendDb, actorId, {
@@ -174,11 +188,16 @@ export async function applyIntakeVideoLocale(
 /** Publishes the reviewed article to every connected target that carries one. */
 export function publishReviewedArticle(backendDb: BackendDb, config: BackendConfig, actorId: number): { title: string } {
   const state = getConversationState(backendDb, actorId, "intake");
-  if (state?.step !== "article_review") throw new Error("no article is waiting to be published");
+  if (state?.step !== "article_review") throw new StudioError("intake.expired");
   const captured = capturedFrom(backendDb, actorId);
+  // Which targets carry an article, and in which language, is the catalogue's
+  // answer; naming one here is how the bot and the publisher drift apart.
+  const carriers = targetsFor("article");
+  const [first] = carriers;
+  if (!first) throw new StudioError("intake.no-article-target");
   const result = publishArticle(backendDb, config, {
-    locale: "en",
-    targets: ["x_article"],
+    locale: first.locale,
+    targets: carriers.filter(({ locale }) => locale === first.locale).map(({ id }) => String(id)),
     markdown: articleMarkdown(captured),
   }) as { title: string };
   clearConversationState(backendDb, actorId, "intake");
@@ -224,7 +243,7 @@ function articleMarkdown(captured: Captured): string {
 function capturedFrom(backendDb: BackendDb, actorId: number): Captured {
   const data = getConversationState(backendDb, actorId, "intake")?.data;
   const message = data?.message as DraftMessage | undefined;
-  if (!message) throw new Error("no captured material");
+  if (!message) throw new StudioError("intake.expired");
   return {
     message: { text: message.text ?? "", media: message.media ?? [], entities: message.entities ?? [] },
     markdown: typeof data?.markdown === "string" ? data.markdown : null,
