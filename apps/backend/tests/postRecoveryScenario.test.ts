@@ -29,7 +29,6 @@ describe("post recovery scenario", () => {
       });
       for (const target of ["telegram", "threads_ru"])
         enqueuePublishJobTx(backendDb.db, {
-          publicationId: 700,
           publicationKey: "post:700",
           target,
           payload: { text: "Night post" },

@@ -21,7 +21,6 @@ describe("post publication retry", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
-          publicationId: 700,
           publicationKey: "post:700",
           target: "telegram",
           status: "failed",
@@ -35,7 +34,6 @@ describe("post publication retry", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
-          publicationId: 700,
           publicationKey: "post:700",
           target: "threads_en",
           status: "verification_required",
@@ -49,7 +47,7 @@ describe("post publication retry", () => {
       backendDb.db
         .insert(siteJobs)
         .values({
-          postId: 700,
+          publicationKey: "post:700",
           messageId: 700,
           reason: "site_en",
           status: "verification_required",
@@ -104,7 +102,6 @@ describe("post publication retry", () => {
         backendDb.db
           .insert(publishJobs)
           .values({
-            publicationId: 800,
             publicationKey: "post:800",
             target: job.target,
             status: job.status,

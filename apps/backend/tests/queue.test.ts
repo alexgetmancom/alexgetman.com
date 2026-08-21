@@ -123,7 +123,7 @@ describe("publish queue", () => {
         payload: { title: "Queued", bodyMarkdown: "Body" },
       });
       const [job] = claimDuePublishJobs(backendDb, 10, "test-worker");
-      expect(job).toMatchObject({ jobId: id, publicationId: 100, target: "test_platform" });
+      expect(job).toMatchObject({ jobId: id, publicationKey: "post:100", target: "test_platform" });
       const row = backendDb.db
         .select({ status: publishJobs.status, lockedBy: publishJobs.lockedBy })
         .from(publishJobs)

@@ -334,7 +334,11 @@ describe("Astro endpoint controller", () => {
       });
       expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM ops_actions").get() as { count: number }).count).toBe(1);
       expect(
-        (backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM site_jobs WHERE post_id=?").get(postId) as { count: number }).count,
+        (
+          backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM site_jobs WHERE publication_key='post:'||?").get(postId) as {
+            count: number;
+          }
+        ).count,
       ).toBe(3);
 
       const failed = await app.request("/api/command-center/action", {

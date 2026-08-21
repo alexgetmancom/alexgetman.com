@@ -5,7 +5,7 @@ export const siteJobs = sqliteTable(
   "site_jobs",
   {
     jobId: autoId(),
-    postId: integer(),
+    publicationKey: text().notNull(),
     messageId: integer().notNull(),
     reason: text().notNull(),
     status: text().notNull().default("queued"),
@@ -15,7 +15,7 @@ export const siteJobs = sqliteTable(
   (table) => [
     index("idx_site_jobs_due").on(table.status, table.nextAttemptAt, table.createdAt),
     index("idx_site_jobs_lock").on(table.lockedBy, table.lockedAt),
-    index("idx_site_jobs_post").on(table.postId, table.status),
+    index("idx_site_jobs_publication").on(table.publicationKey, table.status),
     index("idx_site_jobs_updated_at").on(table.updatedAt),
   ],
 );

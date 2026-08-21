@@ -42,7 +42,7 @@ export function recordPublicationFailures(backendDb: BackendDb): void {
   // cooldown window forever.
   for (const job of failedSite)
     recordDomainEvent(backendDb.events, {
-      ref: job.postId == null ? null : publicationRef("post", job.postId),
+      ref: job.publicationKey,
       type: "site.build.failed",
       severity: "error",
       target: "site",

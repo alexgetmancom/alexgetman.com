@@ -65,7 +65,6 @@ export function publishArticle(backendDb: BackendDb, config: BackendConfig, inpu
         .run();
       for (const target of targets)
         enqueuePublishJobTx(db, {
-          publicationId: article.id,
           publicationKey,
           target,
           payload: { locale: input.locale, title, text: body.text, entities: body.entities, media: [] },

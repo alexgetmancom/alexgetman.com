@@ -191,7 +191,7 @@ type DeliveryPhase = "validate" | "prepare" | "provider.publish" | "provider.ver
 
 async function timedDeliveryPhase<T>(
   backendDb: BackendDb,
-  job: { jobId: number; publicationId: number; publicationKey: string; target: string; attemptCount: number; lockId: string },
+  job: { jobId: number; publicationKey: string; target: string; attemptCount: number; lockId: string },
   phase: DeliveryPhase,
   timings: Record<string, number>,
   work: () => Promise<T>,
@@ -226,7 +226,7 @@ async function timedDeliveryPhase<T>(
     timings[timingKey] = durationMs;
     try {
       recordDomainEvent(backendDb.events, {
-        ref: publicationRef("post", job.publicationId),
+        ref: job.publicationKey,
         target: job.target,
         type: "publish.job.phase",
         severity: "info",
@@ -248,7 +248,7 @@ async function timedDeliveryPhase<T>(
     timings[timingKey] = Date.now() - startedAt;
     try {
       recordDomainEvent(backendDb.events, {
-        ref: publicationRef("post", job.publicationId),
+        ref: job.publicationKey,
         target: job.target,
         type: "publish.job.phase",
         severity: "error",

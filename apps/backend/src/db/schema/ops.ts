@@ -6,7 +6,7 @@ export const publicationEvents = sqliteTable(
   {
     id: autoId(),
     publicationKey: text(),
-    eventType: text().notNull().default("ops.event"),
+    eventType: text().notNull(),
     severity: text().notNull().default("info"),
     target: text(),
     message: text().notNull(),

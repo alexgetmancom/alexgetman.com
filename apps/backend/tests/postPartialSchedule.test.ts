@@ -29,14 +29,14 @@ function enTargetsDueNow(db: BackendDb, postId: number): string[] {
   const social = unsafeDb(db)
     .db.select({ target: publishJobs.target, publishAt: publishJobs.publishAt })
     .from(publishJobs)
-    .where(eq(publishJobs.publicationId, postId))
+    .where(eq(publishJobs.publicationKey, `post:${postId}`))
     .all()
     .filter((job) => targetLocale(job.target) === "en" && (job.publishAt == null || job.publishAt <= now))
     .map((job) => job.target);
   const site = unsafeDb(db)
     .db.select({ reason: siteJobs.reason, nextAttemptAt: siteJobs.nextAttemptAt })
     .from(siteJobs)
-    .where(eq(siteJobs.postId, postId))
+    .where(eq(siteJobs.publicationKey, `post:${postId}`))
     .all()
     .filter((job) => job.reason.includes("en") && (job.nextAttemptAt == null || job.nextAttemptAt <= now))
     .map((job) => job.reason);
@@ -56,7 +56,11 @@ describe("partial locale scheduling", () => {
     const postId = posts.schedule(42, draftId, { ruAt, enAt });
 
     expect(
-      unsafeDb(backendDb).db.select({ target: publishJobs.target }).from(publishJobs).where(eq(publishJobs.publicationId, postId)).all(),
+      unsafeDb(backendDb)
+        .db.select({ target: publishJobs.target })
+        .from(publishJobs)
+        .where(eq(publishJobs.publicationKey, `post:${postId}`))
+        .all(),
     ).not.toContainEqual(expect.objectContaining({ target: "threads_en" }));
     expect(posts.hasLocaleTargets(42, draftId, "en")).toBe(false);
   });
@@ -74,7 +78,11 @@ describe("partial locale scheduling", () => {
     const postId = posts.schedule(42, draftId, { ruAt, enAt });
 
     expect(
-      unsafeDb(backendDb).db.select({ target: publishJobs.target }).from(publishJobs).where(eq(publishJobs.publicationId, postId)).all(),
+      unsafeDb(backendDb)
+        .db.select({ target: publishJobs.target })
+        .from(publishJobs)
+        .where(eq(publishJobs.publicationKey, `post:${postId}`))
+        .all(),
     ).not.toContainEqual(expect.objectContaining({ target: "threads_ru" }));
     expect(posts.hasLocaleTargets(42, draftId, "ru")).toBe(false);
   });
@@ -106,7 +114,7 @@ describe("partial locale scheduling", () => {
     const enJobs = unsafeDb(backendDb)
       .db.select({ target: publishJobs.target })
       .from(publishJobs)
-      .where(eq(publishJobs.publicationId, postId))
+      .where(eq(publishJobs.publicationKey, `post:${postId}`))
       .all()
       .filter((job) => targetLocale(job.target) === "en");
     expect(enJobs.length).toBeGreaterThan(0);
@@ -121,7 +129,7 @@ describe("partial locale scheduling", () => {
     const ruJobs = unsafeDb(backendDb)
       .db.select({ target: publishJobs.target, publishAt: publishJobs.publishAt })
       .from(publishJobs)
-      .where(eq(publishJobs.publicationId, postId))
+      .where(eq(publishJobs.publicationKey, `post:${postId}`))
       .all()
       .filter((job) => targetLocale(job.target) === "ru");
     expect(ruJobs.length).toBeGreaterThan(0);
@@ -164,7 +172,7 @@ describe("partial locale scheduling", () => {
       unsafeDb(backendDb)
         .db.select({ status: publishJobs.status })
         .from(publishJobs)
-        .where(eq(publishJobs.publicationId, postId))
+        .where(eq(publishJobs.publicationKey, `post:${postId}`))
         .all()
         .every((job) => job.status === "published"),
     ).toBe(true);

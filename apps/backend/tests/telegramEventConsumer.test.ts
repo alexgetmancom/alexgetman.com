@@ -249,7 +249,6 @@ describe("Telegram event consumer", () => {
         .insert(publishJobs)
         .values([
           {
-            publicationId: 113,
             publicationKey: "post:113",
             target: "threads_en",
             status: "published",
@@ -257,7 +256,6 @@ describe("Telegram event consumer", () => {
             updatedAt: now,
           },
           {
-            publicationId: 113,
             publicationKey: "post:113",
             target: "telegram",
             status: "queued",
@@ -270,8 +268,16 @@ describe("Telegram event consumer", () => {
       backendDb.db
         .insert(siteJobs)
         .values([
-          { postId: 113, messageId: 113, reason: "site_en", status: "published", createdAt: now, updatedAt: now },
-          { postId: 113, messageId: 113, reason: "site_ru", status: "queued", nextAttemptAt: later, createdAt: now, updatedAt: now },
+          { publicationKey: "post:113", messageId: 113, reason: "site_en", status: "published", createdAt: now, updatedAt: now },
+          {
+            publicationKey: "post:113",
+            messageId: 113,
+            reason: "site_ru",
+            status: "queued",
+            nextAttemptAt: later,
+            createdAt: now,
+            updatedAt: now,
+          },
         ])
         .run();
       recordDomainEvent(backendDb.events, {
@@ -324,7 +330,6 @@ describe("Telegram event consumer", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
-          publicationId: 110,
           publicationKey: "post:110",
           target: "telegram_ru",
           status: "failed",
@@ -336,7 +341,7 @@ describe("Telegram event consumer", () => {
       backendDb.db
         .insert(siteJobs)
         .values({
-          postId: 110,
+          publicationKey: "post:110",
           messageId: 110,
           reason: "site_en",
           status: "published",

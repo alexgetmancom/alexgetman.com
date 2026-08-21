@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { type BackendDb, openBackendDb, unsafeDb } from "../../../backend/src/db/client.js";
-import { drafts, knowledgeEntities, postEntityLinks, postLocales, postMetrics } from "../../../backend/src/db/schema.js";
+import { draftEntityLinks, drafts, knowledgeEntities, postLocales, postMetrics } from "../../../backend/src/db/schema.js";
 import { loadPublicSiteFeed, loadPublicSiteItem } from "../../../backend/src/public/site-read-model.js";
 
 let backendDb: BackendDb;
@@ -67,7 +67,7 @@ describe("Drizzle site feed", () => {
       .returning({ id: knowledgeEntities.id })
       .get();
     if (!entity) throw new Error("knowledge entity was not inserted");
-    rawDb.db.insert(postEntityLinks).values({ postId: 7, entityId: entity.id, createdAt: now }).run();
+    rawDb.db.insert(draftEntityLinks).values({ draftId: 7, entityId: entity.id, createdAt: now }).run();
 
     expect(loadPublicSiteFeed(backendDb)).toEqual([
       expect.objectContaining({

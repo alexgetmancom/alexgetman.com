@@ -10,20 +10,23 @@ describe("operational retention", () => {
     try {
       backendDb.sqlite
         .prepare(
-          "INSERT INTO publication_events(publication_key,severity,message,created_at,acked_at) VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)",
+          "INSERT INTO publication_events(publication_key,event_type,severity,message,created_at,acked_at) VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)",
         )
         .run(
           "post:old",
+          "ops.event",
           "info",
           "old info",
           old,
           null,
           "post:warn",
+          "ops.event",
           "warn",
           "old warning",
           old,
           null,
           "post:error",
+          "ops.event",
           "error",
           "old error",
           old,

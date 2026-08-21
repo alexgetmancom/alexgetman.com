@@ -29,7 +29,6 @@ describe("command center actions", () => {
 
       for (const target of ["threads_ru", "threads_en"]) {
         const id = enqueuePublishJobTx(backendDb.db, {
-          publicationId: 52,
           publicationKey: "post:52",
           target,
           payload: source,
@@ -49,7 +48,7 @@ describe("command center actions", () => {
           payloadJson: publishJobs.payloadJson,
         })
         .from(publishJobs)
-        .where(eq(publishJobs.publicationId, 52))
+        .where(eq(publishJobs.publicationKey, "post:52"))
         .orderBy(asc(publishJobs.target))
         .all();
       const payloads = Object.fromEntries(jobs.map((job) => [job.target, job.payloadJson ?? {}]));
@@ -63,7 +62,9 @@ describe("command center actions", () => {
         text: "English text",
         media: [{ type: "IMAGE", fileId: "en-photo" }],
       });
-      expect(backendDb.db.select({ count: count() }).from(publishJobs).where(eq(publishJobs.publicationId, 52)).get()?.count).toBe(2);
+      expect(backendDb.db.select({ count: count() }).from(publishJobs).where(eq(publishJobs.publicationKey, "post:52")).get()?.count).toBe(
+        2,
+      );
     } finally {
       backendDb.close();
     }
@@ -107,7 +108,6 @@ describe("command center actions", () => {
       const source = { text_ru: "RU", text_en: "EN", media: [], media_en: [] };
       seedTextPost(backendDb, { postId: 9, ru: "RU", en: "EN", now });
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        publicationId: 9,
         publicationKey: "post:9",
         target: "threads_en",
         payload: source,
@@ -145,7 +145,6 @@ describe("command center actions", () => {
       const source = { text_ru: "RU", text_en: "EN", media: [], media_en: [] };
       seedTextPost(backendDb, { postId: 19, ru: "RU", en: "EN", now });
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        publicationId: 19,
         publicationKey: "post:19",
         target: "threads_en",
         payload: source,
@@ -199,7 +198,6 @@ describe("command center actions", () => {
       const source = { text_ru: "RU", text_en: "EN", media: [], media_en: [] };
       seedTextPost(backendDb, { postId: 21, ru: "RU", en: "EN", now });
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        publicationId: 21,
         publicationKey: "post:21",
         target: "threads_en",
         payload: source,
@@ -233,7 +231,6 @@ describe("command center actions", () => {
       const now = new Date().toISOString();
       seedTextPost(backendDb, { postId: 20, ru: "RU", en: "EN", now });
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        publicationId: 20,
         publicationKey: "post:20",
         target: "threads_en",
         payload: { text: "RU", text_en: "EN" },
@@ -322,7 +319,11 @@ describe("command center actions", () => {
       const result = await runOperationCommand(backendDb, { action: "refresh_site", ref: "post:10", locale: "en" });
       expect(result).toMatchObject({ ok: true, post_id: 10, locale: "en", site_refresh: true });
       await runOperationCommand(backendDb, { action: "refresh_site", ref: "post:10", locale: "en" });
-      expect(backendDb.db.select().from(siteJobs).get()).toMatchObject({ postId: 10, reason: "refresh_en_site", status: "queued" });
+      expect(backendDb.db.select().from(siteJobs).get()).toMatchObject({
+        publicationKey: "post:10",
+        reason: "refresh_en_site",
+        status: "queued",
+      });
       expect(backendDb.db.select({ count: count() }).from(siteJobs).get()?.count).toBe(1);
       expect(backendDb.db.select().from(publishJobs).all()).toHaveLength(0);
     } finally {
@@ -360,7 +361,6 @@ describe("command center actions", () => {
       const now = new Date().toISOString();
       seedTextPost(backendDb, { postId: 61, ru: "RU", en: "EN", now });
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        publicationId: 61,
         publicationKey: "post:61",
         target: "threads_en",
         payload: { text: "RU", text_en: "EN" },
@@ -390,7 +390,6 @@ describe("command center actions", () => {
       const now = new Date().toISOString();
       seedTextPost(backendDb, { postId: 62, ru: "RU", en: "EN", now });
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        publicationId: 62,
         publicationKey: "post:62",
         target: "threads_en",
         payload: { text: "RU", text_en: "EN" },
@@ -419,7 +418,7 @@ describe("command center actions", () => {
       backendDb.db
         .insert(siteJobs)
         .values({
-          postId: 90,
+          publicationKey: "post:90",
           messageId: 90,
           reason: "site_ru",
           status: "failed",
@@ -453,7 +452,15 @@ describe("command center actions", () => {
       seedTextPost(backendDb, { postId: 91, ru: "RU", en: "EN", now });
       backendDb.db
         .insert(siteJobs)
-        .values({ postId: 91, messageId: 91, reason: "site_ru", status: "published", attemptCount: 1, createdAt: now, updatedAt: now })
+        .values({
+          publicationKey: "post:91",
+          messageId: 91,
+          reason: "site_ru",
+          status: "published",
+          attemptCount: 1,
+          createdAt: now,
+          updatedAt: now,
+        })
         .run();
       for (const target of ["telegram", "site_ru"])
         backendDb.db

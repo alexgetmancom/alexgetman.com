@@ -27,6 +27,7 @@ describe("site jobs", () => {
     backendDb.db
       .insert(siteJobs)
       .values({
+        publicationKey: "post:11",
         messageId: 11,
         reason: "publish",
         status: "rendering",
@@ -69,7 +70,7 @@ describe("site jobs", () => {
     const now = new Date().toISOString();
     backendDb.db
       .insert(siteJobs)
-      .values({ postId: 1, messageId: 11, reason: "publish", status: "queued", createdAt: now, updatedAt: now })
+      .values({ publicationKey: "post:1", messageId: 11, reason: "publish", status: "queued", createdAt: now, updatedAt: now })
       .run();
 
     expect(await runSiteJobCycle(config, backendDb)).toBe(1);
@@ -88,8 +89,16 @@ describe("site jobs", () => {
     backendDb.db
       .insert(siteJobs)
       .values([
-        { postId: 7, messageId: 7, reason: "site_en", status: "queued", nextAttemptAt: now, createdAt: now, updatedAt: now },
-        { postId: 7, messageId: 7, reason: "site_ru", status: "queued", nextAttemptAt: later, createdAt: now, updatedAt: now },
+        { publicationKey: "post:7", messageId: 7, reason: "site_en", status: "queued", nextAttemptAt: now, createdAt: now, updatedAt: now },
+        {
+          publicationKey: "post:7",
+          messageId: 7,
+          reason: "site_ru",
+          status: "queued",
+          nextAttemptAt: later,
+          createdAt: now,
+          updatedAt: now,
+        },
       ])
       .run();
 
@@ -121,7 +130,7 @@ describe("site jobs", () => {
     backendDb.db
       .insert(siteJobs)
       .values({
-        postId: 7,
+        publicationKey: "post:7",
         messageId: 7,
         reason: "site_ru",
         status: "cancelled",
@@ -132,7 +141,7 @@ describe("site jobs", () => {
     backendDb.db
       .insert(siteJobs)
       .values({
-        postId: 7,
+        publicationKey: "post:7",
         messageId: 7,
         reason: "site_en",
         status: "published",
@@ -164,7 +173,14 @@ describe("site jobs", () => {
       });
       backendDb.db
         .insert(siteJobs)
-        .values({ postId, messageId: postId, reason: "site_ru", status: "queued", createdAt: now, updatedAt: now })
+        .values({
+          publicationKey: `post:${postId}`,
+          messageId: postId,
+          reason: "site_ru",
+          status: "queued",
+          createdAt: now,
+          updatedAt: now,
+        })
         .run();
     }
 
@@ -177,10 +193,13 @@ describe("site jobs", () => {
     }
 
     expect(
-      backendDb.db.select({ postId: siteJobs.postId, status: siteJobs.status, attemptCount: siteJobs.attemptCount }).from(siteJobs).all(),
+      backendDb.db
+        .select({ publicationKey: siteJobs.publicationKey, status: siteJobs.status, attemptCount: siteJobs.attemptCount })
+        .from(siteJobs)
+        .all(),
     ).toEqual([
-      { postId: 1, status: "published", attemptCount: 0 },
-      { postId: 2, status: "queued", attemptCount: 1 },
+      { publicationKey: "post:1", status: "published", attemptCount: 0 },
+      { publicationKey: "post:2", status: "queued", attemptCount: 1 },
     ]);
   });
 });

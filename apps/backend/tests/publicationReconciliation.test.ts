@@ -41,7 +41,6 @@ describe("publication reconciliation", () => {
         .insert(publishJobs)
         .values([
           {
-            publicationId: 90,
             publicationKey: "post:90",
             target: "threads_en",
             status: "published",
@@ -49,7 +48,6 @@ describe("publication reconciliation", () => {
             updatedAt: now.toISOString(),
           },
           {
-            publicationId: 90,
             publicationKey: "post:90",
             target: "telegram",
             status: "queued",
@@ -63,7 +61,7 @@ describe("publication reconciliation", () => {
         .insert(siteJobs)
         .values([
           {
-            postId: 90,
+            publicationKey: "post:90",
             messageId: 90,
             reason: "site_en",
             status: "published",
@@ -71,7 +69,7 @@ describe("publication reconciliation", () => {
             updatedAt: now.toISOString(),
           },
           {
-            postId: 90,
+            publicationKey: "post:90",
             messageId: 90,
             reason: "site_ru",
             status: "queued",
@@ -109,7 +107,6 @@ describe("publication reconciliation", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
-          publicationId: 91,
           publicationKey: "post:91",
           target: "telegram_ru",
           status: "failed",
@@ -119,7 +116,7 @@ describe("publication reconciliation", () => {
         .run();
       backendDb.db
         .insert(siteJobs)
-        .values({ postId: 91, messageId: 91, reason: "site_en", status: "published", createdAt: now, updatedAt: now })
+        .values({ publicationKey: "post:91", messageId: 91, reason: "site_en", status: "published", createdAt: now, updatedAt: now })
         .run();
 
       refreshPublicationStatus(backendDb, 91);
@@ -145,7 +142,6 @@ describe("publication reconciliation", () => {
         .insert(publishJobs)
         .values([
           {
-            publicationId: 92,
             publicationKey: "post:92",
             target: "telegram_ru",
             status: "published",
@@ -153,7 +149,6 @@ describe("publication reconciliation", () => {
             updatedAt: now,
           },
           {
-            publicationId: 92,
             publicationKey: "post:92",
             target: "instagram_stories",
             status: "failed",
@@ -171,7 +166,7 @@ describe("publication reconciliation", () => {
       backendDb.db
         .update(publishJobs)
         .set({ status: "published" })
-        .where(and(eq(publishJobs.publicationId, 92), eq(publishJobs.target, "instagram_stories")))
+        .where(and(eq(publishJobs.publicationKey, "post:92"), eq(publishJobs.target, "instagram_stories")))
         .run();
       refreshPublicationStatus(backendDb, 92);
 
@@ -184,7 +179,6 @@ describe("publication reconciliation", () => {
   it("settles a publication that already has durable provider evidence", () =>
     withDb(async (backendDb) => {
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        publicationId: 81,
         publicationKey: "post:81",
         target: "threads_ru",
         payload: { text: "published" },
@@ -238,7 +232,6 @@ describe("publication reconciliation", () => {
         targetId: "threads_ru",
       });
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        publicationId: 82,
         publicationKey: "post:82",
         target: "threads_ru",
         payload: { text: "published through Zernio" },
@@ -284,7 +277,6 @@ describe("publication reconciliation", () => {
   it("polls a job that already spent its publish attempts", () =>
     withDb(async (backendDb) => {
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        publicationId: 83,
         publicationKey: "post:83",
         target: "threads_ru",
         payload: { text: "retried before it turned ambiguous" },
@@ -326,7 +318,6 @@ describe("publication reconciliation", () => {
   it("counts provider auth failures found during reconciliation", () =>
     withDb(async (backendDb) => {
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        publicationId: 84,
         publicationKey: "post:84",
         target: "threads_ru",
         payload: { text: "unknown outcome" },
@@ -362,7 +353,6 @@ describe("publication reconciliation", () => {
   it("keeps an id-less result unresolved and emits one owner-visible summary", () =>
     withDb(async (backendDb) => {
       const jobId = enqueuePublishJobTx(backendDb.db, {
-        publicationId: 82,
         publicationKey: "post:82",
         target: "telegram",
         payload: { text: "unknown" },

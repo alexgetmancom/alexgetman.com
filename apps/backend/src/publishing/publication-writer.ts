@@ -25,10 +25,10 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
       .run();
   }
   tx.delete(publishJobs)
-    .where(and(eq(publishJobs.publicationId, plan.postId), inArray(publishJobs.status, ["queued", "failed"])))
+    .where(and(eq(publishJobs.publicationKey, plan.publicationKey), inArray(publishJobs.status, ["queued", "failed"])))
     .run();
   tx.delete(siteJobs)
-    .where(and(eq(siteJobs.postId, plan.postId), inArray(siteJobs.status, ["queued", "failed"])))
+    .where(and(eq(siteJobs.publicationKey, plan.publicationKey), inArray(siteJobs.status, ["queued", "failed"])))
     .run();
   // Targets whose delivery is settled or actively in flight are not replanned.
   // "publishing" counts as final on purpose: a worker already holds that job
@@ -41,7 +41,7 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
       .from(publishJobs)
       .where(
         and(
-          eq(publishJobs.publicationId, plan.postId),
+          eq(publishJobs.publicationKey, plan.publicationKey),
           inArray(publishJobs.status, ["publishing", "published", "skipped", "verification_required"]),
         ),
       )
@@ -52,7 +52,7 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
     tx
       .select({ reason: siteJobs.reason })
       .from(siteJobs)
-      .where(and(eq(siteJobs.postId, plan.postId), inArray(siteJobs.status, ["rendering", "published"])))
+      .where(and(eq(siteJobs.publicationKey, plan.publicationKey), inArray(siteJobs.status, ["rendering", "published"])))
       .all()
       .map((row) => row.reason.match(/(?:^|_)(ru|en)(?:_|$)/)?.[1])
       .filter((locale): locale is "ru" | "en" => locale === "ru" || locale === "en"),
@@ -61,7 +61,6 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
     const publishAt = publishAtForTarget(plan, target);
     if (enabled && publishAt != null && !isSiteTarget(target) && !finalTargets.has(target))
       enqueuePublishJobTx(tx, {
-        publicationId: plan.postId,
         publicationKey: plan.publicationKey,
         target,
         payload: localizeTargetPayload(plan.payload, target),
@@ -76,7 +75,7 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
     if (enabled && publishAt != null && !finalSiteLocales.has(locale))
       tx.insert(siteJobs)
         .values({
-          postId: plan.postId,
+          publicationKey: plan.publicationKey,
           messageId: plan.messageId,
           reason: `site_${locale}`,
           status: "queued",

@@ -51,11 +51,13 @@ export const knowledgeEntityAliases = sqliteTable(
   (table) => [primaryKey({ columns: [table.entityId, table.alias] })],
 );
 
-/** A story can be connected to multiple companies, models and themes. */
-export const postEntityLinks = sqliteTable(
-  "post_entity_links",
+/** A story can be connected to multiple companies, models and themes. Keyed by
+ * the draft, like every other child of the aggregate: the accepted candidates
+ * this grows out of are keyed that way too. */
+export const draftEntityLinks = sqliteTable(
+  "draft_entity_links",
   {
-    postId: integer().notNull(),
+    draftId: integer().notNull(),
     entityId: integer().notNull(),
     /** A focus drives a hub's main timeline; a mention remains available for
      * related pages and editorial research without polluting that timeline. */
@@ -63,7 +65,7 @@ export const postEntityLinks = sqliteTable(
     createdAt: text().notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.postId, table.entityId] }),
-    index("idx_post_entity_links_entity").on(table.entityId, table.postId),
+    primaryKey({ columns: [table.draftId, table.entityId] }),
+    index("idx_draft_entity_links_entity").on(table.entityId, table.draftId),
   ],
 );

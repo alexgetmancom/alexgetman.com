@@ -30,7 +30,6 @@ export const PUBLISH_CLAIM_LIMIT = 20;
 
 export type ClaimedPublishJob = {
   jobId: number;
-  publicationId: number;
   publicationKey: string;
   target: string;
   payload: JsonObject;
@@ -124,7 +123,6 @@ export function claimPublishJob(
     );
     return {
       jobId: row.jobId,
-      publicationId: row.publicationId,
       publicationKey,
       target: row.target,
       payload: parsePayload(row.payloadJson),
@@ -546,7 +544,6 @@ export function forcePublishJobVerification(
 export function enqueuePublishJobTx(db: UnsafeBackendDb["db"], input: EnqueuePublishJobInput): number {
   const now = new Date().toISOString();
   const inputRecord = {
-    publicationId: input.publicationId,
     publicationKey: input.publicationKey,
     target: input.target,
     status: "queued",
@@ -575,7 +572,6 @@ export function enqueuePublishJobTx(db: UnsafeBackendDb["db"], input: EnqueuePub
 type EnqueuePublishJobInput = {
   target: string;
   payload: JsonObject;
-  publicationId: number;
   publicationKey: string;
   publishAt?: string | null;
 };

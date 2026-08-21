@@ -41,8 +41,7 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
   const jobs = unsafeDb(backendDb)
     .db.select({
       jobId: publishJobs.jobId,
-      postId: publishJobs.publicationId,
-      messageId: publishJobs.publicationId,
+      publicationKey: publishJobs.publicationKey,
       target: publishJobs.target,
       status: publishJobs.status,
       attemptCount: publishJobs.attemptCount,

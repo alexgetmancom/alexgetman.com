@@ -104,7 +104,6 @@ describe("observability", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
-          publicationId: 1,
           publicationKey: "post:stale",
           target: "threads_ru",
           status: "publishing",
@@ -130,7 +129,7 @@ describe("observability", () => {
       backendDb.db
         .insert(siteJobs)
         .values({
-          postId: 7,
+          publicationKey: "post:7",
           messageId: 7,
           reason: "site_ru",
           status: "failed",
@@ -155,7 +154,6 @@ describe("observability", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
-          publicationId: 8,
           publicationKey: "post:terminal",
           target: "telegram_stories",
           status: "failed",

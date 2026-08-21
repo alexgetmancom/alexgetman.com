@@ -6,6 +6,7 @@ import type {
   StudioQueueVideo,
   StudioQueueVideoTarget,
 } from "../../application/ports.js";
+import { parsePublicationRef, publicationRef } from "../../application/publication-ref.js";
 import { draftStoryCards, drafts, postLocales, publicationTargets, publishJobs, siteJobs, videoDrafts, videoTargets } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
@@ -85,17 +86,25 @@ export function createStudioQueueStore(db: BackendDatabase): StudioQueueStore {
 
     failedPostIds(postIds: number[]): number[] {
       if (postIds.length === 0) return [];
+      const keys = postIds.map((postId) => publicationRef("post", postId));
       const failed = db
-        .select({ postId: publishJobs.publicationId })
+        .select({ publicationKey: publishJobs.publicationKey })
         .from(publishJobs)
-        .where(and(inArray(publishJobs.publicationId, postIds), inArray(publishJobs.status, ["failed", "verification_required"])))
+        .where(and(inArray(publishJobs.publicationKey, keys), inArray(publishJobs.status, ["failed", "verification_required"])))
         .all();
       const failedSite = db
-        .select({ postId: siteJobs.postId })
+        .select({ publicationKey: siteJobs.publicationKey })
         .from(siteJobs)
-        .where(and(inArray(siteJobs.postId, postIds), eq(siteJobs.status, "failed")))
+        .where(and(inArray(siteJobs.publicationKey, keys), eq(siteJobs.status, "failed")))
         .all();
-      return [...new Set([...failed, ...failedSite].flatMap((row) => (row.postId == null ? [] : [row.postId])))];
+      return [
+        ...new Set(
+          [...failed, ...failedSite].flatMap((row) => {
+            const ref = parsePublicationRef(row.publicationKey);
+            return ref?.kind === "post" ? [ref.id] : [];
+          }),
+        ),
+      ];
     },
 
     failedStoryCardDraftIds(draftIds: number[]): number[] {

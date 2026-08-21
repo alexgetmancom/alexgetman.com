@@ -454,10 +454,10 @@ function publicationStateMismatches(backendDb: BackendDb): PublicationStateMisma
               group_concat(x.status) AS statuses
        FROM drafts d
        LEFT JOIN (
-         SELECT publication_id AS post_id,status FROM publish_jobs
+         SELECT publication_key,status FROM publish_jobs
          UNION ALL
-         SELECT post_id,status FROM site_jobs
-       ) x ON x.post_id=d.post_id
+         SELECT publication_key,status FROM site_jobs
+       ) x ON x.publication_key='post:'||d.post_id
        WHERE d.post_id IS NOT NULL
        GROUP BY d.post_id
        ORDER BY d.post_id`,

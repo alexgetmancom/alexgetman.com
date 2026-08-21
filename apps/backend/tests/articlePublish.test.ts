@@ -47,7 +47,7 @@ describe("article-publish", () => {
       ]);
 
       const jobs = backendDb.sqlite
-        .query("SELECT target, publication_key, payload_json FROM publish_jobs WHERE publication_id=?")
+        .query("SELECT target, publication_key, payload_json FROM publish_jobs WHERE publication_key='article:'||?")
         .all(result.article_id) as Array<{ target: string; publication_key: string; payload_json: string }>;
       expect(jobs).toHaveLength(1);
       expect(jobs[0]?.target).toBe("x_article");

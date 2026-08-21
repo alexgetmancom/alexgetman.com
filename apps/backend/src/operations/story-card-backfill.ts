@@ -75,7 +75,7 @@ export async function backfillTextStoryCards(
     }
     tx.insert(siteJobs)
       .values({
-        postId: ref.postId,
+        publicationKey: ref.publicationKey,
         messageId: ref.messageId,
         reason: "text_story_card_backfill",
         status: "queued",

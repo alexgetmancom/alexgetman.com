@@ -73,8 +73,7 @@ type DashboardQueueDraft = {
 
 type DashboardQueueJob = {
   jobId?: string | number | null;
-  postId?: string | number | null;
-  messageId?: string | number | null;
+  publicationKey?: string | null;
   target?: string | null;
   status?: string | null;
   attemptCount?: number | null;

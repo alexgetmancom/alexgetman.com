@@ -91,17 +91,20 @@ function enqueueRepairSiteJob(db: UnsafeBackendDb["db"], ref: ResolvedPublicatio
     .select({ jobId: siteJobs.jobId })
     .from(siteJobs)
     .where(
-      and(
-        eq(siteJobs.messageId, ref.messageId),
-        ref.postId == null ? isNull(siteJobs.postId) : eq(siteJobs.postId, ref.postId),
-        eq(siteJobs.reason, reason),
-        inArray(siteJobs.status, ["queued", "rendering"]),
-      ),
+      and(eq(siteJobs.publicationKey, ref.publicationKey), eq(siteJobs.reason, reason), inArray(siteJobs.status, ["queued", "rendering"])),
     )
     .get();
   if (activeJob) return;
 
   db.insert(siteJobs)
-    .values({ postId: ref.postId, messageId: ref.messageId, reason, status: "queued", nextAttemptAt: now, createdAt: now, updatedAt: now })
+    .values({
+      publicationKey: ref.publicationKey,
+      messageId: ref.messageId,
+      reason,
+      status: "queued",
+      nextAttemptAt: now,
+      createdAt: now,
+      updatedAt: now,
+    })
     .run();
 }

@@ -3,7 +3,7 @@ import { alias } from "drizzle-orm/sqlite-core";
 import * as z from "zod";
 import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { drafts, knowledgeEntities, postEntityLinks, postLocales, postMetrics } from "../db/schema.js";
+import { draftEntityLinks, drafts, knowledgeEntities, postLocales, postMetrics } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 
 const siteMediaSchema = z
@@ -106,6 +106,7 @@ function buildPublicSiteFeed(backendDb: BackendDb, postId?: number): FeedItem[] 
   const enLocale = alias(postLocales, "site_locale_en");
   const rows = unsafeDb(backendDb)
     .db.select({
+      draftId: drafts.id,
       postId: drafts.postId,
       messageId: drafts.channelMessageId,
       date: sql<string>`coalesce(${ruLocale.publishedAt}, ${enLocale.publishedAt}, ${drafts.scheduledAt}, ${drafts.scheduledEnAt}, ${drafts.createdAt})`,
@@ -143,26 +144,26 @@ function buildPublicSiteFeed(backendDb: BackendDb, postId?: number): FeedItem[] 
     .orderBy(desc(drafts.updatedAt), desc(drafts.postId))
     .all();
 
-  const postIds = rows.flatMap((row) => (row.postId == null ? [] : [row.postId]));
-  const entitiesByPost = new Map<number, FeedEntity[]>();
-  if (postIds.length > 0) {
+  const draftIds = rows.map((row) => row.draftId);
+  const entitiesByDraft = new Map<number, FeedEntity[]>();
+  if (draftIds.length > 0) {
     const entityRows = unsafeDb(backendDb)
       .db.select({
-        postId: postEntityLinks.postId,
+        draftId: draftEntityLinks.draftId,
         kind: knowledgeEntities.kind,
         slug: knowledgeEntities.slug,
         titleRu: knowledgeEntities.titleRu,
         titleEn: knowledgeEntities.titleEn,
-        linkRole: postEntityLinks.linkRole,
+        linkRole: draftEntityLinks.linkRole,
       })
-      .from(postEntityLinks)
-      .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
-      .where(inArray(postEntityLinks.postId, postIds))
-      .orderBy(asc(postEntityLinks.postId), asc(knowledgeEntities.kind), asc(knowledgeEntities.titleRu))
+      .from(draftEntityLinks)
+      .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, draftEntityLinks.entityId))
+      .where(inArray(draftEntityLinks.draftId, draftIds))
+      .orderBy(asc(draftEntityLinks.draftId), asc(knowledgeEntities.kind), asc(knowledgeEntities.titleRu))
       .all();
     for (const entity of entityRows) {
       if (!isEntityKind(entity.kind)) continue;
-      const list = entitiesByPost.get(entity.postId) ?? [];
+      const list = entitiesByDraft.get(entity.draftId) ?? [];
       list.push({
         kind: entity.kind,
         slug: entity.slug,
@@ -170,7 +171,7 @@ function buildPublicSiteFeed(backendDb: BackendDb, postId?: number): FeedItem[] 
         title_en: entity.titleEn,
         link_role: entity.linkRole === "focus" ? "focus" : "mention",
       });
-      entitiesByPost.set(entity.postId, list);
+      entitiesByDraft.set(entity.draftId, list);
     }
   }
   const now = Date.now();
@@ -200,7 +201,7 @@ function buildPublicSiteFeed(backendDb: BackendDb, postId?: number): FeedItem[] 
       media_en: mediaEn,
       image: firstImage(media),
       image_en: firstImage(mediaEn),
-      entities: entitiesByPost.get(row.postId) ?? [],
+      entities: entitiesByDraft.get(row.draftId) ?? [],
       views: row.views ?? 0,
     });
     // A single malformed row (a legacy shape, an unexpected null) must never take

@@ -65,7 +65,7 @@ it("publishes operator text to exactly the requested target in one operation", a
       instagram_stories_ru: false,
       instagram_stories: false,
     });
-    expect(backendDb.sqlite.query("SELECT target FROM publish_jobs WHERE publication_id=?").all(result.post_id)).toEqual([
+    expect(backendDb.sqlite.query("SELECT target FROM publish_jobs WHERE publication_key='post:'||?").all(result.post_id)).toEqual([
       { target: "threads_ru" },
     ]);
   } finally {

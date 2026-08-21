@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
-import { and, asc, desc, eq, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
+import { parsePublicationRef, publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
 import { drafts, postLocales, publicationEvents, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -26,7 +27,7 @@ const SITE_JOB_BACKOFF_MAX_SECONDS = 900;
 
 type SiteJob = {
   job_id: number;
-  post_id: number | null;
+  publication_key: string;
   message_id: number;
   attempt_count: number;
   lock_id: string;
@@ -51,25 +52,20 @@ export async function runSiteJobCycle(config: BackendConfig, backendDb: BackendD
       },
       () =>
         trackUsageAsync(backendDb, "publishing.site.materialize", () =>
-          materializeSitePosts(
-            config,
-            backendDb,
-            fetch,
-            new Set(jobs.map((job) => job.post_id).filter((postId): postId is number => postId != null)),
-          ),
+          materializeSitePosts(config, backendDb, fetch, new Set(jobs.map((job) => job.publication_key))),
         ),
     );
     // Only the jobs whose own publication failed carry its error; the rest
     // published, and their attempt budget is not spent on someone else's post.
-    for (const [postId, message] of failures)
+    for (const [publicationKey, message] of failures)
       failSiteJobs(
         backendDb,
-        jobs.filter((job) => job.post_id === postId),
+        jobs.filter((job) => job.publication_key === publicationKey),
         message,
       );
     const completed = completeSiteJobs(
       backendDb,
-      jobs.filter((job) => job.post_id == null || !failures.has(job.post_id)),
+      jobs.filter((job) => !failures.has(job.publication_key)),
     );
     // A materialization is the one moment this process knows the published site
     // changed, so serve the new shape immediately instead of waiting out the TTL.
@@ -114,7 +110,7 @@ export function recoverStaleSiteJobs(backendDb: BackendDb, maxLockAgeSeconds = S
     .where(and(eq(siteJobs.status, "rendering"), isNotNull(siteJobs.lockedAt), lt(siteJobs.lockedAt, cutoff)))
     .all();
   let recovered = 0;
-  const terminalPostIds = new Set<number>();
+  const terminalKeys = new Set<string>();
   unsafeDb(backendDb).db.transaction((tx) => {
     for (const job of stale) {
       if (!job.lockedAt) continue;
@@ -136,10 +132,11 @@ export function recoverStaleSiteJobs(backendDb: BackendDb, maxLockAgeSeconds = S
         .get();
       if (!updated) continue;
       recovered += 1;
-      if (!retry && job.postId != null) terminalPostIds.add(job.postId);
+      if (!retry) terminalKeys.add(job.publicationKey);
     }
   });
-  for (const postId of terminalPostIds) refreshPublicationStatus(backendDb, postId);
+  for (const publicationKey of terminalKeys)
+    for (const postId of publicationPostId(publicationKey)) refreshPublicationStatus(backendDb, postId);
   return recovered;
 }
 
@@ -154,16 +151,16 @@ export async function materializeSitePosts(
   config: BackendConfig,
   backendDb: BackendDb,
   fetchImpl: typeof fetch = fetch,
-  postIds?: ReadonlySet<number>,
-): Promise<Map<number, string>> {
-  const sources = sourceItems(backendDb).filter((source) => !postIds || postIds.has(source.postId));
-  const failures = new Map<number, string>();
+  publicationKeys?: ReadonlySet<string>,
+): Promise<Map<string, string>> {
+  const sources = sourceItems(backendDb, publicationKeys);
+  const failures = new Map<string, string>();
   const prepared = await Promise.all(
     sources.map(async (source) => {
       try {
         return await prepareSiteMedia(config, source, fetchImpl);
       } catch (error) {
-        failures.set(source.postId, error instanceof Error ? error.message : String(error));
+        failures.set(publicationRef("post", source.postId), error instanceof Error ? error.message : String(error));
         return null;
       }
     }),
@@ -218,7 +215,7 @@ function claimSiteJobs(backendDb: BackendDb): SiteJob[] {
       if (claimedRow) {
         claimed.push({
           job_id: row.jobId,
-          post_id: row.postId,
+          publication_key: row.publicationKey,
           message_id: row.messageId,
           attempt_count: row.attemptCount,
           lock_id: lockId,
@@ -252,7 +249,7 @@ function completeSiteJobs(backendDb: BackendDb, jobs: SiteJob[]): SiteJob[] {
         job_ids: completed.map((job) => job.job_id),
       });
   });
-  for (const postId of new Set(completed.map((job) => job.post_id).filter((value): value is number => value != null)))
+  for (const postId of new Set(completed.flatMap((job) => publicationPostId(job.publication_key))))
     refreshPublicationStatus(backendDb, postId);
   return completed;
 }
@@ -286,25 +283,31 @@ function failSiteJobs(backendDb: BackendDb, jobs: SiteJob[], error: unknown): Si
   for (const postId of new Set(
     failed
       .filter((job) => Number(job.attempt_count ?? 0) + 1 >= SITE_JOB_MAX_ATTEMPTS)
-      .map((job) => job.post_id)
-      .filter((value): value is number => value != null),
+      .flatMap((job) => publicationPostId(job.publication_key)),
   ))
     refreshPublicationStatus(backendDb, postId);
   return failed;
 }
 
-function sourceItems(backendDb: BackendDb): PublicationSource[] {
-  const localeStates = siteLocaleStates(backendDb);
+/** Loads only the publications asked for. Loading every published post and
+ * filtering afterwards cost two queries per publication on every cycle, to
+ * render the handful of jobs one batch had actually claimed. */
+function sourceItems(backendDb: BackendDb, publicationKeys?: ReadonlySet<string>): PublicationSource[] {
+  const localeStates = siteLocaleStates(backendDb, publicationKeys);
   const rows = unsafeDb(backendDb)
     .db.select({ postId: drafts.postId })
     .from(drafts)
-    .where(isNotNull(drafts.postId))
+    .where(
+      publicationKeys
+        ? and(isNotNull(drafts.postId), inArray(drafts.postId, [...publicationKeys].flatMap(publicationPostId)))
+        : isNotNull(drafts.postId),
+    )
     .orderBy(desc(drafts.postId))
     .all();
   return rows.flatMap((row): PublicationSource[] => {
     if (row.postId == null) return [];
     const source = publicationSourceFromDb(unsafeDb(backendDb).db, row.postId);
-    const state = localeStates.get(row.postId);
+    const state = localeStates.get(publicationRef("post", row.postId));
     if (!state || state.seen.size === 0) return [source];
     return [
       {
@@ -320,20 +323,25 @@ function sourceItems(backendDb: BackendDb): PublicationSource[] {
 
 type SiteLocaleState = { seen: Set<"ru" | "en">; active: Set<"ru" | "en"> };
 
+function publicationPostId(publicationKey: string): number[] {
+  const ref = parsePublicationRef(publicationKey);
+  return ref?.kind === "post" ? [ref.id] : [];
+}
+
 /** Site publication state is the authority after a target is cancelled. */
-function siteLocaleStates(backendDb: BackendDb): Map<number, SiteLocaleState> {
-  const states = new Map<number, SiteLocaleState>();
-  const rows = unsafeDb(backendDb)
-    .db.select({ postId: siteJobs.postId, reason: siteJobs.reason, status: siteJobs.status })
-    .from(siteJobs)
-    .all();
+function siteLocaleStates(backendDb: BackendDb, publicationKeys?: ReadonlySet<string>): Map<string, SiteLocaleState> {
+  const states = new Map<string, SiteLocaleState>();
+  const query = unsafeDb(backendDb)
+    .db.select({ publicationKey: siteJobs.publicationKey, reason: siteJobs.reason, status: siteJobs.status })
+    .from(siteJobs);
+  const rows = publicationKeys ? query.where(inArray(siteJobs.publicationKey, [...publicationKeys])).all() : query.all();
   for (const row of rows) {
     const locale = row.reason.match(/(?:^|_)(ru|en)(?:_|$)/)?.[1];
-    if ((locale !== "ru" && locale !== "en") || row.postId == null) continue;
-    const state = states.get(row.postId) ?? { seen: new Set(), active: new Set() };
+    if (locale !== "ru" && locale !== "en") continue;
+    const state = states.get(row.publicationKey) ?? { seen: new Set(), active: new Set() };
     state.seen.add(locale);
     if (["queued", "rendering", "published"].includes(row.status)) state.active.add(locale);
-    states.set(row.postId, state);
+    states.set(row.publicationKey, state);
   }
   return states;
 }

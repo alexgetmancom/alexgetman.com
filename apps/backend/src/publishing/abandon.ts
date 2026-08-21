@@ -31,8 +31,7 @@ type Transaction = Parameters<Parameters<ReturnType<typeof unsafeDb>["db"]["tran
 type AbandonDb = UnsafeBackendDb["db"] | Transaction;
 
 function abandonSiteTarget(tx: AbandonDb, scope: RequeueScope, target: string, now: string): AbandonResult {
-  if (scope.postId == null && scope.messageId == null) return { target, outcome: "not_abandonable", status: null };
-  const whereRef = scope.postId != null ? eq(siteJobs.postId, scope.postId) : eq(siteJobs.messageId, scope.messageId as number);
+  const whereRef = eq(siteJobs.publicationKey, scope.publicationKey);
   const row = tx
     .select({ jobId: siteJobs.jobId, status: siteJobs.status })
     .from(siteJobs)
@@ -53,8 +52,7 @@ function abandonSiteTarget(tx: AbandonDb, scope: RequeueScope, target: string, n
 }
 
 function abandonSocialTarget(tx: AbandonDb, scope: RequeueScope, target: string, now: string): AbandonResult {
-  const whereRef =
-    scope.postId != null ? eq(publishJobs.publicationId, scope.postId) : eq(publishJobs.publicationKey, scope.publicationKey);
+  const whereRef = eq(publishJobs.publicationKey, scope.publicationKey);
   const row = tx
     .select({ jobId: publishJobs.jobId, status: publishJobs.status, publicationKey: publishJobs.publicationKey })
     .from(publishJobs)

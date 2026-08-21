@@ -2,7 +2,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { claimSync, markSynced } from "../../analytics/snapshots/creator-store.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
-import { drafts, knowledgeEntities, postEntityLinks, postLocales } from "../../db/schema.js";
+import { draftEntityLinks, drafts, knowledgeEntities, postLocales } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { deepSeekChat } from "../../foundation/external/deepseek.js";
 import { t } from "../../foundation/i18n/index.js";
@@ -74,8 +74,8 @@ export async function sendDailyEditorialInbox(
       titleEn: knowledgeEntities.titleEn,
       count: sql<number>`count(*)`,
     })
-    .from(postEntityLinks)
-    .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
+    .from(draftEntityLinks)
+    .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, draftEntityLinks.entityId))
     .groupBy(knowledgeEntities.id)
     .orderBy(desc(sql<number>`count(*)`))
     .limit(12)

@@ -88,21 +88,25 @@ describe("Studio post commands", () => {
     const postId = posts.schedule(42, draftId, { ruAt, enAt });
 
     expect(
-      backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE publication_id=? AND target='threads_en'").get(postId),
+      backendDb.sqlite
+        .prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE publication_key='post:'||? AND target='threads_en'")
+        .get(postId),
     ).toEqual({
       count: 0,
     });
 
     posts.toggleTarget(42, draftId, "threads_en");
     expect(
-      backendDb.sqlite.prepare("SELECT publish_at FROM publish_jobs WHERE publication_id=? AND target='threads_en'").get(postId),
+      backendDb.sqlite.prepare("SELECT publish_at FROM publish_jobs WHERE publication_key='post:'||? AND target='threads_en'").get(postId),
     ).toEqual({
       publish_at: enAt.toISOString(),
     });
 
     posts.toggleTarget(42, draftId, "threads_en");
     expect(
-      backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE publication_id=? AND target='threads_en'").get(postId),
+      backendDb.sqlite
+        .prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE publication_key='post:'||? AND target='threads_en'")
+        .get(postId),
     ).toEqual({
       count: 0,
     });
@@ -125,7 +129,11 @@ describe("Studio post commands", () => {
     posts.edit(42, draftId, { locale: "ru", text: "After", entities: [], media: [] });
 
     const source = publicationSourceFromDb(backendDb.db, postId);
-    const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.publicationId, postId)).get();
+    const job = backendDb.db
+      .select()
+      .from(publishJobs)
+      .where(eq(publishJobs.publicationKey, `post:${postId}`))
+      .get();
     expect(source.locales.ru).toMatchObject({ text: "After" });
     expect(job?.payloadJson).toMatchObject({ locale: "ru", text: "After" });
   });
@@ -249,25 +257,47 @@ describe("Studio post commands", () => {
     const socialBefore = backendDb.db
       .select({ jobId: publishJobs.jobId })
       .from(publishJobs)
-      .where(eq(publishJobs.publicationId, postId))
+      .where(eq(publishJobs.publicationKey, `post:${postId}`))
       .all();
-    const siteBefore = backendDb.db.select({ jobId: siteJobs.jobId }).from(siteJobs).where(eq(siteJobs.postId, postId)).all();
+    const siteBefore = backendDb.db
+      .select({ jobId: siteJobs.jobId })
+      .from(siteJobs)
+      .where(eq(siteJobs.publicationKey, `post:${postId}`))
+      .all();
 
-    backendDb.db.update(publishJobs).set({ status: "published" }).where(eq(publishJobs.publicationId, postId)).run();
-    backendDb.db.update(siteJobs).set({ status: "published" }).where(eq(siteJobs.postId, postId)).run();
+    backendDb.db
+      .update(publishJobs)
+      .set({ status: "published" })
+      .where(eq(publishJobs.publicationKey, `post:${postId}`))
+      .run();
+    backendDb.db
+      .update(siteJobs)
+      .set({ status: "published" })
+      .where(eq(siteJobs.publicationKey, `post:${postId}`))
+      .run();
     backendDb.db.update(drafts).set({ status: "published" }).where(eq(drafts.id, draftId)).run();
 
     const nextAt = new Date(Date.now() + 10 * 60_000);
     posts.schedule(42, draftId, { ruAt: nextAt, enAt: nextAt });
-    expect(backendDb.db.select({ jobId: publishJobs.jobId }).from(publishJobs).where(eq(publishJobs.publicationId, postId)).all()).toEqual(
-      socialBefore,
-    );
-    expect(backendDb.db.select({ jobId: siteJobs.jobId }).from(siteJobs).where(eq(siteJobs.postId, postId)).all()).toEqual(siteBefore);
+    expect(
+      backendDb.db
+        .select({ jobId: publishJobs.jobId })
+        .from(publishJobs)
+        .where(eq(publishJobs.publicationKey, `post:${postId}`))
+        .all(),
+    ).toEqual(socialBefore);
+    expect(
+      backendDb.db
+        .select({ jobId: siteJobs.jobId })
+        .from(siteJobs)
+        .where(eq(siteJobs.publicationKey, `post:${postId}`))
+        .all(),
+    ).toEqual(siteBefore);
     expect(
       backendDb.db
         .select({ status: publishJobs.status })
         .from(publishJobs)
-        .where(eq(publishJobs.publicationId, postId))
+        .where(eq(publishJobs.publicationKey, `post:${postId}`))
         .all()
         .every((job) => job.status === "published"),
     ).toBe(true);

@@ -322,7 +322,6 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
       rawDb.db
         .insert(publishJobs)
         .values({
-          publicationId: postId,
           publicationKey,
           target: "x",
           status: index === 0 ? "failed" : "done",
@@ -336,7 +335,7 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
       rawDb.db
         .insert(siteJobs)
         .values({
-          postId,
+          publicationKey: `post:${postId}`,
           messageId: postId,
           reason: "publish",
           status: "done",
@@ -353,7 +352,6 @@ export function seedDashboardFixture(options: DashboardFixtureOptions): SeededDa
     rawDb.db
       .insert(publishJobs)
       .values({
-        publicationId: 999,
         publicationKey: "post:999",
         target: "telegram",
         status: "queued",

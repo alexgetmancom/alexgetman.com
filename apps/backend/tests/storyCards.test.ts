@@ -266,7 +266,7 @@ describe("text Story cards", () => {
       backendDb.db
         .select()
         .from(publishJobs)
-        .where(eq(publishJobs.publicationId, postId))
+        .where(eq(publishJobs.publicationKey, `post:${postId}`))
         .all()
         .some((job) => job.target.includes("stories")),
     ).toBe(false);
@@ -312,7 +312,14 @@ describe("text Story cards", () => {
       locales.every((locale) => Array.isArray(locale.siteMediaJson) && locale.siteMediaJson.length === 1),
     );
     expect(backendDb.db.select().from(publishJobs).all()).toHaveLength(socialJobsBefore);
-    expect(backendDb.db.select().from(siteJobs).where(eq(siteJobs.postId, postId)).all().at(-1)?.reason).toBe("text_story_card_backfill");
+    expect(
+      backendDb.db
+        .select()
+        .from(siteJobs)
+        .where(eq(siteJobs.publicationKey, `post:${postId}`))
+        .all()
+        .at(-1)?.reason,
+    ).toBe("text_story_card_backfill");
 
     const forced = await backfillTextStoryCards(backendDb, config, `post:${postId}`, false, true);
     expect(forced).toMatchObject({ applied: false, count: 2, force: true });

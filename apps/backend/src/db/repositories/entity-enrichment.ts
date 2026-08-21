@@ -1,17 +1,16 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { EntityEnrichmentStore } from "../../application/ports.js";
-import { drafts, knowledgeEntities, knowledgeEntityAliases, postEntityLinks, postLocales } from "../schema.js";
+import { draftEntityLinks, knowledgeEntities, knowledgeEntityAliases, postLocales } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite adapter for the reviewed catalogue used by deterministic enrichment. */
 export function createEntityEnrichmentStore(db: BackendDatabase): EntityEnrichmentStore {
   return {
-    locales(postId) {
+    locales(draftId) {
       return db
         .select({ locale: postLocales.locale, text: sql<string>`coalesce(${postLocales.approvedText}, ${postLocales.sourceText}, '')` })
         .from(postLocales)
-        .innerJoin(drafts, eq(drafts.id, postLocales.draftId))
-        .where(and(eq(drafts.postId, postId), inArray(postLocales.locale, ["ru", "en"])))
+        .where(and(eq(postLocales.draftId, draftId), inArray(postLocales.locale, ["ru", "en"])))
         .all();
     },
 
@@ -37,10 +36,10 @@ export function createEntityEnrichmentStore(db: BackendDatabase): EntityEnrichme
         .all();
     },
 
-    link(postId, entityId, linkRole, createdAt) {
-      db.insert(postEntityLinks)
-        .values({ postId, entityId, linkRole, createdAt })
-        .onConflictDoUpdate({ target: [postEntityLinks.postId, postEntityLinks.entityId], set: { linkRole } })
+    link(draftId, entityId, linkRole, createdAt) {
+      db.insert(draftEntityLinks)
+        .values({ draftId, entityId, linkRole, createdAt })
+        .onConflictDoUpdate({ target: [draftEntityLinks.draftId, draftEntityLinks.entityId], set: { linkRole } })
         .run();
     },
   };

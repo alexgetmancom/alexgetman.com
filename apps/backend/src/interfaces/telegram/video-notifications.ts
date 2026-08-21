@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { type Bot, InlineKeyboard } from "grammy";
-import { parsePublicationRef } from "../../application/publication-ref.js";
+import { parsePublicationRef, publicationRef } from "../../application/publication-ref.js";
 import { publicationCallback } from "../../bot/publication-callback.js";
 import { isSiteTarget, targetDefinition, targetLocale } from "../../botTargets.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
@@ -241,7 +241,7 @@ function completionTargets(backendDb: BackendDb, ref: string | null): Array<{ ta
   const jobs = unsafeDb(backendDb)
     .db.select({ target: publishJobs.target, status: publishJobs.status, error: publishJobs.lastError, jobId: publishJobs.jobId })
     .from(publishJobs)
-    .where(eq(publishJobs.publicationId, publication.id))
+    .where(eq(publishJobs.publicationKey, publicationRef("post", publication.id)))
     .orderBy(desc(publishJobs.jobId))
     .all();
   const latest = new Map<string, (typeof jobs)[number]>();
@@ -249,7 +249,7 @@ function completionTargets(backendDb: BackendDb, ref: string | null): Array<{ ta
   const site = unsafeDb(backendDb)
     .db.select({ reason: siteJobs.reason, status: siteJobs.status, error: siteJobs.lastError, jobId: siteJobs.jobId })
     .from(siteJobs)
-    .where(eq(siteJobs.postId, publication.id))
+    .where(eq(siteJobs.publicationKey, publicationRef("post", publication.id)))
     .orderBy(desc(siteJobs.jobId))
     .all();
   for (const job of site) {

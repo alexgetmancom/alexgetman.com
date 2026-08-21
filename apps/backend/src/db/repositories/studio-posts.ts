@@ -53,7 +53,7 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
             : db
                 .select({ target: publishJobs.target, status: publishJobs.status, lastError: publishJobs.lastError })
                 .from(publishJobs)
-                .where(eq(publishJobs.publicationId, draft.postId))
+                .where(eq(publishJobs.publicationKey, publicationRef("post", draft.postId)))
                 .all(),
         siteJobs:
           draft.postId == null
@@ -61,7 +61,7 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
             : db
                 .select({ reason: siteJobs.reason, status: siteJobs.status, lastError: siteJobs.lastError })
                 .from(siteJobs)
-                .where(eq(siteJobs.postId, draft.postId))
+                .where(eq(siteJobs.publicationKey, publicationRef("post", draft.postId)))
                 .all(),
       };
     },
@@ -71,10 +71,11 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
     },
 
     failedPublicationTargets(postId: number): FailedPublicationTarget[] {
+      const publicationKey = publicationRef("post", postId);
       const social = db
         .select({ target: publishJobs.target, status: publishJobs.status, error: publishJobs.lastError, jobId: publishJobs.jobId })
         .from(publishJobs)
-        .where(eq(publishJobs.publicationId, postId))
+        .where(eq(publishJobs.publicationKey, publicationKey))
         .orderBy(desc(publishJobs.jobId))
         .all();
       const latestSocial = new Map<string, (typeof social)[number]>();
@@ -83,7 +84,7 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
       const site = db
         .select({ reason: siteJobs.reason, status: siteJobs.status, error: siteJobs.lastError, jobId: siteJobs.jobId })
         .from(siteJobs)
-        .where(eq(siteJobs.postId, postId))
+        .where(eq(siteJobs.publicationKey, publicationKey))
         .orderBy(desc(siteJobs.jobId))
         .all();
       const latestSite = new Map<string, (typeof site)[number]>();

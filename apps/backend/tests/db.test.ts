@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq } from "drizzle-orm";
 import { createDraftFromMessage } from "../src/content/drafts.js";
-import { knowledgeEntities, postEntityLinks } from "../src/db/schema.js";
+import { draftEntityLinks, knowledgeEntities } from "../src/db/schema.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
 import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
@@ -40,32 +40,24 @@ describe("openBackendDb", () => {
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-squashed-baseline-"));
     const dbPath = join(dir, "pipeline.db");
     const sqlite = new Database(dbPath);
-    // The analytics tables carry a foreign key to `posts` that predates the
-    // squash, so the baseline never expresses it and only a database that came
-    // through the old chain has it. Dropping `posts` leaves it dangling, and a
-    // dangling parent fails every write to these tables while reads stay green.
+    // A real predecessor is the whole baseline, not a stub: a migration that
+    // rebuilds a table is only proven by a database that has every table it
+    // touches. What the baseline cannot express is what the old chain left
+    // behind — the analytics foreign keys to `posts`, and the pre-Drizzle
+    // migration table — so those are added on top.
+    sqlite.exec(readFileSync(new URL("../drizzle/0000_baseline.sql", import.meta.url), "utf8"));
     sqlite.exec(`
       CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, hash text NOT NULL, created_at numeric);
-      INSERT INTO __drizzle_migrations(hash, created_at) VALUES ('old-chain', 1787310000000);
+      INSERT INTO __drizzle_migrations(hash, created_at) VALUES ('old-chain', 1787280000000);
+      CREATE TABLE schema_migrations (version TEXT PRIMARY KEY);
       CREATE TABLE old_chain_marker (id integer PRIMARY KEY);
-      CREATE TABLE posts (publication_key TEXT PRIMARY KEY, post_id INTEGER);
+      DROP TABLE metric_samples;
       CREATE TABLE metric_samples (
         id INTEGER PRIMARY KEY AUTOINCREMENT, publication_key TEXT NOT NULL, target TEXT NOT NULL,
         metric_name TEXT NOT NULL DEFAULT 'views', value INTEGER, sampled_at TEXT NOT NULL, source TEXT, raw_json TEXT,
         FOREIGN KEY (publication_key) REFERENCES posts(publication_key) ON DELETE CASCADE
       );
-      CREATE TABLE metric_schedule (
-        publication_key TEXT NOT NULL, target TEXT NOT NULL, next_check_at TEXT, last_checked_at TEXT,
-        check_count INTEGER NOT NULL DEFAULT 0, frozen_at TEXT, last_error TEXT, updated_at TEXT NOT NULL,
-        locked_by TEXT, locked_at TEXT, PRIMARY KEY (publication_key, target),
-        FOREIGN KEY (publication_key) REFERENCES posts(publication_key) ON DELETE CASCADE
-      );
-      CREATE TABLE post_metrics (
-        publication_key TEXT NOT NULL, target TEXT NOT NULL, metric_name TEXT NOT NULL DEFAULT 'views',
-        value INTEGER, unit TEXT NOT NULL DEFAULT 'count', source TEXT, sampled_at TEXT, error TEXT, raw_json TEXT,
-        PRIMARY KEY (publication_key, target, metric_name),
-        FOREIGN KEY (publication_key) REFERENCES posts(publication_key) ON DELETE CASCADE
-      );
+      DROP TABLE publication_targets;
       CREATE TABLE publication_targets (
         publication_key TEXT NOT NULL, target TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'unknown',
         external_id TEXT, external_ids_json TEXT, url TEXT, error TEXT, skipped INTEGER NOT NULL DEFAULT 0,
@@ -73,12 +65,11 @@ describe("openBackendDb", () => {
         PRIMARY KEY (publication_key, target),
         FOREIGN KEY (publication_key) REFERENCES posts(publication_key) ON DELETE CASCADE
       );
-      INSERT INTO posts (publication_key, post_id) VALUES ('post:1', 1);
+      INSERT INTO posts (post_id, publication_key, message_id, status, created_at, updated_at)
+      VALUES (1, 'post:1', 11, 'active', '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z');
       INSERT INTO metric_samples (publication_key, target, sampled_at) VALUES ('post:1', 'telegram', '2026-08-01T00:00:00.000Z');
-      INSERT INTO metric_schedule (publication_key, target, updated_at) VALUES ('post:1', 'telegram', '2026-08-01T00:00:00.000Z');
-      INSERT INTO post_metrics (publication_key, target, value) VALUES ('post:1', 'telegram', 5);
       INSERT INTO publication_targets (publication_key, target, updated_at) VALUES ('post:1', 'telegram', '2026-08-01T00:00:00.000Z');
-      DROP TABLE posts;
+      INSERT INTO worker_state (name, state_json, updated_at) VALUES ('site', '{}', '2026-08-01T00:00:00.000Z');
     `);
     sqlite.close();
 
@@ -86,16 +77,19 @@ describe("openBackendDb", () => {
     try {
       expect(backendDb.sqlite.query("SELECT name FROM sqlite_master WHERE name='old_chain_marker'").get()).toBeDefined();
       expect(backendDb.sqlite.query("SELECT name FROM sqlite_master WHERE name='posts'").get()).toBeNull();
+      // The pre-Drizzle migration table is gone and no foreign key is left
+      // pointing at a table the aggregate migration dropped.
+      expect(backendDb.sqlite.query("SELECT name FROM sqlite_master WHERE name='schema_migrations'").get()).toBeNull();
       expect(backendDb.sqlite.query("PRAGMA foreign_key_check").all()).toEqual([]);
-      // Rows survive the rebuild, and every write the workers make now lands
+      // Rows survive the rebuilds, and every write the workers make now lands
       // instead of failing on the dropped parent.
-      for (const table of ["metric_samples", "metric_schedule", "post_metrics", "publication_targets"]) {
-        expect(backendDb.sqlite.query(`SELECT count(*) c FROM ${table}`).get()).toMatchObject({ c: 1 });
-      }
+      expect(backendDb.sqlite.query("SELECT count(*) c FROM metric_samples").get()).toMatchObject({ c: 1 });
+      expect(backendDb.sqlite.query("SELECT count(*) c FROM publication_targets").get()).toMatchObject({ c: 1 });
+      expect(backendDb.sqlite.query("SELECT count(*) c FROM worker_state").get()).toMatchObject({ c: 1 });
       backendDb.sqlite.query("DELETE FROM metric_samples").run();
-      backendDb.sqlite.query("UPDATE metric_schedule SET updated_at = '2026-08-02T00:00:00.000Z'").run();
-      backendDb.sqlite.query("UPDATE post_metrics SET value = 6").run();
       backendDb.sqlite.query("UPDATE publication_targets SET status = 'published'").run();
+      // An index the baseline grew after the squash reaches an old database too.
+      expect(backendDb.sqlite.query("SELECT name FROM sqlite_master WHERE name='idx_publish_jobs_updated_at'").get()).toBeDefined();
     } finally {
       backendDb.close();
     }
@@ -334,10 +328,10 @@ describe("openBackendDb", () => {
       });
       const postId = publishDraftToQueue(backendDb, draftId);
       const linked = backendDb.db
-        .select({ slug: knowledgeEntities.slug, role: postEntityLinks.linkRole })
-        .from(postEntityLinks)
-        .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
-        .where(eq(postEntityLinks.postId, postId))
+        .select({ slug: knowledgeEntities.slug, role: draftEntityLinks.linkRole })
+        .from(draftEntityLinks)
+        .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, draftEntityLinks.entityId))
+        .where(eq(draftEntityLinks.draftId, draftId))
         .all()
         .sort((left, right) => left.slug.localeCompare(right.slug));
       expect(linked).toEqual([
@@ -361,10 +355,10 @@ describe("openBackendDb", () => {
       });
       const postId = publishDraftToQueue(backendDb, draftId);
       const links = backendDb.db
-        .select({ slug: knowledgeEntities.slug, role: postEntityLinks.linkRole })
-        .from(postEntityLinks)
-        .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
-        .where(eq(postEntityLinks.postId, postId))
+        .select({ slug: knowledgeEntities.slug, role: draftEntityLinks.linkRole })
+        .from(draftEntityLinks)
+        .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, draftEntityLinks.entityId))
+        .where(eq(draftEntityLinks.draftId, draftId))
         .all();
       expect(links).toContainEqual({ slug: "claude", role: "mention" });
       expect(links).toContainEqual({ slug: "fable-5", role: "mention" });
@@ -385,10 +379,10 @@ describe("openBackendDb", () => {
       });
       const postId = publishDraftToQueue(backendDb, draftId);
       const link = backendDb.db
-        .select({ role: postEntityLinks.linkRole })
-        .from(postEntityLinks)
-        .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
-        .where(and(eq(postEntityLinks.postId, postId), eq(knowledgeEntities.slug, "claude")))
+        .select({ role: draftEntityLinks.linkRole })
+        .from(draftEntityLinks)
+        .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, draftEntityLinks.entityId))
+        .where(and(eq(draftEntityLinks.draftId, draftId), eq(knowledgeEntities.slug, "claude")))
         .get();
       expect(link).toEqual({ role: "mention" });
     } finally {
@@ -406,12 +400,12 @@ describe("openBackendDb", () => {
         entities: [],
         media: [],
       });
-      const directPostId = publishDraftToQueue(backendDb, directDraft);
+      publishDraftToQueue(backendDb, directDraft);
       const direct = backendDb.db
-        .select({ role: postEntityLinks.linkRole })
-        .from(postEntityLinks)
-        .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
-        .where(and(eq(postEntityLinks.postId, directPostId), eq(knowledgeEntities.slug, "codex")))
+        .select({ role: draftEntityLinks.linkRole })
+        .from(draftEntityLinks)
+        .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, draftEntityLinks.entityId))
+        .where(and(eq(draftEntityLinks.draftId, directDraft), eq(knowledgeEntities.slug, "codex")))
         .get();
       expect(direct).toEqual({ role: "focus" });
 
@@ -421,12 +415,12 @@ describe("openBackendDb", () => {
         entities: [],
         media: [],
       });
-      const asidePostId = publishDraftToQueue(backendDb, asideDraft);
+      publishDraftToQueue(backendDb, asideDraft);
       const aside = backendDb.db
-        .select({ role: postEntityLinks.linkRole })
-        .from(postEntityLinks)
-        .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, postEntityLinks.entityId))
-        .where(and(eq(postEntityLinks.postId, asidePostId), eq(knowledgeEntities.slug, "codex")))
+        .select({ role: draftEntityLinks.linkRole })
+        .from(draftEntityLinks)
+        .innerJoin(knowledgeEntities, eq(knowledgeEntities.id, draftEntityLinks.entityId))
+        .where(and(eq(draftEntityLinks.draftId, asideDraft), eq(knowledgeEntities.slug, "codex")))
         .get();
       expect(aside).toEqual({ role: "mention" });
     } finally {

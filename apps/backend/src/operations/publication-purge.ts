@@ -254,11 +254,11 @@ function purgeStatements(postId: number, draftId: number, publicationKey: string
       deleteSql: "UPDATE x_activity_items SET linked_publication_key=NULL WHERE linked_publication_key=?",
       args: [publicationKey],
     },
-    purgeStatement("post_entity_links", "post_entity_links", "post_id=?", [postId]),
+    purgeStatement("draft_entity_links", "draft_entity_links", "draft_id=?", [draftId]),
     purgeStatement("post_locales", "post_locales", "draft_id=?", [draftId]),
     purgeStatement("publication_targets", "publication_targets", "publication_key=?", [publicationKey]),
-    purgeStatement("site_jobs", "site_jobs", "post_id=?", [postId]),
-    purgeStatement("publish_jobs", "publish_jobs", "publication_id=? OR publication_key=?", [postId, publicationKey]),
+    purgeStatement("site_jobs", "site_jobs", "publication_key=?", [publicationKey]),
+    purgeStatement("publish_jobs", "publish_jobs", "publication_key=?", [publicationKey]),
     purgeStatement("drafts", "drafts", "id=? AND post_id=?", [draftId, postId]),
   ];
 }

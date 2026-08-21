@@ -18,7 +18,6 @@ function articleWithJobs(backendDb: Parameters<Parameters<typeof withDb>[0]>[0],
     backendDb.db
       .insert(publishJobs)
       .values({
-        publicationId: article.id,
         publicationKey: `article:${article.id}`,
         target: `target_${index}`,
         status,
@@ -62,7 +61,6 @@ describe("publication owner refresh", () => {
       backendDb.db
         .insert(publishJobs)
         .values({
-          publicationId: 900,
           publicationKey: "post:900",
           target: "telegram",
           status: "published",

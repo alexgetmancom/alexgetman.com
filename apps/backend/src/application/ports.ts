@@ -359,10 +359,10 @@ export type StudioVideoStore = {
 };
 
 export type EntityEnrichmentStore = {
-  locales(postId: number): Array<{ locale: string; text: string | null }>;
+  locales(draftId: number): Array<{ locale: string; text: string | null }>;
   entities(): Array<{ id: number; kind: string; parentEntityId: number | null; slug: string; titleRu: string; titleEn: string | null }>;
   aliases(): Array<{ entityId: number; alias: string }>;
-  link(postId: number, entityId: number, linkRole: "focus" | "mention", createdAt: string): void;
+  link(draftId: number, entityId: number, linkRole: "focus" | "mention", createdAt: string): void;
 };
 
 export type ChannelConnectionRecord = {

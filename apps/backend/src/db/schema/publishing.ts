@@ -5,8 +5,6 @@ export const publishJobs = sqliteTable(
   "publish_jobs",
   {
     jobId: autoId(),
-    /** The id inside the kind its key names: post 12 is `post:12`. */
-    publicationId: integer().notNull(),
     publicationKey: text().notNull(),
     target: text().notNull(),
     status: text().notNull().default("queued"),
@@ -26,7 +24,6 @@ export const publishJobs = sqliteTable(
     uniqueIndex("idx_publish_jobs_publication_target_status").on(table.publicationKey, table.target, table.status),
     index("idx_publish_jobs_due").on(table.status, table.publishAt, table.nextAttemptAt, table.createdAt),
     index("idx_publish_jobs_lock").on(table.lockedBy, table.lockedAt),
-    index("idx_publish_jobs_publication").on(table.publicationId, table.target, table.status),
     index("idx_publish_jobs_updated_at").on(table.updatedAt),
   ],
 );

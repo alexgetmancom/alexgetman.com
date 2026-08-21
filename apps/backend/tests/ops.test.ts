@@ -37,7 +37,7 @@ describe("TypeScript operations tooling", () => {
       const now = new Date().toISOString();
       backendDb.sqlite
         .query(
-          "INSERT INTO publish_jobs(publication_id,publication_key,target,status,locked_at,created_at,updated_at) VALUES (106,'post:106','telegram','published',?,?,?)",
+          "INSERT INTO publish_jobs(publication_key,target,status,locked_at,created_at,updated_at) VALUES ('post:106','telegram','published',?,?,?)",
         )
         .run(now, now, new Date(Date.parse(now) + 25).toISOString());
       backendDb.sqlite
@@ -81,7 +81,7 @@ describe("TypeScript operations tooling", () => {
       const now = new Date().toISOString();
       backendDb.sqlite
         .query(
-          "INSERT INTO publish_jobs(publication_id,publication_key,target,status,payload_json,created_at,updated_at) VALUES (106,'post:106','instagram_stories','published',?,?,?)",
+          "INSERT INTO publish_jobs(publication_key,target,status,payload_json,created_at,updated_at) VALUES ('post:106','instagram_stories','published',?,?,?)",
         )
         .run(JSON.stringify({ locale: "en", media: [{ type: "IMAGE", localPath: "/tmp/source.jpg" }] }), now, now);
       const plan = await reprocessPostMedia(backendDb, loadTestConfig({}), "post:106", false);
@@ -175,7 +175,7 @@ describe("TypeScript operations tooling", () => {
         .run(now);
       backendDb.sqlite
         .prepare(
-          "INSERT INTO publish_jobs(publication_id,publication_key,target,status,created_at,updated_at) VALUES (1,'post:1','telegram','published',?,?)",
+          "INSERT INTO publish_jobs(publication_key,target,status,created_at,updated_at) VALUES ('post:1','telegram','published',?,?)",
         )
         .run(now, now);
       backendDb.sqlite
@@ -318,7 +318,7 @@ describe("TypeScript operations tooling", () => {
       insertVideoAsset(backendDb);
       backendDb.sqlite
         .query(
-          "INSERT INTO publish_jobs(publication_id,publication_key,target,status,last_error,created_at,updated_at) VALUES (1,'post:1','x','verification_required','socket closed',?,?)",
+          "INSERT INTO publish_jobs(publication_key,target,status,last_error,created_at,updated_at) VALUES ('post:1','x','verification_required','socket closed',?,?)",
         )
         .run(now, now);
       backendDb.sqlite
@@ -380,9 +380,7 @@ describe("TypeScript operations tooling", () => {
         )
         .run(now);
       backendDb.sqlite
-        .query(
-          "INSERT INTO publish_jobs(publication_id,publication_key,target,status,created_at,updated_at) VALUES (1,'post:1','telegram','published',?,?)",
-        )
+        .query("INSERT INTO publish_jobs(publication_key,target,status,created_at,updated_at) VALUES ('post:1','telegram','published',?,?)")
         .run(now, now);
       expect(publicationConsistencyReport(backendDb).targetMismatches).toHaveLength(1);
       expect(repairPublicationConsistency(backendDb)).toMatchObject({
@@ -419,10 +417,8 @@ describe("TypeScript operations tooling", () => {
           .query("INSERT INTO publication_targets(publication_key,target,status,error,updated_at) VALUES (?,'telegram','failed','stale',?)")
           .run(`post:${postId}`, now);
         backendDb.sqlite
-          .query(
-            "INSERT INTO publish_jobs(publication_id,publication_key,target,status,created_at,updated_at) VALUES (?,?,'telegram','published',?,?)",
-          )
-          .run(postId, `post:${postId}`, now, now);
+          .query("INSERT INTO publish_jobs(publication_key,target,status,created_at,updated_at) VALUES (?,'telegram','published',?,?)")
+          .run(`post:${postId}`, now, now);
       }
 
       expect(repairPublicationConsistency(backendDb, { ref: "post:1" })).toMatchObject({
@@ -476,7 +472,7 @@ describe("TypeScript operations tooling", () => {
       });
       backendDb.sqlite
         .query(
-          "INSERT INTO publish_jobs(publication_id,publication_key,target,status,created_at,updated_at) VALUES (70,'post:70','telegram','published',?,?)",
+          "INSERT INTO publish_jobs(publication_key,target,status,created_at,updated_at) VALUES ('post:70','telegram','published',?,?)",
         )
         .run(now, now);
 
@@ -494,7 +490,7 @@ describe("TypeScript operations tooling", () => {
       seedTextPost(backendDb, { postId: 71, status: "scheduled", now });
       backendDb.sqlite
         .query(
-          "INSERT INTO publish_jobs(publication_id,publication_key,target,status,created_at,updated_at) VALUES (71,'post:71','telegram','published',?,?)",
+          "INSERT INTO publish_jobs(publication_key,target,status,created_at,updated_at) VALUES ('post:71','telegram','published',?,?)",
         )
         .run(now, now);
 

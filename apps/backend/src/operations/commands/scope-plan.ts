@@ -28,9 +28,8 @@ export function publicationScope(backendDb: BackendDb, ref: ResolvedPublicationR
   return [...rows.values()].sort((left, right) => left.target.localeCompare(right.target));
 }
 
-/** The publication's own jobs, by whichever identity it has. */
 function jobsOf(ref: ResolvedPublicationRef) {
-  return ref.postId != null ? eq(publishJobs.publicationId, ref.postId) : eq(publishJobs.publicationKey, ref.publicationKey);
+  return eq(publishJobs.publicationKey, ref.publicationKey);
 }
 
 export function scopePlan(

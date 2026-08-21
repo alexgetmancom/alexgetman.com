@@ -24,13 +24,14 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
       .where(eq(drafts.id, draftId))
       .run();
     if (!postId) return;
+    const publicationKey = publicationRef("post", postId);
     const finalSocialCount =
       tx
         .select({ count: count() })
         .from(publishJobs)
         .where(
           and(
-            eq(publishJobs.publicationId, postId),
+            eq(publishJobs.publicationKey, publicationKey),
             inArray(publishJobs.status, ["publishing", "published", "skipped", "verification_required"]),
           ),
         )
@@ -39,22 +40,22 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
       tx
         .select({ count: count() })
         .from(siteJobs)
-        .where(and(eq(siteJobs.postId, postId), inArray(siteJobs.status, ["rendering", "published"])))
+        .where(and(eq(siteJobs.publicationKey, publicationKey), inArray(siteJobs.status, ["rendering", "published"])))
         .get()?.count ?? 0;
     const finalCount = finalSocialCount + finalSiteCount;
     if (finalCount > 0) {
       tx.update(publishJobs)
         .set({ status: "cancelled", updatedAt: now })
-        .where(and(eq(publishJobs.publicationId, postId), inArray(publishJobs.status, ["queued", "failed"])))
+        .where(and(eq(publishJobs.publicationKey, publicationKey), inArray(publishJobs.status, ["queued", "failed"])))
         .run();
       tx.update(siteJobs)
         .set({ status: "cancelled", updatedAt: now })
-        .where(and(eq(siteJobs.postId, postId), inArray(siteJobs.status, ["queued", "failed"])))
+        .where(and(eq(siteJobs.publicationKey, publicationKey), inArray(siteJobs.status, ["queued", "failed"])))
         .run();
       return;
     }
-    tx.delete(publishJobs).where(eq(publishJobs.publicationId, postId)).run();
-    tx.delete(siteJobs).where(eq(siteJobs.postId, postId)).run();
+    tx.delete(publishJobs).where(eq(publishJobs.publicationKey, publicationKey)).run();
+    tx.delete(siteJobs).where(eq(siteJobs.publicationKey, publicationKey)).run();
     tx.update(postLocales)
       .set({
         slug: null,
@@ -88,6 +89,7 @@ export function cancelPendingPostJobs(backendDb: BackendDb, draftId: number): vo
   if (!draft?.postId) return;
   const now = new Date().toISOString();
   const postId = draft.postId;
+  const publicationKey = publicationRef("post", postId);
   // Social and site work is cancelled together, and the journal entry is written
   // only once that has committed: the two updates used to be separate writes
   // with the event between them, so a failure in the middle left the site still
@@ -95,11 +97,11 @@ export function cancelPendingPostJobs(backendDb: BackendDb, draftId: number): vo
   unsafeDb(backendDb).db.transaction((tx) => {
     tx.update(publishJobs)
       .set({ status: "cancelled", updatedAt: now })
-      .where(and(eq(publishJobs.publicationId, postId), inArray(publishJobs.status, ["queued", "failed"])))
+      .where(and(eq(publishJobs.publicationKey, publicationKey), inArray(publishJobs.status, ["queued", "failed"])))
       .run();
     tx.update(siteJobs)
       .set({ status: "cancelled", updatedAt: now })
-      .where(and(eq(siteJobs.postId, postId), inArray(siteJobs.status, ["queued", "failed"])))
+      .where(and(eq(siteJobs.publicationKey, publicationKey), inArray(siteJobs.status, ["queued", "failed"])))
       .run();
   });
   recordDomainEvent(backendDb.events, {

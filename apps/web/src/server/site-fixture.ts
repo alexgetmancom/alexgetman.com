@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { SITE_MEDIA_URL_PREFIX, siteMediaVerticalFilename } from "../../../backend/src/content/site-media-naming.js";
 import { openBackendDb, unsafeDb } from "../../../backend/src/db/client.js";
-import { drafts, knowledgeEntities, postEntityLinks, postLocales } from "../../../backend/src/db/schema.js";
+import { draftEntityLinks, drafts, knowledgeEntities, postLocales } from "../../../backend/src/db/schema.js";
 import { fixtureDayWindow } from "./fixture-utils.js";
 
 /**
@@ -235,7 +235,7 @@ export function seedSiteFixture(options: { dbPath: string; publicDir: string; po
           })
           .returning({ id: knowledgeEntities.id })
           .get();
-        rawDb.db.insert(postEntityLinks).values({ postId: post.postId, entityId: row.id, createdAt: now }).run();
+        rawDb.db.insert(draftEntityLinks).values({ draftId: post.postId, entityId: row.id, createdAt: now }).run();
       }
     }
   } finally {

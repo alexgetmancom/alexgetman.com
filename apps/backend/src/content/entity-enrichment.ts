@@ -1,10 +1,13 @@
-import type { BackendDb } from "../db/client.js";
+import type { EntityEnrichmentStore } from "../application/ports.js";
 
 /** Deterministic, non-blocking enrichment for published stories. It only uses
  * a small reviewed catalogue; ambiguous AI guesses never become public links.
- * A focus is deliberately stricter than a mention: only focuses feed hubs. */
-export function enrichPublishedPostEntities(backendDb: BackendDb, postId: number): number {
-  const locales = backendDb.entityEnrichment.locales(postId);
+ * A focus is deliberately stricter than a mention: only focuses feed hubs.
+ *
+ * Takes the store rather than the database handle so a caller inside a
+ * transaction enriches through that transaction. */
+export function enrichPublishedPostEntities(store: EntityEnrichmentStore, draftId: number, now: string): number {
+  const locales = store.locales(draftId);
   const text = locales
     .map((locale) => locale.text ?? "")
     .join("\n")
@@ -12,8 +15,8 @@ export function enrichPublishedPostEntities(backendDb: BackendDb, postId: number
   if (!text.trim()) return 0;
   const headlines = locales.map((locale) => headline(locale.text ?? "")).filter(Boolean);
 
-  const entities = backendDb.entityEnrichment.entities();
-  const aliases = backendDb.entityEnrichment.aliases();
+  const entities = store.entities();
+  const aliases = store.aliases();
   const aliasesByEntity = new Map<number, string[]>();
   for (const alias of aliases) aliasesByEntity.set(alias.entityId, [...(aliasesByEntity.get(alias.entityId) ?? []), alias.alias]);
   const matches = entities.filter(
@@ -36,14 +39,13 @@ export function enrichPublishedPostEntities(backendDb: BackendDb, postId: number
     (isFocus ? focus : mentions).add(entity.id);
     if (entity.parentEntityId != null) mentions.add(entity.parentEntityId);
   }
-  const now = backendDb.clock.now().toISOString();
-  for (const entityId of mentions) insertLink(backendDb, postId, entityId, "mention", now);
-  for (const entityId of focus) insertLink(backendDb, postId, entityId, "focus", now);
+  // An entity can land in both sets — a matched entity's parent is always a
+  // mention — and the link write is an upsert on (draft, entity). Focus is
+  // written last on purpose: it is the stronger role and must win the conflict.
+  // Swap these two loops and matched focuses silently degrade to mentions.
+  for (const entityId of mentions) store.link(draftId, entityId, "mention", now);
+  for (const entityId of focus) store.link(draftId, entityId, "focus", now);
   return new Set([...mentions, ...focus]).size;
-}
-
-function insertLink(backendDb: BackendDb, postId: number, entityId: number, linkRole: "focus" | "mention", createdAt: string): void {
-  backendDb.entityEnrichment.link(postId, entityId, linkRole, createdAt);
 }
 
 function supportsAutomaticMatching(kind: string, slug: string): boolean {

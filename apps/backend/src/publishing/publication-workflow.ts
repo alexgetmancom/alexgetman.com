@@ -5,7 +5,8 @@ import { effectivePostTargets, registeredPostTargetIds } from "../channels/regis
 import { requireDraft } from "../content/drafts.js";
 import { enrichPublishedPostEntities } from "../content/entity-enrichment.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
-import { draftEntityCandidates, drafts, knowledgeEntities, postEntityLinks } from "../db/schema.js";
+import { createEntityEnrichmentStore } from "../db/repositories/entity-enrichment.js";
+import { draftEntityCandidates, draftEntityLinks, drafts, knowledgeEntities } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import { trackUsageSync } from "../observability/usage.js";
 import { readyStoryCardMedia } from "../story-cards/store.js";
@@ -39,7 +40,7 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
   const { postId, plan } = unsafeDb(backendDb).db.transaction(
     (tx) => {
       const publicationId = ensurePublication(tx, draftId, now);
-      copyAcceptedEntities(tx, draftId, publicationId, now);
+      copyAcceptedEntities(tx, draftId, now);
       const registeredTargets = registeredPostTargetIds(backendDb);
       const storyCards = readyStoryCardMedia(unsafeDb(backendDb).db, draftId);
       const hasStoryTarget = Object.entries(parseTargets(effectiveDraft.targets_json)).some(
@@ -57,7 +58,7 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
         storyCards ?? undefined,
       );
       persistPublicationPlanTx(tx, publicationPlan);
-      enrichPublishedPostEntities(backendDb, publicationId);
+      enrichPublishedPostEntities(createEntityEnrichmentStore(tx), draftId, now);
       return { postId: publicationId, plan: publicationPlan };
     },
     { behavior: "immediate" },
@@ -79,7 +80,7 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
   return postId;
 }
 
-function copyAcceptedEntities(db: UnsafeBackendDb["db"], draftId: number, postId: number, now: string): void {
+function copyAcceptedEntities(db: UnsafeBackendDb["db"], draftId: number, now: string): void {
   const candidates = db
     .select()
     .from(draftEntityCandidates)
@@ -108,8 +109,8 @@ function copyAcceptedEntities(db: UnsafeBackendDb["db"], draftId: number, postId
     .all()
     .filter((entity) => candidateKeys.has(`${entity.kind}\u0000${entity.slug}`));
   if (entities.length)
-    db.insert(postEntityLinks)
-      .values(entities.map((entity) => ({ postId, entityId: entity.id, createdAt: now })))
+    db.insert(draftEntityLinks)
+      .values(entities.map((entity) => ({ draftId, entityId: entity.id, createdAt: now })))
       .onConflictDoNothing()
       .run();
 }

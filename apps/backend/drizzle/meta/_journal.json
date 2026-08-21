@@ -22,6 +22,13 @@
       "when": 1787400000000,
       "tag": "0002_drop_dangling_post_foreign_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787500000000,
+      "tag": "0003_one_key_per_aggregate",
+      "breakpoints": true
     }
   ]
 }
