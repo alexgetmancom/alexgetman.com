@@ -18,6 +18,10 @@ const ignoredDirectories = new Set([
   "story-renderer",
 ]);
 const forbiddenExtensions = new Set([".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs"]);
+// The one file that cannot be TypeScript: it runs on a bare host through
+// `curl … | sh`, before Docker has pulled anything and long before a Bun exists
+// to interpret it. Everything it sets up afterwards is TypeScript.
+const allowedShellSources = new Set(["install.sh"]);
 const shellNames = new Set(["sh", "bash", "zsh"]);
 const violations: string[] = [];
 
@@ -32,6 +36,7 @@ function visit(directory: string): void {
     if (!entry.isFile()) continue;
     const relative = path.relative(root, absolute);
     const extension = path.extname(entry.name);
+    if (allowedShellSources.has(relative)) continue;
     if (forbiddenExtensions.has(extension)) violations.push(relative);
     const disabledTypecheckDirective = "@ts-" + "nocheck";
     if (extension === ".ts" && fs.readFileSync(absolute, "utf8").includes(disabledTypecheckDirective)) violations.push(relative);
@@ -56,4 +61,4 @@ if (violations.length > 0) {
   );
   process.exit(1);
 }
-console.log("Language gate passed: no Python, JavaScript, or shell source files.");
+console.log("Language gate passed: no Python, JavaScript, or shell source files beyond the installer.");
