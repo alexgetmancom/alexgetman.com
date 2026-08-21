@@ -108,7 +108,7 @@ export function compactOperationsStatus(config: BackendConfig, backendDb: Backen
     workers: workerRows,
     missingWorkers,
     posts: {
-      total: countRows(backendDb, "posts"),
+      total: Number(unsafeDb(backendDb).sqlite.query("SELECT count(*) AS count FROM drafts WHERE post_id IS NOT NULL").get()?.count ?? 0),
       targets: { total: total(postTargetCounts), byStatus: postTargetCounts },
       jobs: { total: total(publishJobCounts), byStatus: publishJobCounts },
     },

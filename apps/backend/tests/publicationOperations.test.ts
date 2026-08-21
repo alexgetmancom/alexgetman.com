@@ -150,7 +150,7 @@ it("purges an absent publication and every stored publication path", async () =>
     expect(plan.applied).toBe(false);
     expect(plan.rows).toMatchObject({
       drafts: 1,
-      publications: 1,
+      post_locales: 2,
       publish_jobs: 1,
       publication_targets: 1,
       notification_jobs: 1,

@@ -4,8 +4,9 @@ import { TerminalMetricError } from "../src/analytics/collection/collectors/erro
 import { createMetricCollectors, SUPPORTED_METRIC_TARGETS } from "../src/analytics/collection/collectors/index.js";
 import { claimDueMetricTasks, type MetricTask } from "../src/analytics/collection/metric-schedule.js";
 import { runMetricsCycle } from "../src/analytics/collection/metrics-cycle.js";
-import { metricSamples, metricSchedule, postMetrics, posts, publicationTargets, workerState } from "../src/db/schema.js";
+import { metricSamples, metricSchedule, postMetrics, publicationTargets, workerState } from "../src/db/schema.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { seedTextPost } from "./helpers/post.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("metrics cycle", () => {
@@ -83,7 +84,7 @@ describe("metrics cycle", () => {
   it("does not schedule or run X metrics unless explicitly enabled", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      seedPublishedPost(backendDb, "post:paid-x", "x");
+      seedPublishedPost(backendDb, "post:3", "x");
       const config = loadTestConfig({ MAX_METRIC_TASKS_PER_CYCLE: "10" });
       const collectors = createMetricCollectors(config);
       expect(collectors.x).toBeUndefined();
@@ -97,7 +98,7 @@ describe("metrics cycle", () => {
   it("freezes a terminal collector error instead of retrying it", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      seedPublishedPost(backendDb, "post:terminal", "threads_ru");
+      seedPublishedPost(backendDb, "post:4", "threads_ru");
       await runMetricsCycle(loadTestConfig({}), backendDb, {
         threads_ru: async () => {
           throw new TerminalMetricError("post expired");
@@ -114,20 +115,20 @@ describe("metrics cycle", () => {
   it("claims the oldest due metric checkpoint before newer posts", () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      seedPublishedPost(backendDb, "post:old", "threads_ru");
-      seedPublishedPost(backendDb, "post:new", "threads_ru");
+      seedPublishedPost(backendDb, "post:5", "threads_ru");
+      seedPublishedPost(backendDb, "post:6", "threads_ru");
       const now = Date.now();
       backendDb.db
         .insert(metricSchedule)
         .values([
           {
-            publicationKey: "post:old",
+            publicationKey: "post:5",
             target: "threads_ru",
             nextCheckAt: new Date(now - 60_000).toISOString(),
             updatedAt: new Date(now - 60_000).toISOString(),
           },
           {
-            publicationKey: "post:new",
+            publicationKey: "post:6",
             target: "threads_ru",
             nextCheckAt: new Date(now - 1_000).toISOString(),
             updatedAt: new Date(now - 1_000).toISOString(),
@@ -135,7 +136,7 @@ describe("metrics cycle", () => {
         ])
         .run();
       expect(claimDueMetricTasks(backendDb, loadTestConfig({ MAX_METRIC_TASKS_PER_CYCLE: "1" }), ["threads_ru"])[0]?.publicationKey).toBe(
-        "post:old",
+        "post:5",
       );
     } finally {
       backendDb.close();
@@ -145,13 +146,13 @@ describe("metrics cycle", () => {
   it("does not let schedules without collectors block supported targets", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      seedPublishedPost(backendDb, "post:stale", "site_en");
-      seedPublishedPost(backendDb, "post:current", "threads_ru");
+      seedPublishedPost(backendDb, "post:7", "site_en");
+      seedPublishedPost(backendDb, "post:8", "threads_ru");
       const now = Date.now();
       backendDb.db
         .insert(metricSchedule)
         .values({
-          publicationKey: "post:stale",
+          publicationKey: "post:7",
           target: "site_en",
           nextCheckAt: new Date(now - 60_000).toISOString(),
           updatedAt: new Date(now - 60_000).toISOString(),
@@ -167,14 +168,14 @@ describe("metrics cycle", () => {
         backendDb.db
           .select({ publicationKey: postMetrics.publicationKey, value: postMetrics.value })
           .from(postMetrics)
-          .where(eq(postMetrics.publicationKey, "post:current"))
+          .where(eq(postMetrics.publicationKey, "post:8"))
           .get(),
-      ).toEqual({ publicationKey: "post:current", value: 42 });
+      ).toEqual({ publicationKey: "post:8", value: 42 });
       expect(
         backendDb.db
           .select({ checkCount: metricSchedule.checkCount })
           .from(metricSchedule)
-          .where(eq(metricSchedule.publicationKey, "post:stale"))
+          .where(eq(metricSchedule.publicationKey, "post:7"))
           .get(),
       ).toEqual({ checkCount: 0 });
     } finally {
@@ -185,14 +186,14 @@ describe("metrics cycle", () => {
   it("retires schedules for targets the product no longer collects", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      seedPublishedPost(backendDb, "post:retired", "bluesky");
-      seedPublishedPost(backendDb, "post:paid", "x");
+      seedPublishedPost(backendDb, "post:9", "bluesky");
+      seedPublishedPost(backendDb, "post:10", "x");
       const overdue = new Date(Date.now() - 60_000).toISOString();
       backendDb.db
         .insert(metricSchedule)
         .values([
-          { publicationKey: "post:retired", target: "bluesky", nextCheckAt: overdue, updatedAt: overdue },
-          { publicationKey: "post:paid", target: "x", nextCheckAt: overdue, updatedAt: overdue },
+          { publicationKey: "post:9", target: "bluesky", nextCheckAt: overdue, updatedAt: overdue },
+          { publicationKey: "post:10", target: "x", nextCheckAt: overdue, updatedAt: overdue },
         ])
         .run();
 
@@ -264,13 +265,19 @@ describe("Telegram public metrics", () => {
 
 function seedPublishedPost(backendDb: ReturnType<typeof openBackendDb>, publicationKey: string, target: string): void {
   const date = new Date(Date.now() - 2 * 3_600_000).toISOString();
-  backendDb.db
-    .insert(posts)
-    .values({ publicationKey, channel: "alexgetmancom", messageId: 42, dateUtc: date, status: "active", createdAt: date, updatedAt: date })
-    .run();
+  const postId = Number(publicationKey.replace("post:", ""));
+  seedTextPost(backendDb, { postId, messageId: 42, now: date });
   backendDb.db
     .insert(publicationTargets)
-    .values({ publicationKey, target, status: "published", externalId: "external-1", url: "https://example.test/post", updatedAt: date })
+    .values({
+      publicationKey,
+      target,
+      status: "published",
+      externalId: "external-1",
+      url: "https://example.test/post",
+      publishedAt: date,
+      updatedAt: date,
+    })
     .run();
 }
 

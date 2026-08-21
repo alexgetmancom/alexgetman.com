@@ -1,6 +1,8 @@
-import { desc, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
+import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { posts, publicationTargets } from "../db/schema.js";
+import { drafts, postLocales, publicationTargets } from "../db/schema.js";
 
 /** How many posts back the "usual" target set is learned from. Wide enough that
  * one skipped delivery cannot remove a target from the baseline, short enough
@@ -58,16 +60,18 @@ type RawRow = {
 };
 
 function publicationRows(backendDb: BackendDb, limit: number): RawRow[] {
+  const ru = alias(postLocales, "recent_ru");
   const rows = unsafeDb(backendDb)
     .db.select({
-      publicationKey: posts.publicationKey,
-      postId: posts.postId,
-      dateUtc: posts.dateUtc,
-      status: posts.status,
-      text: posts.text,
+      postId: drafts.postId,
+      dateUtc: sql<string>`coalesce(${ru.publishedAt}, ${drafts.updatedAt})`,
+      status: drafts.status,
+      text: sql<string>`coalesce(${ru.approvedText}, ${ru.sourceText}, '')`,
     })
-    .from(posts)
-    .orderBy(desc(posts.dateUtc))
+    .from(drafts)
+    .leftJoin(ru, and(eq(ru.draftId, drafts.id), eq(ru.locale, "ru")))
+    .where(sql`${drafts.postId} is not null`)
+    .orderBy(desc(sql`coalesce(${ru.publishedAt}, ${drafts.updatedAt})`))
     .limit(limit)
     .all();
   if (rows.length === 0) return [];
@@ -82,7 +86,7 @@ function publicationRows(backendDb: BackendDb, limit: number): RawRow[] {
     .where(
       inArray(
         publicationTargets.publicationKey,
-        rows.map((row) => row.publicationKey),
+        rows.map((row) => publicationRef("post", row.postId as number)),
       ),
     )
     .orderBy(publicationTargets.target)
@@ -93,7 +97,10 @@ function publicationRows(backendDb: BackendDb, limit: number): RawRow[] {
     list.push({ target: row.target, status: row.status, url: row.url });
     byPost.set(row.publicationKey, list);
   }
-  return rows.map((row) => ({ ...row, text: row.text ?? "", targets: byPost.get(row.publicationKey) ?? [] }));
+  return rows.map((row) => {
+    const publicationKey = publicationRef("post", row.postId as number);
+    return { ...row, publicationKey, text: row.text ?? "", targets: byPost.get(publicationKey) ?? [] };
+  });
 }
 
 /** A target counts as expected once most of the recent posts carried it, so a

@@ -138,7 +138,9 @@ describe("bot intake", () => {
       const effects = await applyIntakeKind(ctxWith({}), backendDb, config, "post");
       expect(effects[0]).toMatchObject({ card: { kind: "post" } });
       expect(getConversationState(backendDb, 42, "intake")).toBeNull();
-      expect(backendDb.sqlite.query("SELECT text_ru FROM drafts").all()).toEqual([{ text_ru: "x".repeat(901) }]);
+      expect(backendDb.sqlite.query("SELECT source_text AS text_ru FROM post_locales WHERE locale='ru'").all()).toEqual([
+        { text_ru: "x".repeat(901) },
+      ]);
     } finally {
       backendDb.close();
     }

@@ -1,7 +1,8 @@
 import { and, desc, eq, inArray, max, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { publicationRef } from "../../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
-import { metricSamples, postLocales, posts, publications, videoTargets } from "../../db/schema.js";
+import { drafts, metricSamples, postLocales, videoTargets } from "../../db/schema.js";
 import { t } from "../../foundation/i18n/index.js";
 import type { StudioLocale } from "../../foundation/locale.js";
 import { metricNumber } from "../snapshots/creator-store.js";
@@ -13,12 +14,7 @@ export const ARCHIVE_PAGE_SIZE = 10;
 /** One definition of "a post the creator actually published", shared by the
  * archive listing and the archive summary so the two can never disagree. */
 function publishedPostCount(backendDb: BackendDb): number {
-  const row = unsafeDb(backendDb)
-    .db.select({ count: sql<number>`count(*)` })
-    .from(posts)
-    .innerJoin(publications, eq(publications.postId, posts.postId))
-    .where(eq(publications.status, "published"))
-    .get();
+  const row = unsafeDb(backendDb).db.select({ count: sql<number>`count(*)` }).from(drafts).where(eq(drafts.status, "published")).get();
   return Number(row?.count ?? 0);
 }
 
@@ -28,12 +24,16 @@ export function creatorPostArchive(
   locale: StudioLocale = "en",
 ): { text: string; items: Array<{ id: number; label: string }>; total: number; pageSize: number } {
   const total = publishedPostCount(backendDb);
+  const ru = alias(postLocales, "archive_ru");
   const rows = unsafeDb(backendDb)
-    .db.select({ id: posts.postId, label: sql<string>`coalesce(nullif(trim(${posts.text}), ''), 'Media post')` })
-    .from(posts)
-    .innerJoin(publications, eq(publications.postId, posts.postId))
-    .where(eq(publications.status, "published"))
-    .orderBy(desc(posts.updatedAt))
+    .db.select({
+      id: drafts.postId,
+      label: sql<string>`coalesce(nullif(trim(coalesce(${ru.approvedText}, ${ru.sourceText})), ''), 'Media post')`,
+    })
+    .from(drafts)
+    .leftJoin(ru, and(eq(ru.draftId, drafts.id), eq(ru.locale, "ru")))
+    .where(eq(drafts.status, "published"))
+    .orderBy(desc(drafts.updatedAt))
     .limit(ARCHIVE_PAGE_SIZE)
     .offset(offset)
     .all();
@@ -48,10 +48,16 @@ export function creatorPostArchive(
 
 export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale: StudioLocale = "en"): string {
   const publicationKey = publicationRef("post", postId);
+  const ru = alias(postLocales, "archive_metric_ru");
   const post = unsafeDb(backendDb)
-    .db.select({ text: posts.text, mediaCount: posts.mediaCount, dateMsk: posts.dateMsk })
-    .from(posts)
-    .where(eq(posts.postId, postId))
+    .db.select({
+      text: sql<string>`coalesce(${ru.approvedText}, ${ru.sourceText}, '')`,
+      media: ru.siteMediaJson,
+      dateMsk: sql<string>`coalesce(${ru.publishedAt}, ${drafts.scheduledAt}, ${drafts.createdAt})`,
+    })
+    .from(drafts)
+    .leftJoin(ru, and(eq(ru.draftId, drafts.id), eq(ru.locale, "ru")))
+    .where(eq(drafts.postId, postId))
     .get();
   if (!post) return t(locale, "report.post-not-found");
   // Only the newest sample per (target, metric): metric_samples is an append-only
@@ -86,7 +92,7 @@ export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale:
     `📝 *${t(locale, "post.heading", { id: postId })}*`,
     `👁 ${t(locale, "report.total-views")}: *${totals.views}*`,
     `💬 ${t(locale, "report.interactions")}: *${totals.interactions}*`,
-    `🖼 ${t(locale, "post.media")}: *${post.mediaCount}*`,
+    `🖼 ${t(locale, "post.media")}: *${Array.isArray(post.media) ? post.media.length : 0}*`,
     post.dateMsk ? `🗓 ${post.dateMsk}` : "",
     "",
     post.text?.slice(0, 600) || t(locale, "report.media-post"),
@@ -103,9 +109,10 @@ export function creatorPostMetrics(backendDb: BackendDb, postId: number, locale:
 export function creatorPostMedia(backendDb: BackendDb, postId: number, locale: StudioLocale): Record<string, unknown>[] {
   const preferred = locale === "ru" ? "ru" : "en";
   const row = unsafeDb(backendDb)
-    .db.select({ mediaJson: postLocales.mediaJson })
-    .from(postLocales)
-    .where(and(eq(postLocales.postId, postId), eq(postLocales.locale, preferred)))
+    .db.select({ mediaJson: postLocales.siteMediaJson })
+    .from(drafts)
+    .innerJoin(postLocales, eq(postLocales.draftId, drafts.id))
+    .where(and(eq(drafts.postId, postId), eq(postLocales.locale, preferred)))
     .get();
   const media = row?.mediaJson;
   return Array.isArray(media) ? media.filter((item): item is Record<string, unknown> => item != null && typeof item === "object") : [];

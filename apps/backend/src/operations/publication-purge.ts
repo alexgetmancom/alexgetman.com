@@ -19,7 +19,7 @@ export async function purgePublication(backendDb: BackendDb, config: BackendConf
   const resolved = resolvePublicationRef(backendDb, input.ref);
   if (!resolved?.postId) throw new Error(`publication not found: ${input.ref}`);
   const sqlite = unsafeDb(backendDb).sqlite;
-  const publication = sqlite.query("SELECT draft_id AS draftId FROM publications WHERE post_id=?").get(resolved.postId) as {
+  const publication = sqlite.query("SELECT id AS draftId FROM drafts WHERE post_id=?").get(resolved.postId) as {
     draftId: number | null;
   } | null;
   if (!publication?.draftId) throw new Error(`purge requires a Studio publication: ${resolved.publicationKey}`);
@@ -29,11 +29,9 @@ export async function purgePublication(backendDb: BackendDb, config: BackendConf
   const statements = purgeStatements(postId, draftId, resolved.publicationKey, refs);
   const rows = affectedRows(sqlite, statements);
   const files = (
-    sqlite
-      .query(
-        "SELECT local_path AS path FROM draft_story_cards WHERE draft_id=? AND local_path IS NOT NULL UNION SELECT site_ru_path AS path FROM posts WHERE publication_key=? AND site_ru_path IS NOT NULL UNION SELECT site_en_path AS path FROM posts WHERE publication_key=? AND site_en_path IS NOT NULL",
-      )
-      .all(draftId, resolved.publicationKey, resolved.publicationKey) as Array<{ path: string }>
+    sqlite.query("SELECT local_path AS path FROM draft_story_cards WHERE draft_id=? AND local_path IS NOT NULL").all(draftId) as Array<{
+      path: string;
+    }>
   ).map(({ path }) => path);
   if (!input.apply) return { ok: true, applied: false, action: "purge", ref: resolved.publicationKey, draft_id: draftId, rows, files };
 
@@ -48,7 +46,7 @@ export async function purgePublication(backendDb: BackendDb, config: BackendConf
       if (targetSignature(targetStates(sqlite, resolved.publicationKey)) !== targetSignature(verified))
         throw new Error(`targets for ${resolved.publicationKey} changed while it was being verified; nothing was deleted`);
       const result = executePurge(sqlite, statements);
-      const remaining = sqlite.query("SELECT COUNT(*) AS count FROM publications WHERE post_id=? OR draft_id=?").get(postId, draftId);
+      const remaining = sqlite.query("SELECT COUNT(*) AS count FROM drafts WHERE post_id=? OR id=?").get(postId, draftId);
       if (count(remaining) !== 0) throw new Error(`purge did not remove ${resolved.publicationKey}`);
       return result;
     })
@@ -257,14 +255,10 @@ function purgeStatements(postId: number, draftId: number, publicationKey: string
       args: [publicationKey],
     },
     purgeStatement("post_entity_links", "post_entity_links", "post_id=?", [postId]),
-    purgeStatement("post_locales", "post_locales", "post_id=?", [postId]),
+    purgeStatement("post_locales", "post_locales", "draft_id=?", [draftId]),
     purgeStatement("publication_targets", "publication_targets", "publication_key=?", [publicationKey]),
     purgeStatement("site_jobs", "site_jobs", "post_id=?", [postId]),
     purgeStatement("publish_jobs", "publish_jobs", "publication_id=? OR publication_key=?", [postId, publicationKey]),
-    purgeStatement("publication_plans", "publication_plans", "post_id=?", [postId]),
-    purgeStatement("publication_sources", "publication_sources", "post_id=?", [postId]),
-    purgeStatement("posts", "posts", "post_id=? OR publication_key=?", [postId, publicationKey]),
-    purgeStatement("publications", "publications", "post_id=? AND draft_id=?", [postId, draftId]),
     purgeStatement("drafts", "drafts", "id=? AND post_id=?", [draftId, postId]),
   ];
 }

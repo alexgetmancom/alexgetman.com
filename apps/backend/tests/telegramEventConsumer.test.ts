@@ -1,12 +1,13 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { Bot } from "grammy";
 import { refreshPostControlCard } from "../src/bot/progress.js";
-import { alertDedup, botUiSettings, drafts, publishJobs, siteJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
+import { alertDedup, botUiSettings, publishJobs, siteJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
 import { recordDomainEvent } from "../src/domain/events.js";
 import { setTelegramPostCard, setTelegramPostProgressCard, setTelegramVideoCard } from "../src/interfaces/telegram/control-cards.js";
 import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";
 import { refreshVideoControlCard, sendStudioCompletion, sendStudioReminder } from "../src/interfaces/telegram/video-notifications.js";
 import { withDb } from "./helpers/db.js";
+import { seedTextPost } from "./helpers/post.js";
 import { loadTestConfig, MSK_STUDIO_PROFILE } from "./helpers/studio-config.js";
 import { createTestVideoAsset } from "./helpers/video.js";
 
@@ -21,18 +22,7 @@ describe("Telegram event consumer", () => {
     withDb(async (backendDb) => {
       const draftId = 11;
       const now = new Date().toISOString();
-      backendDb.db
-        .insert(drafts)
-        .values({
-          id: draftId,
-          actorId: 42,
-          status: "scheduled",
-          textRu: "Scheduled post",
-          targetsJson: JSON.stringify({ threads_en: true }),
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
+      seedTextPost(backendDb, { draftId, actorId: 42, status: "scheduled", ru: "Scheduled post", targets: { threads_en: true }, now });
       setTelegramPostCard(backendDb, draftId, 42, 100);
       const editMessageText = mock(async () => undefined);
       const bot = { api: { editMessageText } } as unknown as Bot;
@@ -46,18 +36,7 @@ describe("Telegram event consumer", () => {
     withDb(async (backendDb) => {
       const draftId = 12;
       const now = new Date().toISOString();
-      backendDb.db
-        .insert(drafts)
-        .values({
-          id: draftId,
-          actorId: 42,
-          status: "scheduled",
-          textRu: "Scheduled post",
-          targetsJson: JSON.stringify({ threads_en: true }),
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
+      seedTextPost(backendDb, { draftId, actorId: 42, status: "scheduled", ru: "Scheduled post", targets: { threads_en: true }, now });
       setTelegramPostProgressCard(backendDb, draftId, 42, 101);
       const editMessageText = mock(async (_chatId: number, _messageId: number, text: string) => text);
       const bot = { api: { editMessageText } } as unknown as Bot;
@@ -254,22 +233,18 @@ describe("Telegram event consumer", () => {
     withDb(async (backendDb) => {
       const now = new Date().toISOString();
       const later = "2026-08-06T07:00:00.000Z";
-      backendDb.db
-        .insert(drafts)
-        .values({
-          id: 13,
-          actorId: 42,
-          status: "scheduled",
-          textRu: "RU",
-          textEnMachine: "EN",
-          targetsJson: JSON.stringify({ telegram: true, site_ru: true, threads_en: true, site_en: true }),
-          postId: 113,
-          scheduledAt: later,
-          scheduledEnAt: now,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
+      seedTextPost(backendDb, {
+        draftId: 13,
+        postId: 113,
+        actorId: 42,
+        status: "scheduled",
+        ru: "RU",
+        en: "EN",
+        targets: { telegram: true, site_ru: true, threads_en: true, site_en: true },
+        scheduledAt: later,
+        scheduledEnAt: now,
+        now,
+      });
       backendDb.db
         .insert(publishJobs)
         .values([
@@ -337,19 +312,15 @@ describe("Telegram event consumer", () => {
   it("sends one actionable aggregate for a failed post and does not replay it", async () =>
     withDb(async (backendDb) => {
       const now = new Date().toISOString();
-      backendDb.db
-        .insert(drafts)
-        .values({
-          id: 11,
-          actorId: 42,
-          status: "failed",
-          textRu: "Failed post",
-          targetsJson: JSON.stringify({ telegram_ru: true, site_en: true }),
-          postId: 110,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
+      seedTextPost(backendDb, {
+        draftId: 11,
+        postId: 110,
+        actorId: 42,
+        status: "failed",
+        ru: "Failed post",
+        targets: { telegram_ru: true, site_en: true },
+        now,
+      });
       backendDb.db
         .insert(publishJobs)
         .values({

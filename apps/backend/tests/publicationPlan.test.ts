@@ -24,14 +24,15 @@ describe("PublicationPlan", () => {
 
     expect(plan).toMatchObject({ draftId: 9, postId: 99, publicationKey: "post:99", messageId: 42, mode: "scheduled" });
     expect(plan.payload).toMatchObject({
-      text_ru: "Русский заголовок\nТекст",
-      text_en: "English title\nText",
-      publish_at_en: "2026-07-15T12:00:00.000Z",
+      locales: {
+        ru: { text: "Русский заголовок\nТекст" },
+        en: { text: "English title\nText", publishAt: "2026-07-15T12:00:00.000Z" },
+      },
     });
     expect(plan.locales).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ locale: "ru", siteEnabled: 1 }),
-        expect.objectContaining({ locale: "en", siteEnabled: 1 }),
+        expect.objectContaining({ locale: "ru", source: expect.objectContaining({ siteEnabled: true }) }),
+        expect.objectContaining({ locale: "en", source: expect.objectContaining({ siteEnabled: true }) }),
       ]),
     );
   });

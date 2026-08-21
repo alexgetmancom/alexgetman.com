@@ -1,7 +1,8 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { claimSync, markSynced } from "../../analytics/snapshots/creator-store.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
-import { knowledgeEntities, postEntityLinks, posts } from "../../db/schema.js";
+import { drafts, knowledgeEntities, postEntityLinks, postLocales } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { deepSeekChat } from "../../foundation/external/deepseek.js";
 import { t } from "../../foundation/i18n/index.js";
@@ -40,11 +41,20 @@ export async function sendDailyEditorialInbox(
   if (date.hour < EDITORIAL_INBOX_HOUR_MSK) return false;
   const key = `editorial_inbox:${date.day}`;
 
+  const ru = alias(postLocales, "editorial_ru");
+  const en = alias(postLocales, "editorial_en");
   const material = unsafeDb(backendDb)
-    .db.select({ postId: posts.postId, date: posts.dateUtc, text: posts.text, textEn: posts.textEn })
-    .from(posts)
-    .where(eq(posts.status, "active"))
-    .orderBy(desc(posts.dateUtc), desc(posts.createdAt))
+    .db.select({
+      postId: drafts.postId,
+      date: sql<string>`coalesce(${ru.publishedAt}, ${en.publishedAt}, ${drafts.updatedAt})`,
+      text: sql<string>`coalesce(${ru.approvedText}, ${ru.sourceText}, '')`,
+      textEn: sql<string>`coalesce(${en.approvedText}, ${en.sourceText}, '')`,
+    })
+    .from(drafts)
+    .leftJoin(ru, and(eq(ru.draftId, drafts.id), eq(ru.locale, "ru")))
+    .leftJoin(en, and(eq(en.draftId, drafts.id), eq(en.locale, "en")))
+    .where(eq(drafts.status, "published"))
+    .orderBy(desc(sql`coalesce(${ru.publishedAt}, ${en.publishedAt}, ${drafts.updatedAt})`), desc(drafts.createdAt))
     .limit(24)
     .all()
     .flatMap((post) => {

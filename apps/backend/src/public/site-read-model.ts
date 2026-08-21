@@ -1,9 +1,9 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import * as z from "zod";
 import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { knowledgeEntities, postEntityLinks, postLocales, postMetrics, posts, publications } from "../db/schema.js";
+import { drafts, knowledgeEntities, postEntityLinks, postLocales, postMetrics } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 
 const siteMediaSchema = z
@@ -106,39 +106,41 @@ function buildPublicSiteFeed(backendDb: BackendDb, postId?: number): FeedItem[] 
   const enLocale = alias(postLocales, "site_locale_en");
   const rows = unsafeDb(backendDb)
     .db.select({
-      postId: publications.postId,
-      messageId: posts.messageId,
-      publicationKey: posts.publicationKey,
-      date: posts.dateUtc,
-      createdAt: publications.createdAt,
+      postId: drafts.postId,
+      messageId: drafts.channelMessageId,
+      date: sql<string>`coalesce(${ruLocale.publishedAt}, ${enLocale.publishedAt}, ${drafts.scheduledAt}, ${drafts.scheduledEnAt}, ${drafts.createdAt})`,
+      createdAt: drafts.createdAt,
       ruSlug: ruLocale.slug,
-      ruText: ruLocale.text,
+      ruText: sql<string>`coalesce(${ruLocale.approvedText}, ${ruLocale.sourceText}, '')`,
       ruHtml: ruLocale.html,
-      ruMedia: ruLocale.mediaJson,
+      ruMedia: ruLocale.siteMediaJson,
       ruEnabled: ruLocale.siteEnabled,
       ruPublishedAt: ruLocale.publishedAt,
       enSlug: enLocale.slug,
-      enText: enLocale.text,
+      enText: sql<string>`coalesce(${enLocale.approvedText}, ${enLocale.sourceText}, '')`,
       enHtml: enLocale.html,
-      enMedia: enLocale.mediaJson,
+      enMedia: enLocale.siteMediaJson,
       enEnabled: enLocale.siteEnabled,
       enPublishedAt: enLocale.publishedAt,
       views: postMetrics.value,
     })
-    .from(publications)
-    .innerJoin(posts, eq(posts.postId, publications.postId))
-    .leftJoin(ruLocale, and(eq(ruLocale.postId, publications.postId), eq(ruLocale.locale, "ru")))
-    .leftJoin(enLocale, and(eq(enLocale.postId, publications.postId), eq(enLocale.locale, "en")))
+    .from(drafts)
+    .leftJoin(ruLocale, and(eq(ruLocale.draftId, drafts.id), eq(ruLocale.locale, "ru")))
+    .leftJoin(enLocale, and(eq(enLocale.draftId, drafts.id), eq(enLocale.locale, "en")))
     .leftJoin(
       postMetrics,
-      and(eq(postMetrics.publicationKey, posts.publicationKey), eq(postMetrics.target, "telegram"), eq(postMetrics.metricName, "views")),
+      and(
+        eq(postMetrics.publicationKey, sql`'post:' || ${drafts.postId}`),
+        eq(postMetrics.target, "telegram"),
+        eq(postMetrics.metricName, "views"),
+      ),
     )
     .where(
       postId === undefined
-        ? inArray(publications.status, ["published", "failed", "scheduled"])
-        : and(inArray(publications.status, ["published", "failed", "scheduled"]), eq(publications.postId, postId)),
+        ? inArray(drafts.status, ["published", "failed", "scheduled"])
+        : and(inArray(drafts.status, ["published", "failed", "scheduled"]), eq(drafts.postId, postId)),
     )
-    .orderBy(desc(posts.dateUtc), desc(publications.postId))
+    .orderBy(desc(drafts.updatedAt), desc(drafts.postId))
     .all();
 
   const postIds = rows.flatMap((row) => (row.postId == null ? [] : [row.postId]));
@@ -173,16 +175,17 @@ function buildPublicSiteFeed(backendDb: BackendDb, postId?: number): FeedItem[] 
   }
   const now = Date.now();
   return rows.flatMap((row): FeedItem[] => {
-    if (row.postId == null || row.messageId == null || row.publicationKey == null) return [];
+    if (row.postId == null) return [];
+    const publicationKey = publicationRef("post", row.postId);
     const ru = locale(row.ruEnabled, row.ruPublishedAt, row.ruText, row.ruSlug, row.ruHtml, publishedMedia(row.ruMedia), now);
     const en = locale(row.enEnabled, row.enPublishedAt, row.enText, row.enSlug, row.enHtml, publishedMedia(row.enMedia), now);
     if (!ru.enabled && !en.enabled) return [];
     const media = ru.media;
     const mediaEn = en.media.length > 0 ? en.media : media;
     const parsed = feedItemSchema.safeParse({
-      id: row.publicationKey,
+      id: publicationKey,
       post_id: row.postId,
-      message_id: row.messageId,
+      message_id: row.messageId ?? row.postId,
       date: row.date ?? row.createdAt,
       text: ru.text,
       text_ru: ru.text,
@@ -207,8 +210,8 @@ function buildPublicSiteFeed(backendDb: BackendDb, postId?: number): FeedItem[] 
         ref: publicationRef("post", row.postId),
         type: "site.feed.item_invalid",
         severity: "warn",
-        message: `Post ${row.publicationKey} dropped from the public feed: ${parsed.error.issues[0]?.message ?? "invalid shape"}`,
-        details: { publication_key: row.publicationKey, issues: parsed.error.issues.slice(0, 5) },
+        message: `Post ${publicationKey} dropped from the public feed: ${parsed.error.issues[0]?.message ?? "invalid shape"}`,
+        details: { publication_key: publicationKey, issues: parsed.error.issues.slice(0, 5) },
         cooldownSeconds: 60 * 60,
       });
       return [];

@@ -5,8 +5,6 @@ import {
   credentialChecks,
   drafts,
   publicationEvents,
-  publicationPlans,
-  publications,
   publicationTargets,
   publishJobs,
   siteJobs,
@@ -18,6 +16,7 @@ import { refreshPublicationStatus } from "../src/publishing/publication-status.j
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
 import { replaceVideoTargets } from "../src/publishing/video-service.js";
 import { withDb } from "./helpers/db.js";
+import { seedTextPost } from "./helpers/post.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoDraft } from "./helpers/video.js";
 
@@ -26,40 +25,18 @@ describe("publication reconciliation", () => {
     withDb((backendDb) => {
       const now = new Date("2026-08-05T21:32:13.000Z");
       const later = new Date("2026-08-06T07:00:00.000Z");
-      backendDb.db
-        .insert(drafts)
-        .values({
-          id: 90,
-          actorId: 42,
-          status: "scheduled",
-          textRu: "RU",
-          textEnMachine: "EN",
-          targetsJson: JSON.stringify({ telegram: true, site_ru: true, threads_en: true, site_en: true }),
-          postId: 90,
-          scheduledAt: later.toISOString(),
-          scheduledEnAt: now.toISOString(),
-          createdAt: now.toISOString(),
-          updatedAt: now.toISOString(),
-        })
-        .run();
-      backendDb.db
-        .insert(publications)
-        .values({ postId: 90, draftId: 90, status: "scheduled", createdAt: now.toISOString(), updatedAt: now.toISOString() })
-        .run();
-      backendDb.db
-        .insert(publicationPlans)
-        .values({
-          postId: 90,
-          planJson: {
-            mode: "scheduled",
-            targets: { telegram: true, site_ru: true, threads_en: true, site_en: true },
-            scheduled_at: later.toISOString(),
-            scheduled_en_at: now.toISOString(),
-          },
-          createdAt: now.toISOString(),
-          updatedAt: now.toISOString(),
-        })
-        .run();
+      seedTextPost(backendDb, {
+        postId: 90,
+        actorId: 42,
+        status: "scheduled",
+        targets: { telegram: true, site_ru: true, threads_en: true, site_en: true },
+        ru: "RU",
+        en: "EN",
+        publishMode: "scheduled",
+        scheduledAt: later.toISOString(),
+        scheduledEnAt: now.toISOString(),
+        now: now.toISOString(),
+      });
       backendDb.db
         .insert(publishJobs)
         .values([
@@ -121,20 +98,14 @@ describe("publication reconciliation", () => {
   it("emits one aggregate when social and site targets are terminal", () =>
     withDb((backendDb) => {
       const now = new Date().toISOString();
-      backendDb.db
-        .insert(drafts)
-        .values({
-          id: 91,
-          actorId: 42,
-          status: "scheduled",
-          textRu: "Terminal post",
-          targetsJson: JSON.stringify({ telegram_ru: true, site_en: true }),
-          postId: 91,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      backendDb.db.insert(publications).values({ postId: 91, draftId: 91, status: "scheduled", createdAt: now, updatedAt: now }).run();
+      seedTextPost(backendDb, {
+        postId: 91,
+        actorId: 42,
+        status: "scheduled",
+        targets: { telegram_ru: true, site_en: true },
+        ru: "Terminal post",
+        now,
+      });
       backendDb.db
         .insert(publishJobs)
         .values({
@@ -162,20 +133,14 @@ describe("publication reconciliation", () => {
   it("announces the completion again once a retried target lands", () =>
     withDb((backendDb) => {
       const now = new Date().toISOString();
-      backendDb.db
-        .insert(drafts)
-        .values({
-          id: 92,
-          actorId: 42,
-          status: "scheduled",
-          textRu: "Retried post",
-          targetsJson: JSON.stringify({ telegram_ru: true, instagram_stories: true }),
-          postId: 92,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      backendDb.db.insert(publications).values({ postId: 92, draftId: 92, status: "scheduled", createdAt: now, updatedAt: now }).run();
+      seedTextPost(backendDb, {
+        postId: 92,
+        actorId: 42,
+        status: "scheduled",
+        targets: { telegram_ru: true, instagram_stories: true },
+        ru: "Retried post",
+        now,
+      });
       backendDb.db
         .insert(publishJobs)
         .values([

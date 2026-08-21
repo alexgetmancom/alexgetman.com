@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { draftPreview } from "../src/bot/preview.js";
-import { drafts } from "../src/db/schema.js";
 import { requirePostEditAllowed } from "../src/studio/services/post-access.js";
 import { withDb } from "./helpers/db.js";
+import { seedTextPost } from "./helpers/post.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("locale-aware post edit lock", () => {
@@ -11,22 +11,17 @@ describe("locale-aware post edit lock", () => {
       const now = new Date();
       const ruAt = new Date(now.getTime() + 60_000).toISOString();
       const enAt = new Date(now.getTime() + 10 * 60_000).toISOString();
-      backendDb.db
-        .insert(drafts)
-        .values({
-          id: 8,
-          actorId: 42,
-          status: "scheduled",
-          textRu: "RU text",
-          textEnMachine: "EN text",
-          textEnApproved: "EN text",
-          targetsJson: JSON.stringify({ telegram_ru: true, telegram_en: true }),
-          scheduledAt: ruAt,
-          scheduledEnAt: enAt,
-          createdAt: now.toISOString(),
-          updatedAt: now.toISOString(),
-        })
-        .run();
+      seedTextPost(backendDb, {
+        draftId: 8,
+        actorId: 42,
+        status: "scheduled",
+        ru: "RU text",
+        en: "EN text",
+        targets: { telegram_ru: true, telegram_en: true },
+        scheduledAt: ruAt,
+        scheduledEnAt: enAt,
+        now: now.toISOString(),
+      });
       const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42", POST_EDIT_LOCK_MINUTES: "2" });
 
       expect(() => requirePostEditAllowed(backendDb, config, 42, 8, now, "ru")).toThrow("err.post-too-close-to-publish");

@@ -7,11 +7,12 @@ import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { draftStoryCards, drafts, postLocales, publicationEvents, publicationSources, publishJobs, siteJobs } from "../src/db/schema.js";
+import { draftStoryCards, drafts, postLocales, publicationEvents, publishJobs, siteJobs } from "../src/db/schema.js";
 import { backfillTextStoryCards } from "../src/operations/story-card-backfill.js";
 import { localizeTargetPayload } from "../src/publishing/payload.js";
 import { createPublicationPlan } from "../src/publishing/publication-plan.js";
 import { publishDraftToQueue } from "../src/publishing/publication-workflow.js";
+import { publicationSourceFromDb } from "../src/publishing/source-store.js";
 import { buildStoryCardCopy, MAX_LINES, TEMPLATE_VERSION } from "../src/story-cards/copy.js";
 import { discardDraftStoryCards, readyStoryCardMedia, setStoryPublishMode, storyCardsForDraft } from "../src/story-cards/store.js";
 import { emojiAssetFile, STORY_CARD_EMOJI_LEFT, STORY_CARD_EMOJI_SIZE, storyCardEmojiTop } from "../src/story-cards/svg.js";
@@ -158,7 +159,7 @@ describe("text Story cards", () => {
       instagram_stories_ru: false,
       instagram_stories: false,
     });
-    expect(siteOnly.locales[0]?.mediaJson).toEqual([storyCards.ru]);
+    expect(siteOnly.locales[0]?.source.siteMedia).toEqual([storyCards.ru]);
     expect(localizeTargetPayload(siteOnly.payload, "telegram").media).toEqual([]);
 
     const withStories = createPublicationPlan(
@@ -227,16 +228,12 @@ describe("text Story cards", () => {
     const postId = posts.schedule(42, draftId, { ruAt: new Date(Date.now() + 5 * 60_000), enAt: null });
 
     posts.edit(42, draftId, { locale: "ru", text: "After", entities: [], media: [] });
-    expect(backendDb.db.select().from(publicationSources).where(eq(publicationSources.postId, postId)).get()?.itemJson).toMatchObject({
-      text_ru: "Before",
-    });
+    expect(publicationSourceFromDb(backendDb.db, postId).locales.ru).toMatchObject({ text: "After" });
     expect(backendDb.db.select().from(drafts).where(eq(drafts.id, draftId)).get()?.storyPublishMode).toBe("all");
 
     await runStoryCardCycle(config, backendDb);
     await runStoryCardCycle(config, backendDb);
-    expect(backendDb.db.select().from(publicationSources).where(eq(publicationSources.postId, postId)).get()?.itemJson).toMatchObject({
-      text_ru: "After",
-    });
+    expect(publicationSourceFromDb(backendDb.db, postId).locales.ru).toMatchObject({ text: "After" });
   }, 20_000);
 
   it("skips Story delivery and notifies the inbox after a card exhausts retries", async () => {
@@ -311,8 +308,8 @@ describe("text Story cards", () => {
 
     const applied = await backfillTextStoryCards(backendDb, config, `post:${postId}`, true);
     expect(applied).toMatchObject({ applied: true, count: 2 });
-    expect(backendDb.db.select().from(postLocales).where(eq(postLocales.postId, postId)).all()).toSatisfy((locales) =>
-      locales.every((locale) => Array.isArray(locale.mediaJson) && locale.mediaJson.length === 1),
+    expect(backendDb.db.select().from(postLocales).where(eq(postLocales.draftId, draftId)).all()).toSatisfy((locales) =>
+      locales.every((locale) => Array.isArray(locale.siteMediaJson) && locale.siteMediaJson.length === 1),
     );
     expect(backendDb.db.select().from(publishJobs).all()).toHaveLength(socialJobsBefore);
     expect(backendDb.db.select().from(siteJobs).where(eq(siteJobs.postId, postId)).all().at(-1)?.reason).toBe("text_story_card_backfill");

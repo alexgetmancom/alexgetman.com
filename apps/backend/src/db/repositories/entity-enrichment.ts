@@ -1,6 +1,6 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { EntityEnrichmentStore } from "../../application/ports.js";
-import { knowledgeEntities, knowledgeEntityAliases, postEntityLinks, postLocales } from "../schema.js";
+import { drafts, knowledgeEntities, knowledgeEntityAliases, postEntityLinks, postLocales } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite adapter for the reviewed catalogue used by deterministic enrichment. */
@@ -8,9 +8,10 @@ export function createEntityEnrichmentStore(db: BackendDatabase): EntityEnrichme
   return {
     locales(postId) {
       return db
-        .select({ locale: postLocales.locale, text: postLocales.text })
+        .select({ locale: postLocales.locale, text: sql<string>`coalesce(${postLocales.approvedText}, ${postLocales.sourceText}, '')` })
         .from(postLocales)
-        .where(and(eq(postLocales.postId, postId), inArray(postLocales.locale, ["ru", "en"])))
+        .innerJoin(drafts, eq(drafts.id, postLocales.draftId))
+        .where(and(eq(drafts.postId, postId), inArray(postLocales.locale, ["ru", "en"])))
         .all();
     },
 

@@ -3,11 +3,12 @@ import type { Bot, Context } from "grammy";
 import { runCallbackBoundary } from "../src/bot/callback-boundary.js";
 import { handlePublicationCallback } from "../src/bot/callback-router.js";
 import { publicationCallback } from "../src/bot/publication-callback.js";
-import { drafts, publicationSources, publications, publicationTargets, publishJobs } from "../src/db/schema.js";
+import { publicationTargets, publishJobs } from "../src/db/schema.js";
 import { consumeTelegramEvents } from "../src/interfaces/telegram/event-consumer.js";
 import { HttpPublishError } from "../src/publishing/errors.js";
 import { claimDuePublishJobs, enqueuePublishJobTx, failPublishJob } from "../src/publishing/queue.js";
 import { withDb } from "./helpers/db.js";
+import { seedTextPost } from "./helpers/post.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
 const config = loadTestConfig({ CONTROLLER_ADMIN_IDS: "42" });
@@ -16,25 +17,16 @@ describe("post recovery scenario", () => {
   it("notifies once, retries all failed targets once, and exposes no duplicate queue rows", async () =>
     withDb(async (backendDb) => {
       const now = new Date().toISOString();
-      backendDb.db
-        .insert(drafts)
-        .values({
-          id: 7,
-          actorId: 42,
-          status: "scheduled",
-          textRu: "Night post",
-          textEnMachine: "Night post",
-          targetsJson: JSON.stringify({ telegram: true, threads_ru: true }),
-          postId: 700,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      backendDb.db.insert(publications).values({ postId: 700, draftId: 7, status: "scheduled", createdAt: now, updatedAt: now }).run();
-      backendDb.db
-        .insert(publicationSources)
-        .values({ postId: 700, itemJson: { text: "Night post", text_ru: "Night post", media: [] }, createdAt: now, updatedAt: now })
-        .run();
+      seedTextPost(backendDb, {
+        draftId: 7,
+        postId: 700,
+        actorId: 42,
+        status: "scheduled",
+        targets: { telegram: true, threads_ru: true },
+        ru: "Night post",
+        en: "Night post",
+        now,
+      });
       for (const target of ["telegram", "threads_ru"])
         enqueuePublishJobTx(backendDb.db, {
           publicationId: 700,

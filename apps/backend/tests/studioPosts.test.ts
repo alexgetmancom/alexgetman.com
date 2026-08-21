@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { registerChannel } from "../src/channels/registry.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { channelConnections, drafts, publicationSources, publishJobs, siteJobs } from "../src/db/schema.js";
+import { channelConnections, drafts, postLocales, publishJobs, siteJobs } from "../src/db/schema.js";
+import { publicationSourceFromDb } from "../src/publishing/source-store.js";
 import { postService } from "../src/studio/services/posts.js";
 import { registerTestChannels, TEXT_TEST_CHANNELS } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
@@ -123,9 +124,9 @@ describe("Studio post commands", () => {
 
     posts.edit(42, draftId, { locale: "ru", text: "After", entities: [], media: [] });
 
-    const source = backendDb.db.select().from(publicationSources).where(eq(publicationSources.postId, postId)).get();
+    const source = publicationSourceFromDb(backendDb.db, postId);
     const job = backendDb.db.select().from(publishJobs).where(eq(publishJobs.publicationId, postId)).get();
-    expect(source?.itemJson).toMatchObject({ text_ru: "After" });
+    expect(source.locales.ru).toMatchObject({ text: "After" });
     expect(job?.payloadJson).toMatchObject({ locale: "ru", text: "After" });
   });
 
@@ -184,9 +185,7 @@ describe("Studio post commands", () => {
 
     posts.edit(42, draftId, { locale: "ru", text: "After", entities: [], media: [] });
 
-    expect(backendDb.db.select().from(publicationSources).where(eq(publicationSources.postId, postId)).get()?.itemJson).toMatchObject({
-      text_ru: "After",
-    });
+    expect(publicationSourceFromDb(backendDb.db, postId).locales.ru).toMatchObject({ text: "After" });
   });
 
   it("restores an unapproved EN translation as null when a replan rejects the edit", () => {
@@ -203,7 +202,14 @@ describe("Studio post commands", () => {
         media: [],
       }),
     ).toThrow();
-    expect(backendDb.db.select({ textEnApproved: drafts.textEnApproved }).from(drafts).where(eq(drafts.id, draftId)).get()).toEqual({
+    expect(
+      backendDb.db
+        .select({ textEnApproved: postLocales.approvedText })
+        .from(postLocales)
+        .where(eq(postLocales.draftId, draftId))
+        .all()
+        .find((row) => row.textEnApproved === null),
+    ).toEqual({
       textEnApproved: null,
     });
   });

@@ -1,47 +1,28 @@
 import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { json, type MediaPayload, timestamps } from "./_shared.js";
-
-export const posts = sqliteTable(
-  "posts",
-  {
-    publicationKey: text().primaryKey(),
-    postId: integer(),
-    source: text().notNull().default("studio"),
-    channel: text().notNull(),
-    chatId: text(),
-    messageId: integer().notNull(),
-    dateUtc: text(),
-    dateMsk: text(),
-    text: text(),
-    textEn: text(),
-    html: text(),
-    htmlEn: text(),
-    mediaJson: text(),
-    mediaCount: integer().notNull().default(0),
-    siteRuPath: text(),
-    siteEnPath: text(),
-    telegramUrl: text(),
-    status: text().notNull().default("active"),
-    ...timestamps(),
-  },
-  (table) => [index("idx_posts_updated_at").on(table.updatedAt)],
-);
+import { json, type MediaPayload } from "./_shared.js";
 
 export const postLocales = sqliteTable(
   "post_locales",
   {
-    postId: integer().notNull(),
+    draftId: integer().notNull(),
     locale: text().notNull(),
-    slug: text().notNull(),
-    text: text(),
+    /** Authoring source. For English this is the latest machine translation;
+     * approvedText is the author's replacement when one exists. */
+    sourceText: text().notNull().default(""),
+    approvedText: text(),
     html: text(),
     entitiesJson: text(),
+    /** Original editorial media, before any target-specific rendering. */
     mediaJson: json<MediaPayload[] | null>(),
+    storyMediaJson: json<MediaPayload[] | null>(),
+    siteMediaJson: json<MediaPayload[] | null>(),
+    slug: text(),
     siteEnabled: integer().notNull().default(0),
+    publishAt: text(),
     publishedAt: text(),
     updatedAt: text().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.postId, table.locale] })],
+  (table) => [primaryKey({ columns: [table.draftId, table.locale] }), index("idx_post_locales_published_at").on(table.publishedAt)],
 );
 
 export const publicationTargets = sqliteTable(

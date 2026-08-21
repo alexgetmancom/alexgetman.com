@@ -1,6 +1,7 @@
-import { eq, or } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
+import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { posts } from "../db/schema.js";
+import { drafts, postLocales } from "../db/schema.js";
 import { zonedCalendarDay } from "../foundation/time.js";
 
 export function recordPageview(backendDb: BackendDb, rawPath: string, timeZone = "UTC"): string {
@@ -10,22 +11,23 @@ export function recordPageview(backendDb: BackendDb, rawPath: string, timeZone =
   const candidates = path.endsWith("/") ? [path, path.slice(0, -1)] : [path, `${path}/`];
   const [firstCandidate, secondCandidate] = candidates;
   if (!firstCandidate || !secondCandidate) return path;
-  const ru = unsafeDb(backendDb)
-    .db.select({ publicationKey: posts.publicationKey })
-    .from(posts)
-    .where(or(eq(posts.siteRuPath, firstCandidate), eq(posts.siteRuPath, secondCandidate)))
-    .get();
-  const en = ru
-    ? null
-    : unsafeDb(backendDb)
-        .db.select({ publicationKey: posts.publicationKey })
-        .from(posts)
-        .where(or(eq(posts.siteEnPath, firstCandidate), eq(posts.siteEnPath, secondCandidate)))
-        .get();
+  const localePath = (locale: "ru" | "en") =>
+    locale === "ru"
+      ? sql<string>`'/ru/' || ${drafts.postId} || '/' || ${postLocales.slug} || '/'`
+      : sql<string>`'/' || ${drafts.postId} || '/' || ${postLocales.slug} || '/'`;
+  const findLocale = (locale: "ru" | "en") =>
+    unsafeDb(backendDb)
+      .db.select({ postId: drafts.postId })
+      .from(drafts)
+      .innerJoin(postLocales, and(eq(postLocales.draftId, drafts.id), eq(postLocales.locale, locale), eq(postLocales.siteEnabled, 1)))
+      .where(or(eq(localePath(locale), firstCandidate), eq(localePath(locale), secondCandidate)))
+      .get();
+  const ru = findLocale("ru");
+  const en = ru ? null : findLocale("en");
   const row = ru
-    ? { publicationKey: ru.publicationKey, target: "site_ru" }
+    ? { publicationKey: publicationRef("post", ru.postId as number), target: "site_ru" }
     : en
-      ? { publicationKey: en.publicationKey, target: "site_en" }
+      ? { publicationKey: publicationRef("post", en.postId as number), target: "site_en" }
       : null;
   const sampledAt = now.toISOString();
   unsafeDb(backendDb).sqlite.transaction(() => {

@@ -2,8 +2,8 @@ import { desc, eq, or } from "drizzle-orm";
 import type { DraftEntityCandidate, FailedPublicationTarget, PostEventRecord, StudioPostStore } from "../../application/ports.js";
 import { publicationRef } from "../../application/publication-ref.js";
 import { isSiteTarget } from "../../botTargets.js";
-import { jsonObject } from "../../json.js";
-import { draftEntityCandidates, drafts, publicationEvents, publicationSources, publishJobs, siteJobs } from "../schema.js";
+import { publicationSourceFromDb } from "../../publishing/source-store.js";
+import { draftEntityCandidates, drafts, publicationEvents, publishJobs, siteJobs } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite adapter for Studio post-specific persistence operations. */
@@ -67,7 +67,7 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
     },
 
     publicationSource(postId: number): Record<string, unknown> {
-      return publicationSource(db, postId);
+      return publicationSourceFromDb(db, postId);
     },
 
     failedPublicationTargets(postId: number): FailedPublicationTarget[] {
@@ -97,11 +97,4 @@ export function createStudioPostStore(db: BackendDatabase): StudioPostStore {
       });
     },
   };
-}
-
-function publicationSource(db: BackendDatabase, postId: number): Record<string, unknown> {
-  return jsonObject(
-    db.select({ itemJson: publicationSources.itemJson }).from(publicationSources).where(eq(publicationSources.postId, postId)).get()
-      ?.itemJson,
-  );
 }

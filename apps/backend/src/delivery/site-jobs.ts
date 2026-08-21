@@ -1,17 +1,17 @@
 import crypto from "node:crypto";
 import { and, asc, desc, eq, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
-import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
-import { postLocales, publicationEvents, publicationSources, siteJobs } from "../db/schema.js";
+import { drafts, postLocales, publicationEvents, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { withJobHeartbeat } from "../foundation/runtime/job-heartbeat.js";
 import { recordWorkerState } from "../foundation/runtime/worker-state.js";
-import { parseObject } from "../fsUtils.js";
 import { trackUsageAsync } from "../observability/usage.js";
 import { invalidatePublicSiteFeed } from "../public/site-read-model.js";
 import { nextRetryAt } from "../publishing/errors.js";
+import type { PublicationSource } from "../publishing/publication-source.js";
 import { refreshPublicationStatus } from "../publishing/publication-status.js";
 import { workerId } from "../publishing/queue.js";
+import { publicationSourceFromDb } from "../publishing/source-store.js";
 import { publishContentIndex } from "./site-content-index.js";
 import { pingIndexNow } from "./site-index-now.js";
 import { materializeSiteMedia } from "./site-media.js";
@@ -156,39 +156,40 @@ export async function materializeSitePosts(
   fetchImpl: typeof fetch = fetch,
   postIds?: ReadonlySet<number>,
 ): Promise<Map<number, string>> {
-  const sources = sourceItems(backendDb).filter((source) => !postIds || postIds.has(Number(source.post_id)));
+  const sources = sourceItems(backendDb).filter((source) => !postIds || postIds.has(source.postId));
   const failures = new Map<number, string>();
   const prepared = await Promise.all(
     sources.map(async (source) => {
       try {
         return await prepareSiteMedia(config, source, fetchImpl);
       } catch (error) {
-        failures.set(Number(source.post_id), error instanceof Error ? error.message : String(error));
+        failures.set(source.postId, error instanceof Error ? error.message : String(error));
         return null;
       }
     }),
   );
   persistMaterializedSiteMedia(
     backendDb,
-    prepared.filter((item): item is Record<string, unknown> => item != null),
+    prepared.filter((item): item is PreparedSiteMedia => item != null),
   );
   return failures;
 }
-function persistMaterializedSiteMedia(backendDb: BackendDb, items: Record<string, unknown>[]): void {
+type PreparedSiteMedia = {
+  draftId: number;
+  postId: number;
+  locales: Record<"ru" | "en", { enabled: boolean; media: Record<string, unknown>[] }>;
+};
+
+function persistMaterializedSiteMedia(backendDb: BackendDb, items: PreparedSiteMedia[]): void {
   const now = new Date().toISOString();
   unsafeDb(backendDb).db.transaction((tx) => {
     for (const item of items) {
-      const postId = Number(item.post_id ?? 0);
-      if (!Number.isSafeInteger(postId) || postId <= 0) continue;
-      for (const [locale, key, enabled] of [
-        ["ru", "media", item.has_ru],
-        ["en", "media_en", item.has_en],
-      ] as const) {
-        const media = item[key];
-        if (!enabled || !Array.isArray(media)) continue;
+      for (const locale of ["ru", "en"] as const) {
+        const value = item.locales[locale];
+        if (!value.enabled) continue;
         tx.update(postLocales)
-          .set({ mediaJson: media, updatedAt: now })
-          .where(and(eq(postLocales.postId, postId), eq(postLocales.locale, locale)))
+          .set({ siteMediaJson: value.media, updatedAt: now })
+          .where(and(eq(postLocales.draftId, item.draftId), eq(postLocales.locale, locale)))
           .run();
       }
     }
@@ -292,19 +293,28 @@ function failSiteJobs(backendDb: BackendDb, jobs: SiteJob[], error: unknown): Si
   return failed;
 }
 
-function sourceItems(backendDb: BackendDb): Record<string, unknown>[] {
+function sourceItems(backendDb: BackendDb): PublicationSource[] {
   const localeStates = siteLocaleStates(backendDb);
   const rows = unsafeDb(backendDb)
-    .db.select({ itemJson: publicationSources.itemJson, postId: publicationSources.postId })
-    .from(publicationSources)
-    .orderBy(desc(publicationSources.postId))
+    .db.select({ postId: drafts.postId })
+    .from(drafts)
+    .where(isNotNull(drafts.postId))
+    .orderBy(desc(drafts.postId))
     .all();
-  return rows.flatMap((row): Record<string, unknown>[] => {
-    const item = parseObject(row.itemJson);
-    if (!item) return [];
+  return rows.flatMap((row): PublicationSource[] => {
+    if (row.postId == null) return [];
+    const source = publicationSourceFromDb(unsafeDb(backendDb).db, row.postId);
     const state = localeStates.get(row.postId);
-    const localized = state && state.seen.size > 0 ? { ...item, has_ru: state.active.has("ru"), has_en: state.active.has("en") } : item;
-    return [{ ...localized, id: publicationRef("post", row.postId), post_id: row.postId }];
+    if (!state || state.seen.size === 0) return [source];
+    return [
+      {
+        ...source,
+        locales: {
+          ru: { ...source.locales.ru, siteEnabled: state.active.has("ru") },
+          en: { ...source.locales.en, siteEnabled: state.active.has("en") },
+        },
+      },
+    ];
   });
 }
 
@@ -330,25 +340,23 @@ function siteLocaleStates(backendDb: BackendDb): Map<number, SiteLocaleState> {
 
 async function prepareSiteMedia(
   config: BackendConfig,
-  source: Record<string, unknown>,
+  source: PublicationSource,
   fetchImpl: typeof fetch,
-): Promise<Record<string, unknown> | null> {
-  const postId = Number(source.post_id ?? 0);
-  if (!postId) return null;
+): Promise<PreparedSiteMedia | null> {
+  const postId = source.postId;
   const now = Date.now();
-  const targets = source.targets && typeof source.targets === "object" ? (source.targets as Record<string, unknown>) : {};
-  const hasRu = Boolean(source.has_ru ?? targets.site_ru) && isDue(source.publish_at_ru, now);
-  const hasEn = Boolean(source.has_en ?? targets.site_en) && isDue(source.publish_at_en, now);
+  const hasRu = source.locales.ru.siteEnabled && isDue(source.locales.ru.publishAt, now);
+  const hasEn = source.locales.en.siteEnabled && isDue(source.locales.en.publishAt, now);
   if (!hasRu && !hasEn) return null;
-  const mediaRuSource = nonEmptyMedia(source.media ?? source.media_ru) ?? source.site_media_ru;
+  const mediaRuSource = source.locales.ru.siteMedia.length ? source.locales.ru.siteMedia : source.locales.ru.media;
   const mediaRu = hasRu ? await materializeSiteMedia(config, postId, "ru", mediaRuSource, fetchImpl) : [];
-  const mediaEnSource = nonEmptyMedia(source.media_en ?? source.media ?? source.media_ru) ?? source.site_media_en ?? mediaRuSource;
+  const mediaEnSource = source.locales.en.siteMedia.length ? source.locales.en.siteMedia : source.locales.en.media;
   const mediaEn = hasEn ? await materializeSiteMedia(config, postId, "en", mediaEnSource, fetchImpl) : [];
-  return { post_id: postId, has_ru: hasRu, has_en: hasEn, media: mediaRu, media_en: mediaEn };
-}
-
-function nonEmptyMedia(value: unknown): unknown[] | null {
-  return Array.isArray(value) && value.length > 0 ? value : null;
+  return {
+    draftId: source.draftId,
+    postId,
+    locales: { ru: { enabled: hasRu, media: mediaRu }, en: { enabled: hasEn, media: mediaEn } },
+  };
 }
 
 function isDue(value: unknown, now: number): boolean {

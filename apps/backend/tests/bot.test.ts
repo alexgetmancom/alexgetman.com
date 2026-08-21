@@ -109,7 +109,7 @@ describe("Telegram controller flow", () => {
       unknown
     >[];
     const locales = backendDb.sqlite
-      .prepare("SELECT locale, site_enabled FROM post_locales WHERE post_id=? ORDER BY locale")
+      .prepare("SELECT l.locale, l.site_enabled FROM post_locales l JOIN drafts d ON d.id=l.draft_id WHERE d.post_id=? ORDER BY l.locale")
       .all(postId) as Record<string, unknown>[];
 
     expect(draft).toMatchObject({ status: "scheduled", post_id: postId });
@@ -247,8 +247,12 @@ describe("Telegram controller flow", () => {
 
     cancelDraft(backendDb, draftId);
 
-    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publications WHERE post_id=?").get(postId)).toEqual({ count: 1 });
-    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM posts WHERE post_id=?").get(postId)).toEqual({ count: 1 });
+    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM drafts WHERE post_id=?").get(postId)).toEqual({ count: 1 });
+    expect(
+      backendDb.sqlite
+        .prepare("SELECT COUNT(*) AS count FROM post_locales l JOIN drafts d ON d.id=l.draft_id WHERE d.post_id=?")
+        .get(postId),
+    ).toEqual({ count: 2 });
     expect(backendDb.sqlite.prepare("SELECT status FROM site_jobs WHERE post_id=? ORDER BY reason").all(postId)).toEqual([
       { status: "cancelled" },
       { status: "published" },
@@ -281,7 +285,11 @@ describe("Telegram controller flow", () => {
     expect(jobs.every((job) => job.publish_at === ruAt.toISOString())).toBe(true);
     expect(jobs.some((job) => job.target.endsWith("_en"))).toBe(false);
     expect(enSite).toBeNull();
-    expect(backendDb.sqlite.prepare("SELECT published_at FROM post_locales WHERE post_id=? AND locale='en'").get(postId)).toEqual({
+    expect(
+      backendDb.sqlite
+        .prepare("SELECT l.published_at FROM post_locales l JOIN drafts d ON d.id=l.draft_id WHERE d.post_id=? AND l.locale='en'")
+        .get(postId),
+    ).toEqual({
       published_at: null,
     });
   });
@@ -301,7 +309,7 @@ describe("Telegram controller flow", () => {
     backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
     refreshPublicationStatus(backendDb, postId);
 
-    expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "scheduled" });
+    expect(backendDb.sqlite.prepare("SELECT status FROM drafts WHERE post_id=?").get(postId)).toEqual({ status: "scheduled" });
     expect(backendDb.sqlite.prepare("SELECT status FROM drafts WHERE id=?").get(draftId)).toEqual({ status: "scheduled" });
 
     const enAt = new Date(Date.now() + 120_000);
@@ -317,13 +325,13 @@ describe("Telegram controller flow", () => {
     backendDb = openBotDb();
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Complete", textEn: "Complete", entities: [], media: [] });
     const postId = publishDraftToQueue(backendDb, draftId);
-    expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "scheduled" });
+    expect(backendDb.sqlite.prepare("SELECT status FROM drafts WHERE post_id=?").get(postId)).toEqual({ status: "scheduled" });
 
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE publication_id=?").run(postId);
     backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
     refreshPublicationStatus(backendDb, postId);
 
-    expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "published" });
+    expect(backendDb.sqlite.prepare("SELECT status FROM drafts WHERE post_id=?").get(postId)).toEqual({ status: "published" });
     expect(backendDb.sqlite.prepare("SELECT status FROM drafts WHERE id=?").get(draftId)).toEqual({ status: "published" });
   });
 
@@ -335,12 +343,12 @@ describe("Telegram controller flow", () => {
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status='failed' WHERE publication_id=? AND target='threads_ru'").run(postId);
     backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
     refreshPublicationStatus(backendDb, postId);
-    expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "failed" });
+    expect(backendDb.sqlite.prepare("SELECT status FROM drafts WHERE post_id=?").get(postId)).toEqual({ status: "failed" });
 
     cancelDraft(backendDb, draftId);
     backendDb.sqlite.prepare("UPDATE publish_jobs SET status='published' WHERE publication_id=?").run(postId);
     refreshPublicationStatus(backendDb, postId);
-    expect(backendDb.sqlite.prepare("SELECT status FROM publications WHERE post_id=?").get(postId)).toEqual({ status: "cancelled" });
+    expect(backendDb.sqlite.prepare("SELECT status FROM drafts WHERE post_id=?").get(postId)).toEqual({ status: "cancelled" });
   });
 
   it("removes all unpublished draft artifacts while retaining published history", () => {
@@ -353,9 +361,13 @@ describe("Telegram controller flow", () => {
     });
     cancelDraft(backendDb, draftId);
     expect(backendDb.sqlite.prepare("SELECT post_id FROM drafts WHERE id=?").get(draftId)).toEqual({ post_id: null });
-    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publications WHERE post_id=?").get(postId)).toEqual({ count: 0 });
+    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM drafts WHERE post_id=?").get(postId)).toEqual({ count: 0 });
     expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM publish_jobs WHERE publication_id=?").get(postId)).toEqual({ count: 0 });
-    expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM post_locales WHERE post_id=?").get(postId)).toEqual({ count: 0 });
+    expect(
+      backendDb.sqlite
+        .prepare("SELECT COUNT(*) AS count FROM post_locales WHERE draft_id=? AND (slug IS NOT NULL OR published_at IS NOT NULL)")
+        .get(draftId),
+    ).toEqual({ count: 0 });
   });
 
   it("queues locale-specific text and media for RU and EN targets", () => {
@@ -367,7 +379,7 @@ describe("Telegram controller flow", () => {
       media: [{ type: "photo", file_id: "ru-image" }],
     });
     backendDb.sqlite
-      .prepare("UPDATE drafts SET text_en_approved=?, media_en_json=? WHERE id=?")
+      .prepare("UPDATE post_locales SET approved_text=?, media_json=? WHERE draft_id=? AND locale='en'")
       .run("Edited English text", JSON.stringify([{ type: "photo", file_id: "en-image" }]), draftId);
     publishDraftToQueue(backendDb, draftId);
 
@@ -401,7 +413,7 @@ describe("Telegram controller flow", () => {
       media: [{ type: "photo", file_id: "ru-image" }],
     });
     backendDb.sqlite
-      .prepare("UPDATE drafts SET media_en_json=? WHERE id=?")
+      .prepare("UPDATE post_locales SET media_json=? WHERE draft_id=? AND locale='en'")
       .run(JSON.stringify([{ type: "photo", file_id: "en-image" }]), draftId);
     const postId = publishDraftToQueue(backendDb, draftId);
     const jobs = backendDb.sqlite.prepare("SELECT target,payload_json FROM publish_jobs WHERE publication_id=?").all(postId) as Array<{
@@ -538,7 +550,9 @@ describe("Telegram controller flow", () => {
     const fakeBot = { api: { sendMessage } } as unknown as Bot;
 
     expect(await finalizePendingAlbums(fakeBot, backendDb, loadTestConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" }))).toBe(1);
-    const draft = backendDb.sqlite.prepare("SELECT text_ru, media_ru_json FROM drafts").get() as { text_ru: string; media_ru_json: string };
+    const draft = backendDb.sqlite
+      .prepare("SELECT source_text AS text_ru, media_json AS media_ru_json FROM post_locales WHERE locale='ru'")
+      .get() as { text_ru: string; media_ru_json: string };
     expect(draft.text_ru).toBe("Album caption");
     expect(JSON.parse(draft.media_ru_json)).toHaveLength(2);
     expect(sendMessage).toHaveBeenCalledTimes(1);
@@ -589,7 +603,9 @@ describe("Telegram controller flow", () => {
     expect(await finalizePendingAlbums(fakeBot, backendDb, loadTestConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" }))).toBe(1);
     expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM drafts").get()).toEqual({ count: 1 });
     const draft = backendDb.sqlite
-      .prepare("SELECT text_ru, text_en_approved, media_ru_json, media_en_json FROM drafts WHERE id=?")
+      .prepare(
+        "SELECT ru.source_text AS text_ru,en.approved_text AS text_en_approved,ru.media_json AS media_ru_json,en.media_json AS media_en_json FROM post_locales ru JOIN post_locales en ON en.draft_id=ru.draft_id AND en.locale='en' WHERE ru.draft_id=? AND ru.locale='ru'",
+      )
       .get(draftId) as {
       text_ru: string;
       text_en_approved: string;
@@ -624,7 +640,9 @@ describe("Telegram controller flow", () => {
     const fakeBot = { api: { sendMessage } } as unknown as Bot;
 
     expect(await finalizePendingAlbums(fakeBot, backendDb, loadTestConfig({ CONTROLLER_ALBUM_SETTLE_SECONDS: "1" }))).toBe(0);
-    expect(backendDb.sqlite.prepare("SELECT text_en_approved FROM drafts WHERE id=?").get(draftId)).toEqual({ text_en_approved: null });
+    expect(
+      backendDb.sqlite.prepare("SELECT approved_text AS text_en_approved FROM post_locales WHERE draft_id=? AND locale='en'").get(draftId),
+    ).toEqual({ text_en_approved: null });
     expect(backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM pending_albums").get()).toEqual({ count: 0 });
     expect(sendMessage).not.toHaveBeenCalled();
     expect(getConversationState(backendDb, 42, "post")?.data).toEqual({ locale: "ru" });

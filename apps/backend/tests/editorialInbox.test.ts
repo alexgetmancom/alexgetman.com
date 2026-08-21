@@ -1,26 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { posts } from "../src/db/schema.js";
 import { type EditorialInboxBot, sendDailyEditorialInbox } from "../src/interfaces/telegram/editorial-inbox.js";
 import { withDb } from "./helpers/db.js";
+import { seedTextPost } from "./helpers/post.js";
 import { loadTestConfig, MSK_STUDIO_PROFILE } from "./helpers/studio-config.js";
 
 describe("daily editorial inbox", () => {
   it("sends one AI-generated opportunity inbox per Moscow day", async () => {
     await withDb(async (backendDb) => {
-      backendDb.db
-        .insert(posts)
-        .values({
-          publicationKey: "post:7",
-          postId: 7,
-          source: "studio",
-          channel: "studio",
-          messageId: 7,
-          status: "active",
-          text: "Kimi changed API prices",
-          createdAt: "2026-07-20T00:00:00.000Z",
-          updatedAt: "2026-07-20T00:00:00.000Z",
-        })
-        .run();
+      seedTextPost(backendDb, { postId: 7, ru: "Kimi changed API prices", now: "2026-07-20T00:00:00.000Z" });
       const sent: string[] = [];
       const bot: EditorialInboxBot = { api: { sendMessage: async (_actorId, text) => void sent.push(text) } };
       const fetchImpl = async () =>
@@ -56,20 +43,7 @@ describe("daily editorial inbox", () => {
 
   it("sends only chat-completion fields to the provider, with the abort signal on the request", async () => {
     await withDb(async (backendDb) => {
-      backendDb.db
-        .insert(posts)
-        .values({
-          publicationKey: "post:8",
-          postId: 8,
-          source: "studio",
-          channel: "studio",
-          messageId: 8,
-          status: "active",
-          text: "Something published",
-          createdAt: "2026-07-20T00:00:00.000Z",
-          updatedAt: "2026-07-20T00:00:00.000Z",
-        })
-        .run();
+      seedTextPost(backendDb, { postId: 8, ru: "Something published", now: "2026-07-20T00:00:00.000Z" });
       let init: RequestInit | undefined;
       const fetchImpl = (async (_url: string, requestInit: RequestInit) => {
         init = requestInit;

@@ -31,47 +31,19 @@ export const publishJobs = sqliteTable(
   ],
 );
 
-export const publicationPlans = sqliteTable("publication_plans", {
-  postId: integer().primaryKey(),
-  planJson: json<JsonObject>().notNull(),
-  ...timestamps(),
-});
-
-export const publicationSources = sqliteTable("publication_sources", {
-  postId: integer().primaryKey(),
-  itemJson: json<JsonObject>().notNull(),
-  ...timestamps(),
-});
-
-export const publications = sqliteTable(
-  "publications",
-  {
-    postId: autoId(),
-    draftId: integer(),
-    status: text().notNull().default("draft"),
-    telegramMessageId: integer(),
-    ...timestamps(),
-  },
-  (table) => [index("idx_publications_created_at").on(table.createdAt)],
-);
-
 export const drafts = sqliteTable("drafts", {
   id: autoId(),
   actorId: integer().notNull(),
   status: text().notNull(),
-  textRu: text().notNull(),
-  textEnMachine: text(),
-  textEnApproved: text(),
   targetsJson: text().notNull(),
-  mediaRuJson: text(),
-  mediaEnJson: text(),
   channelMessageId: integer(),
   scheduledAt: text(),
   scheduledEnAt: text(),
   publishMode: text(),
-  postId: integer(),
-  textRuEntitiesJson: text(),
-  textEnEntitiesJson: text(),
+  /** Stable public id allocated when this aggregate first enters Delivery.
+   * Draft id remains the Studio/card identity; published id remains the public
+   * URL and external publication identity. */
+  postId: integer().unique(),
   /** A one-off waiver of the 500-character Threads rule for this draft only:
    * the author saw how many posts the chain would take and accepted it. Lives
    * and dies with the draft on purpose — a remembered waiver stops being a rule. */

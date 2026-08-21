@@ -1,12 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { firstNonEmptyLine } from "../content/message.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { drafts, postLocales, publications, siteJobs } from "../db/schema.js";
+import { drafts, postLocales, siteJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { jsonObject } from "../json.js";
 import { queueDraftStoryCards, readyStoryCardMedia, setStoryPublishMode, storyCardsForDraft } from "../story-cards/store.js";
 import { runStoryCardCycle, STORY_CARD_TIMEOUT_SECONDS } from "../story-cards/worker.js";
-import { updateSource } from "./commands/content-repair.js";
 import { resolvePublicationRef } from "./publication-ref.js";
 
 type LocalePlan = { locale: "ru" | "en"; slug: string; headline: string };
@@ -22,26 +21,23 @@ export async function backfillTextStoryCards(
 ): Promise<Record<string, unknown>> {
   const ref = resolvePublicationRef(backendDb, input);
   if (!ref?.postId) throw new Error(`publication not found: ${input}`);
-  const publication = unsafeDb(backendDb)
-    .db.select({ draftId: publications.draftId })
-    .from(publications)
-    .where(eq(publications.postId, ref.postId))
-    .get();
+  const publication = unsafeDb(backendDb).db.select({ draftId: drafts.id }).from(drafts).where(eq(drafts.postId, ref.postId)).get();
   if (!publication?.draftId) throw new Error(`published draft not found: ${input}`);
   const draft = unsafeDb(backendDb).db.select().from(drafts).where(eq(drafts.id, publication.draftId)).get();
   if (!draft) throw new Error(`draft ${publication.draftId} not found`);
-  if (mediaCount(draft.mediaRuJson) > 0 || mediaCount(draft.mediaEnJson) > 0)
+  const sourceLocales = unsafeDb(backendDb).db.select().from(postLocales).where(eq(postLocales.draftId, publication.draftId)).all();
+  if (sourceLocales.some((locale) => mediaCount(locale.mediaJson) > 0))
     throw new Error(`draft ${publication.draftId} already has original media`);
 
   const locales = unsafeDb(backendDb)
     .db.select({
       locale: postLocales.locale,
       slug: postLocales.slug,
-      text: postLocales.text,
-      mediaJson: postLocales.mediaJson,
+      text: postLocales.sourceText,
+      mediaJson: postLocales.siteMediaJson,
     })
     .from(postLocales)
-    .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.siteEnabled, 1)))
+    .where(and(eq(postLocales.draftId, publication.draftId), eq(postLocales.siteEnabled, 1)))
     .all();
   const plan = locales
     .filter(
@@ -52,7 +48,7 @@ export async function backfillTextStoryCards(
     .map(
       (locale): LocalePlan => ({
         locale: locale.locale as "ru" | "en",
-        slug: locale.slug,
+        slug: locale.slug ?? String(ref.postId),
         headline: firstNonEmptyLine(locale.text),
       }),
     );
@@ -73,19 +69,10 @@ export async function backfillTextStoryCards(
     for (const item of plan) {
       const media = [cards[item.locale]];
       tx.update(postLocales)
-        .set({ mediaJson: media, updatedAt: now })
-        .where(and(eq(postLocales.postId, ref.postId as number), eq(postLocales.locale, item.locale)))
+        .set({ storyMediaJson: media, siteMediaJson: media, updatedAt: now })
+        .where(and(eq(postLocales.draftId, publication.draftId), eq(postLocales.locale, item.locale)))
         .run();
     }
-    updateSource(
-      tx,
-      ref,
-      {
-        ...(plan.some((item) => item.locale === "ru") ? { site_media_ru: [cards.ru] } : {}),
-        ...(plan.some((item) => item.locale === "en") ? { site_media_en: [cards.en] } : {}),
-      },
-      now,
-    );
     tx.insert(siteJobs)
       .values({
         postId: ref.postId,

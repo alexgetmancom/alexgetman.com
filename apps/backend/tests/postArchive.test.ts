@@ -1,9 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { creatorArchiveSummary, creatorPostArchive, creatorPostMedia, creatorPostMetrics } from "../src/analytics/reports/post-archive.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { metricSamples, postLocales, posts, publications } from "../src/db/schema.js";
+import { metricSamples } from "../src/db/schema.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
 import { withDb } from "./helpers/db.js";
+import { seedTextPost } from "./helpers/post.js";
 
 const at = "2026-07-27T10:00:00.000Z";
 
@@ -11,24 +12,13 @@ function publishedPost(
   backendDb: UnsafeBackendDb,
   options: { postId: number; text?: string | null; updatedAt?: string; mediaCount?: number; dateMsk?: string; status?: string },
 ): void {
-  backendDb.db
-    .insert(posts)
-    .values({
-      publicationKey: `post:${options.postId}`,
-      postId: options.postId,
-      channel: "alexgetman",
-      messageId: options.postId,
-      text: options.text ?? null,
-      mediaCount: options.mediaCount ?? 0,
-      dateMsk: options.dateMsk ?? null,
-      createdAt: at,
-      updatedAt: options.updatedAt ?? at,
-    })
-    .run();
-  backendDb.db
-    .insert(publications)
-    .values({ postId: options.postId, status: options.status ?? "published", createdAt: at, updatedAt: at })
-    .run();
+  seedTextPost(backendDb, {
+    postId: options.postId,
+    ru: options.text ?? "",
+    status: options.status ?? "published",
+    siteMediaRu: Array.from({ length: options.mediaCount ?? 0 }, (_, index) => ({ type: "photo", index })),
+    now: options.dateMsk ?? options.updatedAt ?? at,
+  });
 }
 
 function sample(
@@ -156,14 +146,12 @@ describe("creatorPostMetrics", () => {
 describe("creatorPostMedia", () => {
   it("returns the requested locale's media as plain records", () => {
     return withDb((backendDb) => {
-      backendDb.db
-        .insert(postLocales)
-        .values({ postId: 1, locale: "ru", slug: "ru-slug", mediaJson: [{ type: "photo", url: "/ru.jpg" }], updatedAt: at })
-        .run();
-      backendDb.db
-        .insert(postLocales)
-        .values({ postId: 1, locale: "en", slug: "en-slug", mediaJson: [{ type: "photo", url: "/en.jpg" }], updatedAt: at })
-        .run();
+      seedTextPost(backendDb, {
+        postId: 1,
+        siteMediaRu: [{ type: "photo", url: "/ru.jpg" }],
+        siteMediaEn: [{ type: "photo", url: "/en.jpg" }],
+        now: at,
+      });
 
       expect(creatorPostMedia(backendDb, 1, "ru")).toEqual([{ type: "photo", url: "/ru.jpg" }]);
       expect(creatorPostMedia(backendDb, 1, "en")).toEqual([{ type: "photo", url: "/en.jpg" }]);
@@ -174,18 +162,18 @@ describe("creatorPostMedia", () => {
     return withDb((backendDb) => {
       expect(creatorPostMedia(backendDb, 1, "en")).toEqual([]);
 
-      backendDb.sqlite
-        .query("INSERT INTO post_locales(post_id,locale,slug,media_json,updated_at) VALUES (2,'en','s','{\"type\":\"photo\"}',?)")
-        .run(at);
+      seedTextPost(backendDb, { postId: 2, now: at });
+      backendDb.sqlite.query("UPDATE post_locales SET site_media_json='{\"type\":\"photo\"}' WHERE draft_id=2 AND locale='en'").run();
       expect(creatorPostMedia(backendDb, 2, "en")).toEqual([]);
     });
   });
 
   it("drops null entries rather than passing them to the renderer", () => {
     return withDb((backendDb) => {
+      seedTextPost(backendDb, { postId: 3, now: at });
       backendDb.sqlite
-        .query("INSERT INTO post_locales(post_id,locale,slug,media_json,updated_at) VALUES (3,'en','s','[null,{\"type\":\"photo\"}]',?)")
-        .run(at);
+        .query("UPDATE post_locales SET site_media_json='[null,{\"type\":\"photo\"}]' WHERE draft_id=3 AND locale='en'")
+        .run();
 
       expect(creatorPostMedia(backendDb, 3, "en")).toEqual([{ type: "photo" }]);
     });

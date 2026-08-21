@@ -1,73 +1,29 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { isSiteTarget, targetLocale } from "../botTargets.js";
 import type { UnsafeBackendDb } from "../db/client.js";
-import { drafts, postLocales, posts, publicationPlans, publicationSources, publications, publishJobs, siteJobs } from "../db/schema.js";
+import { drafts, postLocales, publishJobs, siteJobs } from "../db/schema.js";
 import { localizeTargetPayload } from "./payload.js";
 import type { PublicationPlan } from "./publication-plan.js";
 import { enqueuePublishJobTx } from "./queue.js";
 
 export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: PublicationPlan): void {
-  const postValues = {
-    postId: plan.postId,
-    source: "studio",
-    channel: "studio",
-    messageId: plan.messageId,
-    dateUtc: plan.ruAt ?? plan.enAt ?? plan.now,
-    text: plan.textRu,
-    textEn: plan.textEn,
-    mediaJson: JSON.stringify(plan.mediaRu),
-    mediaCount: plan.mediaRu.length,
-    createdAt: plan.now,
-    updatedAt: plan.now,
-  };
-  tx.insert(posts)
-    .values({ publicationKey: plan.publicationKey, ...postValues })
-    .onConflictDoUpdate({
-      target: posts.publicationKey,
-      set: {
-        postId: plan.postId,
-        dateUtc: postValues.dateUtc,
-        text: plan.textRu,
-        textEn: plan.textEn,
-        mediaJson: postValues.mediaJson,
-        mediaCount: plan.mediaRu.length,
+  for (const locale of plan.locales) {
+    const publishedAt = locale.source.siteEnabled ? (locale.source.publishAt ?? (plan.mode === "immediate" ? plan.now : null)) : null;
+    tx.update(postLocales)
+      .set({
+        slug: locale.source.slug,
+        html: locale.html,
+        entitiesJson: typeof locale.entitiesJson === "string" ? locale.entitiesJson : null,
+        storyMediaJson: locale.source.storyMedia,
+        siteMediaJson: locale.source.siteMedia,
+        siteEnabled: locale.source.siteEnabled ? 1 : 0,
+        publishAt: locale.source.publishAt,
+        publishedAt,
         updatedAt: plan.now,
-      },
-    })
-    .run();
-  for (const locale of plan.locales)
-    tx.insert(postLocales)
-      .values(locale)
-      .onConflictDoUpdate({
-        target: [postLocales.postId, postLocales.locale],
-        set: {
-          slug: locale.slug,
-          text: locale.text,
-          html: locale.html,
-          entitiesJson: locale.entitiesJson,
-          mediaJson: locale.mediaJson,
-          siteEnabled: locale.siteEnabled,
-          publishedAt: locale.publishedAt,
-          updatedAt: plan.now,
-        },
       })
+      .where(and(eq(postLocales.draftId, plan.draftId), eq(postLocales.locale, locale.locale)))
       .run();
-  const storedPlan = {
-    draft_id: plan.draftId,
-    mode: plan.mode,
-    targets: plan.targets,
-    scheduled_at: plan.ruAt,
-    scheduled_en_at: plan.enAt,
-    created_at: plan.now,
-  };
-  tx.insert(publicationPlans)
-    .values({ postId: plan.postId, planJson: storedPlan, createdAt: plan.now, updatedAt: plan.now })
-    .onConflictDoUpdate({ target: publicationPlans.postId, set: { planJson: storedPlan, updatedAt: plan.now } })
-    .run();
-  tx.insert(publicationSources)
-    .values({ postId: plan.postId, itemJson: plan.payload, createdAt: plan.now, updatedAt: plan.now })
-    .onConflictDoUpdate({ target: publicationSources.postId, set: { itemJson: plan.payload, updatedAt: plan.now } })
-    .run();
+  }
   tx.delete(publishJobs)
     .where(and(eq(publishJobs.publicationId, plan.postId), inArray(publishJobs.status, ["queued", "failed"])))
     .run();
@@ -141,7 +97,6 @@ export function persistPublicationPlanTx(tx: UnsafeBackendDb["db"], plan: Public
     })
     .where(eq(drafts.id, plan.draftId))
     .run();
-  tx.update(publications).set({ status: "scheduled", updatedAt: plan.now }).where(eq(publications.postId, plan.postId)).run();
 }
 
 function publishAtForTarget(plan: PublicationPlan, target: string): string | null {

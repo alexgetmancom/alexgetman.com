@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { eq } from "drizzle-orm";
-import { articles, publications, publishJobs } from "../src/db/schema.js";
+import { articles, drafts, publishJobs } from "../src/db/schema.js";
 import { refreshPublicationOwner } from "../src/publishing/publication-owner.js";
 import { withDb } from "./helpers/db.js";
+import { seedTextPost } from "./helpers/post.js";
 
 const now = "2026-08-20T10:00:00.000Z";
 
@@ -57,7 +58,7 @@ describe("publication owner refresh", () => {
   it("routes a post key to the post owner without touching articles", () =>
     withDb((backendDb) => {
       const id = articleWithJobs(backendDb, ["published"]);
-      backendDb.db.insert(publications).values({ postId: 900, status: "scheduled", createdAt: now, updatedAt: now }).run();
+      seedTextPost(backendDb, { postId: 900, status: "scheduled", now });
       backendDb.db
         .insert(publishJobs)
         .values({
@@ -70,7 +71,7 @@ describe("publication owner refresh", () => {
         })
         .run();
       refreshPublicationOwner(backendDb, "post:900");
-      expect(backendDb.db.select({ status: publications.status }).from(publications).where(eq(publications.postId, 900)).get()).toEqual({
+      expect(backendDb.db.select({ status: drafts.status }).from(drafts).where(eq(drafts.postId, 900)).get()).toEqual({
         status: "published",
       });
       expect(statusOf(backendDb, id)).toBe("draft");

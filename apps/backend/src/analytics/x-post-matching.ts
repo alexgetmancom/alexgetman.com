@@ -40,7 +40,15 @@ const LINK_SIMILARITY_MARGIN = 0.1;
 
 export function editorialTexts(backendDb: BackendDb): EditorialText[] {
   return unsafeDb(backendDb)
-    .sqlite.prepare("SELECT publication_key, text_en, date_utc FROM posts WHERE trim(COALESCE(text_en, '')) <> ''")
+    .sqlite.prepare(
+      `SELECT 'post:' || d.post_id AS publication_key,
+              coalesce(en.approved_text,en.source_text) AS text_en,
+              coalesce(en.published_at,ru.published_at,d.updated_at) AS date_utc
+         FROM drafts d
+         JOIN post_locales en ON en.draft_id=d.id AND en.locale='en'
+         LEFT JOIN post_locales ru ON ru.draft_id=d.id AND ru.locale='ru'
+        WHERE d.post_id IS NOT NULL AND trim(coalesce(en.approved_text,en.source_text,'')) <> ''`,
+    )
     .all() as EditorialText[];
 }
 

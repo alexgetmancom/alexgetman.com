@@ -1,7 +1,7 @@
 import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
 import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { drafts, postLocales, posts, publicationPlans, publicationSources, publications, publishJobs, siteJobs } from "../db/schema.js";
+import { drafts, postLocales, publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import { discardDraftStoryCards } from "../story-cards/store.js";
 
@@ -17,14 +17,13 @@ export function scheduledDrafts(backendDb: BackendDb): Array<{ id: number; sched
 export function cancelDraft(backendDb: BackendDb, draftId: number): void {
   const now = new Date().toISOString();
   unsafeDb(backendDb).db.transaction((tx) => {
-    const publication = tx.select({ postId: publications.postId }).from(publications).where(eq(publications.draftId, draftId)).get();
+    const publication = tx.select({ postId: drafts.postId }).from(drafts).where(eq(drafts.id, draftId)).get();
     const postId = publication?.postId;
     tx.update(drafts)
       .set({ status: "cancelled", scheduledAt: null, scheduledEnAt: null, updatedAt: now })
       .where(eq(drafts.id, draftId))
       .run();
     if (!postId) return;
-    tx.update(publications).set({ status: "cancelled", updatedAt: now }).where(eq(publications.postId, postId)).run();
     const finalSocialCount =
       tx
         .select({ count: count() })
@@ -56,12 +55,23 @@ export function cancelDraft(backendDb: BackendDb, draftId: number): void {
     }
     tx.delete(publishJobs).where(eq(publishJobs.publicationId, postId)).run();
     tx.delete(siteJobs).where(eq(siteJobs.postId, postId)).run();
-    tx.delete(publicationPlans).where(eq(publicationPlans.postId, postId)).run();
-    tx.delete(publicationSources).where(eq(publicationSources.postId, postId)).run();
-    tx.delete(postLocales).where(eq(postLocales.postId, postId)).run();
-    tx.delete(posts).where(eq(posts.postId, postId)).run();
-    tx.delete(publications).where(eq(publications.postId, postId)).run();
-    tx.update(drafts).set({ postId: null, updatedAt: now }).where(eq(drafts.id, draftId)).run();
+    tx.update(postLocales)
+      .set({
+        slug: null,
+        html: null,
+        storyMediaJson: null,
+        siteMediaJson: null,
+        siteEnabled: 0,
+        publishAt: null,
+        publishedAt: null,
+        updatedAt: now,
+      })
+      .where(eq(postLocales.draftId, draftId))
+      .run();
+    tx.update(drafts)
+      .set({ postId: null, publishMode: null, scheduledAt: null, scheduledEnAt: null, updatedAt: now })
+      .where(eq(drafts.id, draftId))
+      .run();
   });
   discardDraftStoryCards(unsafeDb(backendDb).db, draftId);
   recordDomainEvent(backendDb.events, {

@@ -9,7 +9,6 @@ import { handleVideoConversationMessage } from "../src/bot/video-conversation.js
 import { getVideoState, saveVideoState } from "../src/bot/video-ui.js";
 import { registerChannel } from "../src/channels/registry.js";
 import {
-  drafts,
   socialComments,
   studioMediaAssets,
   videoDrafts,
@@ -25,6 +24,7 @@ import { cancelVideo, replaceVideoTargets, retryVideoTarget, saveVideoMetadata, 
 import { videoService } from "../src/studio/services/videos.js";
 import { VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { useBackendDb } from "./helpers/db.js";
+import { seedTextPost } from "./helpers/post.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoDraft } from "./helpers/video.js";
 
@@ -154,18 +154,14 @@ describe("video publication queue", () => {
         .set({ status: "published", retentionUntil: new Date(Date.now() - 1_000).toISOString(), updatedAt: now })
         .where(eq(videoDrafts.id, draftId))
         .run();
-      backendDb.db
-        .insert(drafts)
-        .values({
-          actorId: 42,
-          status: "needs_review",
-          textRu: "Post using the same asset",
-          targetsJson: "{}",
-          mediaRuJson: JSON.stringify([{ type: "video", asset_id: asset.id, local_path: source }]),
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
+      seedTextPost(backendDb, {
+        draftId: 999,
+        actorId: 42,
+        status: "needs_review",
+        ru: "Post using the same asset",
+        mediaRu: [{ type: "video", asset_id: asset.id, local_path: source }],
+        now,
+      });
 
       await runVideoCycle({ ...videoConfig(), STUDIO_MEDIA_DIR: directory }, backendDb);
       expect(existsSync(source)).toBe(true);

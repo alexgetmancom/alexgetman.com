@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq } from "drizzle-orm";
@@ -42,7 +42,7 @@ describe("openBackendDb", () => {
     const sqlite = new Database(dbPath);
     sqlite.exec(`
       CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, hash text NOT NULL, created_at numeric);
-      INSERT INTO __drizzle_migrations(hash, created_at) VALUES ('old-chain', 1787280000000);
+      INSERT INTO __drizzle_migrations(hash, created_at) VALUES ('old-chain', 1787310000000);
       CREATE TABLE old_chain_marker (id integer PRIMARY KEY);
     `);
     sqlite.close();
@@ -51,6 +51,93 @@ describe("openBackendDb", () => {
     try {
       expect(backendDb.sqlite.query("SELECT name FROM sqlite_master WHERE name='old_chain_marker'").get()).toBeDefined();
       expect(backendDb.sqlite.query("SELECT name FROM sqlite_master WHERE name='posts'").get()).toBeNull();
+    } finally {
+      backendDb.close();
+    }
+  });
+
+  it("moves historical text posts into one aggregate without losing published content", () => {
+    const dir = mkdtempSync(join(tmpdir(), "alexgetman-post-aggregate-"));
+    const dbPath = join(dir, "pipeline.db");
+    const sqlite = new Database(dbPath);
+    sqlite.exec(readFileSync(new URL("../drizzle/0000_baseline.sql", import.meta.url), "utf8"));
+    sqlite.exec(`
+      CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, hash text NOT NULL, created_at numeric);
+      INSERT INTO __drizzle_migrations(hash, created_at) VALUES ('baseline', 1783727704995);
+      INSERT INTO drafts (
+        id, actor_id, status, text_ru, text_en_machine, text_en_approved, targets_json,
+        media_ru_json, media_en_json, channel_message_id, scheduled_at, scheduled_en_at,
+        publish_mode, post_id, text_ru_entities_json, text_en_entities_json,
+        threads_chain_approved, story_publish_mode, created_at, updated_at
+      ) VALUES (
+        7, 42, 'ready', 'Draft RU', 'Machine EN', 'Approved EN', '{"telegram":true}',
+        '[{"type":"photo","local_path":"ru.jpg"}]', '[{"type":"photo","local_path":"en.jpg"}]',
+        99, '2026-08-20T09:00:00.000Z', '2026-08-20T10:00:00.000Z', 'scheduled', 42,
+        '[{"type":"bold","offset":0,"length":5}]', '[]', 1, 'publish',
+        '2026-08-19T00:00:00.000Z', '2026-08-20T00:00:00.000Z'
+      );
+      INSERT INTO publications (post_id, draft_id, status, telegram_message_id, created_at, updated_at)
+      VALUES (42, 7, 'published', 100, '2026-08-19T00:00:00.000Z', '2026-08-21T00:00:00.000Z');
+      INSERT INTO posts (
+        publication_key, post_id, channel, message_id, text, text_en, media_json, status, created_at, updated_at
+      ) VALUES (
+        'telegram:100', 42, 'telegram', 100, 'Published RU', 'Published EN', '[{"type":"photo"}]', 'active',
+        '2026-08-19T00:00:00.000Z', '2026-08-21T01:00:00.000Z'
+      );
+      INSERT INTO publication_plans (post_id, plan_json, created_at, updated_at)
+      VALUES (42, '{"targets":{"telegram":true}}', '2026-08-19T00:00:00.000Z', '2026-08-20T00:00:00.000Z');
+      INSERT INTO publication_sources (post_id, item_json, created_at, updated_at)
+      VALUES (42, '{"story_media_ru":[{"type":"photo","local_path":"story.jpg"}],"site_media_en":[{"type":"photo","local_path":"site.jpg"}]}', '2026-08-19T00:00:00.000Z', '2026-08-20T00:00:00.000Z');
+      INSERT INTO post_locales (post_id, locale, slug, text, html, entities_json, media_json, site_enabled, published_at, updated_at)
+      VALUES
+        (42, 'ru', 'ru-slug', 'Site RU', '<p>RU</p>', '[]', '[{"type":"photo","url":"ru.webp"}]', 1, '2026-08-20T09:01:00.000Z', '2026-08-21T00:00:00.000Z'),
+        (42, 'en', 'en-slug', 'Site EN', '<p>EN</p>', '[]', '[{"type":"photo","url":"en.webp"}]', 1, '2026-08-20T10:01:00.000Z', '2026-08-21T00:00:00.000Z');
+      INSERT INTO posts (publication_key, post_id, channel, message_id, text, text_en, status, created_at, updated_at)
+      VALUES ('telegram:200', 55, 'telegram', 200, 'Orphan RU', 'Orphan EN', 'active', '2026-08-18T00:00:00.000Z', '2026-08-18T01:00:00.000Z');
+    `);
+    sqlite.close();
+
+    const backendDb = openBackendDb(dbPath);
+    try {
+      expect(
+        backendDb.sqlite
+          .prepare(
+            "SELECT id, actor_id, status, post_id, channel_message_id, threads_chain_approved, story_publish_mode FROM drafts WHERE post_id=42",
+          )
+          .get(),
+      ).toEqual({
+        id: 7,
+        actor_id: 42,
+        status: "published",
+        post_id: 42,
+        channel_message_id: 99,
+        threads_chain_approved: 1,
+        story_publish_mode: "publish",
+      });
+      expect(
+        backendDb.sqlite
+          .prepare(
+            "SELECT source_text, approved_text, media_json, story_media_json, site_media_json, slug, site_enabled, publish_at, published_at FROM post_locales WHERE draft_id=7 AND locale='en'",
+          )
+          .get(),
+      ).toEqual({
+        source_text: "Machine EN",
+        approved_text: "Approved EN",
+        media_json: '[{"type":"photo","local_path":"en.jpg"}]',
+        story_media_json: null,
+        site_media_json: '[{"type":"photo","url":"en.webp"}]',
+        slug: "en-slug",
+        site_enabled: 1,
+        publish_at: "2026-08-20T10:00:00.000Z",
+        published_at: "2026-08-20T10:01:00.000Z",
+      });
+      expect(
+        backendDb.sqlite
+          .prepare("SELECT source_text FROM post_locales JOIN drafts ON drafts.id=post_locales.draft_id WHERE post_id=55 AND locale='ru'")
+          .get(),
+      ).toEqual({ source_text: "Orphan RU" });
+      for (const table of ["posts", "publications", "publication_plans", "publication_sources"])
+        expect(backendDb.sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table)).toBeNull();
     } finally {
       backendDb.close();
     }
@@ -83,10 +170,6 @@ describe("openBackendDb", () => {
         "post_locales",
         "post_metrics",
         "publication_targets",
-        "posts",
-        "publication_plans",
-        "publication_sources",
-        "publications",
         "publish_jobs",
         "runtime_usage",
         "site_jobs",

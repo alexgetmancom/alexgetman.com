@@ -1,7 +1,8 @@
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { postLocales } from "../channels/locales.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { posts } from "../db/schema.js";
+import { drafts, postLocales as postLocaleRows } from "../db/schema.js";
 import { resolvePublicationRef } from "./publication-ref.js";
 
 type PostText = {
@@ -22,10 +23,19 @@ type PostText = {
 export function postText(backendDb: BackendDb, ref: string): PostText {
   const resolved = resolvePublicationRef(backendDb, ref);
   if (!resolved) throw new Error(`no publication matches ${ref}`);
+  const ru = alias(postLocaleRows, "post_text_ru");
+  const en = alias(postLocaleRows, "post_text_en");
   const row = unsafeDb(backendDb)
-    .db.select({ postId: posts.postId, dateUtc: posts.dateUtc, text: posts.text, textEn: posts.textEn })
-    .from(posts)
-    .where(eq(posts.publicationKey, resolved.publicationKey))
+    .db.select({
+      postId: drafts.postId,
+      dateUtc: sql<string>`coalesce(${ru.publishedAt}, ${en.publishedAt}, ${drafts.updatedAt})`,
+      text: sql<string>`coalesce(${ru.approvedText}, ${ru.sourceText}, '')`,
+      textEn: sql<string>`coalesce(${en.approvedText}, ${en.sourceText}, '')`,
+    })
+    .from(drafts)
+    .leftJoin(ru, and(eq(ru.draftId, drafts.id), eq(ru.locale, "ru")))
+    .leftJoin(en, and(eq(en.draftId, drafts.id), eq(en.locale, "en")))
+    .where(eq(drafts.postId, resolved.postId as number))
     .get();
   if (!row) throw new Error(`publication ${resolved.publicationKey} has no stored text`);
   return {

@@ -1,6 +1,7 @@
-import { asc, desc, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { credentialChecks, drafts, opsActions, publicationEvents, publicationTargets, publishJobs } from "../db/schema.js";
+import { credentialChecks, drafts, opsActions, postLocales, publicationEvents, publicationTargets, publishJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { capabilityReport } from "../observability/capabilities.js";
 import { recentPostMetrics } from "./read-model.js";
@@ -54,17 +55,19 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
     .orderBy(desc(publishJobs.updatedAt), desc(publishJobs.jobId))
     .limit(100)
     .all();
+  const ru = alias(postLocales, "command_center_ru");
   const draftRows = unsafeDb(backendDb)
     .db.select({
       id: drafts.id,
       status: drafts.status,
-      textRu: drafts.textRu,
+      textRu: ru.sourceText,
       scheduledAt: drafts.scheduledAt,
       scheduledEnAt: drafts.scheduledEnAt,
       channelMessageId: drafts.channelMessageId,
       updatedAt: drafts.updatedAt,
     })
     .from(drafts)
+    .leftJoin(ru, and(eq(ru.draftId, drafts.id), eq(ru.locale, "ru")))
     .orderBy(desc(drafts.updatedAt), desc(drafts.id))
     .limit(50)
     .all();
@@ -167,7 +170,8 @@ export function commandCenterFingerprint(backendDb: BackendDb): CommandCenterFin
     .sqlite.prepare(
       `SELECT
          (SELECT MAX(value) FROM (
-           SELECT MAX(updated_at) AS value FROM posts
+           SELECT MAX(updated_at) AS value FROM drafts WHERE post_id IS NOT NULL
+           UNION ALL SELECT MAX(updated_at) FROM post_locales
            UNION ALL SELECT MAX(updated_at) FROM publication_targets
            UNION ALL SELECT MAX(sampled_at) FROM post_metrics
            UNION ALL SELECT MAX(sampled_at) FROM metric_samples

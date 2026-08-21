@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { SITE_MEDIA_URL_PREFIX, siteMediaVerticalFilename } from "../../../backend/src/content/site-media-naming.js";
 import { openBackendDb, unsafeDb } from "../../../backend/src/db/client.js";
-import { knowledgeEntities, postEntityLinks, postLocales, posts, publications } from "../../../backend/src/db/schema.js";
+import { drafts, knowledgeEntities, postEntityLinks, postLocales } from "../../../backend/src/db/schema.js";
 import { fixtureDayWindow } from "./fixture-utils.js";
 
 /**
@@ -188,16 +188,15 @@ export function seedSiteFixture(options: { dbPath: string; publicDir: string; po
     backendDb.studioSettings.saveProfile({ siteEnabled: 1, updatedAt: now });
     for (const post of fixture) {
       const createdAt = post.dateUtc ?? now;
-      rawDb.db.insert(publications).values({ postId: post.postId, status: "published", createdAt, updatedAt: now }).run();
       rawDb.db
-        .insert(posts)
+        .insert(drafts)
         .values({
-          publicationKey: `post:${post.postId}`,
+          id: post.postId,
+          actorId: 1,
+          status: "published",
+          targetsJson: "{}",
           postId: post.postId,
-          source: "bot",
-          channel: "controller",
-          messageId: post.postId,
-          dateUtc: post.dateUtc ?? now,
+          channelMessageId: post.postId,
           createdAt,
           updatedAt: now,
         })
@@ -208,11 +207,11 @@ export function seedSiteFixture(options: { dbPath: string; publicDir: string; po
         rawDb.db
           .insert(postLocales)
           .values({
-            postId: post.postId,
+            draftId: post.postId,
             locale,
             slug: spec.slug,
-            text: spec.text,
-            mediaJson: Array.from({ length: images }, (_, index) => ({
+            sourceText: spec.text,
+            siteMediaJson: Array.from({ length: images }, (_, index) => ({
               type: "image",
               path: `media/posts/${post.postId}-${locale}-${index}-vertical.jpg`,
             })),

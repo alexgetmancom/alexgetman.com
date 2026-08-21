@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { posts, publicationTargets } from "../src/db/schema.js";
+import { publicationTargets } from "../src/db/schema.js";
 import { findPublication, formatRecentPublications, recentPublications } from "../src/operations/recent.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { seedTextPost } from "./helpers/post.js";
 
 let backendDb: UnsafeBackendDb | null = null;
 
@@ -16,19 +17,11 @@ const USUAL = ["telegram", "threads_ru", "x"];
 function seed(db: UnsafeBackendDb, count: number, gap: { postId: number; target: string }): void {
   const now = new Date().toISOString();
   for (let postId = 1; postId <= count; postId += 1) {
-    db.db
-      .insert(posts)
-      .values({
-        publicationKey: `post:${postId}`,
-        postId,
-        channel: "alexgetmancom",
-        messageId: postId,
-        dateUtc: `2026-08-${String(postId).padStart(2, "0")}T10:00:00.000Z`,
-        text: `Headline ${postId}\n\nBody copy that identifies nothing.`,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
+    seedTextPost(db, {
+      postId,
+      ru: `Headline ${postId}\n\nBody copy that identifies nothing.`,
+      now: `2026-08-${String(postId).padStart(2, "0")}T10:00:00.000Z`,
+    });
     for (const target of USUAL) {
       if (postId === gap.postId && target === gap.target) continue;
       db.db

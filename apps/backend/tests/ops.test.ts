@@ -19,6 +19,7 @@ import { diagnoseMediaProcessor, mediaProcessorStatus, reprocessPostMedia } from
 import { compactOperationsStatus } from "../src/operations/status.js";
 import { publicationTimeline } from "../src/operations/timeline.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { seedTextPost } from "./helpers/post.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
 function insertVideoAsset(backendDb: ReturnType<typeof openBackendDb>): void {
@@ -128,11 +129,7 @@ describe("TypeScript operations tooling", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      backendDb.sqlite
-        .prepare(
-          "INSERT INTO posts(publication_key,post_id,channel,message_id,date_utc,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,'active',?,?)",
-        )
-        .run(now, now, now);
+      seedTextPost(backendDb, { postId: 1, now });
       backendDb.sqlite
         .prepare("INSERT INTO publication_targets(publication_key,target,status,updated_at) VALUES ('post:1','threads_ru','published',?)")
         .run(now);
@@ -172,11 +169,7 @@ describe("TypeScript operations tooling", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      backendDb.sqlite
-        .prepare(
-          "INSERT INTO posts(publication_key,post_id,channel,message_id,date_utc,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,'active',?,?)",
-        )
-        .run(now, now, now);
+      seedTextPost(backendDb, { postId: 1, now });
       backendDb.sqlite
         .prepare("INSERT INTO publication_targets(publication_key,target,status,updated_at) VALUES ('post:1','telegram','published',?)")
         .run(now);
@@ -380,17 +373,7 @@ describe("TypeScript operations tooling", () => {
         .query("INSERT INTO video_metric_snapshots(video_target_id,platform,metrics_json,sampled_at) VALUES (1,'instagram_reels','{}',?)")
         .run(now);
       backendDb.sqlite.run("PRAGMA foreign_keys=ON");
-      backendDb.sqlite.query("INSERT INTO publications(post_id,status,created_at,updated_at) VALUES (1,'failed',?,?)").run(now, now);
-      backendDb.sqlite
-        .query(
-          "INSERT INTO drafts(id,actor_id,status,text_ru,targets_json,post_id,created_at,updated_at) VALUES (1,1,'failed','text','{}',1,?,?)",
-        )
-        .run(now, now);
-      backendDb.sqlite
-        .query(
-          "INSERT INTO posts(publication_key,post_id,channel,message_id,status,created_at,updated_at) VALUES ('post:1',1,'test',1,'active',?,?)",
-        )
-        .run(now, now);
+      seedTextPost(backendDb, { postId: 1, actorId: 1, status: "failed", ru: "text", now });
       backendDb.sqlite
         .query(
           "INSERT INTO publication_targets(publication_key,target,status,error,updated_at) VALUES ('post:1','telegram','failed','stale',?)",
@@ -415,7 +398,6 @@ describe("TypeScript operations tooling", () => {
         status: "published",
         error: null,
       });
-      expect(backendDb.sqlite.query("SELECT status FROM publications WHERE post_id=1").get()).toEqual({ status: "published" });
       expect(backendDb.sqlite.query("SELECT status FROM drafts WHERE id=1").get()).toEqual({ status: "published" });
       expect(backendDb.sqlite.query("SELECT count(*) AS count FROM video_targets").get()).toEqual({ count: 0 });
       expect(backendDb.sqlite.query("SELECT count(*) AS count FROM video_jobs").get()).toEqual({ count: 0 });
@@ -432,14 +414,7 @@ describe("TypeScript operations tooling", () => {
       const now = new Date().toISOString();
       backendDb.sqlite.query("INSERT INTO metric_schedule(publication_key,target,updated_at) VALUES ('post:orphan','telegram',?)").run(now);
       for (const postId of [1, 2]) {
-        backendDb.sqlite
-          .query("INSERT INTO publications(post_id,status,created_at,updated_at) VALUES (?,'failed',?,?)")
-          .run(postId, now, now);
-        backendDb.sqlite
-          .query(
-            "INSERT INTO posts(publication_key,post_id,channel,message_id,status,created_at,updated_at) VALUES (?,?, 'test',?,'active',?,?)",
-          )
-          .run(`post:${postId}`, postId, postId, now, now);
+        seedTextPost(backendDb, { postId, status: "failed", now });
         backendDb.sqlite
           .query("INSERT INTO publication_targets(publication_key,target,status,error,updated_at) VALUES (?,'telegram','failed','stale',?)")
           .run(`post:${postId}`, now);
@@ -491,10 +466,14 @@ describe("TypeScript operations tooling", () => {
           },
           now,
         );
-      backendDb.sqlite.query("INSERT INTO publications(post_id,status,created_at,updated_at) VALUES (70,'scheduled',?,?)").run(now, now);
-      backendDb.sqlite
-        .query("INSERT INTO publication_plans(post_id,plan_json,created_at,updated_at) VALUES (70,?,?,?)")
-        .run(JSON.stringify({ mode: "scheduled", targets: { telegram: true, threads_en: true }, scheduled_at: now }), now, now);
+      seedTextPost(backendDb, {
+        postId: 70,
+        status: "scheduled",
+        targets: { telegram: true, threads_en: true },
+        publishMode: "scheduled",
+        scheduledAt: now,
+        now,
+      });
       backendDb.sqlite
         .query(
           "INSERT INTO publish_jobs(publication_id,publication_key,target,status,created_at,updated_at) VALUES (70,'post:70','telegram','published',?,?)",
@@ -502,7 +481,7 @@ describe("TypeScript operations tooling", () => {
         .run(now, now);
 
       expect(repairPublicationConsistency(backendDb)).toMatchObject({ repairedPublications: 0 });
-      expect(backendDb.sqlite.query("SELECT status FROM publications WHERE post_id=70").get()).toEqual({ status: "scheduled" });
+      expect(backendDb.sqlite.query("SELECT status FROM drafts WHERE post_id=70").get()).toEqual({ status: "scheduled" });
     } finally {
       backendDb.close();
     }
@@ -512,7 +491,7 @@ describe("TypeScript operations tooling", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      backendDb.sqlite.query("INSERT INTO publications(post_id,status,created_at,updated_at) VALUES (71,'scheduled',?,?)").run(now, now);
+      seedTextPost(backendDb, { postId: 71, status: "scheduled", now });
       backendDb.sqlite
         .query(
           "INSERT INTO publish_jobs(publication_id,publication_key,target,status,created_at,updated_at) VALUES (71,'post:71','telegram','published',?,?)",
@@ -520,7 +499,7 @@ describe("TypeScript operations tooling", () => {
         .run(now, now);
 
       expect(repairPublicationConsistency(backendDb)).toMatchObject({ repairedPublications: 1 });
-      expect(backendDb.sqlite.query("SELECT status FROM publications WHERE post_id=71").get()).toEqual({ status: "published" });
+      expect(backendDb.sqlite.query("SELECT status FROM drafts WHERE post_id=71").get()).toEqual({ status: "published" });
     } finally {
       backendDb.close();
     }

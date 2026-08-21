@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 let fixtureDir: string | null = null;
 
@@ -19,20 +20,22 @@ async function runDoctor(overrides: (fixture: string) => Record<string, string> 
   mkdirSync(dataDir);
   mkdirSync(backupDir);
   writeFileSync(path.join(backupDir, "media-20260820T000000Z.tar.gz"), "archive");
-  const child = Bun.spawn(["bun", "apps/backend/src/cli.ts", "doctor", "--db", path.join(fixtureDir, "pipeline.db")], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      NODE_ENV: "development",
-      DEPLOYMENT_ENV: "development",
-      COMMAND_CENTER_TOKEN: "command-center",
-      DATA_DIR: dataDir,
-      BACKUP_DIR: backupDir,
-      ...overrides(fixtureDir),
+  const child = Bun.spawn(
+    ["bun", fileURLToPath(new URL("../src/cli.ts", import.meta.url)), "doctor", "--db", path.join(fixtureDir, "pipeline.db")],
+    {
+      env: {
+        ...process.env,
+        NODE_ENV: "development",
+        DEPLOYMENT_ENV: "development",
+        COMMAND_CENTER_TOKEN: "command-center",
+        DATA_DIR: dataDir,
+        BACKUP_DIR: backupDir,
+        ...overrides(fixtureDir),
+      },
+      stdout: "pipe",
+      stderr: "pipe",
     },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  );
   const [exitCode, stdout, stderr] = await Promise.all([
     child.exited,
     new Response(child.stdout).text(),

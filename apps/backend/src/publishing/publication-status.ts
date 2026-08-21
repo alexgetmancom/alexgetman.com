@@ -1,10 +1,11 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { publicationRef } from "../application/publication-ref.js";
 import { isSiteTarget, targetLocale } from "../botTargets.js";
 import { registeredPostTargetIds } from "../channels/registry.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { drafts, publicationEvents, publicationPlans, publications, publishJobs, siteJobs } from "../db/schema.js";
+import { drafts, publicationEvents, publishJobs, siteJobs } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
+import { publicationPlanFromDb } from "./source-store.js";
 import { effectivePublicationStatus, isPostJobFinal, planObject, planScheduleAt } from "./state.js";
 
 type PublicationJob = { target: string; status: string; error: string | null };
@@ -15,13 +16,10 @@ type PublicationJob = { target: string; status: string; error: string | null };
  * delivery state. Both were called `publication-reconciliation`, and the file
  * that imports this one is the other. */
 export function refreshPublicationStatus(backendDb: BackendDb, postId: number): void {
-  const existing = unsafeDb(backendDb)
-    .db.select({ status: publications.status })
-    .from(publications)
-    .where(eq(publications.postId, postId))
-    .get();
+  const existing = unsafeDb(backendDb).db.select({ status: drafts.status }).from(drafts).where(eq(drafts.postId, postId)).get();
+  if (!existing) return;
   if (existing?.status === "cancelled") return;
-  const previousStatus = existing?.status ?? null;
+  const previousStatus = existing.status;
   const social = unsafeDb(backendDb)
     .db.select({ target: publishJobs.target, status: publishJobs.status, error: publishJobs.lastError })
     .from(publishJobs)
@@ -38,12 +36,13 @@ export function refreshPublicationStatus(backendDb: BackendDb, postId: number): 
     .all()
     .filter((job) => isSiteTarget(job.target));
   const all: PublicationJob[] = [...social, ...site];
-  const plan = publicationPlan(backendDb, postId);
+  const registeredTargets = registeredPostTargetIds(backendDb);
+  const plan = publicationPlanFromDb(unsafeDb(backendDb).db, postId, registeredTargets);
   emitLocaleCompletion(backendDb, postId, all, plan);
   const effectiveStatus = effectivePublicationStatus(
     all.map((job) => job.status),
     plan,
-    registeredPostTargetIds(backendDb),
+    registeredTargets,
   );
   if (!effectiveStatus) return;
   const now = backendDb.clock.now().toISOString();
@@ -51,23 +50,19 @@ export function refreshPublicationStatus(backendDb: BackendDb, postId: number): 
   // itself has to be claimed atomically: the write carries the status this cycle
   // read, and a concurrent refresh that already moved it wins and returns
   // nothing. Announcing off the earlier read instead would send the card twice.
-  const moved = unsafeDb(backendDb).db.transaction((tx) => {
-    const claimed = tx
-      .update(publications)
-      .set({ status: effectiveStatus, updatedAt: now })
-      .where(
-        and(
-          eq(publications.postId, postId),
-          previousStatus == null ? isNull(publications.status) : eq(publications.status, previousStatus),
-        ),
-      )
-      .returning({ postId: publications.postId })
-      .get();
-    if (!claimed) return false;
-    tx.update(drafts).set({ status: effectiveStatus, updatedAt: now }).where(eq(drafts.postId, postId)).run();
-    return true;
-  });
-  if (moved && effectiveStatus !== "scheduled" && previousStatus !== effectiveStatus && all.every((job) => isPostJobFinal(job.status))) {
+  const moved = unsafeDb(backendDb)
+    .db.update(drafts)
+    .set({ status: effectiveStatus, updatedAt: now })
+    .where(and(eq(drafts.postId, postId), eq(drafts.status, previousStatus)))
+    .returning({ id: drafts.id })
+    .get();
+  const movedStatus = moved != null;
+  if (
+    movedStatus &&
+    effectiveStatus !== "scheduled" &&
+    previousStatus !== effectiveStatus &&
+    all.every((job) => isPostJobFinal(job.status))
+  ) {
     const counts = postJobCounts(all);
     recordDomainEvent(backendDb.events, {
       ref: publicationRef("post", postId),
@@ -163,13 +158,4 @@ function isDeferredLocale(plan: Record<string, unknown>, completed: "ru" | "en",
   const completedTime = Date.parse(completedAt);
   const remainingTime = Date.parse(remainingAt);
   return Number.isFinite(remainingTime) && Number.isFinite(completedTime) && remainingTime > completedTime;
-}
-
-function publicationPlan(backendDb: BackendDb, postId: number): Record<string, unknown> | null {
-  const value = unsafeDb(backendDb)
-    .db.select({ planJson: publicationPlans.planJson })
-    .from(publicationPlans)
-    .where(eq(publicationPlans.postId, postId))
-    .get()?.planJson;
-  return planObject(value);
 }

@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { publicationRef } from "../application/publication-ref.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { postLocales, postMetrics, posts, publications, publicationTargets, publishJobs } from "../db/schema.js";
+import { drafts, postLocales, postMetrics, publicationTargets, publishJobs } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { zonedRollingPeriodBounds } from "../foundation/time.js";
 import {
@@ -152,9 +152,9 @@ type PublicationQueryRow = {
  * the filter and the ordering cannot drift apart.
  */
 const publicationMoment = sql`coalesce(
-  (select min(${publicationTargets.publishedAt}) from ${publicationTargets} where ${publicationTargets.publicationKey} = 'post:' || ${publications.postId}),
-  (select min(${publishJobs.publishAt}) from ${publishJobs} where ${publishJobs.publicationKey} = 'post:' || ${publications.postId}),
-  ${publications.createdAt}
+  (select min(${publicationTargets.publishedAt}) from ${publicationTargets} where ${publicationTargets.publicationKey} = 'post:' || ${drafts.postId}),
+  (select min(${publishJobs.publishAt}) from ${publishJobs} where ${publishJobs.publicationKey} = 'post:' || ${drafts.postId}),
+  ${drafts.createdAt}
 )`;
 
 function fetchPostRows(backendDb: BackendDb, start: string, end: string, includeContent: boolean, rowLimit = 100): PipelinePostRow[] {
@@ -162,10 +162,10 @@ function fetchPostRows(backendDb: BackendDb, start: string, end: string, include
   const en = alias(postLocales, "pipeline_en");
   const publicationRows = unsafeDb(backendDb)
     .db.select({
-      postId: publications.postId,
-      telegramMessageId: publications.telegramMessageId,
-      createdAt: publications.createdAt,
-      updatedAt: publications.updatedAt,
+      postId: drafts.postId,
+      telegramMessageId: drafts.channelMessageId,
+      createdAt: drafts.createdAt,
+      updatedAt: drafts.updatedAt,
       ...(includeContent
         ? {
             siteRu: ru.siteEnabled,
@@ -176,40 +176,25 @@ function fetchPostRows(backendDb: BackendDb, start: string, end: string, include
         : {}),
       ...(includeContent
         ? {
-            textRu: ru.text,
-            mediaRuJson: ru.mediaJson,
-            textEn: en.text,
-            mediaEnJson: en.mediaJson,
+            textRu: sql<string>`coalesce(${ru.approvedText}, ${ru.sourceText}, '')`,
+            mediaRuJson: ru.siteMediaJson,
+            textEn: sql<string>`coalesce(${en.approvedText}, ${en.sourceText}, '')`,
+            mediaEnJson: en.siteMediaJson,
           }
         : {}),
     })
-    .from(publications)
-    .leftJoin(ru, and(eq(ru.postId, publications.postId), eq(ru.locale, "ru")))
-    .leftJoin(en, and(eq(en.postId, publications.postId), eq(en.locale, "en")))
+    .from(drafts)
+    .leftJoin(ru, and(eq(ru.draftId, drafts.id), eq(ru.locale, "ru")))
+    .leftJoin(en, and(eq(en.draftId, drafts.id), eq(en.locale, "en")))
     // A publication belongs to the day it reached its audience, not the day its
     // row was made. Filtering on creation hid a post scheduled yesterday and
     // published this morning from today's dashboard, while it sat in the
     // seven-day view — the delivery was fine and the period was lying.
-    .where(and(gte(publicationMoment, start), lte(publicationMoment, end)))
+    .where(and(sql`${drafts.postId} is not null`, gte(publicationMoment, start), lte(publicationMoment, end)))
     .orderBy(desc(publicationMoment))
     .limit(rowLimit)
     .all() as PublicationQueryRow[];
-  const publicationKeys = publicationRows.map((row) => publicationRef("post", row.postId));
-  const publicationPosts = publicationKeys.length
-    ? unsafeDb(backendDb)
-        .db.select({
-          publicationKey: posts.publicationKey,
-          messageId: posts.messageId,
-          dateMsk: posts.dateMsk,
-          telegramUrl: posts.telegramUrl,
-        })
-        .from(posts)
-        .where(inArray(posts.publicationKey, publicationKeys))
-        .all()
-    : [];
-  const postByKey = new Map(publicationPosts.map((post) => [post.publicationKey, post]));
   return publicationRows.map((row) => {
-    const post = postByKey.get(publicationRef("post", row.postId));
     return {
       publication_key: publicationRef("post", row.postId),
       post_id: row.postId,
@@ -224,9 +209,9 @@ function fetchPostRows(backendDb: BackendDb, start: string, end: string, include
       media_en_json: row.mediaEnJson,
       site_en: row.siteEn,
       slug_en: row.slugEn,
-      message_id: post?.messageId ?? row.telegramMessageId,
-      date_msk: post?.dateMsk,
-      telegram_url: post?.telegramUrl,
+      message_id: row.telegramMessageId,
+      date_msk: row.createdAt,
+      telegram_url: null,
     };
   });
 }
@@ -290,11 +275,16 @@ export function recentPostMetrics(backendDb: BackendDb) {
       source: postMetrics.source,
       sampledAt: postMetrics.sampledAt,
       error: postMetrics.error,
-      messageId: posts.messageId,
-      postUrl: sql<string | null>`coalesce(${posts.siteEnPath}, ${posts.siteRuPath}, ${posts.telegramUrl})`,
+      messageId: drafts.channelMessageId,
+      postUrl: sql<string | null>`(
+        select ${publicationTargets.url} from ${publicationTargets}
+        where ${publicationTargets.publicationKey} = ${postMetrics.publicationKey}
+          and ${publicationTargets.url} is not null
+        order by ${publicationTargets.publishedAt} asc limit 1
+      )`,
     })
     .from(postMetrics)
-    .leftJoin(posts, eq(posts.publicationKey, postMetrics.publicationKey))
+    .leftJoin(drafts, sql`${postMetrics.publicationKey} = 'post:' || ${drafts.postId}`)
     .orderBy(desc(postMetrics.sampledAt), asc(postMetrics.publicationKey), asc(postMetrics.target), asc(postMetrics.metricName))
     .limit(100)
     .all();

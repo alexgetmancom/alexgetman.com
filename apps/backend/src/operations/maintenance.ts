@@ -10,14 +10,14 @@ import {
   drafts,
   maintenanceLocks,
   metricSchedule,
-  posts,
   publicationEvents,
   publicationTargets,
   videoDrafts,
   videoTargets,
 } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { effectivePublicationStatus, planObject } from "../publishing/state.js";
+import { publicationPlanFromDb } from "../publishing/source-store.js";
+import { effectivePublicationStatus } from "../publishing/state.js";
 
 /** Explicitly invoked operational maintenance routines. */
 export async function backupDatabase(backendDb: BackendDb, sourcePath: string, destinationDirectory?: string): Promise<string> {
@@ -95,25 +95,27 @@ export function buildMetricsBackfillPlan(
 ): Record<string, unknown>[] {
   if (options.targets.length === 0) return [];
   const conditions = [
-    eq(posts.status, "active"),
+    eq(drafts.status, "published"),
     eq(publicationTargets.status, "published"),
     inArray(publicationTargets.target, options.targets),
   ];
-  if (options.refs?.length) conditions.push(inArray(posts.publicationKey, options.refs));
-  if (options.dateFrom) conditions.push(gte(posts.dateUtc, options.dateFrom));
-  if (options.dateTo) conditions.push(lte(posts.dateUtc, options.dateTo));
+  const key = sql<string>`'post:' || ${drafts.postId}`;
+  const date = sql<string>`coalesce(${publicationTargets.publishedAt}, ${drafts.updatedAt})`;
+  if (options.refs?.length) conditions.push(inArray(key, options.refs));
+  if (options.dateFrom) conditions.push(gte(date, options.dateFrom));
+  if (options.dateTo) conditions.push(lte(date, options.dateTo));
   return unsafeDb(backendDb)
     .db.select({
-      publicationKey: posts.publicationKey,
-      postId: posts.postId,
-      messageId: posts.messageId,
-      dateUtc: posts.dateUtc,
+      publicationKey: key,
+      postId: drafts.postId,
+      messageId: drafts.channelMessageId,
+      dateUtc: date,
       target: publicationTargets.target,
     })
-    .from(posts)
-    .innerJoin(publicationTargets, eq(publicationTargets.publicationKey, posts.publicationKey))
+    .from(drafts)
+    .innerJoin(publicationTargets, eq(publicationTargets.publicationKey, key))
     .where(and(...conditions))
-    .orderBy(desc(posts.dateUtc), publicationTargets.target)
+    .orderBy(desc(date), publicationTargets.target)
     .all();
 }
 
@@ -360,11 +362,9 @@ export function repairPublicationConsistency(backendDb: BackendDb, options: Publ
         "DELETE FROM video_metric_schedule WHERE video_target_id NOT IN (SELECT id FROM video_targets) OR video_target_id IN (SELECT id FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts))",
         "DELETE FROM video_jobs WHERE video_draft_id NOT IN (SELECT id FROM video_drafts) OR (video_target_id IS NOT NULL AND video_target_id NOT IN (SELECT id FROM video_targets))",
         "DELETE FROM video_targets WHERE video_draft_id NOT IN (SELECT id FROM video_drafts)",
-        "DELETE FROM metric_schedule WHERE publication_key NOT IN (SELECT publication_key FROM posts)",
-        "DELETE FROM publication_targets WHERE publication_key NOT IN (SELECT publication_key FROM posts)",
-        "DELETE FROM post_locales WHERE post_id NOT IN (SELECT post_id FROM publications)",
-        "DELETE FROM publication_sources WHERE post_id NOT IN (SELECT post_id FROM publications)",
-        "DELETE FROM publication_plans WHERE post_id NOT IN (SELECT post_id FROM publications)",
+        "DELETE FROM metric_schedule WHERE publication_key LIKE 'post:%' AND publication_key NOT IN (SELECT 'post:' || post_id FROM drafts WHERE post_id IS NOT NULL)",
+        "DELETE FROM publication_targets WHERE publication_key LIKE 'post:%' AND publication_key NOT IN (SELECT 'post:' || post_id FROM drafts WHERE post_id IS NOT NULL)",
+        "DELETE FROM post_locales WHERE draft_id NOT IN (SELECT id FROM drafts)",
       ])
         deletedOrphans += unsafeDb(backendDb).sqlite.run(statement).changes;
     }
@@ -392,14 +392,9 @@ export function repairPublicationConsistency(backendDb: BackendDb, options: Publ
 
     for (const mismatch of before.publicationMismatches) {
       const changed = unsafeDb(backendDb)
-        .sqlite.query("UPDATE publications SET status=?, updated_at=? WHERE post_id=? AND status=?")
+        .sqlite.query("UPDATE drafts SET status=?, updated_at=? WHERE post_id=? AND status=?")
         .run(mismatch.expected, now, mismatch.post_id, mismatch.status).changes;
       if (!changed) continue;
-      unsafeDb(backendDb)
-        .db.update(drafts)
-        .set({ status: mismatch.expected, updatedAt: now })
-        .where(eq(drafts.postId, mismatch.post_id))
-        .run();
       repairedPublications += changed;
     }
 
@@ -453,42 +448,35 @@ function targetStateMismatches(backendDb: BackendDb): TargetStateMismatch[] {
 }
 
 function publicationStateMismatches(backendDb: BackendDb): PublicationStateMismatch[] {
-  // The plan comes along because a locale the operator has not dated yet keeps
-  // the publication open; without it this scan called every such post a mismatch.
   const rows = unsafeDb(backendDb)
     .sqlite.query(
-      `SELECT p.post_id,p.status,pp.plan_json,
+      `SELECT d.post_id,d.status,
               group_concat(x.status) AS statuses
-       FROM publications p
-       LEFT JOIN publication_plans pp ON pp.post_id=p.post_id
+       FROM drafts d
        LEFT JOIN (
          SELECT publication_id AS post_id,status FROM publish_jobs
          UNION ALL
          SELECT post_id,status FROM site_jobs
-       ) x ON x.post_id=p.post_id
-       GROUP BY p.post_id
-       ORDER BY p.post_id`,
+       ) x ON x.post_id=d.post_id
+       WHERE d.post_id IS NOT NULL
+       GROUP BY d.post_id
+       ORDER BY d.post_id`,
     )
-    .all() as Array<{ post_id: number; status: string; plan_json: string | null; statuses: string | null }>;
+    .all() as Array<{
+    post_id: number;
+    status: string;
+    statuses: string | null;
+  }>;
   const registeredTargets = registeredPostTargetIds(backendDb);
   return rows.flatMap((row) => {
     if (row.status === "cancelled") return [];
     const expected = effectivePublicationStatus(
       (row.statuses ?? "").split(",").filter(Boolean).map(normalizeArchivedJobStatus),
-      parsePlan(row.plan_json),
+      publicationPlanFromDb(unsafeDb(backendDb).db, row.post_id, registeredTargets),
       registeredTargets,
     );
     return expected && expected !== row.status ? [{ post_id: row.post_id, status: row.status, expected }] : [];
   });
-}
-
-function parsePlan(value: string | null): Record<string, unknown> | null {
-  if (!value) return null;
-  try {
-    return planObject(JSON.parse(value));
-  } catch {
-    return null;
-  }
 }
 
 function normalizeArchivedJobStatus(status: string): string {

@@ -269,7 +269,9 @@ describe("Studio MCP", () => {
         authorization,
       );
       expect(JSON.stringify(await attached.json())).toContain('\\"attached\\":true');
-      expect(backendDb.sqlite.prepare("SELECT media_en_json FROM drafts WHERE id=1").get()).toMatchObject({
+      expect(
+        backendDb.sqlite.prepare("SELECT media_json AS media_en_json FROM post_locales WHERE draft_id=1 AND locale='en'").get(),
+      ).toMatchObject({
         media_en_json: expect.stringContaining('"assetId":1'),
       });
       expect(backendDb.sqlite.prepare("SELECT source FROM studio_media_assets WHERE id=1").get()).toEqual({ source: "http_upload" });

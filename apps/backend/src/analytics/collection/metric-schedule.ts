@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { and, asc, eq, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import { TARGET_GROUPS } from "../../botTargets.js";
 import { type BackendDb, unsafeDb } from "../../db/client.js";
-import { metricSchedule, posts, publicationTargets } from "../../db/schema.js";
+import { drafts, metricSchedule, publicationTargets } from "../../db/schema.js";
 import type { BackendConfig } from "../../foundation/config.js";
 import { metricCheckpointAt } from "./metric-checkpoints.js";
 
@@ -30,16 +30,19 @@ const PAID_METRIC_TARGETS = TARGET_GROUPS.x;
 export function ensureMetricSchedule(backendDb: BackendDb, targets: readonly string[]): void {
   if (targets.length === 0) return;
   const rows = unsafeDb(backendDb)
-    .db.select({ publicationKey: posts.publicationKey, dateUtc: posts.dateUtc, target: publicationTargets.target })
-    .from(posts)
-    .innerJoin(publicationTargets, eq(publicationTargets.publicationKey, posts.publicationKey))
+    .db.select({
+      publicationKey: publicationTargets.publicationKey,
+      dateUtc: publicationTargets.publishedAt,
+      target: publicationTargets.target,
+    })
+    .from(drafts)
+    .innerJoin(publicationTargets, eq(publicationTargets.publicationKey, sql`'post:' || ${drafts.postId}`))
     .leftJoin(
       metricSchedule,
-      and(eq(metricSchedule.publicationKey, posts.publicationKey), eq(metricSchedule.target, publicationTargets.target)),
+      and(eq(metricSchedule.publicationKey, publicationTargets.publicationKey), eq(metricSchedule.target, publicationTargets.target)),
     )
     .where(
       and(
-        eq(posts.status, "active"),
         eq(publicationTargets.status, "published"),
         inArray(publicationTargets.target, [...targets]),
         isNull(metricSchedule.publicationKey),
@@ -78,8 +81,8 @@ export function claimDueMetricTasks(
       publicationKey: metricSchedule.publicationKey,
       target: metricSchedule.target,
       checkCount: metricSchedule.checkCount,
-      messageId: posts.messageId,
-      dateUtc: posts.dateUtc,
+      messageId: sql<number>`coalesce(${drafts.channelMessageId}, ${drafts.postId})`,
+      dateUtc: publicationTargets.publishedAt,
       externalId: publicationTargets.externalId,
       externalIds: publicationTargets.externalIdsJson,
       url: publicationTargets.url,
@@ -87,7 +90,7 @@ export function claimDueMetricTasks(
       lockedAt: metricSchedule.lockedAt,
     })
     .from(metricSchedule)
-    .innerJoin(posts, eq(posts.publicationKey, metricSchedule.publicationKey))
+    .innerJoin(drafts, eq(metricSchedule.publicationKey, sql`'post:' || ${drafts.postId}`))
     .innerJoin(
       publicationTargets,
       and(eq(publicationTargets.publicationKey, metricSchedule.publicationKey), eq(publicationTargets.target, metricSchedule.target)),
@@ -104,7 +107,7 @@ export function claimDueMetricTasks(
     )
     // Oldest due work must win. Ordering by the post date starved historical
     // checkpoints indefinitely whenever newer posts kept becoming due.
-    .orderBy(asc(metricSchedule.nextCheckAt), asc(metricSchedule.checkCount), asc(posts.dateUtc))
+    .orderBy(asc(metricSchedule.nextCheckAt), asc(metricSchedule.checkCount), asc(publicationTargets.publishedAt))
     .limit(MAX_METRIC_TASKS_PER_CYCLE)
     .all();
   const claimed: MetricTask[] = [];

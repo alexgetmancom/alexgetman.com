@@ -1,11 +1,11 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { publicationRef } from "../application/publication-ref.js";
 import { isStoryTarget } from "../botTargets.js";
 import { effectivePostTargets, registeredPostTargetIds } from "../channels/registry.js";
 import { requireDraft } from "../content/drafts.js";
 import { enrichPublishedPostEntities } from "../content/entity-enrichment.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
-import { draftEntityCandidates, knowledgeEntities, postEntityLinks, publications } from "../db/schema.js";
+import { draftEntityCandidates, drafts, knowledgeEntities, postEntityLinks } from "../db/schema.js";
 import { recordDomainEvent } from "../domain/events.js";
 import { trackUsageSync } from "../observability/usage.js";
 import { readyStoryCardMedia } from "../story-cards/store.js";
@@ -33,32 +33,35 @@ function publishDraftToQueueInternal(backendDb: BackendDb, draftId: number, opti
   const mode = options.mode ?? "immediate";
   const ruAt = mode === "immediate" || options.immediateLocale === "ru" ? now : (options.ruAt?.toISOString() ?? null);
   const enAt = mode === "immediate" || options.immediateLocale === "en" ? now : (options.enAt?.toISOString() ?? null);
-  // One transaction for the whole hand-off: a failure midway used to leave a
-  // publications row with no plan behind it, which no worker picks up and no
-  // retry path repairs. Every step below is synchronous, so this is free.
-  const { postId, plan } = unsafeDb(backendDb).db.transaction((tx) => {
-    const publicationId = ensurePublication(tx, draftId, now);
-    copyAcceptedEntities(tx, draftId, publicationId, now);
-    const registeredTargets = registeredPostTargetIds(backendDb);
-    const storyCards = readyStoryCardMedia(unsafeDb(backendDb).db, draftId);
-    const hasStoryTarget = Object.entries(parseTargets(effectiveDraft.targets_json)).some(
-      ([target, enabled]) => enabled && isStoryTarget(target),
-    );
-    if (storyCards && hasStoryTarget && draft.story_publish_mode !== "all" && draft.story_publish_mode !== "site_only")
-      throw new Error("Story delivery decision is required for a text-only post");
-    const publicationPlan = createPublicationPlan(
-      effectiveDraft,
-      draftId,
-      publicationId,
-      { mode, ruAt, enAt },
-      now,
-      registeredTargets.size ? registeredTargets : undefined,
-      storyCards ?? undefined,
-    );
-    persistPublicationPlanTx(tx, publicationPlan);
-    enrichPublishedPostEntities(backendDb, publicationId);
-    return { postId: publicationId, plan: publicationPlan };
-  });
+  // One immediate transaction for the whole hand-off: id allocation and the
+  // jobs it owns become visible together, and concurrent interfaces cannot
+  // choose the same next public id from a stale maximum.
+  const { postId, plan } = unsafeDb(backendDb).db.transaction(
+    (tx) => {
+      const publicationId = ensurePublication(tx, draftId, now);
+      copyAcceptedEntities(tx, draftId, publicationId, now);
+      const registeredTargets = registeredPostTargetIds(backendDb);
+      const storyCards = readyStoryCardMedia(unsafeDb(backendDb).db, draftId);
+      const hasStoryTarget = Object.entries(parseTargets(effectiveDraft.targets_json)).some(
+        ([target, enabled]) => enabled && isStoryTarget(target),
+      );
+      if (storyCards && hasStoryTarget && draft.story_publish_mode !== "all" && draft.story_publish_mode !== "site_only")
+        throw new Error("Story delivery decision is required for a text-only post");
+      const publicationPlan = createPublicationPlan(
+        effectiveDraft,
+        draftId,
+        publicationId,
+        { mode, ruAt, enAt },
+        now,
+        registeredTargets.size ? registeredTargets : undefined,
+        storyCards ?? undefined,
+      );
+      persistPublicationPlanTx(tx, publicationPlan);
+      enrichPublishedPostEntities(backendDb, publicationId);
+      return { postId: publicationId, plan: publicationPlan };
+    },
+    { behavior: "immediate" },
+  );
   refreshPublicationStatus(backendDb, postId);
   recordDomainEvent(backendDb.events, {
     ref: publicationRef("post", postId),
@@ -112,13 +115,24 @@ function copyAcceptedEntities(db: UnsafeBackendDb["db"], draftId: number, postId
 }
 
 function ensurePublication(db: UnsafeBackendDb["db"], draftId: number, now: string): number {
-  const existing = db.select({ postId: publications.postId }).from(publications).where(eq(publications.draftId, draftId)).get();
+  const existing = db.select({ postId: drafts.postId }).from(drafts).where(eq(drafts.id, draftId)).get();
   if (existing?.postId != null) return existing.postId;
+  if (!existing) throw new Error(`draft ${draftId} not found`);
+  const idAvailable = !db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, draftId)).get();
+  const next = idAvailable
+    ? draftId
+    : Number(
+        db
+          .select({ value: sql<number>`coalesce(max(${drafts.postId}), 0) + 1` })
+          .from(drafts)
+          .get()?.value ?? draftId,
+      );
   const inserted = db
-    .insert(publications)
-    .values({ status: "scheduled", draftId, createdAt: now, updatedAt: now })
-    .returning({ postId: publications.postId })
+    .update(drafts)
+    .set({ postId: next, status: "scheduled", updatedAt: now })
+    .where(and(eq(drafts.id, draftId), isNull(drafts.postId)))
+    .returning({ postId: drafts.postId })
     .get();
-  if (inserted?.postId == null) throw new Error("publication insert did not return an id");
+  if (inserted?.postId == null) throw new Error("draft publication id allocation did not return an id");
   return inserted.postId;
 }

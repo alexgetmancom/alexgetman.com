@@ -1,8 +1,10 @@
 import { eq } from "drizzle-orm";
+import { parsePublicationRef } from "../application/publication-ref.js";
 import { targetLocale } from "../botTargets.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { posts, publicationTargets } from "../db/schema.js";
+import { publicationTargets } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { publicationSourceFromDb } from "../publishing/source-store.js";
 import { createPlatformAdapters } from "./platform-adapters.js";
 
 type PublishedTargetEdit = { publicationKey: string; textRu: string | null; textEn: string | null; target?: string; locale?: "ru" | "en" };
@@ -14,11 +16,8 @@ export async function editPublishedTargets(
   config: BackendConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Array<Record<string, unknown>>> {
-  const post = unsafeDb(backendDb)
-    .db.select({ chatId: posts.chatId, mediaCount: posts.mediaCount })
-    .from(posts)
-    .where(eq(posts.publicationKey, edit.publicationKey))
-    .get();
+  const ref = parsePublicationRef(edit.publicationKey);
+  const source = ref?.kind === "post" ? publicationSourceFromDb(unsafeDb(backendDb).db, ref.id) : null;
   const rows = unsafeDb(backendDb)
     .db.select({
       target: publicationTargets.target,
@@ -38,13 +37,13 @@ export async function editPublishedTargets(
     editable.map(async (row): Promise<Record<string, unknown> | null> => {
       try {
         const adapter = adapters[row.target];
-        const text = targetLocale(row.target) === "ru" ? edit.textRu : edit.textEn;
-        if (!adapter?.edit || !text) return { target: row.target, ok: false, skipped: true, error: "no_edit_port_for_target" };
+        const locale = targetLocale(row.target);
+        const text = locale === "ru" ? edit.textRu : edit.textEn;
+        if (!adapter?.edit || !text || !locale) return { target: row.target, ok: false, skipped: true, error: "no_edit_port_for_target" };
         const result = await adapter.edit({
           externalId: row.externalId,
           text,
-          ...(post?.chatId ? { chatId: post.chatId } : {}),
-          mediaCount: Number(post?.mediaCount ?? 0),
+          mediaCount: source?.locales[locale].media.length ?? 0,
           externalIdCount: row.externalIdsJson?.length ?? 1,
         });
         return { target: row.target, ...result };

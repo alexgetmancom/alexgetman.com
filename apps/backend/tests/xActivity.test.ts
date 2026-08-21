@@ -14,6 +14,7 @@ import { textOverviewOf } from "../src/interfaces/web/dashboard/text-overview.js
 import { emptyVideoOverview } from "../src/interfaces/web/dashboard/video-overview.js";
 import { xActivityPost } from "../src/interfaces/web/dashboard/x-activity-posts.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { seedTextPost } from "./helpers/post.js";
 
 const HEADERS = [
   "Идентификатор поста",
@@ -69,11 +70,7 @@ describe("X Activity", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      backendDb.sqlite
-        .prepare(
-          "INSERT INTO posts(publication_key,post_id,channel,message_id,date_utc,text,text_en,status,created_at,updated_at) VALUES ('post:1',1,'x',1,?,?,?,?,?,?)",
-        )
-        .run(now, "Русский текст", "English text", "active", now, now);
+      seedTextPost(backendDb, { postId: 1, ru: "Русский текст", en: "English text", now });
 
       recordPublishedXActivity(backendDb, { publicationKey: "post:1", xPostId: "x-1", url: null, publishedAt: now });
       recordPublishedXActivity(backendDb, {
@@ -149,11 +146,7 @@ describe("X Activity", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = "2026-07-29T11:49:00.000Z";
-      backendDb.sqlite
-        .prepare(
-          "INSERT INTO posts(publication_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,'A linked Studio post','active',?,?)",
-        )
-        .run(now, now, now);
+      seedTextPost(backendDb, { postId: 1, en: "A linked Studio post", now });
       backendDb.sqlite
         .prepare(
           "INSERT INTO publication_targets(publication_key,target,status,external_id,url,updated_at) VALUES ('post:1','x','published','100','https://x.com/test/status/100',?)",
@@ -179,7 +172,9 @@ describe("X Activity", () => {
         { xPostId: "101", kind: "reply", linkedPublicationKey: null },
       ]);
       expect(backendDb.db.select().from(xActivityMetricSnapshots).all()).toHaveLength(26);
-      expect((backendDb.sqlite.prepare("SELECT count(*) AS count FROM posts").get() as { count: number }).count).toBe(1);
+      expect(
+        (backendDb.sqlite.prepare("SELECT count(*) AS count FROM drafts WHERE post_id IS NOT NULL").get() as { count: number }).count,
+      ).toBe(1);
 
       const repeated = importXAnalyticsCsv(backendDb, file, now);
       expect(repeated.activitySamples).toBe(0);
@@ -204,11 +199,7 @@ describe("X Activity", () => {
         ].join("\n"),
       );
       expect(importXAnalyticsCsv(backendDb, file, now)).toMatchObject({ linkedByText: 0, insertedSamples: 0 });
-      backendDb.sqlite
-        .prepare(
-          "INSERT INTO posts(publication_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,?,'active',?,?)",
-        )
-        .run(now, text, now, now);
+      seedTextPost(backendDb, { postId: 1, en: text, now });
 
       expect(attachXActivityToPosts(backendDb, false)).toMatchObject({
         links: [{ xPostId: "100", publicationKey: "post:1", matchedBy: "direct_text" }],
@@ -245,12 +236,7 @@ describe("X Activity", () => {
           x: "Alibaba released Qwen 3.8 Max and now users will decide whether it wins",
         },
       ];
-      for (const [index, item] of cases.entries())
-        backendDb.sqlite
-          .prepare(
-            "INSERT INTO posts(publication_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES (?,?,'test',?,?,?,'active',?,?)",
-          )
-          .run(item.key, index + 1, index + 1, now, item.post, now, now);
+      for (const [index, item] of cases.entries()) seedTextPost(backendDb, { postId: index + 1, en: item.post, now });
       const directory = mkdtempSync(join(tmpdir(), "x-activity-spelling-"));
       const file = join(directory, "account_analytics_content_2026-07-23_2026-07-29.csv");
       const metrics = [50, 2, 4, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0];
@@ -290,11 +276,8 @@ describe("X Activity", () => {
       // report's lower bar: the second is the near miss the report exists for.
       const linked = "A long enough Studio post about the newest frontier model and what it changes for everyone";
       const short = "Shorter post about pricing";
-      backendDb.sqlite
-        .prepare(
-          "INSERT INTO posts(publication_key,post_id,channel,message_id,date_utc,text_en,status,created_at,updated_at) VALUES ('post:1',1,'test',1,?,?,'active',?,?),('post:2',2,'test',2,?,?,'active',?,?)",
-        )
-        .run(now, `${linked} and a tail`, now, now, now, `${short} and a tail`, now, now);
+      seedTextPost(backendDb, { postId: 1, en: `${linked} and a tail`, now });
+      seedTextPost(backendDb, { postId: 2, en: `${short} and a tail`, now });
       backendDb.sqlite
         .prepare(
           "INSERT INTO publication_targets(publication_key,target,status,external_id,url,updated_at) VALUES ('post:9','x','published','900','https://x.com/test/status/900',?)",

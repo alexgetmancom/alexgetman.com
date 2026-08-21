@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { jsonObject } from "./json.js";
 
 /** Unique per call, not per process: two concurrent writers of the same file
  * shared one `<file>.<pid>.tmp` and raced on the rename, so one of them could
@@ -28,9 +27,4 @@ export function atomicWriteText(filePath: string, content: string): void {
     fs.rmSync(temp, { force: true });
     throw error;
   }
-}
-
-export function parseObject(value: unknown): Record<string, unknown> | null {
-  const object = jsonObject(value);
-  return Object.keys(object).length > 0 ? object : null;
 }

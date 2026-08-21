@@ -1,11 +1,12 @@
 import { describe, expect, it, setSystemTime } from "bun:test";
 import type { Context } from "grammy";
 import { queueScreen, showQueue } from "../src/bot/queue.js";
-import { draftStoryCards, drafts, posts, publicationTargets, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
+import { draftStoryCards, publicationTargets, publishJobs, videoDrafts, videoTargets } from "../src/db/schema.js";
 import type { StudioQueueSnapshot } from "../src/studio/services/queue.js";
 import { queueService } from "../src/studio/services/queue.js";
 import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { seedTextPost } from "./helpers/post.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 import { createTestVideoAsset } from "./helpers/video.js";
 
@@ -15,31 +16,12 @@ describe("Telegram work queue", () => {
     try {
       const postPublishedAt = "2026-08-12T12:00:00.000Z";
       const videoPublishedAt = "2026-08-11T12:00:00.000Z";
-      backendDb.db
-        .insert(drafts)
-        .values({
-          actorId: 7,
-          status: "published",
-          textRu: "Published post\nTogether with a body that must stay out of the menu",
-          targetsJson: "{}",
-          postId: 10,
-          createdAt: postPublishedAt,
-          updatedAt: postPublishedAt,
-        })
-        .run();
-      backendDb.db
-        .insert(posts)
-        .values({
-          publicationKey: "post:10",
-          postId: 10,
-          channel: "studio",
-          messageId: 10,
-          dateUtc: postPublishedAt,
-          text: "Published post",
-          createdAt: postPublishedAt,
-          updatedAt: postPublishedAt,
-        })
-        .run();
+      seedTextPost(backendDb, {
+        postId: 10,
+        actorId: 7,
+        ru: "Published post\nTogether with a body that must stay out of the menu",
+        now: postPublishedAt,
+      });
       backendDb.db
         .insert(publicationTargets)
         .values({
@@ -77,7 +59,7 @@ describe("Telegram work queue", () => {
         .run();
 
       expect(queueService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "7" })).headline(7).published).toEqual({
-        id: 1,
+        id: 10,
         label: "Published post",
         kind: "post",
         time: new Date(postPublishedAt),
@@ -92,40 +74,18 @@ describe("Telegram work queue", () => {
     try {
       const now = new Date().toISOString();
       const scheduledAt = new Date(Date.now() + 60 * 60_000).toISOString();
-      backendDb.db
-        .insert(drafts)
-        .values([
-          {
-            id: 1,
-            actorId: 7,
-            status: "scheduled",
-            textRu: "Запланированный пост",
-            targetsJson: JSON.stringify({ telegram_ru: true, telegram_en: true }),
-            scheduledAt,
-            postId: 101,
-            createdAt: now,
-            updatedAt: now,
-          },
-          {
-            id: 2,
-            actorId: 7,
-            status: "needs_review",
-            textRu: "Черновик поста",
-            targetsJson: "{}",
-            createdAt: now,
-            updatedAt: now,
-          },
-          {
-            id: 3,
-            actorId: 8,
-            status: "needs_review",
-            textRu: "Чужой черновик",
-            targetsJson: "{}",
-            createdAt: now,
-            updatedAt: now,
-          },
-        ])
-        .run();
+      seedTextPost(backendDb, {
+        draftId: 1,
+        postId: 101,
+        actorId: 7,
+        status: "scheduled",
+        ru: "Запланированный пост",
+        targets: { telegram_ru: true, telegram_en: true },
+        scheduledAt,
+        now,
+      });
+      seedTextPost(backendDb, { draftId: 2, actorId: 7, status: "needs_review", ru: "Черновик поста", now });
+      seedTextPost(backendDb, { draftId: 3, actorId: 8, status: "needs_review", ru: "Чужой черновик", now });
       backendDb.db
         .insert(publishJobs)
         .values({
@@ -238,35 +198,24 @@ describe("Telegram work queue", () => {
       registerTestChannels(backendDb, ["telegram", "threads_en"]);
       const now = new Date().toISOString();
       const ruAt = new Date(Date.now() + 60 * 60_000).toISOString();
-      backendDb.db
-        .insert(drafts)
-        .values({
-          actorId: 7,
-          status: "scheduled",
-          textRu: "RU already handled",
-          targetsJson: JSON.stringify({ telegram: true, threads_en: true }),
-          scheduledAt: new Date(Date.now() - 60_000).toISOString(),
-          scheduledEnAt: null,
-          postId: 201,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      const futureDraft = backendDb.db
-        .insert(drafts)
-        .values({
-          actorId: 7,
-          status: "scheduled",
-          textRu: "RU then EN",
-          targetsJson: JSON.stringify({ telegram: true, threads_en: true }),
-          scheduledAt: ruAt,
-          scheduledEnAt: null,
-          postId: 202,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      void futureDraft;
+      seedTextPost(backendDb, {
+        postId: 201,
+        actorId: 7,
+        status: "scheduled",
+        ru: "RU already handled",
+        targets: { telegram: true, threads_en: true },
+        scheduledAt: new Date(Date.now() - 60_000).toISOString(),
+        now,
+      });
+      seedTextPost(backendDb, {
+        postId: 202,
+        actorId: 7,
+        status: "scheduled",
+        ru: "RU then EN",
+        targets: { telegram: true, threads_en: true },
+        scheduledAt: ruAt,
+        now,
+      });
 
       const snapshot = queueService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "7" })).snapshot(7);
       expect(snapshot.upcoming).toHaveLength(0);
@@ -284,20 +233,15 @@ describe("Telegram work queue", () => {
       // EN time nobody can give held two posts in the queue indefinitely.
       registerTestChannels(backendDb, ["telegram", "threads_ru"]);
       const now = new Date().toISOString();
-      backendDb.db
-        .insert(drafts)
-        .values({
-          actorId: 7,
-          status: "scheduled",
-          textRu: "RU only Studio",
-          targetsJson: JSON.stringify({ telegram: true, threads_ru: true, instagram_stories: true }),
-          scheduledAt: new Date(Date.now() + 60 * 60_000).toISOString(),
-          scheduledEnAt: null,
-          postId: 203,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
+      seedTextPost(backendDb, {
+        postId: 203,
+        actorId: 7,
+        status: "scheduled",
+        ru: "RU only Studio",
+        targets: { telegram: true, threads_ru: true, instagram_stories: true },
+        scheduledAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+        now,
+      });
 
       const snapshot = queueService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "7" })).snapshot(7);
       expect(snapshot.drafts).toHaveLength(0);
@@ -346,17 +290,7 @@ describe("Telegram work queue", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      backendDb.db
-        .insert(drafts)
-        .values({
-          actorId: 7,
-          status: "needs_review",
-          textRu: `${"x".repeat(37)}😀 after the limit`,
-          targetsJson: "{}",
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
+      seedTextPost(backendDb, { draftId: 301, actorId: 7, status: "needs_review", ru: `${"x".repeat(37)}😀 after the limit`, now });
 
       const label = queueService(backendDb, loadTestConfig({ CONTROLLER_ADMIN_IDS: "7" })).snapshot(7).drafts[0]?.label;
       expect(label).toBe(`${"x".repeat(37)}😀`);

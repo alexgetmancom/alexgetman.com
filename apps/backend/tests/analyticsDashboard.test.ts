@@ -3,10 +3,11 @@ import { creatorDashboard } from "../src/analytics/reports/dashboard.js";
 import { studioAnalyticsDashboard } from "../src/analytics/reports/studio-dashboard.js";
 import { pruneMetricSamples } from "../src/analytics/snapshots/metric-repository.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { creatorProfiles, metricSamples, posts, publicationTargets, videoMetricSnapshots } from "../src/db/schema.js";
+import { creatorProfiles, metricSamples, publicationTargets, videoMetricSnapshots } from "../src/db/schema.js";
 import { insertPublishedVideo } from "./helpers/analytics.js";
 import { TEXT_TEST_CHANNELS, VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { withDb as withFixtureDb } from "./helpers/db.js";
+import { seedTextPost } from "./helpers/post.js";
 import { loadTestConfig, SITE_STUDIO_PROFILE } from "./helpers/studio-config.js";
 
 const withDb = <T>(run: (backendDb: UnsafeBackendDb) => T | Promise<T>) =>
@@ -158,18 +159,7 @@ describe("creator analytics dashboards", () => {
   it("renders only newly published text posts in the posting section", async () => {
     await withDb(async (backendDb) => {
       const now = new Date().toISOString();
-      backendDb.db
-        .insert(posts)
-        .values({
-          publicationKey: "post:1",
-          channel: "telegram",
-          messageId: 1,
-          text: "Релиз новой функции",
-          dateUtc: now,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
+      seedTextPost(backendDb, { postId: 1, ru: "Релиз новой функции", now });
       backendDb.db
         .insert(publicationTargets)
         .values({ publicationKey: "post:1", target: "telegram", status: "published", updatedAt: now })
@@ -193,27 +183,16 @@ describe("creator analytics dashboards", () => {
   it("renders text publication platforms in their own labeled column", async () => {
     await withDb(async (backendDb) => {
       const now = new Date().toISOString();
-      backendDb.db
-        .insert(posts)
-        .values({
-          publicationKey: "post:icons",
-          channel: "telegram",
-          messageId: 2,
-          text: "Platform labels",
-          dateUtc: now,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
+      seedTextPost(backendDb, { postId: 2, en: "Platform labels", now });
       const targets = ["threads_en", "x", "telegram", "discord"];
       backendDb.db
         .insert(publicationTargets)
-        .values(targets.map((target) => ({ publicationKey: "post:icons", target, status: "published", publishedAt: now, updatedAt: now })))
+        .values(targets.map((target) => ({ publicationKey: "post:2", target, status: "published", publishedAt: now, updatedAt: now })))
         .run();
       backendDb.db
         .insert(metricSamples)
         .values(
-          targets.map((target, index) => ({ publicationKey: "post:icons", target, metricName: "views", value: index + 1, sampledAt: now })),
+          targets.map((target, index) => ({ publicationKey: "post:2", target, metricName: "views", value: index + 1, sampledAt: now })),
         )
         .run();
 
@@ -229,18 +208,7 @@ describe("creator analytics dashboards", () => {
       // Before the 30-day window opens: this is the checkpoint the delta is
       // measured from, and the sample retention used to delete after 7 days.
       const beforePeriod = new Date(Date.now() - 33 * 24 * 60 * 60_000).toISOString();
-      backendDb.db
-        .insert(posts)
-        .values({
-          publicationKey: "post:1",
-          channel: "telegram",
-          messageId: 1,
-          text: "Старый пост",
-          dateUtc: publishedAt,
-          createdAt: publishedAt,
-          updatedAt: now,
-        })
-        .run();
+      seedTextPost(backendDb, { postId: 1, ru: "Старый пост", now: publishedAt });
       backendDb.db
         .insert(publicationTargets)
         .values({ publicationKey: "post:1", target: "telegram", status: "published", publishedAt, updatedAt: now })

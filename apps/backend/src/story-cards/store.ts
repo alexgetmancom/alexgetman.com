@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { and, eq } from "drizzle-orm";
 import type { StoryPublishMode } from "../application/ports.js";
 import { draftLocaleContent } from "../content/draft-content.js";
-import { draftStoryCards, drafts } from "../db/schema.js";
+import { draftStoryCards, drafts, postLocales } from "../db/schema.js";
 import type { BackendDatabase } from "../db/types.js";
 import { log } from "../foundation/logger.js";
 import { buildStoryCardCopy } from "./copy.js";
@@ -11,7 +11,11 @@ import { buildStoryCardCopy } from "./copy.js";
 export function queueDraftStoryCards(db: BackendDatabase, draftId: number): void {
   const draft = db.select().from(drafts).where(eq(drafts.id, draftId)).get();
   if (!draft) throw new Error(`draft ${draftId} not found`);
-  if (mediaCount(draft.mediaRuJson) > 0 || mediaCount(draft.mediaEnJson) > 0) {
+  const locales = db.select().from(postLocales).where(eq(postLocales.draftId, draftId)).all();
+  const byLocale = new Map(locales.map((row) => [row.locale, row]));
+  const ru = byLocale.get("ru");
+  const en = byLocale.get("en");
+  if (mediaCount(ru?.mediaJson) > 0 || mediaCount(en?.mediaJson) > 0) {
     discardDraftStoryCards(db, draftId);
     db.update(drafts).set({ storyPublishMode: null, updatedAt: new Date().toISOString() }).where(eq(drafts.id, draftId)).run();
     return;
@@ -22,9 +26,9 @@ export function queueDraftStoryCards(db: BackendDatabase, draftId: number): void
   // this one still borrowed the Russian text, so the English card carried
   // Russian words in an image an English audience would have seen.
   const source = {
-    text_ru: draft.textRu,
-    text_en_approved: draft.textEnApproved,
-    text_en_machine: draft.textEnMachine,
+    text_ru: ru?.sourceText ?? null,
+    text_en_approved: en?.approvedText ?? null,
+    text_en_machine: en?.sourceText ?? null,
   };
   const content = {
     ru: draftLocaleContent(source, "ru").text,
@@ -139,13 +143,8 @@ function mediaItem(localPath: string): Record<string, unknown> {
   };
 }
 
-function mediaCount(value: string | null): number {
-  try {
-    const parsed = value ? JSON.parse(value) : [];
-    return Array.isArray(parsed) ? parsed.length : 0;
-  } catch {
-    return 0;
-  }
+function mediaCount(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
 }
 
 function removeFiles(paths: string[]): void {

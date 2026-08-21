@@ -3,9 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { UnsafeBackendDb } from "../src/db/client.js";
-import { postLocales, publicationSources, publications, siteJobs } from "../src/db/schema.js";
+import { postLocales, siteJobs } from "../src/db/schema.js";
 import { materializeSitePosts, recoverStaleSiteJobs, runSiteJobCycle } from "../src/delivery/site-jobs.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { seedTextPost } from "./helpers/post.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
 let backendDb: UnsafeBackendDb | null = null;
@@ -53,32 +54,9 @@ describe("site jobs", () => {
     const config = loadTestConfig({ DATA_DIR: tempDir });
     backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
-    backendDb.db.insert(publications).values({ postId: 1, status: "published", createdAt: now, updatedAt: now }).run();
-    backendDb.db.insert(postLocales).values({ postId: 1, locale: "ru", slug: "ru", siteEnabled: 1, updatedAt: now }).run();
-    backendDb.db.insert(postLocales).values({ postId: 1, locale: "en", slug: "en", siteEnabled: 1, updatedAt: now }).run();
-    backendDb.db
-      .insert(publicationSources)
-      .values({
-        postId: 1,
-        itemJson: {
-          id: "post:1",
-          post_id: 1,
-          message_id: 11,
-          date: now,
-          text: "RU",
-          text_ru: "RU",
-          text_en: "EN",
-          has_ru: true,
-          has_en: true,
-          slug_ru: "ru",
-          slug_en: "en",
-        },
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
+    seedTextPost(backendDb, { postId: 1, messageId: 11, ru: "RU", en: "EN", siteRu: true, siteEn: true, slugRu: "ru", slugEn: "en", now });
     await materializeSitePosts(config, backendDb);
-    expect(backendDb.db.select({ locale: postLocales.locale, media: postLocales.mediaJson }).from(postLocales).all()).toEqual([
+    expect(backendDb.db.select({ locale: postLocales.locale, media: postLocales.siteMediaJson }).from(postLocales).all()).toEqual([
       { locale: "ru", media: [] },
       { locale: "en", media: [] },
     ]);
@@ -106,25 +84,7 @@ describe("site jobs", () => {
     backendDb = openBackendDb(":memory:");
     const now = new Date(Date.now() - 1_000).toISOString();
     const later = new Date(Date.now() + 60 * 60_000).toISOString();
-    backendDb.db
-      .insert(publicationSources)
-      .values({
-        postId: 7,
-        itemJson: {
-          post_id: 7,
-          text_ru: "RU",
-          text_en: "EN",
-          has_ru: true,
-          has_en: true,
-          publish_at_ru: later,
-          publish_at_en: now,
-          slug_ru: "ru",
-          slug_en: "en",
-        },
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
+    seedTextPost(backendDb, { postId: 7, ru: "RU", en: "EN", siteRu: true, siteEn: true, scheduledAt: later, scheduledEnAt: now, now });
     backendDb.db
       .insert(siteJobs)
       .values([
@@ -147,22 +107,17 @@ describe("site jobs", () => {
     const config = loadTestConfig({ DATA_DIR: tempDir });
     backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
-    backendDb.db
-      .insert(publicationSources)
-      .values({
-        postId: 7,
-        itemJson: { post_id: 7, text_ru: "RU", text_en: "EN", has_ru: true, has_en: true, publish_at_ru: now, publish_at_en: now },
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
-    backendDb.db
-      .insert(postLocales)
-      .values([
-        { postId: 7, locale: "ru", slug: "ru", mediaJson: [{ type: "image", path: "keep.jpg" }], siteEnabled: 1, updatedAt: now },
-        { postId: 7, locale: "en", slug: "en", siteEnabled: 1, updatedAt: now },
-      ])
-      .run();
+    seedTextPost(backendDb, {
+      postId: 7,
+      ru: "RU",
+      en: "EN",
+      siteRu: true,
+      siteEn: true,
+      siteMediaRu: [{ type: "image", path: "keep.jpg" }],
+      scheduledAt: now,
+      scheduledEnAt: now,
+      now,
+    });
     backendDb.db
       .insert(siteJobs)
       .values({
@@ -187,7 +142,7 @@ describe("site jobs", () => {
       .run();
 
     await materializeSitePosts(config, backendDb);
-    expect(backendDb.db.select({ locale: postLocales.locale, media: postLocales.mediaJson }).from(postLocales).all()).toEqual([
+    expect(backendDb.db.select({ locale: postLocales.locale, media: postLocales.siteMediaJson }).from(postLocales).all()).toEqual([
       { locale: "ru", media: [{ type: "image", path: "keep.jpg" }] },
       { locale: "en", media: [] },
     ]);
@@ -199,33 +154,14 @@ describe("site jobs", () => {
     backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
     for (const postId of [1, 2]) {
-      backendDb.db.insert(publications).values({ postId, status: "published", createdAt: now, updatedAt: now }).run();
-      backendDb.db
-        .insert(postLocales)
-        .values({ postId, locale: "ru", slug: `ru-${postId}`, siteEnabled: 1, updatedAt: now })
-        .run();
-      backendDb.db
-        .insert(publicationSources)
-        .values({
-          postId,
-          itemJson: {
-            id: `post:${postId}`,
-            post_id: postId,
-            message_id: postId,
-            date: now,
-            text: "RU",
-            text_ru: "RU",
-            has_ru: true,
-            slug_ru: `ru-${postId}`,
-            // Post 2 points at an image no one can fetch. It used to reject the
-            // one Promise.all that carried both, and the cycle then spent an
-            // attempt on post 1 too — five cycles and both were `failed`.
-            ...(postId === 2 ? { media: [{ type: "photo", url: "https://media.invalid/gone.jpg" }] } : {}),
-          },
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
+      seedTextPost(backendDb, {
+        postId,
+        ru: "RU",
+        siteRu: true,
+        slugRu: `ru-${postId}`,
+        mediaRu: postId === 2 ? [{ type: "photo", url: "https://media.invalid/gone.jpg" }] : [],
+        now,
+      });
       backendDb.db
         .insert(siteJobs)
         .values({ postId, messageId: postId, reason: "site_ru", status: "queued", createdAt: now, updatedAt: now })

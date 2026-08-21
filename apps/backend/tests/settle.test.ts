@@ -75,7 +75,7 @@ describe("settle", () => {
       url: "https://threads.net/p/18049",
       confirmation_source: "operator",
     });
-    expect(backendDb.sqlite.prepare("SELECT status FROM publications").get()).toEqual({ status: "published" });
+    expect(backendDb.sqlite.prepare("SELECT status FROM drafts").get()).toEqual({ status: "published" });
   });
 
   it("queues the target again when the operator reports the post absent", async () => {

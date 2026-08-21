@@ -116,16 +116,19 @@ export function latestTextPostMetrics(backendDb: BackendDb, since: string): Text
                 ROW_NUMBER() OVER (PARTITION BY publication_key, target, metric_name ORDER BY sampled_at DESC, id DESC) AS rn
          FROM metric_samples
        )
-       SELECT p.publication_key, COALESCE(NULLIF(p.text, ''), p.text_en, p.publication_key) AS label,
+       SELECT 'post:' || d.post_id AS publication_key,
+              COALESCE(NULLIF(ru.approved_text, ''), NULLIF(ru.source_text, ''), NULLIF(en.approved_text, ''), NULLIF(en.source_text, ''), 'post:' || d.post_id) AS label,
               t.target, sample.metric_name, sample.value AS latest,
               (SELECT value FROM metric_samples baseline
                WHERE baseline.publication_key = t.publication_key AND baseline.target = t.target
                  AND baseline.metric_name = sample.metric_name AND baseline.sampled_at <= ?
                ORDER BY baseline.sampled_at DESC, baseline.id DESC LIMIT 1) AS baseline
-       FROM posts p
-       JOIN publication_targets t ON t.publication_key = p.publication_key
+       FROM drafts d
+       LEFT JOIN post_locales ru ON ru.draft_id=d.id AND ru.locale='ru'
+       LEFT JOIN post_locales en ON en.draft_id=d.id AND en.locale='en'
+       JOIN publication_targets t ON t.publication_key = 'post:' || d.post_id
        LEFT JOIN ranked_samples sample ON sample.publication_key = t.publication_key AND sample.target = t.target AND sample.rn = 1
-       WHERE t.status = 'published' AND COALESCE(t.published_at, p.date_utc, p.created_at) >= ?
+       WHERE t.status = 'published' AND COALESCE(t.published_at, d.updated_at, d.created_at) >= ?
          AND t.target NOT LIKE 'site_%' AND t.target NOT LIKE '%stories%'
        ORDER BY t.published_at DESC, t.target ASC`,
     )

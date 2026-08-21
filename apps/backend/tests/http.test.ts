@@ -310,12 +310,27 @@ describe("Astro endpoint controller", () => {
       const response = await app.request("/api/command-center/action", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "edit", ref: `post:${postId}`, locale: "en", text: "Edited English", apply: true, token: "secret" }),
+        body: JSON.stringify({
+          action: "edit",
+          ref: `post:${postId}`,
+          locale: "en",
+          text: "Edited <English>",
+          apply: true,
+          token: "secret",
+        }),
       });
       expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ ok: true, post_id: postId, text_en: true });
-      expect(backendDb.sqlite.prepare("SELECT text FROM post_locales WHERE post_id=? AND locale='en'").get(postId)).toEqual({
-        text: "Edited English",
+      expect(await response.json()).toMatchObject({ ok: true, post_id: postId, locale: "en", text: true });
+      expect(
+        backendDb.sqlite
+          .prepare(
+            "SELECT approved_text, html, entities_json FROM post_locales JOIN drafts ON drafts.id=post_locales.draft_id WHERE post_id=? AND locale='en'",
+          )
+          .get(postId),
+      ).toEqual({
+        approved_text: "Edited <English>",
+        html: "Edited &lt;English&gt;",
+        entities_json: "[]",
       });
       expect((backendDb.sqlite.prepare("SELECT COUNT(*) AS count FROM ops_actions").get() as { count: number }).count).toBe(1);
       expect(

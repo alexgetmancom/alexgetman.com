@@ -3,7 +3,7 @@ import path from "node:path";
 import { and, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import { parseArrayValue } from "../content/message.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { drafts, studioMediaAssets, videoDrafts } from "../db/schema.js";
+import { postLocales, studioMediaAssets, videoDrafts } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 
 /** Reclaims video source files whose drafts are final and past their
@@ -93,12 +93,10 @@ function pruneStudioAssetSource(config: BackendConfig, backendDb: BackendDb, ass
  * only way to know an asset is unreferenced is to read every draft's media. */
 export function postDraftReferencesAsset(backendDb: BackendDb, assetId: number): boolean {
   return unsafeDb(backendDb)
-    .db.select({ mediaRuJson: drafts.mediaRuJson, mediaEnJson: drafts.mediaEnJson })
-    .from(drafts)
+    .db.select({ mediaJson: postLocales.mediaJson })
+    .from(postLocales)
     .all()
-    .some((draft) =>
-      [draft.mediaRuJson, draft.mediaEnJson].some((value) => parseArrayValue(value).some((item) => Number(item.asset_id) === assetId)),
-    );
+    .some((locale) => parseArrayValue(locale.mediaJson).some((item) => Number(item.asset_id) === assetId));
 }
 
 function isManagedVideoSource(config: BackendConfig, source: string): boolean {

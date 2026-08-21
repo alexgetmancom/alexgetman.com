@@ -7,6 +7,7 @@ import { drafts } from "../db/schema.js";
 import { editPublishedTargets } from "../delivery/external-edits.js";
 import { attemptPublishedTargetRemovals, settlePublishedTargetRemovals } from "../delivery/external-removals.js";
 import type { BackendConfig } from "../foundation/config.js";
+import { parsePublicationSource } from "../publishing/publication-source.js";
 import { parseManualSchedule } from "../publishing/schedule.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { recordOperationAction } from "./action-audit.js";
@@ -78,7 +79,7 @@ export async function runOperationCommand(
       ...(input.action === "delete" ? { republish: input.republish } : {}),
     });
   if (input.action === "retry") {
-    const source = sourcePayload(backendDb, publicationRef);
+    const source = parsePublicationSource(sourcePayload(backendDb, publicationRef));
     return commitOperation(backendDb, input, publicationRef, (tx) =>
       requeuePublicationScopeTx(tx, publicationRef, source, input.target, input.locale),
     );
@@ -96,7 +97,7 @@ export async function runOperationCommand(
     const locale = input.locale ?? "en";
     const text = input.text ?? "";
     if (!text.trim()) throw new Error(`text_${locale} is required`);
-    const source = sourcePayload(backendDb, publicationRef);
+    const source = parsePublicationSource(sourcePayload(backendDb, publicationRef));
     let external: Array<Record<string, unknown>> = [];
     let fallbacks: Awaited<ReturnType<typeof attemptTextFallbackRemovals>> = [];
     if (config) {
@@ -116,7 +117,7 @@ export async function runOperationCommand(
     }
     const nextSource = {
       ...source,
-      ...(locale === "en" ? { text_en: text.trim(), bodyMarkdown: text.trim() } : { text_ru: text.trim(), text: text.trim() }),
+      locales: { ...source.locales, [locale]: { ...source.locales[locale], text: text.trim() } },
     };
     return commitOperation(backendDb, input, publicationRef, (tx) => {
       const result = editLocaleContentTx(tx, publicationRef, locale, text);
@@ -134,8 +135,13 @@ export async function runOperationCommand(
   if (input.action === "replace_media" || input.action === "use_other_media") {
     const locale = input.locale ?? "en";
     const media = input.action === "replace_media" ? parseLocaleMedia(input.media_json) : null;
-    const source = sourcePayload(backendDb, publicationRef);
-    const nextSource = { ...source, [locale === "en" ? "media_en" : "media"]: media };
+    const source = parsePublicationSource(sourcePayload(backendDb, publicationRef));
+    const fallback = locale === "en" && media == null ? source.locales.ru.media : [];
+    const nextMedia = media ?? fallback;
+    const nextSource = {
+      ...source,
+      locales: { ...source.locales, [locale]: { ...source.locales[locale], media: nextMedia, siteMedia: nextMedia } },
+    };
     const attempts = config
       ? await attemptPublishedTargetRemovals(
           backendDb,
@@ -156,7 +162,7 @@ export async function runOperationCommand(
   }
   if (input.action === "delete") {
     if (!config) throw new Error("external removal requires runtime config");
-    const source = sourcePayload(backendDb, publicationRef);
+    const source = parsePublicationSource(sourcePayload(backendDb, publicationRef));
     const attempts = await attemptPublishedTargetRemovals(
       backendDb,
       config,

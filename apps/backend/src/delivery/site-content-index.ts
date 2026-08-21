@@ -1,9 +1,9 @@
 import path from "node:path";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { firstLine } from "../content/message.js";
 import { type BackendDb, unsafeDb } from "../db/client.js";
-import { postLocales, publications } from "../db/schema.js";
+import { drafts, postLocales } from "../db/schema.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { atomicWriteText } from "../fsUtils.js";
 
@@ -13,20 +13,20 @@ export function publishContentIndex(config: BackendConfig, backendDb: BackendDb)
   const en = alias(postLocales, "en");
   const rows = unsafeDb(backendDb)
     .db.select({
-      postId: publications.postId,
-      updatedAt: publications.updatedAt,
+      postId: drafts.postId,
+      updatedAt: drafts.updatedAt,
       slugRu: ru.slug,
-      textRu: ru.text,
+      textRu: sql<string>`coalesce(${ru.approvedText}, ${ru.sourceText}, '')`,
       hasRu: ru.siteEnabled,
       slugEn: en.slug,
-      textEn: en.text,
+      textEn: sql<string>`coalesce(${en.approvedText}, ${en.sourceText}, '')`,
       hasEn: en.siteEnabled,
     })
-    .from(publications)
-    .leftJoin(ru, and(eq(ru.postId, publications.postId), eq(ru.locale, "ru")))
-    .leftJoin(en, and(eq(en.postId, publications.postId), eq(en.locale, "en")))
-    .where(eq(publications.status, "published"))
-    .orderBy(desc(publications.postId))
+    .from(drafts)
+    .leftJoin(ru, and(eq(ru.draftId, drafts.id), eq(ru.locale, "ru")))
+    .leftJoin(en, and(eq(en.draftId, drafts.id), eq(en.locale, "en")))
+    .where(eq(drafts.status, "published"))
+    .orderBy(desc(drafts.postId))
     .limit(200)
     .all();
   const base = config.PUBLIC_BASE_URL.replace(/\/$/, "");

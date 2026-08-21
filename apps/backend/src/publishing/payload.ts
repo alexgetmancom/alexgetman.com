@@ -2,51 +2,29 @@ import { isStoryTarget, targetLocale } from "../botTargets.js";
 import { firstLine } from "../content/message.js";
 import { payloadMedia } from "../delivery/social/payload.js";
 import { selectMediaForTarget } from "./media-policy.js";
+import { type PublicationSource, parsePublicationSource } from "./publication-source.js";
 
 /** Resolves the dual-locale publication source into the one durable job shape. */
-export function localizeTargetPayload(payload: Record<string, unknown>, target: string): Record<string, unknown> {
+export function localizeTargetPayload(value: PublicationSource | unknown, target: string): Record<string, unknown> {
   // No default: a target whose locale this build does not know is not English,
   // and guessing was how an unknown target got the English branch and the
   // English text.
   const locale = targetLocale(target);
   if (!locale) return {};
-  const storyMedia = isStoryTarget(target) ? payload[locale === "ru" ? "story_media_ru" : "story_media_en"] : undefined;
-  if (locale === "ru") {
-    const text = String(payload.text_ru ?? payload.text ?? "");
-    const entities = recordArray(payload.entities_ru ?? payload.entities);
-    const rawMedia = storyMedia ?? payload.media;
-    const selectedMedia = Array.isArray(rawMedia) ? selectMediaForTarget(target, rawMedia).map(deliveryMedia) : rawMedia;
-    const localized = {
-      locale,
-      title: firstLine(text),
-      text,
-      media: selectedMedia,
-      entities,
-      slug: payload.slug_ru,
-      postId: payload.post_id,
-      draftId: payload.draft_id,
-      threadsChainApproved: payload.threads_chain_approved === true,
-    };
-    return { ...localized, media: payloadMedia(localized) };
-  }
-
-  // `payload.text` is the Russian one, so there is no fallback to make here:
-  // an English job with no English text has nothing to publish, and saying so
-  // is the point.
-  const text = String(payload.text_en ?? "");
-  const entities = recordArray(payload.entities_en ?? payload.entities);
-  const rawMedia = storyMedia ?? payload.media_en ?? payload.media;
-  const selectedMedia = Array.isArray(rawMedia) ? selectMediaForTarget(target, rawMedia).map(deliveryMedia) : rawMedia;
+  const payload = parsePublicationSource(value);
+  const source = payload.locales[locale];
+  const rawMedia = isStoryTarget(target) && source.storyMedia.length ? source.storyMedia : source.media;
+  const selectedMedia = selectMediaForTarget(target, rawMedia).map(deliveryMedia);
   const localized = {
     locale,
-    title: firstLine(text),
-    text,
+    title: firstLine(source.text),
+    text: source.text,
     media: selectedMedia,
-    entities,
-    slug: payload.slug_en,
-    postId: payload.post_id,
-    draftId: payload.draft_id,
-    threadsChainApproved: payload.threads_chain_approved === true,
+    entities: source.entities,
+    slug: source.slug,
+    postId: payload.postId,
+    draftId: payload.draftId,
+    threadsChainApproved: payload.threadsChainApproved,
   };
   return { ...localized, media: payloadMedia(localized) };
 }
@@ -66,10 +44,4 @@ function deliveryMedia(value: unknown): unknown {
     telegramStoryLocalPath: media.telegramStoryLocalPath ?? media.telegram_story_local_path,
     storyVpsUrl: media.storyVpsUrl ?? media.story_vps_url,
   };
-}
-
-function recordArray(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
-    : [];
 }

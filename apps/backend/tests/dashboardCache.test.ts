@@ -1,9 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { registerChannel } from "../src/channels/registry.js";
-import { postLocales, posts, publications, publishJobs } from "../src/db/schema.js";
+import { publishJobs } from "../src/db/schema.js";
 import { renderDashboard } from "../src/interfaces/web/dashboard.js";
 import { commandCenterFingerprint } from "../src/operations/command-center.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { seedTextPost } from "./helpers/post.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("dashboard render cache", () => {
@@ -38,15 +39,7 @@ describe("dashboard render cache", () => {
     try {
       registerChannel(backendDb, { platform: "site", locale: "ru", provider: "native", targetId: "site_ru", source: "test" });
       const now = new Date().toISOString();
-      backendDb.db
-        .insert(publications)
-        .values({ postId: 1, status: "published", telegramMessageId: 1, createdAt: now, updatedAt: now })
-        .run();
-      backendDb.db
-        .insert(posts)
-        .values({ publicationKey: "post:1", postId: 1, channel: "test", messageId: 1, createdAt: now, updatedAt: now })
-        .run();
-      backendDb.db.insert(postLocales).values({ postId: 1, locale: "ru", slug: "today", text: "Current local day", updatedAt: now }).run();
+      seedTextPost(backendDb, { postId: 1, ru: "Current local day", slugRu: "today", siteRu: true, now });
 
       expect(
         renderDashboard(

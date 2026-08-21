@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { isSiteTarget, targetLocale } from "../botTargets.js";
 import { textLocale } from "../content/text-locale.js";
 import { type BackendDb, type UnsafeBackendDb, unsafeDb } from "../db/client.js";
-import { publications, publicationTargets, publishJobs, siteJobs } from "../db/schema.js";
+import { drafts, publicationTargets, publishJobs, siteJobs } from "../db/schema.js";
 import { requeuedPostTarget, requeuedPublishJobColumns } from "./job-policy.js";
 import { localizeTargetPayload } from "./payload.js";
 import { insertEvent } from "./queue-state.js";
@@ -90,7 +90,7 @@ export function requeuePublicationTargetsTx(
   // target held changed nothing, and moving the publication back to
   // `scheduled` would tell the Command Center a delivery was under way.
   if (scope.postId != null && results.some((result) => result.outcome === "requeued"))
-    db.update(publications).set({ status: "scheduled", updatedAt: now }).where(eq(publications.postId, scope.postId)).run();
+    db.update(drafts).set({ status: "scheduled", updatedAt: now }).where(eq(drafts.postId, scope.postId)).run();
   return results;
 }
 

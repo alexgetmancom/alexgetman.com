@@ -1,38 +1,23 @@
 import { describe, expect, it } from "bun:test";
-import {
-  drafts,
-  publicationEvents,
-  publicationSources,
-  publications,
-  publicationTargets,
-  publishJobs,
-  siteJobs,
-} from "../src/db/schema.js";
+import { drafts, publicationEvents, publicationTargets, publishJobs, siteJobs } from "../src/db/schema.js";
 import { createStudioServices } from "../src/studio/services/index.js";
 import { withDb } from "./helpers/db.js";
+import { seedTextPost } from "./helpers/post.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("post publication retry", () => {
   it("requeues failed social and site targets and refuses a second retry", () =>
     withDb((backendDb) => {
       const now = new Date().toISOString();
-      backendDb.db
-        .insert(drafts)
-        .values({
-          id: 7,
-          actorId: 42,
-          status: "failed",
-          textRu: "Retryable post",
-          targetsJson: JSON.stringify({ telegram: true, site_en: true }),
-          postId: 700,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      backendDb.db
-        .insert(publicationSources)
-        .values({ postId: 700, itemJson: { text: "Retryable post", text_ru: "Retryable post", media: [] }, createdAt: now, updatedAt: now })
-        .run();
+      seedTextPost(backendDb, {
+        draftId: 7,
+        postId: 700,
+        actorId: 42,
+        status: "failed",
+        targets: { telegram: true, site_en: true },
+        ru: "Retryable post",
+        now,
+      });
       backendDb.db
         .insert(publishJobs)
         .values({
@@ -103,20 +88,15 @@ describe("post publication retry", () => {
   it("abandons a target the operator skips and settles the publication without it", () =>
     withDb((backendDb) => {
       const now = new Date().toISOString();
-      backendDb.db.insert(publications).values({ postId: 800, draftId: 8, status: "failed", createdAt: now, updatedAt: now }).run();
-      backendDb.db
-        .insert(drafts)
-        .values({
-          id: 8,
-          actorId: 42,
-          status: "failed",
-          textRu: "Skippable post",
-          targetsJson: JSON.stringify({ telegram: true, threads_ru: true }),
-          postId: 800,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
+      seedTextPost(backendDb, {
+        draftId: 8,
+        postId: 800,
+        actorId: 42,
+        status: "failed",
+        targets: { telegram: true, threads_ru: true },
+        ru: "Skippable post",
+        now,
+      });
       for (const job of [
         { target: "telegram", status: "published", lastError: null },
         { target: "threads_ru", status: "failed", lastError: "Threads is unreachable" },
@@ -157,7 +137,7 @@ describe("post publication retry", () => {
         { target: "threads_ru", status: "cancelled" },
       ]);
       // The publication no longer holds the draft in the attention list.
-      expect(backendDb.db.select({ status: publications.status }).from(publications).all()).toEqual([{ status: "published" }]);
+      expect(backendDb.db.select({ status: drafts.status }).from(drafts).all()).toEqual([{ status: "published" }]);
       expect(backendDb.studioQueue.failedPostIds([800])).toEqual([]);
       expect(
         backendDb.db.select({ type: publicationEvents.eventType, target: publicationEvents.target }).from(publicationEvents).all(),

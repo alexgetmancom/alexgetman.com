@@ -1,11 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { asc, count, eq } from "drizzle-orm";
-import { opsActions, posts, publicationSources, publications, publicationTargets, publishJobs, siteJobs } from "../src/db/schema.js";
+import { drafts, opsActions, publicationTargets, publishJobs, siteJobs } from "../src/db/schema.js";
 import { runOperationCommand } from "../src/operations/commands.js";
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
 import { postService } from "../src/studio/services/posts.js";
 import { registerTestChannels } from "./helpers/channels.js";
 import { openBackendDb } from "./helpers/open-db.js";
+import { seedTextPost } from "./helpers/post.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
 
 describe("command center actions", () => {
@@ -13,34 +14,18 @@ describe("command center actions", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      const source = {
-        text: "Русский текст",
-        text_ru: "Русский текст",
-        text_en: "English text",
-        media: [{ type: "photo", file_id: "ru-photo" }],
-        media_en: [{ type: "photo", file_id: "en-photo" }],
-        slug_ru: "russian",
-        slug_en: "english",
-      };
-      backendDb.db
-        .insert(publications)
-        .values({
-          postId: 52,
-          status: "published",
-          telegramMessageId: 492,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      backendDb.db
-        .insert(publicationSources)
-        .values({
-          postId: 52,
-          itemJson: source,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
+      const source = {};
+      seedTextPost(backendDb, {
+        postId: 52,
+        messageId: 492,
+        ru: "Русский текст",
+        en: "English text",
+        mediaRu: [{ type: "photo", file_id: "ru-photo" }],
+        mediaEn: [{ type: "photo", file_id: "en-photo" }],
+        slugRu: "russian",
+        slugEn: "english",
+        now,
+      });
 
       for (const target of ["threads_ru", "threads_en"]) {
         const id = enqueuePublishJobTx(backendDb.db, {
@@ -88,25 +73,7 @@ describe("command center actions", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      backendDb.db.insert(publications).values({ postId: 8, status: "published", createdAt: now, updatedAt: now }).run();
-      backendDb.db
-        .insert(posts)
-        .values({
-          publicationKey: "post:8",
-          postId: 8,
-          channel: "controller",
-          messageId: 8,
-          text: "RU",
-          textEn: "EN",
-          status: "active",
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      backendDb.db
-        .insert(publicationSources)
-        .values({ postId: 8, itemJson: { text: "RU", text_ru: "RU", text_en: "EN", media: [] }, createdAt: now, updatedAt: now })
-        .run();
+      seedTextPost(backendDb, { postId: 8, ru: "RU", en: "EN", now });
       backendDb.db
         .insert(publicationTargets)
         .values([{ publicationKey: "post:8", target: "threads_en", status: "published", externalId: "en-post", updatedAt: now }])
@@ -138,22 +105,7 @@ describe("command center actions", () => {
     try {
       const now = new Date().toISOString();
       const source = { text_ru: "RU", text_en: "EN", media: [], media_en: [] };
-      backendDb.db.insert(publications).values({ postId: 9, status: "published", createdAt: now, updatedAt: now }).run();
-      backendDb.db
-        .insert(posts)
-        .values({
-          publicationKey: "post:9",
-          postId: 9,
-          channel: "studio",
-          messageId: 9,
-          text: "RU",
-          textEn: "EN",
-          status: "active",
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      backendDb.db.insert(publicationSources).values({ postId: 9, itemJson: source, createdAt: now, updatedAt: now }).run();
+      seedTextPost(backendDb, { postId: 9, ru: "RU", en: "EN", now });
       const jobId = enqueuePublishJobTx(backendDb.db, {
         publicationId: 9,
         publicationKey: "post:9",
@@ -191,21 +143,7 @@ describe("command center actions", () => {
     try {
       const now = new Date().toISOString();
       const source = { text_ru: "RU", text_en: "EN", media: [], media_en: [] };
-      backendDb.db.insert(publications).values({ postId: 19, status: "published", createdAt: now, updatedAt: now }).run();
-      backendDb.db
-        .insert(posts)
-        .values({
-          publicationKey: "post:19",
-          postId: 19,
-          channel: "studio",
-          messageId: 19,
-          text: "RU",
-          textEn: "EN",
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      backendDb.db.insert(publicationSources).values({ postId: 19, itemJson: source, createdAt: now, updatedAt: now }).run();
+      seedTextPost(backendDb, { postId: 19, ru: "RU", en: "EN", now });
       const jobId = enqueuePublishJobTx(backendDb.db, {
         publicationId: 19,
         publicationKey: "post:19",
@@ -259,21 +197,7 @@ describe("command center actions", () => {
     try {
       const now = new Date().toISOString();
       const source = { text_ru: "RU", text_en: "EN", media: [], media_en: [] };
-      backendDb.db.insert(publications).values({ postId: 21, status: "published", createdAt: now, updatedAt: now }).run();
-      backendDb.db
-        .insert(posts)
-        .values({
-          publicationKey: "post:21",
-          postId: 21,
-          channel: "studio",
-          messageId: 21,
-          text: "RU",
-          textEn: "EN",
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      backendDb.db.insert(publicationSources).values({ postId: 21, itemJson: source, createdAt: now, updatedAt: now }).run();
+      seedTextPost(backendDb, { postId: 21, ru: "RU", en: "EN", now });
       const jobId = enqueuePublishJobTx(backendDb.db, {
         publicationId: 21,
         publicationKey: "post:21",
@@ -307,11 +231,7 @@ describe("command center actions", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      backendDb.db.insert(publications).values({ postId: 20, status: "published", createdAt: now, updatedAt: now }).run();
-      backendDb.db
-        .insert(publicationSources)
-        .values({ postId: 20, itemJson: { text: "RU", text_en: "EN" }, createdAt: now, updatedAt: now })
-        .run();
+      seedTextPost(backendDb, { postId: 20, ru: "RU", en: "EN", now });
       const jobId = enqueuePublishJobTx(backendDb.db, {
         publicationId: 20,
         publicationKey: "post:20",
@@ -328,7 +248,7 @@ describe("command center actions", () => {
         status: "failed",
         lastError: "boom",
       });
-      expect(backendDb.db.select().from(publications).where(eq(publications.postId, 20)).get()?.status).toBe("published");
+      expect(backendDb.db.select().from(drafts).where(eq(drafts.postId, 20)).get()?.status).toBe("published");
       expect(backendDb.db.select().from(opsActions).all()).toEqual([]);
     } finally {
       backendDb.close();
@@ -339,23 +259,7 @@ describe("command center actions", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      const source = { text_ru: "RU", text_en: "EN", media: [], media_en: [] };
-      backendDb.db.insert(publications).values({ postId: 9, status: "published", createdAt: now, updatedAt: now }).run();
-      backendDb.db
-        .insert(posts)
-        .values({
-          publicationKey: "post:9",
-          postId: 9,
-          channel: "studio",
-          messageId: 9,
-          text: "RU",
-          textEn: "EN",
-          status: "active",
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      backendDb.db.insert(publicationSources).values({ postId: 9, itemJson: source, createdAt: now, updatedAt: now }).run();
+      seedTextPost(backendDb, { postId: 9, ru: "RU", en: "EN", now });
       backendDb.db
         .insert(publicationTargets)
         .values([
@@ -400,20 +304,7 @@ describe("command center actions", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      backendDb.db.insert(publications).values({ postId: 9, status: "published", createdAt: now, updatedAt: now }).run();
-      backendDb.db
-        .insert(posts)
-        .values({
-          publicationKey: "post:9",
-          postId: 9,
-          channel: "studio",
-          messageId: 9,
-          text: "RU",
-          status: "active",
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
+      seedTextPost(backendDb, { postId: 9, ru: "RU", now });
 
       const plan = await runOperationCommand(backendDb, { action: "retry", ref: "post:9", apply: "false" });
 
@@ -427,7 +318,7 @@ describe("command center actions", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      backendDb.db.insert(publications).values({ postId: 10, status: "published", createdAt: now, updatedAt: now }).run();
+      seedTextPost(backendDb, { postId: 10, now });
       const result = await runOperationCommand(backendDb, { action: "refresh_site", ref: "post:10", locale: "en" });
       expect(result).toMatchObject({ ok: true, post_id: 10, locale: "en", site_refresh: true });
       await runOperationCommand(backendDb, { action: "refresh_site", ref: "post:10", locale: "en" });
@@ -467,11 +358,7 @@ describe("command center actions", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      backendDb.db.insert(publications).values({ postId: 61, status: "published", createdAt: now, updatedAt: now }).run();
-      backendDb.db
-        .insert(publicationSources)
-        .values({ postId: 61, itemJson: { text: "RU", text_en: "EN" }, createdAt: now, updatedAt: now })
-        .run();
+      seedTextPost(backendDb, { postId: 61, ru: "RU", en: "EN", now });
       const jobId = enqueuePublishJobTx(backendDb.db, {
         publicationId: 61,
         publicationKey: "post:61",
@@ -501,11 +388,7 @@ describe("command center actions", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      backendDb.db.insert(publications).values({ postId: 62, status: "published", createdAt: now, updatedAt: now }).run();
-      backendDb.db
-        .insert(publicationSources)
-        .values({ postId: 62, itemJson: { text: "RU", text_en: "EN" }, createdAt: now, updatedAt: now })
-        .run();
+      seedTextPost(backendDb, { postId: 62, ru: "RU", en: "EN", now });
       const jobId = enqueuePublishJobTx(backendDb.db, {
         publicationId: 62,
         publicationKey: "post:62",
@@ -532,11 +415,7 @@ describe("command center actions", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      backendDb.db.insert(publications).values({ postId: 90, status: "published", createdAt: now, updatedAt: now }).run();
-      backendDb.db
-        .insert(publicationSources)
-        .values({ postId: 90, itemJson: { text: "RU", text_en: "EN" }, createdAt: now, updatedAt: now })
-        .run();
+      seedTextPost(backendDb, { postId: 90, ru: "RU", en: "EN", now });
       backendDb.db
         .insert(siteJobs)
         .values({
@@ -571,11 +450,7 @@ describe("command center actions", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      backendDb.db.insert(publications).values({ postId: 91, status: "published", createdAt: now, updatedAt: now }).run();
-      backendDb.db
-        .insert(publicationSources)
-        .values({ postId: 91, itemJson: { text: "RU", text_en: "EN" }, createdAt: now, updatedAt: now })
-        .run();
+      seedTextPost(backendDb, { postId: 91, ru: "RU", en: "EN", now });
       backendDb.db
         .insert(siteJobs)
         .values({ postId: 91, messageId: 91, reason: "site_ru", status: "published", attemptCount: 1, createdAt: now, updatedAt: now })
@@ -604,11 +479,7 @@ describe("command center actions", () => {
     const backendDb = openBackendDb(":memory:");
     try {
       const now = new Date().toISOString();
-      backendDb.db.insert(publications).values({ postId: 92, status: "published", createdAt: now, updatedAt: now }).run();
-      backendDb.db
-        .insert(publicationSources)
-        .values({ postId: 92, itemJson: { text: "RU", text_en: "EN" }, createdAt: now, updatedAt: now })
-        .run();
+      seedTextPost(backendDb, { postId: 92, ru: "RU", en: "EN", now });
 
       expect(runOperationCommand(backendDb, { action: "retry", ref: "post:92", target: "threds_en" })).rejects.toThrow(
         "unknown target: threds_en",

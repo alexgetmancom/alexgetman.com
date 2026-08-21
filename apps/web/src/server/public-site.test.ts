@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { type BackendDb, openBackendDb, unsafeDb } from "../../../backend/src/db/client.js";
-import { knowledgeEntities, postEntityLinks, postLocales, postMetrics, posts, publications } from "../../../backend/src/db/schema.js";
+import { drafts, knowledgeEntities, postEntityLinks, postLocales, postMetrics } from "../../../backend/src/db/schema.js";
 import { loadPublicSiteFeed, loadPublicSiteItem } from "../../../backend/src/public/site-read-model.js";
 
 let backendDb: BackendDb;
@@ -17,16 +17,15 @@ afterEach(() => backendDb.close());
 describe("Drizzle site feed", () => {
   it("reads published localized posts and Telegram views from SQLite without feed.json", () => {
     const now = new Date().toISOString();
-    rawDb.db.insert(publications).values({ postId: 7, status: "published", createdAt: now, updatedAt: now }).run();
     rawDb.db
-      .insert(posts)
+      .insert(drafts)
       .values({
-        publicationKey: "post:7",
+        id: 7,
+        actorId: 1,
+        status: "published",
+        targetsJson: "{}",
         postId: 7,
-        source: "bot",
-        channel: "controller",
-        messageId: 77,
-        dateUtc: now,
+        channelMessageId: 77,
         createdAt: now,
         updatedAt: now,
       })
@@ -35,23 +34,23 @@ describe("Drizzle site feed", () => {
       .insert(postLocales)
       .values([
         {
-          postId: 7,
+          draftId: 7,
           locale: "ru",
           slug: "russkiy-post",
-          text: "Русский текст",
+          sourceText: "Русский текст",
           html: "<p>Русский текст</p>",
-          mediaJson: [{ type: "image", path: "media/posts/7-ru.jpg" }],
+          siteMediaJson: [{ type: "image", path: "media/posts/7-ru.jpg" }],
           siteEnabled: 1,
           publishedAt: now,
           updatedAt: now,
         },
         {
-          postId: 7,
+          draftId: 7,
           locale: "en",
           slug: "english-post",
-          text: "English text",
+          sourceText: "English text",
           html: "<p>English text</p>",
-          mediaJson: [{ type: "video", path: "media/posts/7-en.mp4", poster: "media/posts/7-en.jpg" }],
+          siteMediaJson: [{ type: "video", path: "media/posts/7-en.mp4", poster: "media/posts/7-en.jpg" }],
           siteEnabled: 1,
           publishedAt: now,
           updatedAt: now,
@@ -91,19 +90,27 @@ describe("Drizzle site feed", () => {
   it("does not expose scheduled or disabled locales", () => {
     const now = new Date().toISOString();
     const future = new Date(Date.now() + 60_000).toISOString();
-    rawDb.db.insert(publications).values({ postId: 8, status: "scheduled", createdAt: now, updatedAt: now }).run();
     rawDb.db
-      .insert(posts)
-      .values({ publicationKey: "post:8", postId: 8, source: "bot", channel: "controller", messageId: 88, createdAt: now, updatedAt: now })
+      .insert(drafts)
+      .values({
+        id: 8,
+        actorId: 1,
+        status: "scheduled",
+        targetsJson: "{}",
+        postId: 8,
+        channelMessageId: 88,
+        createdAt: now,
+        updatedAt: now,
+      })
       .run();
     rawDb.db
       .insert(postLocales)
       .values({
-        postId: 8,
+        draftId: 8,
         locale: "en",
         slug: "future",
-        text: "Future",
-        mediaJson: [],
+        sourceText: "Future",
+        siteMediaJson: [],
         siteEnabled: 1,
         publishedAt: future,
         updatedAt: now,
@@ -115,15 +122,15 @@ describe("Drizzle site feed", () => {
   it("exposes an EN locale while RU remains scheduled", () => {
     const now = new Date().toISOString();
     const future = new Date(Date.now() + 60_000).toISOString();
-    rawDb.db.insert(publications).values({ postId: 10, status: "scheduled", createdAt: now, updatedAt: now }).run();
     rawDb.db
-      .insert(posts)
+      .insert(drafts)
       .values({
-        publicationKey: "post:10",
+        id: 10,
+        actorId: 1,
+        status: "scheduled",
+        targetsJson: "{}",
         postId: 10,
-        source: "studio",
-        channel: "studio",
-        messageId: 110,
+        channelMessageId: 110,
         createdAt: now,
         updatedAt: now,
       })
@@ -132,16 +139,25 @@ describe("Drizzle site feed", () => {
       .insert(postLocales)
       .values([
         {
-          postId: 10,
+          draftId: 10,
           locale: "ru",
           slug: "ru-future",
-          text: "RU future",
-          mediaJson: [],
+          sourceText: "RU future",
+          siteMediaJson: [],
           siteEnabled: 1,
           publishedAt: future,
           updatedAt: now,
         },
-        { postId: 10, locale: "en", slug: "en-now", text: "EN now", mediaJson: [], siteEnabled: 1, publishedAt: now, updatedAt: now },
+        {
+          draftId: 10,
+          locale: "en",
+          slug: "en-now",
+          sourceText: "EN now",
+          siteMediaJson: [],
+          siteEnabled: 1,
+          publishedAt: now,
+          updatedAt: now,
+        },
       ])
       .run();
 
@@ -152,19 +168,27 @@ describe("Drizzle site feed", () => {
 
   it("reads the persisted site media manifest", () => {
     const now = new Date().toISOString();
-    rawDb.db.insert(publications).values({ postId: 9, status: "published", createdAt: now, updatedAt: now }).run();
     rawDb.db
-      .insert(posts)
-      .values({ publicationKey: "post:9", postId: 9, source: "bot", channel: "controller", messageId: 99, createdAt: now, updatedAt: now })
+      .insert(drafts)
+      .values({
+        id: 9,
+        actorId: 1,
+        status: "published",
+        targetsJson: "{}",
+        postId: 9,
+        channelMessageId: 99,
+        createdAt: now,
+        updatedAt: now,
+      })
       .run();
     rawDb.db
       .insert(postLocales)
       .values({
-        postId: 9,
+        draftId: 9,
         locale: "en",
         slug: "media-post",
-        text: "Media post",
-        mediaJson: [{ type: "image", path: "media/posts/9-en-0-vertical.jpg?v=1234" }],
+        sourceText: "Media post",
+        siteMediaJson: [{ type: "image", path: "media/posts/9-en-0-vertical.jpg?v=1234" }],
         siteEnabled: 1,
         publishedAt: now,
         updatedAt: now,

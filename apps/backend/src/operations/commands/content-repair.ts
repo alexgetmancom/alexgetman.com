@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
+import { entitiesToHtml } from "../../content/text.js";
 import type { UnsafeBackendDb } from "../../db/client.js";
-import { drafts, postLocales, posts, publicationSources, siteJobs } from "../../db/schema.js";
-import { jsonObject } from "../../json.js";
+import { drafts, postLocales, siteJobs } from "../../db/schema.js";
 import type { ResolvedPublicationRef } from "../publication-ref.js";
 
 /** Repairs durable English content before Delivery rebuilds the site or retries a target. */
@@ -15,20 +15,18 @@ export function editLocaleContentTx(
   if (!value) throw new Error(`text_${locale} is required`);
   const now = new Date().toISOString();
   if (ref.postId != null) {
-    db.update(drafts)
-      .set(locale === "en" ? { textEnApproved: value, updatedAt: now } : { textRu: value, updatedAt: now })
-      .where(eq(drafts.postId, ref.postId))
-      .run();
+    const draft = db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, ref.postId)).get();
+    if (!draft) throw new Error(`publication ${ref.postId} has no aggregate`);
     db.update(postLocales)
-      .set({ text: value, updatedAt: now })
-      .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, locale)))
+      .set(
+        locale === "en"
+          ? { approvedText: value, html: entitiesToHtml(value, []), entitiesJson: "[]", updatedAt: now }
+          : { sourceText: value, html: entitiesToHtml(value, []), entitiesJson: "[]", updatedAt: now },
+      )
+      .where(and(eq(postLocales.draftId, draft.id), eq(postLocales.locale, locale)))
       .run();
+    db.update(drafts).set({ updatedAt: now }).where(eq(drafts.id, draft.id)).run();
   }
-  db.update(posts)
-    .set(locale === "en" ? { textEn: value, updatedAt: now } : { text: value, updatedAt: now })
-    .where(eq(posts.publicationKey, ref.publicationKey))
-    .run();
-  updateSource(db, ref, locale === "en" ? { text_en: value, bodyMarkdown: value } : { text_ru: value, text: value }, now);
   enqueueRepairSiteJob(db, ref, `edit_${locale}`, now);
   return {
     ok: true,
@@ -36,7 +34,6 @@ export function editLocaleContentTx(
     publication_key: ref.publicationKey,
     locale,
     text: true,
-    ...(locale === "en" ? { text_en: true } : { text_ru: true }),
   };
 }
 
@@ -48,25 +45,20 @@ export function replaceLocaleMediaTx(
 ): Record<string, unknown> {
   const now = new Date().toISOString();
   if (ref.postId != null) {
-    db.update(drafts)
-      .set(
-        locale === "en"
-          ? { mediaEnJson: media == null ? null : JSON.stringify(media), updatedAt: now }
-          : { mediaRuJson: JSON.stringify(media ?? []), updatedAt: now },
-      )
-      .where(eq(drafts.postId, ref.postId))
-      .run();
+    const draft = db.select({ id: drafts.id }).from(drafts).where(eq(drafts.postId, ref.postId)).get();
+    if (!draft) throw new Error(`publication ${ref.postId} has no aggregate`);
     const other = db
       .select({ mediaJson: postLocales.mediaJson })
       .from(postLocales)
-      .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, locale === "en" ? "ru" : "en")))
+      .where(and(eq(postLocales.draftId, draft.id), eq(postLocales.locale, locale === "en" ? "ru" : "en")))
       .get();
+    const nextMedia = media == null ? (other?.mediaJson ?? []) : media;
     db.update(postLocales)
-      .set({ mediaJson: media == null ? (other?.mediaJson ?? []) : media, updatedAt: now })
-      .where(and(eq(postLocales.postId, ref.postId), eq(postLocales.locale, locale)))
+      .set({ mediaJson: nextMedia, siteMediaJson: nextMedia, updatedAt: now })
+      .where(and(eq(postLocales.draftId, draft.id), eq(postLocales.locale, locale)))
       .run();
+    db.update(drafts).set({ updatedAt: now }).where(eq(drafts.id, draft.id)).run();
   }
-  updateSource(db, ref, { [locale === "en" ? "media_en" : "media"]: media }, now);
   enqueueRepairSiteJob(db, ref, media == null ? `use_other_media_for_${locale}` : `replace_${locale}_media`, now);
   return { ok: true, post_id: ref.postId, publication_key: ref.publicationKey, locale, media: media != null };
 }
@@ -92,21 +84,6 @@ export function parseLocaleMedia(raw: string | undefined): Record<string, unknow
 
 function locatesMedia(item: Record<string, unknown>): boolean {
   return ["file_id", "fileId", "local_path", "localPath", "path", "asset_id"].some((key) => item[key] != null);
-}
-
-/** Merges a patch into the publication's single durable source. */
-export function updateSource(db: UnsafeBackendDb["db"], ref: ResolvedPublicationRef, patch: Record<string, unknown>, now: string): void {
-  if (ref.postId == null) throw new Error("publication has no post id");
-  const row = db
-    .select({ itemJson: publicationSources.itemJson })
-    .from(publicationSources)
-    .where(eq(publicationSources.postId, ref.postId))
-    .get();
-  const source = { ...jsonObject(row?.itemJson), ...patch };
-  db.insert(publicationSources)
-    .values({ postId: ref.postId, itemJson: source, createdAt: now, updatedAt: now })
-    .onConflictDoUpdate({ target: publicationSources.postId, set: { itemJson: source, updatedAt: now } })
-    .run();
 }
 
 function enqueueRepairSiteJob(db: UnsafeBackendDb["db"], ref: ResolvedPublicationRef, reason: string, now: string): void {
