@@ -33,10 +33,11 @@ describe("production deployment", () => {
     const { run, scripts } = recorder();
     await deployRelease(inputs, run, () => {});
 
+    // One file describes every Studio; each host renders it with its own .env.
     const archive = scripts().find((script) => script.startsWith("tar -cf -"));
-    for (const file of ["deploy/alex.compose.yaml", "deploy/maru.compose.yaml"]) expect(archive).toContain(file);
+    expect(archive).toContain("deploy/studio.compose.yaml");
     expect(
-      scripts().some((script) => script.includes("cp '/home/deploy/alexgetman-runtime/release-files/abc1234/deploy/alex.compose.yaml'")),
+      scripts().some((script) => script.includes("cp '/home/deploy/alexgetman-runtime/release-files/abc1234/deploy/studio.compose.yaml'")),
     ).toBe(true);
   });
 

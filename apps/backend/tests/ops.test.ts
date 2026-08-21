@@ -189,7 +189,7 @@ describe("TypeScript operations tooling", () => {
         .prepare('INSERT INTO worker_state(name,state_json,updated_at) VALUES (\'queue\',\'{"ok":true,"last_run_at":"2026-01-01"}\',?)')
         .run(now);
 
-      const status = compactOperationsStatus(loadTestConfig({ PIPELINE_DB: ":memory:" }), backendDb);
+      const status = compactOperationsStatus(loadTestConfig({}), backendDb);
 
       expect(status.ok).toBe(false);
       expect(status.missingWorkers).toContain("story-cards");
@@ -234,7 +234,7 @@ describe("TypeScript operations tooling", () => {
       backendDb.sqlite
         .prepare("INSERT INTO video_jobs(video_draft_id,kind,run_at,status,created_at,updated_at) VALUES (1,'publish',?,'failed',?,?)")
         .run(now, now, now);
-      const config = loadTestConfig({ PIPELINE_DB: ":memory:" });
+      const config = loadTestConfig({});
       const status = compactOperationsStatus(config, backendDb);
 
       expect(status.ok).toBe(false);

@@ -62,9 +62,11 @@ function countRealTags(html: string, tag: string): number {
 }
 
 beforeAll(async () => {
-  dbDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-home-smoke-"));
+  // One volume, the way the running process derives every path from DATA_DIR.
+  dbDir = fs.mkdtempSync(path.join(os.tmpdir(), "solo-publisher-home-smoke-"));
   const dbPath = path.join(dbDir, "pipeline.db");
-  publicDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-home-smoke-media-"));
+  publicDir = path.join(dbDir, "site");
+  fs.mkdirSync(publicDir, { recursive: true });
   const seeded = seedSiteFixture({ dbPath, publicDir });
   // The fixture derives this name from the production naming helper; assert the
   // literal the tests below fetch, so a convention change fails here loudly.
@@ -75,8 +77,7 @@ beforeAll(async () => {
       ...process.env,
       ASTRO_DEV_BACKGROUND: "0",
       NODE_ENV: "test",
-      PIPELINE_DB: dbPath,
-      SITE_PUBLIC_DIR: publicDir,
+      DATA_DIR: dbDir,
     },
     stdout: "ignore",
     stderr: "pipe",
@@ -88,7 +89,6 @@ afterAll(async () => {
   server?.kill();
   await server?.exited;
   fs.rmSync(dbDir, { recursive: true, force: true });
-  fs.rmSync(publicDir, { recursive: true, force: true });
 });
 
 describe("home page SSR smoke test", () => {

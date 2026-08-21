@@ -85,6 +85,10 @@ pnpm-debug.log*
 # Local dev fixture data (bun scripts/dev-seed.ts)
 /.dev-fixture/
 
+# Production database snapshots pulled down by hand. Out of the repo root so a
+# careless cleanup there cannot reach them; nothing in the project reads them.
+/.local-data/
+
 # Scratch output from local tooling
 /tmp/
 /output/

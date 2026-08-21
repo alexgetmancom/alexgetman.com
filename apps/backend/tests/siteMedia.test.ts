@@ -32,22 +32,24 @@ describe("site media materialization", () => {
     const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
     fs.writeFileSync(first, image);
     fs.writeFileSync(second, image);
-    const config = loadTestConfig({ SITE_PUBLIC_DIR: directory });
+    const config = loadTestConfig({ DATA_DIR: directory });
 
     const initial = await materializeSiteMedia(config, 1, "ru", [{ type: "image", local_path: first }]);
     await materializeSiteMedia(config, 1, "ru", [{ type: "image", local_path: second }]);
 
     expect(initial[0]?.path).toMatch(/^media\/posts\/1-ru-0-vertical\.jpg\?v=[a-f0-9]{12}$/);
-    expect(fs.readFileSync(path.join(directory, "media", "posts", "1-ru-0.png"))).toEqual(image);
+    expect(fs.readFileSync(path.join(config.SITE_PUBLIC_DIR, "media", "posts", "1-ru-0.png"))).toEqual(image);
     for (const width of [360, 640, 960])
-      expect(fs.existsSync(path.join(directory, "generated", "responsive", `media-posts-1-ru-0-vertical-${width}.webp`))).toBe(true);
+      expect(fs.existsSync(path.join(config.SITE_PUBLIC_DIR, "generated", "responsive", `media-posts-1-ru-0-vertical-${width}.webp`))).toBe(
+        true,
+      );
   });
 
   it("does not regenerate unchanged responsive derivatives on every feed build", async () => {
     directory = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-media-"));
     const image = path.join(directory, "image.jpg");
     fs.writeFileSync(image, "source");
-    const config = loadTestConfig({ SITE_PUBLIC_DIR: directory });
+    const config = loadTestConfig({ DATA_DIR: directory });
 
     await materializeSiteMedia(config, 2, "en", [{ type: "image", local_path: image }]);
     await materializeSiteMedia(config, 2, "en", [{ type: "image", local_path: image }]);
@@ -63,11 +65,11 @@ describe("site media materialization", () => {
     const changed = path.join(directory, "changed.jpg");
     fs.writeFileSync(first, "same-source");
     fs.writeFileSync(changed, "new-source");
-    const config = loadTestConfig({ SITE_PUBLIC_DIR: directory });
+    const config = loadTestConfig({ DATA_DIR: directory });
     await materializeSiteMedia(config, 3, "ru", [{ type: "image", local_path: first }]);
     await materializeSiteMedia(config, 3, "en", [{ type: "image", local_path: first }]);
-    const ru = path.join(directory, "media", "posts", "3-ru-0.jpg");
-    const en = path.join(directory, "media", "posts", "3-en-0.jpg");
+    const ru = path.join(config.SITE_PUBLIC_DIR, "media", "posts", "3-ru-0.jpg");
+    const en = path.join(config.SITE_PUBLIC_DIR, "media", "posts", "3-en-0.jpg");
     expect(fs.statSync(ru).ino).toBe(fs.statSync(en).ino);
     await materializeSiteMedia(config, 3, "ru", [{ type: "image", local_path: changed }]);
     expect(fs.readFileSync(ru, "utf8")).toBe("new-source");
@@ -79,9 +81,9 @@ describe("site media materialization", () => {
     directory = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-media-"));
     const source = path.join(directory, "source.mp4");
     fs.writeFileSync(source, "video-source");
-    const config = loadTestConfig({ SITE_PUBLIC_DIR: directory });
+    const config = loadTestConfig({ DATA_DIR: directory });
     const [item] = await materializeSiteMedia(config, 4, "en", [{ type: "video", local_path: source }]);
-    const media = path.join(directory, "media", "posts");
+    const media = path.join(config.SITE_PUBLIC_DIR, "media", "posts");
     expect(fs.existsSync(path.join(media, "4-en-0.mp4"))).toBe(false);
     expect(fs.existsSync(path.join(media, "4-en-0-vertical.mp4"))).toBe(true);
     expect(fs.existsSync(path.join(media, "4-en-0-poster.jpg"))).toBe(true);
@@ -100,7 +102,7 @@ describe("site media materialization", () => {
       return new Response("standard");
     }) as unknown as typeof fetch;
     const config = loadTestConfig({
-      SITE_PUBLIC_DIR: directory,
+      DATA_DIR: directory,
       MEDIA_PROCESSOR_PROVIDER: "remote_http",
       MEDIA_PROCESSOR_URL: "http://processor",
       MEDIA_PROCESSOR_TOKEN: "x".repeat(16),
@@ -116,14 +118,14 @@ describe("site media materialization", () => {
 
   it("migrates historical URLs without changing their paths or bytes", async () => {
     directory = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-media-"));
-    const media = path.join(directory, "media");
+    const config = loadTestConfig({ DATA_DIR: directory });
+    const media = path.join(config.SITE_PUBLIC_DIR, "media");
     const posts = path.join(media, "posts");
     fs.mkdirSync(posts, { recursive: true });
     const legacy = path.join(media, "35.mp4");
     const current = path.join(posts, "35-en-0.mp4");
     fs.writeFileSync(legacy, "historical-video");
     fs.writeFileSync(current, "historical-video");
-    const config = loadTestConfig({ SITE_PUBLIC_DIR: directory });
     expect(await deduplicateSiteMedia(config, false)).toMatchObject({ files: 2, legacy_url_files: 1, reclaimable_bytes: 16 });
     await deduplicateSiteMedia(config, true);
     expect(fs.readFileSync(legacy, "utf8")).toBe("historical-video");

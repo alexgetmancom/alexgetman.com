@@ -42,7 +42,7 @@ function readiness(config: BackendConfig, backendDb: BackendDb): Record<string, 
   // this check exists to catch.
   const mediaDirectories = [
     ["media_cache_dir", config.MEDIA_CACHE_DIR],
-    ["video_media_dir", config.VIDEO_MEDIA_DIR],
+    ["studio_media_dir", config.STUDIO_MEDIA_DIR],
     ...(config.studio.siteEnabled ? [["site_public_dir", config.SITE_PUBLIC_DIR] as const] : []),
   ] as const;
   for (const [name, dir] of mediaDirectories) {

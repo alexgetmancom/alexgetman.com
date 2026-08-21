@@ -28,27 +28,19 @@ afterEach(() => {
 describe("requiredDataDirectories", () => {
   it("lists every always-required directory plus the site for a Studio that has one", () => {
     const root = tempRoot();
-    const config = loadTestConfig(
-      {
-        DATA_DIR: join(root, "data"),
-        MEDIA_CACHE_DIR: join(root, "media-cache"),
-        STUDIO_MEDIA_DIR: join(root, "video-media"),
-        VIDEO_MEDIA_DIR: join(root, "video-media"),
-        SITE_PUBLIC_DIR: join(root, "site"),
-      },
-      SITE_STUDIO_PROFILE,
-    );
-    // Video directories are always required.
-    const names = requiredDataDirectories(config).map((entry) => entry.name);
+    const config = loadTestConfig({ DATA_DIR: join(root, "data") }, SITE_STUDIO_PROFILE);
+    const entries = requiredDataDirectories(config);
+    const names = entries.map((entry) => entry.name);
     expect(names).toContain("DATA_DIR");
     expect(names).toContain("MEDIA_CACHE_DIR");
+    expect(names).toContain("STUDIO_MEDIA_DIR");
+    expect(names).toContain("STORY_CARD_DIR");
     expect(names).toContain("REMOTE_MEDIA_PATH");
     expect(names).toContain("SITE_PUBLIC_DIR");
-    // STUDIO_MEDIA_DIR and VIDEO_MEDIA_DIR resolve to one path here: listed once.
-    expect(names).toContain("STUDIO_MEDIA_DIR");
+    // One name per directory: the second name for the media volume is gone.
     expect(names).not.toContain("VIDEO_MEDIA_DIR");
-    expect(requiredDataDirectories(config).filter((entry) => entry.path === join(root, "video-media"))).toHaveLength(1);
-    expect(names).toContain("REMOTE_MEDIA_PATH");
+    // Every one of them sits on the single volume, which is the point of DATA_DIR.
+    for (const entry of entries) expect(entry.path.startsWith(join(root, "data"))).toBe(true);
   });
 });
 

@@ -24,6 +24,6 @@ export const CHECK_GROUPS: CheckStep[][] = [
   [
     { name: "test", args: ["test"] },
     { name: "web", args: ["check:web"] },
-    { name: "backend", args: ["--filter", "@alexgetman/backend", "build"] },
+    { name: "backend", args: ["--filter", "@solo-publisher/backend", "build"] },
   ],
 ];

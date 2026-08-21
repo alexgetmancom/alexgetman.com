@@ -1,3 +1,4 @@
+import path from "node:path";
 import { type BackendDb, openBackendDb } from "./db/client.js";
 import type { BackendConfig } from "./foundation/config.js";
 import { operationInput, parseArguments } from "./operations/cli-args.js";
@@ -9,7 +10,7 @@ const CLI_ACTOR = "ops-cli";
 function printHelp(): void {
   const lines = operationCatalog().map((entry) => `${entry.mutates ? "[MUTATION] " : "           "}${entry.usage}`);
   console.log(
-    ["alexgetman backend operations", "", ...lines, "", "--db PATH overrides the database; --json prints the raw result."].join("\n"),
+    ["solo-publisher backend operations", "", ...lines, "", "--db PATH overrides the database; --json prints the raw result."].join("\n"),
   );
 }
 
@@ -19,7 +20,7 @@ async function main(): Promise<void> {
     printHelp();
     return;
   }
-  const dbPath = args.values.get("db") ?? process.env.PIPELINE_DB ?? "/data/pipeline.db";
+  const dbPath = args.values.get("db") ?? path.join(process.env.DATA_DIR ?? "/data", "pipeline.db");
   const def = operationDef(args.command);
   if (!def) throw new Error(`unknown command: ${args.command}`);
   // Held in a cell so the lazy accessors can fill them in without TypeScript
@@ -29,7 +30,7 @@ async function main(): Promise<void> {
     dbPath,
     // The Studio's own settings live in its database, so asking for the
     // configuration opens it. Both stay lazy: `help` touches neither.
-    config: () => (opened.config ??= loadRuntimeConfig({ ...process.env, PIPELINE_DB: dbPath }, context.db())),
+    config: () => (opened.config ??= { ...loadRuntimeConfig(process.env, context.db()), PIPELINE_DB: dbPath }),
     db: () => (opened.db ??= openBackendDb(dbPath)),
     fetchImpl: fetch,
     actorType: CLI_ACTOR,

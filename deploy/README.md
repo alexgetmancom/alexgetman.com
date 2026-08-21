@@ -41,22 +41,47 @@ socket and can only request a rollback using a private bearer-authenticated rout
 
    ```dotenv
    # /home/deploy/alexgetman-runtime/deploy-image.env
-   ALEX_MEDIA_CACHE_DIR_HOST=/mnt/alex-media/alex/media-cache
-   ALEX_VIDEO_MEDIA_DIR_HOST=/mnt/alex-media/alex/video-media
-   ALEX_MEDIA_STAGING_DIR_HOST=/mnt/alex-media/alex/media-staging
-   ALEX_SITE_MEDIA_DIR_HOST=/home/deploy/ialexey-web/media
+   STUDIO=alexgetman
+   STUDIO_PUBLIC_BASE_URL=https://alexgetman.com
+   STUDIO_PORT=8788
+   STUDIO_CPUS=1.0
+   TELEGRAM_CHANNEL_USERNAME=alexgetmancom
+   STUDIO_DATA_DIR_HOST=/home/deploy/alexgetman-runtime/data
+   STUDIO_MEDIA_CACHE_DIR_HOST=/mnt/alex-media/alex/media-cache
+   STUDIO_VIDEO_MEDIA_DIR_HOST=/mnt/alex-media/alex/video-media
+   STUDIO_MEDIA_STAGING_DIR_HOST=/mnt/alex-media/alex/media-staging
+   STUDIO_SITE_MEDIA_DIR_HOST=/home/deploy/ialexey-web/media
+   STUDIO_BACKUP_DIR_HOST=/mnt/backups/alex
    DEPLOY_AGENT_HOST_GATEWAY=<agent_default gateway>
 
    # /home/deploy/maru/deploy-image.env
-   MARU_MEDIA_CACHE_DIR_HOST=/mnt/alex-media/maru/media-cache
-   MARU_VIDEO_MEDIA_DIR_HOST=/mnt/alex-media/maru/video-media
-   MARU_MEDIA_STAGING_DIR_HOST=/mnt/alex-media/maru/media-staging
+   STUDIO=maru
+   STUDIO_PUBLIC_BASE_URL=<maru's own public base URL>
+   STUDIO_PORT=8789
+   STUDIO_CPUS=0.75
+   STUDIO_DATA_DIR_HOST=/home/deploy/maru/data
+   STUDIO_MEDIA_CACHE_DIR_HOST=/mnt/alex-media/maru/media-cache
+   STUDIO_VIDEO_MEDIA_DIR_HOST=/mnt/alex-media/maru/video-media
+   STUDIO_MEDIA_STAGING_DIR_HOST=/mnt/alex-media/maru/media-staging
+   STUDIO_SITE_MEDIA_DIR_HOST=/home/deploy/maru/site-media
+   STUDIO_BACKUP_DIR_HOST=/mnt/backups/maru
    DEPLOY_AGENT_HOST_GATEWAY=<agent_default gateway>
    ```
 
+   Both deployments render `deploy/studio.compose.yaml`; there is no per-Studio
+   compose file, and every difference above is a value in that host's own
+   `deploy-image.env`. `STUDIO_BACKUP_DIR_HOST` must not sit under the data
+   directory — `doctor` fails a deployment whose media backup lives on the
+   volume it exists to survive.
+
+   The host's single Telegram Bot API server is deployed once from
+   `deploy/bot-api.compose.yaml` and is not part of any Studio. Both backends
+   reach it at `http://telegram-bot-api:8081` over `agent_default` and mount its
+   download directory read-only via `BOT_API_DATA_DIR_HOST`.
+
    The backend containers also use the host's existing Grok CLI installation. Keep
-   `/home/deploy/.grok` present on the host and signed in; the compose files mount
-   that directory into both Studio containers and pass its absolute CLI path to the
+   `/home/deploy/.grok` present on the host and signed in; the compose file mounts
+   that directory into every Studio container and passes its absolute CLI path to the
    backend. The mount is writable because Grok refreshes its credentials and keeps
    headless-run state there.
 

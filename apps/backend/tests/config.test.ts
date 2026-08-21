@@ -50,10 +50,20 @@ describe("loadConfig", () => {
     ).toBe("https://cdn.example.com/m");
   });
 
-  it("derives temporary media storage beside a custom site volume", () => {
-    const config = loadTestConfig({ SITE_PUBLIC_DIR: "/srv/studio/site", PUBLIC_BASE_URL: "https://studio.example.com" });
+  it("moves every pipeline path with the one volume they sit on", () => {
+    const config = loadTestConfig({ DATA_DIR: "/srv/studio", PUBLIC_BASE_URL: "https://studio.example.com" });
+    expect(config.PIPELINE_DB).toBe("/srv/studio/pipeline.db");
+    expect(config.STUDIO_MEDIA_DIR).toBe("/srv/studio/video-media");
+    expect(config.MEDIA_CACHE_DIR).toBe("/srv/studio/media-cache");
+    expect(config.STORY_CARD_DIR).toBe("/srv/studio/story-cards");
+    expect(config.SITE_PUBLIC_DIR).toBe("/srv/studio/site");
     expect(config.REMOTE_MEDIA_PATH).toBe("/srv/studio/media");
     expect(config.PUBLIC_MEDIA_BASE_URL).toBe("https://studio.example.com/media/staging");
+  });
+
+  it("keeps backups off the volume they exist to survive", () => {
+    // A default under DATA_DIR would look like a backup and die with the disk.
+    expect(loadTestConfig({}).BACKUP_DIR).toBe("/backups");
   });
 
   it("uses controller token as primary bot token", () => {

@@ -27,14 +27,14 @@ const FFMPEG_MAX_CONCURRENCY = 2;
 // Astro bundles API routes into a separate module graph from apps/web/server.ts.
 // A module-local singleton therefore starts the workers twice in one Bun
 // process. Keep the process singleton on globalThis so both graphs reuse it.
-type RuntimeGlobal = typeof globalThis & { __alexgetmanRuntime?: AppRuntime };
+type RuntimeGlobal = typeof globalThis & { __soloPublisherRuntime?: AppRuntime };
 const runtimeGlobal = globalThis as RuntimeGlobal;
 
 export function startRuntime(): AppRuntime {
   // The global is authoritative, not the module-local cache: stopRuntime in one
   // module graph cannot clear the other graph's copy, and a stale copy would
   // hand out a closed database.
-  runtime = runtimeGlobal.__alexgetmanRuntime;
+  runtime = runtimeGlobal.__soloPublisherRuntime;
   if (runtime) return runtime;
   const env = loadConfig(Bun.env);
   configureLogging(env.LOG_LEVEL);
@@ -48,7 +48,7 @@ export function startRuntime(): AppRuntime {
   const bot = createBot(config, backendDb);
   const loops = config.NODE_ENV === "test" ? [] : [...startCoreWorkers(config, backendDb), ...startTelegramWorkers(config, backendDb, bot)];
   runtime = { config, backendDb, studio, bot, loops };
-  runtimeGlobal.__alexgetmanRuntime = runtime;
+  runtimeGlobal.__soloPublisherRuntime = runtime;
   if (!assertFfmpegAvailable()) log("warn", "ffmpeg is not available; video poster generation will fail until Docker/runtime installs it");
   reportUnwritableDataDirectories(config, backendDb);
   return runtime;
@@ -89,6 +89,6 @@ export async function stopRuntime(signal: string): Promise<void> {
   await Promise.all(runtime.loops.map((loop) => loop.stop()));
   if (runtime.bot?.isRunning()) await runtime.bot.stop();
   runtime.backendDb.close();
-  delete runtimeGlobal.__alexgetmanRuntime;
+  delete runtimeGlobal.__soloPublisherRuntime;
   runtime = undefined;
 }

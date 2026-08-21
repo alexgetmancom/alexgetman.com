@@ -50,7 +50,7 @@ describe("site jobs", () => {
 
   it("persists materialized media in the public read model", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-"));
-    const config = loadTestConfig({ SITE_PUBLIC_DIR: tempDir });
+    const config = loadTestConfig({ DATA_DIR: tempDir });
     backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
     backendDb.db.insert(publications).values({ postId: 1, status: "published", createdAt: now, updatedAt: now }).run();
@@ -86,7 +86,7 @@ describe("site jobs", () => {
 
   it("claims and completes queued site jobs", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-"));
-    const config = loadTestConfig({ SITE_PUBLIC_DIR: tempDir });
+    const config = loadTestConfig({ DATA_DIR: tempDir });
     backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
     backendDb.db
@@ -102,7 +102,7 @@ describe("site jobs", () => {
 
   it("publishes the EN site job while a later RU site job remains queued", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-"));
-    const config = loadTestConfig({ SITE_PUBLIC_DIR: tempDir });
+    const config = loadTestConfig({ DATA_DIR: tempDir });
     backendDb = openBackendDb(":memory:");
     const now = new Date(Date.now() - 1_000).toISOString();
     const later = new Date(Date.now() + 60 * 60_000).toISOString();
@@ -144,7 +144,7 @@ describe("site jobs", () => {
 
   it("does not re-materialize a locale after its site target was cancelled", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-"));
-    const config = loadTestConfig({ SITE_PUBLIC_DIR: tempDir });
+    const config = loadTestConfig({ DATA_DIR: tempDir });
     backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
     backendDb.db
@@ -195,7 +195,7 @@ describe("site jobs", () => {
 
   it("fails only the publication that could not render, not the batch it was claimed with", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-site-"));
-    const config = loadTestConfig({ SITE_PUBLIC_DIR: tempDir });
+    const config = loadTestConfig({ DATA_DIR: tempDir });
     backendDb = openBackendDb(":memory:");
     const now = new Date().toISOString();
     for (const postId of [1, 2]) {

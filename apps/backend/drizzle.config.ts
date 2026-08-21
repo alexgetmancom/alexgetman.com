@@ -1,3 +1,4 @@
+import path from "node:path";
 import { defineConfig } from "drizzle-kit";
 
 export default defineConfig({
@@ -6,7 +7,7 @@ export default defineConfig({
   casing: "snake_case",
   out: "./drizzle",
   dbCredentials: {
-    url: process.env.PIPELINE_DB ?? "./data/pipeline.db",
+    url: path.join(process.env.DATA_DIR ?? "./data", "pipeline.db"),
   },
   strict: true,
   verbose: true,

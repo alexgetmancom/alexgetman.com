@@ -18,17 +18,18 @@ const PUBLIC_ROOT = path.join(WEB_ROOT, "public");
  * hits are cached: media is materialized lazily, and a path that is missing now
  * can legitimately exist on the next request. The key carries the resolution
  * roots, because the same public path resolves to different files when
- * SITE_PUBLIC_DIR or the working directory changes. */
+ * DATA_DIR or the working directory changes. */
 const siteImageCache = new Set<string>();
 
 export function existingSiteImage(publicPath: string | null | undefined) {
   if (!publicPath) return null;
   const normalizedPath = String(publicPath).replace(/^\/+/, "");
-  const cacheKey = `${process.env.SITE_PUBLIC_DIR ?? ""}\0${process.cwd()}\0${normalizedPath}`;
+  const siteRoot = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, "site") : null;
+  const cacheKey = `${siteRoot ?? ""}\0${process.cwd()}\0${normalizedPath}`;
   if (siteImageCache.has(cacheKey)) return normalizedPath;
   const filePath = normalizedPath.split(/[?#]/, 1)[0] ?? "";
   const candidates = [
-    ...(process.env.SITE_PUBLIC_DIR ? [path.join(process.env.SITE_PUBLIC_DIR, filePath)] : []),
+    ...(siteRoot ? [path.join(siteRoot, filePath)] : []),
     path.join(PUBLIC_ROOT, filePath),
     path.resolve(process.cwd(), "public", filePath),
     path.resolve(process.cwd(), "apps/web/public", filePath),

@@ -57,8 +57,15 @@ const envSchema = z
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
     PORT: z.coerce.number().int().positive().default(8788),
     BIND_HOST: z.string().default("127.0.0.1"),
+    /** Where `backup` and `backup-media` write. Deliberately its own setting
+     * and not derived: a backup under DATA_DIR is lost with the volume it
+     * exists to survive, and `doctor` fails a deployment that points it there. */
+    BACKUP_DIR: z.string().default("/backups"),
+    /** The one mounted volume. Every pipeline path below is derived from it,
+     * because five separately settable paths meant five ways to point one of
+     * them off the volume — a database or a media tree written to the
+     * container's own filesystem looks fine until the container is replaced. */
     DATA_DIR: z.string().default("/data"),
-    PIPELINE_DB: z.string().default("/data/pipeline.db"),
     // Telegram's own API. A deployment that runs a local Bot API server — the
     // way to lift the 50 MB download limit for video — points this at it
     // instead; the default must work for an install that does not.
@@ -104,18 +111,11 @@ const envSchema = z
     MEDIA_PROCESSOR_URL: z.url().optional(),
     MEDIA_PROCESSOR_TOKEN: z.string().min(16).optional(),
     MEDIA_PROCESSOR_TIMEOUT_SECONDS: z.coerce.number().int().min(10).max(3600).default(900),
-    MEDIA_CACHE_DIR: z.string().default("/data/media-cache"),
-    STORY_CARD_DIR: z.string().default("/data/story-cards"),
     STORY_CARD_ASSETS_DIR: z.string().default("/app/apps/backend/assets/story-card"),
     STORY_CARD_RENDERER_ENTRY: z.string().default("/app/story-renderer/renderer-process.js"),
-    // Dedicated mounted media volume; never place large Studio assets on the
-    // pipeline/database disk mounted at /data.
-    STUDIO_MEDIA_DIR: z.string().default("/data/video-media"),
-    VIDEO_MEDIA_DIR: z.string().default("/data/video-media"),
     // VIDEO_PREPARE_LEAD_MINUTES / VIDEO_REMINDER_MINUTES / VIDEO_MEDIA_RETENTION_HOURS
     // are owned by the studio_profile row (see withStudioProfile); they are not
     // env-configurable.
-    SITE_PUBLIC_DIR: z.string().default("/data/site"),
     THREADS_RU_ACCESS_TOKEN: z.string().optional(),
     THREADS_EN_ACCESS_TOKEN: z.string().optional(),
     /** The Threads app's own id and secret, which are not the Meta app's — the
@@ -152,10 +152,6 @@ const envSchema = z
     TELEGRAM_CHANNEL_STORIES_API_ID: z.coerce.number().int().positive().optional(),
     TELEGRAM_CHANNEL_STORIES_API_HASH: z.string().optional(),
     TELEGRAM_CHANNEL_STORIES_SESSION: z.string().optional(),
-    /** Temporary public staging for platforms that fetch media by URL. The
-     * resolved default stays under this Studio's own site volume, so a fresh
-     * self-host never tries to create a directory at the container root. */
-    REMOTE_MEDIA_PATH: z.string().default(""),
     // Override only when a platform-facing media URL lives elsewhere. Otherwise
     // it follows this Studio's own public base URL below.
     PUBLIC_MEDIA_BASE_URL: z.string().optional(),
@@ -226,6 +222,18 @@ const envSchema = z
 /** What .env alone determines. Everything the Studio itself owns is added by
  * withStudioProfile once the database is open. */
 export type EnvConfig = z.infer<typeof envSchema> & {
+  /** Every pipeline path, derived from DATA_DIR rather than settable. They are
+   * fields and not constants because a test and the dev fixture both run
+   * against a temporary root. */
+  PIPELINE_DB: string;
+  /** All media the Studio owns: ingress staging under `.incoming`, per-actor
+   * uploads, and the video files delivery reads. One directory, one name. */
+  STUDIO_MEDIA_DIR: string;
+  MEDIA_CACHE_DIR: string;
+  STORY_CARD_DIR: string;
+  SITE_PUBLIC_DIR: string;
+  /** Temporary public staging for platforms that fetch media by URL. */
+  REMOTE_MEDIA_PATH: string;
   controllerBotToken: string | undefined;
   commandCenterToken: string | undefined;
   /** Where this Studio's dashboard lives. Derived, never configured: it is
@@ -294,10 +302,15 @@ export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): EnvConfig {
   if (parsed.MEDIA_PROCESSOR_PROVIDER === "remote_http" && (!parsed.MEDIA_PROCESSOR_URL || !parsed.MEDIA_PROCESSOR_TOKEN)) {
     throw new Error("MEDIA_PROCESSOR_URL and MEDIA_PROCESSOR_TOKEN are required when MEDIA_PROCESSOR_PROVIDER=remote_http");
   }
-  const remoteMediaPath = parsed.REMOTE_MEDIA_PATH || path.join(path.dirname(parsed.SITE_PUBLIC_DIR), "media");
+  const dataDir = parsed.DATA_DIR;
   return {
     ...parsed,
-    REMOTE_MEDIA_PATH: remoteMediaPath,
+    PIPELINE_DB: path.join(dataDir, "pipeline.db"),
+    STUDIO_MEDIA_DIR: path.join(dataDir, "video-media"),
+    MEDIA_CACHE_DIR: path.join(dataDir, "media-cache"),
+    STORY_CARD_DIR: path.join(dataDir, "story-cards"),
+    SITE_PUBLIC_DIR: path.join(dataDir, "site"),
+    REMOTE_MEDIA_PATH: path.join(dataDir, "media"),
     controllerBotToken: parsed.CONTROLLER_BOT_TOKEN,
     commandCenterToken: parsed.COMMAND_CENTER_TOKEN,
     COMMAND_CENTER_URL: `${parsed.PUBLIC_BASE_URL.replace(/\/$/, "")}/command-center`,

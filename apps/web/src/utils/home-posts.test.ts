@@ -30,17 +30,20 @@ function feedItem(overrides: Partial<FeedItem> = {}): FeedItem {
   };
 }
 
-/** `existingSiteImage` checks the real filesystem; point SITE_PUBLIC_DIR at a
+/** `existingSiteImage` checks the real filesystem; point DATA_DIR at a
  * throwaway temp dir (the same seam siteJobs/siteParity/home.smoke tests use)
  * so these tests don't depend on which files happen to live in apps/web/public. */
+let dataDir: string;
 let siteDir: string;
 beforeEach(() => {
-  siteDir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-home-posts-"));
-  process.env.SITE_PUBLIC_DIR = siteDir;
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "solo-publisher-home-posts-"));
+  siteDir = path.join(dataDir, "site");
+  fs.mkdirSync(siteDir, { recursive: true });
+  process.env.DATA_DIR = dataDir;
 });
 afterEach(() => {
-  delete process.env.SITE_PUBLIC_DIR;
-  fs.rmSync(siteDir, { recursive: true, force: true });
+  delete process.env.DATA_DIR;
+  fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
 function touch(relativePath: string): void {
@@ -60,7 +63,7 @@ describe("existingSiteImage", () => {
     expect(existingSiteImage("media/posts/does-not-exist.jpg")).toBeNull();
   });
 
-  it("returns the normalized path once the file exists under SITE_PUBLIC_DIR", () => {
+  it("returns the normalized path once the file exists under the site volume", () => {
     touch("media/posts/1-en-0.jpg");
     expect(existingSiteImage("media/posts/1-en-0.jpg")).toBe("media/posts/1-en-0.jpg");
     expect(existingSiteImage("/media/posts/1-en-0.jpg")).toBe("media/posts/1-en-0.jpg");

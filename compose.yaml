@@ -50,13 +50,13 @@ services:
     env_file:
       - .env
     environment:
+      # One volume: the database, media, story cards and site all derive from
+      # it (foundation/config.ts). Pointing any one of them somewhere else was
+      # a way to write production data onto the container's own filesystem.
       DATA_DIR: /data
-      PIPELINE_DB: /data/pipeline.db
-      SITE_PUBLIC_DIR: /data/site
-      MEDIA_CACHE_DIR: /data/media-cache
-      VIDEO_MEDIA_DIR: /data/video-media
-      STORY_CARD_DIR: /data/story-cards
-      REMOTE_MEDIA_PATH: /data/media
+      # Never under DATA_DIR: a backup on the volume it exists to survive is
+      # not a backup, and `doctor` fails an install that puts it there.
+      BACKUP_DIR: /backups
       PUBLIC_MEDIA_BASE_URL: https://${DOMAIN:?set DOMAIN to the hostname this Studio answers on}/media/staging
       PUBLIC_BASE_URL: https://${DOMAIN:?set DOMAIN to the hostname this Studio answers on}
       NODE_ENV: production
@@ -71,6 +71,11 @@ services:
       PORT: "8788"
     volumes:
       - app-data:/data
+      # A named volume is enough to survive `docker compose down`, but not the
+      # disk. Point this at off-host storage; `backup-media` writes here and
+      # `doctor` fails until it has, because the database backup Telegram sends
+      # every day does not carry media.
+      - ${BACKUP_DIR_HOST:-./backups}:/backups
     # No published ports: the application is reachable only through Caddy.
     expose:
       - "8788"

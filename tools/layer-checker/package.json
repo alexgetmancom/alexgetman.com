@@ -1,5 +1,5 @@
 {
-  "name": "@alexgetman/layer-checker-tools",
+  "name": "@solo-publisher/layer-checker-tools",
   "private": true,
   "type": "module",
   "devDependencies": {

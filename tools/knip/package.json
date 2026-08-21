@@ -1,5 +1,5 @@
 {
-  "name": "@alexgetman/knip-tools",
+  "name": "@solo-publisher/knip-tools",
   "private": true,
   "type": "module",
   "devDependencies": {

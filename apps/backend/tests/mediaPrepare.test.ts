@@ -11,8 +11,7 @@ describe("media preparation", () => {
     const config = loadTestConfig({
       CONTROLLER_BOT_TOKEN: "token",
       TELEGRAM_API_BASE_URL: "https://telegram.local",
-      MEDIA_CACHE_DIR: path.join(dir, "cache"),
-      REMOTE_MEDIA_PATH: path.join(dir, "public"),
+      DATA_DIR: dir,
       PUBLIC_MEDIA_BASE_URL: "https://example.com/media",
     });
     const fetchImpl = mock(async (input: string | URL | Request) =>
@@ -30,7 +29,7 @@ describe("media preparation", () => {
       expect(first[0]?.vpsUrl).toBe(second[0]?.vpsUrl);
       expect(fs.existsSync(String(first[0]?.localPath))).toBe(true);
       expect(fs.existsSync(String(second[0]?.localPath))).toBe(true);
-      expect(fs.existsSync(String(second[0]?.vpsUrl).replace("https://example.com/media/", path.join(dir, "public/")))).toBe(true);
+      expect(fs.existsSync(String(second[0]?.vpsUrl).replace("https://example.com/media/", `${config.REMOTE_MEDIA_PATH}/`))).toBe(true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -40,8 +39,7 @@ describe("media preparation", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-media-prune-"));
     try {
       const config = loadTestConfig({
-        MEDIA_CACHE_DIR: path.join(dir, "cache"),
-        REMOTE_MEDIA_PATH: path.join(dir, "public"),
+        DATA_DIR: dir,
       });
       fs.mkdirSync(config.MEDIA_CACHE_DIR, { recursive: true });
       fs.mkdirSync(config.REMOTE_MEDIA_PATH, { recursive: true });

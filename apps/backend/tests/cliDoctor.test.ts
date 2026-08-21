@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -10,9 +10,15 @@ afterEach(() => {
   fixtureDir = null;
 });
 
-async function runDoctor(overrides: Record<string, string> = {}) {
+async function runDoctor(overrides: (fixture: string) => Record<string, string> = () => ({})) {
   fixtureDir = mkdtempSync(path.join(tmpdir(), "solo-publisher-doctor-"));
-  for (const name of ["data", "media", "cache", "cards", "site"]) mkdirSync(path.join(fixtureDir, name));
+  const dataDir = path.join(fixtureDir, "data");
+  // The backup directory sits beside the data volume, never inside it — the
+  // deployment shape doctor is asserting about.
+  const backupDir = path.join(fixtureDir, "backups");
+  mkdirSync(dataDir);
+  mkdirSync(backupDir);
+  writeFileSync(path.join(backupDir, "media-20260820T000000Z.tar.gz"), "archive");
   const child = Bun.spawn(["bun", "apps/backend/src/cli.ts", "doctor", "--db", path.join(fixtureDir, "pipeline.db")], {
     cwd: process.cwd(),
     env: {
@@ -20,13 +26,9 @@ async function runDoctor(overrides: Record<string, string> = {}) {
       NODE_ENV: "development",
       DEPLOYMENT_ENV: "development",
       COMMAND_CENTER_TOKEN: "command-center",
-      DATA_DIR: path.join(fixtureDir, "data"),
-      STUDIO_MEDIA_DIR: path.join(fixtureDir, "media"),
-      VIDEO_MEDIA_DIR: path.join(fixtureDir, "media"),
-      MEDIA_CACHE_DIR: path.join(fixtureDir, "cache"),
-      STORY_CARD_DIR: path.join(fixtureDir, "cards"),
-      SITE_PUBLIC_DIR: path.join(fixtureDir, "site"),
-      ...overrides,
+      DATA_DIR: dataDir,
+      BACKUP_DIR: backupDir,
+      ...overrides(fixtureDir),
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -47,8 +49,16 @@ describe("doctor CLI", () => {
     expect(result.stdout).toContain('"ok": true');
   });
 
+  it("fails a deployment whose media backup lives on the data volume", async () => {
+    // A copy inside DATA_DIR is lost with the volume it is meant to survive.
+    const result = await runDoctor((fixture) => ({ BACKUP_DIR: path.join(fixture, "data", "backups") }));
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain('"mediaBackedUp": false');
+    expect(result.stdout).toContain('"onDataVolume": true');
+  });
+
   it("exits nonzero when its report is not ok", async () => {
-    const result = await runDoctor({ CONTROLLER_BOT_TOKEN: "half-configured" });
+    const result = await runDoctor(() => ({ CONTROLLER_BOT_TOKEN: "half-configured" }));
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toContain('"ok": false');
     expect(result.stdout).toContain("CONTROLLER_ADMIN_IDS");

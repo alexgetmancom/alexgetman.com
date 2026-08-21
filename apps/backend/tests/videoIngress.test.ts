@@ -22,7 +22,7 @@ describe("storeTelegramVideo", () => {
   it("rejects a message with neither a video nor a document", async () => {
     await withMediaDir(async (dir) => {
       const backendDb = openBackendDb(":memory:");
-      const config = loadTestConfig({ CONTROLLER_BOT_TOKEN: "token", STUDIO_MEDIA_DIR: dir });
+      const config = loadTestConfig({ CONTROLLER_BOT_TOKEN: "token", DATA_DIR: dir });
       try {
         const ctx = contextWith({ text: "hello" }, async () => ({ file_path: "video.mp4" }));
         await expect(storeTelegramVideo(ctx, backendDb, config, 1)).rejects.toThrow(StudioError);
@@ -36,7 +36,7 @@ describe("storeTelegramVideo", () => {
   it("rejects a document that is neither video/* nor named .mp4", async () => {
     await withMediaDir(async (dir) => {
       const backendDb = openBackendDb(":memory:");
-      const config = loadTestConfig({ CONTROLLER_BOT_TOKEN: "token", STUDIO_MEDIA_DIR: dir });
+      const config = loadTestConfig({ CONTROLLER_BOT_TOKEN: "token", DATA_DIR: dir });
       try {
         const ctx = contextWith({ document: { file_id: "doc-1", mime_type: "application/pdf", file_name: "report.pdf" } }, async () => ({
           file_path: "docs/report.pdf",
@@ -51,7 +51,7 @@ describe("storeTelegramVideo", () => {
   it("imports an uploaded video whose Telegram file_path is already a local absolute path", async () => {
     await withMediaDir(async (dir) => {
       const backendDb = openBackendDb(":memory:");
-      const config = loadTestConfig({ CONTROLLER_BOT_TOKEN: "token", STUDIO_MEDIA_DIR: dir });
+      const config = loadTestConfig({ CONTROLLER_BOT_TOKEN: "token", DATA_DIR: dir });
       try {
         const sourceFile = path.join(dir, "source.mp4");
         fs.writeFileSync(sourceFile, Buffer.from("fake mp4 bytes"));
@@ -73,7 +73,7 @@ describe("storeTelegramVideo", () => {
       const config = loadTestConfig({
         CONTROLLER_BOT_TOKEN: "token",
         TELEGRAM_API_BASE_URL: "https://telegram.local",
-        STUDIO_MEDIA_DIR: dir,
+        DATA_DIR: dir,
       });
       const originalFetch = globalThis.fetch;
       const requestedUrls: string[] = [];
@@ -98,7 +98,7 @@ describe("storeTelegramVideo", () => {
   it("rejects when the bot token is not configured", async () => {
     await withMediaDir(async (dir) => {
       const backendDb = openBackendDb(":memory:");
-      const config = loadTestConfig({ STUDIO_MEDIA_DIR: dir });
+      const config = loadTestConfig({ DATA_DIR: dir });
       try {
         const ctx = contextWith({ video: { file_id: "vid-1" } }, async () => ({ file_path: "video.mp4" }));
         await expect(storeTelegramVideo(ctx, backendDb, config, 1)).rejects.toThrow("Telegram bot token is not configured.");

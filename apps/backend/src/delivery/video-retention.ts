@@ -103,8 +103,6 @@ export function postDraftReferencesAsset(backendDb: BackendDb, assetId: number):
 
 function isManagedVideoSource(config: BackendConfig, source: string): boolean {
   const resolved = path.resolve(source);
-  return [config.STUDIO_MEDIA_DIR, config.VIDEO_MEDIA_DIR].some((root) => {
-    const directory = path.resolve(root);
-    return resolved.startsWith(`${directory}${path.sep}`);
-  });
+  const directory = path.resolve(config.STUDIO_MEDIA_DIR);
+  return resolved.startsWith(`${directory}${path.sep}`);
 }

@@ -25,45 +25,45 @@ docker compose exec app bun /app/ops/cli.js restore --source /data/restore.db --
 docker compose restart app
 ```
 
-## The media, which is yours to arrange
+## The media, which has its own command
 
 Media is not in that copy and cannot be: those files are far past what Telegram
-accepts. They live in the `app-data` volume, under `/data`, and they are the
-part that cannot be regenerated — the source images and videos of everything you
-published.
+accepts. They live on the data volume — video, posters, story cards and the
+published site's assets — and they are the part that cannot be regenerated.
 
-Solo Publisher deliberately ships no backup integration for them. A credential
-for object storage, a schedule and a retention policy would be a second thing to
-configure and get wrong, and every host already has a tool for this. Point one at
-the volume.
-
-**To another machine**, which is the simplest thing that works:
+`backup-media` archives them:
 
 ```bash
-docker run --rm -v solo-publisher_app-data:/data:ro -v ~/.ssh:/root/.ssh:ro \
-  instrumentisto/rsync-ssh \
-  rsync -a --delete /data/ backup@your-other-host:/srv/solo-publisher-media/
+docker compose exec app bun /app/ops/cli.js backup-media
 ```
 
-**To S3 or anything like it**, with [restic](https://restic.net/) so the copies
-are incremental and verifiable:
+It writes one gzipped tar into `BACKUP_DIR`, which `BACKUP_DIR_HOST` in `.env`
+points at. That location must not be the data volume, and the command refuses if
+it is: a copy that dies with the disk it is copying is not a backup. Paths inside
+the archive are relative to the volume root, so it restores onto a fresh volume
+unchanged:
 
 ```bash
-docker run --rm -v solo-publisher_app-data:/data:ro \
-  -e RESTIC_REPOSITORY=s3:s3.amazonaws.com/your-bucket \
-  -e RESTIC_PASSWORD=... -e AWS_ACCESS_KEY_ID=... -e AWS_SECRET_ACCESS_KEY=... \
-  restic/restic backup /data
+tar -xzf media-<stamp>.tar.gz -C /data
 ```
 
-Put either behind a cron entry on the host at whatever hour suits you. Both read
-the volume while the Studio runs; media files are written once and never edited,
-so a copy taken mid-write is at worst a file the next run picks up.
-
-Check the volume name first — Compose prefixes it with the project directory:
+`doctor` reports the deployment unhealthy while the newest archive is missing or
+more than a week old, so a forgotten backup is noticed while the volume it
+protects is still intact:
 
 ```bash
-docker volume ls | grep app-data
+docker compose exec app bun /app/ops/cli.js doctor
 ```
+
+Put the command behind a cron entry on the host at whatever hour suits you. It
+reads the volume while the Studio runs; media files are written once and never
+edited, so a copy taken mid-write is at worst a file the next run picks up.
+
+Where `BACKUP_DIR_HOST` itself should point is the one part still yours to
+choose — another disk, a mount, a machine that is not this one. Solo Publisher
+ships no object-storage integration on purpose: a credential, a schedule and a
+retention policy would be a second thing to configure and get wrong, and every
+host already has a tool for moving a directory somewhere else.
 
 ## What is not worth backing up
 

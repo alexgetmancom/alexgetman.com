@@ -112,7 +112,7 @@ describe("video publication queue", () => {
         .where(eq(videoDrafts.id, draftId))
         .run();
 
-      const config = { ...videoConfig(), STUDIO_MEDIA_DIR: directory, VIDEO_MEDIA_DIR: directory };
+      const config = { ...videoConfig(), STUDIO_MEDIA_DIR: directory };
       await runVideoCycle(config, backendDb);
       expect(existsSync(source)).toBe(false);
       expect(backendDb.db.select().from(studioMediaAssets).where(eq(studioMediaAssets.id, asset.id)).get()).toBeDefined();
@@ -167,7 +167,7 @@ describe("video publication queue", () => {
         })
         .run();
 
-      await runVideoCycle({ ...videoConfig(), STUDIO_MEDIA_DIR: directory, VIDEO_MEDIA_DIR: directory }, backendDb);
+      await runVideoCycle({ ...videoConfig(), STUDIO_MEDIA_DIR: directory }, backendDb);
       expect(existsSync(source)).toBe(true);
     } finally {
       rmSync(directory, { recursive: true, force: true });

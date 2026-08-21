@@ -12,7 +12,6 @@ export function requiredDataDirectories(config: EnvConfig): { name: string; path
   const entries = [
     { name: "DATA_DIR", path: config.DATA_DIR },
     { name: "STUDIO_MEDIA_DIR", path: config.STUDIO_MEDIA_DIR },
-    { name: "VIDEO_MEDIA_DIR", path: config.VIDEO_MEDIA_DIR },
     { name: "MEDIA_CACHE_DIR", path: config.MEDIA_CACHE_DIR },
     { name: "STORY_CARD_DIR", path: config.STORY_CARD_DIR },
     { name: "REMOTE_MEDIA_PATH", path: config.REMOTE_MEDIA_PATH },

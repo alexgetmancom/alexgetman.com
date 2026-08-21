@@ -231,7 +231,7 @@ describe("Studio MCP", () => {
           CONTROLLER_ADMIN_IDS: "42",
           MCP_STUDIO_TOKEN: token,
           MCP_STUDIO_ACTOR_ID: "42",
-          STUDIO_MEDIA_DIR: directory,
+          DATA_DIR: directory,
         },
         SITE_STUDIO_PROFILE,
       );

@@ -28,7 +28,7 @@ describe("Studio media storage", () => {
     const secondPath = path.join(inputDirectory, "two.png");
     writeFileSync(firstPath, bytes);
     writeFileSync(secondPath, bytes);
-    const config = loadTestConfig({ STUDIO_MEDIA_DIR: storageDirectory, STUDIO_MEDIA_MAX_BYTES: "1000" });
+    const config = loadTestConfig({ DATA_DIR: storageDirectory, STUDIO_MEDIA_MAX_BYTES: "1000" });
 
     const first = await importStudioMediaFile(backendDb, config, 42, {
       filename: "one.jpg",
@@ -45,6 +45,6 @@ describe("Studio media storage", () => {
 
     expect(second.id).toBe(first.id);
     expect(second.localPath).toBe(first.localPath);
-    expect(readdirSync(path.join(storageDirectory, "42"))).toEqual([path.basename(first.localPath)]);
+    expect(readdirSync(path.join(config.STUDIO_MEDIA_DIR, "42"))).toEqual([path.basename(first.localPath)]);
   });
 });

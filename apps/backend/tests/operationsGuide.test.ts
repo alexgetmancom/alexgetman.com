@@ -59,7 +59,7 @@ describe("operations guide", () => {
 
     expect(guide.local.state).toBe("available");
     expect(guide.route).toBe("local");
-    expect(guide.next.command).toBe("bun run --filter @alexgetman/backend ops <command>");
+    expect(guide.next.command).toBe("bun run --filter @solo-publisher/backend ops <command>");
     expect(guide.commands.find((command) => command.name === "publication-repair")).toMatchObject({
       mutates: true,
       usage: "publication-repair [--ref post:160] [--apply]",

@@ -40,7 +40,7 @@ COPY --chown=bun:bun tools/layer-checker ./tools/layer-checker
 # service.ts too, and the typecheck below runs across them.
 COPY --chown=bun:bun deploy/media-processor ./deploy/media-processor
 
-RUN bun run --filter @alexgetman/backend typecheck
+RUN bun run --filter @solo-publisher/backend typecheck
 RUN DATA_DIR=/data bun run build
 RUN bun build apps/web/server.ts --outdir runtime --target bun --splitting --minify --sourcemap=external
 RUN bun build apps/backend/src/cli.ts --outdir ops --target bun --minify --sourcemap=external

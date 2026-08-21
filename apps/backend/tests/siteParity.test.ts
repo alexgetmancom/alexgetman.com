@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDraftFromMessage } from "../src/content/drafts.js";
@@ -18,7 +18,6 @@ describe("site parity", () => {
     registerTestChannels(backendDb, TEXT_TEST_CHANNELS);
     const config = loadTestConfig({
       DATA_DIR: dir,
-      SITE_PUBLIC_DIR: dir,
       PUBLIC_BASE_URL: "https://example.test",
       INDEXNOW_ENABLED: "true",
     });
@@ -29,8 +28,8 @@ describe("site parity", () => {
       backendDb.sqlite.prepare("UPDATE site_jobs SET status='published' WHERE post_id=?").run(postId);
       refreshPublicationStatus(backendDb, postId);
       const urls = publishContentIndex(config, backendDb);
-      expect(existsSync(join(dir, "content-index.json"))).toBe(true);
-      expect(readFileSync(join(dir, "content-memory.md"), "utf8")).toContain("English title");
+      expect(existsSync(join(config.SITE_PUBLIC_DIR, "content-index.json"))).toBe(true);
+      expect(readFileSync(join(config.SITE_PUBLIC_DIR, "content-memory.md"), "utf8")).toContain("English title");
       const fetchImpl = mock(async () => new Response("", { status: 202 })) as unknown as typeof fetch;
       await pingIndexNow(config, urls, fetchImpl);
       await pingIndexNow(config, urls, fetchImpl);
@@ -45,10 +44,11 @@ describe("site parity", () => {
     const dir = mkdtempSync(join(tmpdir(), "alexgetman-indexnow-"));
     const config = loadTestConfig({
       DATA_DIR: dir,
-      SITE_PUBLIC_DIR: dir,
       PUBLIC_BASE_URL: "https://example.test",
       INDEXNOW_ENABLED: "true",
     });
+    // The runtime creates every data directory at boot (see data-dirs.ts).
+    mkdirSync(config.SITE_PUBLIC_DIR, { recursive: true });
     const fetchImpl = mock(async () => new Response("", { status: 500 })) as unknown as typeof fetch;
     await expect(pingIndexNow(config, ["https://example.test/post"], fetchImpl)).rejects.toThrow("500");
     await expect(pingIndexNow(config, ["https://example.test/post"], fetchImpl)).rejects.toThrow("500");

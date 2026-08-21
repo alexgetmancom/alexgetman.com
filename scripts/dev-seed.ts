@@ -24,13 +24,13 @@ import {
  *   bun scripts/dev-seed.ts                       # 30 days, 1–5 text and video posts per day
  *   bun scripts/dev-seed.ts --days 14 --min-posts 2 --max-posts 4 --gallery 3
  *   bun scripts/dev-seed.ts --simple --posts 5 --gallery 3
- *   bun scripts/dev-seed.ts --db /tmp/x.db --public-dir /tmp/site
+ *   bun scripts/dev-seed.ts --data-dir /tmp/fixture
  *   bun scripts/dev-seed.ts --no-dashboard        # site rows only
  *   bun scripts/dev-seed.ts --mock                # reference-layout parity data
  *   bun scripts/dev-seed.ts --one-language        # a Studio that publishes text in Russian only
  *
- * Then point the dev server at the same paths:
- *   PIPELINE_DB=<db> SITE_PUBLIC_DIR=<public-dir> bun run dev
+ * The seed writes `<data-dir>/demo.env` with everything the dev server needs,
+ * so `bun run demo` never restates the configuration this script chose.
  *
  * The dashboard sits behind a token. Any value works locally as long as the
  * server and the browser agree, so the launch config sets COMMAND_CENTER_TOKEN=dev
@@ -42,9 +42,11 @@ function flag(name: string, fallback: string): string {
   return index === -1 ? fallback : (process.argv[index + 1] ?? fallback);
 }
 
-const defaultRoot = path.join(process.cwd(), ".dev-fixture");
-const dbPath = path.resolve(flag("db", path.join(defaultRoot, "pipeline.db")));
-const publicDir = path.resolve(flag("public-dir", path.join(defaultRoot, "site")));
+// One root, matching DATA_DIR in the running process: every pipeline path is
+// derived from it there, so the seed cannot be allowed to place them anywhere else.
+const dataDir = path.resolve(flag("data-dir", path.join(process.cwd(), ".dev-fixture")));
+const dbPath = path.join(dataDir, "pipeline.db");
+const publicDir = path.join(dataDir, "site");
 const count = Math.max(1, Number(flag("posts", "3")) || 3);
 const galleryImages = Math.max(1, Number(flag("gallery", "2")) || 2);
 const days = Math.max(1, Math.floor(Number(flag("days", String(FULL_DEV_HISTORY_DAYS))) || FULL_DEV_HISTORY_DAYS));
@@ -123,8 +125,23 @@ function connectChannels(): void {
   }
 }
 
-console.log(
-  `\nbun run build\nNODE_ENV=test DATA_DIR=${path.join(defaultRoot, "data")} STUDIO_MEDIA_DIR=${path.join(defaultRoot, "video-media")} VIDEO_MEDIA_DIR=${path.join(defaultRoot, "video-media")} MEDIA_CACHE_DIR=${path.join(defaultRoot, "media-cache")} STORY_CARD_DIR=${path.join(defaultRoot, "story-cards")} PIPELINE_DB=${dbPath} SITE_PUBLIC_DIR=${publicDir} COMMAND_CENTER_TOKEN=dev MCP_STUDIO_TOKEN=demo-studio-token MCP_STUDIO_ACTOR_ID=1 STUDIO_ACTOR_IDS=1 ASTRO_DIST_DIR=${path.resolve("dist")} bun run --filter @alexgetman/backend dev`,
+const envPath = path.join(dataDir, "demo.env");
+fs.mkdirSync(dataDir, { recursive: true });
+fs.writeFileSync(
+  envPath,
+  `${Object.entries({
+    NODE_ENV: "test",
+    DATA_DIR: dataDir,
+    COMMAND_CENTER_TOKEN: "dev",
+    MCP_STUDIO_TOKEN: "demo-studio-token",
+    MCP_STUDIO_ACTOR_ID: "1",
+    STUDIO_ACTOR_IDS: "1",
+    ASTRO_DIST_DIR: path.resolve("dist"),
+  })
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n")}\n`,
 );
+
+console.log(`\nEnvironment: ${envPath}\n  bun run demo`);
 console.log("  site       http://localhost:8788/");
 if (withDashboard) console.log("  dashboard  http://localhost:8788/command-center?token=dev");

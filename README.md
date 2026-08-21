@@ -81,8 +81,12 @@ Before an update, `docker compose exec app bun /app/ops/cli.js status` reports t
 Two things worth knowing on day one. When Telegram is configured, the Studio sends you a copy of its database
 every day, silently, in the same Telegram chat you author from; it covers posts,
 schedules, delivery state and analytics, but **not** media files, which are far
-larger than Telegram accepts and need a backup of the `app-data` volume. Turn it
-off under Settings → Notifications → Database backup. And Telegram refuses file
+larger than Telegram accepts. Those have their own command:
+`docker compose exec app bun /app/ops/cli.js backup-media` archives video,
+posters, story cards and site assets into `BACKUP_DIR_HOST`, which must not be
+the volume it is protecting — run it on a schedule, because `doctor` reports the
+deployment unhealthy until an archive newer than a week is there. Turn the
+database copy off under Settings → Notifications → Database backup. And Telegram refuses file
 downloads over 50 MB, which is smaller than a short video: to publish video, set
 `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` and `COMPOSE_PROFILES=telegram` in `.env`,
 which starts a local Bot API server alongside the app and lifts the limit to 2 GB.
@@ -135,7 +139,7 @@ Copy the secret template:
 cp apps/backend/secrets.env.example apps/backend/secrets.env
 ```
 
-What a Studio publishes as, whether it serves the public site, its time zone and video timing live in its own database, read and written with `bun run --filter @alexgetman/backend ops -- studio-profile`. Credentials stay in the ignored `apps/backend/secrets.env`; connected destinations live in the channel registry. Text posting, video posting and analytics always run.
+What a Studio publishes as, whether it serves the public site, its time zone and video timing live in its own database, read and written with `bun run --filter @solo-publisher/backend ops -- studio-profile`. Credentials stay in the ignored `apps/backend/secrets.env`; connected destinations live in the channel registry. Text posting, video posting and analytics always run.
 
 The private Telegram bot and MCP endpoint operate the same Studio services. Posts created through either interface land in the same drafts, schedules, publication jobs, and analytics.
 

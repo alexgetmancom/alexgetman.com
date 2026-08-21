@@ -20,7 +20,7 @@ function withIngress<T>(
 ): Promise<T> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "alexgetman-media-ingress-"));
   const backendDb = openBackendDb(":memory:");
-  const config = loadTestConfig({ CONTROLLER_BOT_TOKEN: "token", STUDIO_MEDIA_DIR: dir, ...env });
+  const config = loadTestConfig({ CONTROLLER_BOT_TOKEN: "token", DATA_DIR: dir, ...env });
   return fn({ dir, backendDb, config }).finally(() => {
     backendDb.close();
     fs.rmSync(dir, { recursive: true, force: true });

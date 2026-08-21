@@ -22,7 +22,7 @@ describe("Studio service boundaries", () => {
     const backendDb = openBackendDb(":memory:");
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "studio-service-media-"));
     try {
-      const config = loadTestConfig({ STUDIO_MEDIA_DIR: directory, STUDIO_MEDIA_MAX_BYTES: "1000" });
+      const config = loadTestConfig({ DATA_DIR: directory, STUDIO_MEDIA_MAX_BYTES: "1000" });
       const media = createStudioServices(backendDb, config).media;
       const bytes = new Uint8Array([1, 2, 3, 4]);
       const first = await media.import(42, {

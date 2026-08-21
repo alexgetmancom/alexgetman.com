@@ -55,7 +55,7 @@ function probeLocalOperations(databasePath: string): LocalOperationsProbe {
 export function buildOperationsGuide(databasePath: string, commands: readonly OperationCatalogEntry[]): OperationsGuide {
   const local = probeLocalOperations(databasePath);
   const route = local.state === "available" ? "local" : "production";
-  const command = route === "local" ? "bun run --filter @alexgetman/backend ops <command>" : "bun run ops:prod <command>";
+  const command = route === "local" ? "bun run --filter @solo-publisher/backend ops <command>" : "bun run ops:prod <command>";
   // The catalog is compiled into this process. On the local route that is the
   // binary being run, so it is the truth. On the production route it is not:
   // the container runs whatever revision was last deployed, and between a

@@ -85,18 +85,10 @@ describe("dashboard read model bounds", () => {
         metrics: { telegram: { views: { raw?: unknown; samples: Array<{ value: number; sampled_at: string }> } } };
         targets: { telegram: Record<string, unknown> };
       };
-      const payload = pipelineOverviewPayload(
-        loadTestConfig({ PIPELINE_DB: ":memory:" }, MSK_STUDIO_PROFILE),
-        backendDb,
-        0,
-        1,
-        0,
-        undefined,
-        {
-          includeSamples: true,
-          sampleLimitPerSeries: 200,
-        },
-      ) as unknown as { posts: TestPost[] };
+      const payload = pipelineOverviewPayload(loadTestConfig({}, MSK_STUDIO_PROFILE), backendDb, 0, 1, 0, undefined, {
+        includeSamples: true,
+        sampleLimitPerSeries: 200,
+      }) as unknown as { posts: TestPost[] };
       const post = payload.posts[0];
       if (!post) throw new Error("Expected one pipeline post");
       const metric = post.metrics.telegram.views;
@@ -112,36 +104,20 @@ describe("dashboard read model bounds", () => {
       expect(metric).not.toHaveProperty("raw");
       expect(target).not.toHaveProperty("raw");
 
-      const longPeriod = pipelineOverviewPayload(
-        loadTestConfig({ PIPELINE_DB: ":memory:" }, MSK_STUDIO_PROFILE),
-        backendDb,
-        0,
-        30,
-        0,
-        undefined,
-        {
-          includeSamples: true,
-          sampleLimitPerSeries: 200,
-        },
-      ) as unknown as { posts: TestPost[] };
+      const longPeriod = pipelineOverviewPayload(loadTestConfig({}, MSK_STUDIO_PROFILE), backendDb, 0, 30, 0, undefined, {
+        includeSamples: true,
+        sampleLimitPerSeries: 200,
+      }) as unknown as { posts: TestPost[] };
       expect(longPeriod.posts[0]?.metrics.telegram.views.samples).toHaveLength(30);
       expect(longPeriod.posts[0]?.metrics.telegram.views.samples[0]?.sampled_at).toBe(
         new Date(periodStart30Ms + 23 * 60 * 60 * 1_000 + 2_000).toISOString(),
       );
 
-      const compact = pipelineOverviewPayload(
-        loadTestConfig({ PIPELINE_DB: ":memory:" }, MSK_STUDIO_PROFILE),
-        backendDb,
-        0,
-        1,
-        0,
-        undefined,
-        {
-          includeSamples: false,
-          includeContent: false,
-          compact: true,
-        },
-      ) as unknown as { posts: Array<Record<string, unknown>> };
+      const compact = pipelineOverviewPayload(loadTestConfig({}, MSK_STUDIO_PROFILE), backendDb, 0, 1, 0, undefined, {
+        includeSamples: false,
+        includeContent: false,
+        compact: true,
+      }) as unknown as { posts: Array<Record<string, unknown>> };
       expect(compact.posts[0]).not.toHaveProperty("full_text_en");
       expect(compact.posts[0]).not.toHaveProperty("media_en_json");
       expect(compact.posts[0]).toMatchObject({ post_id: 1, telegram_url: expect.anything() });

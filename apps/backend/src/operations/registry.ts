@@ -37,6 +37,7 @@ import {
   restoreDatabase,
   withMaintenanceLock,
 } from "./maintenance.js";
+import { backupMedia, mediaBackupStatus } from "./media-backup.js";
 import { diagnoseMediaProcessor, mediaJobReport, mediaProcessorStatus, reprocessPostMedia } from "./media-processor.js";
 import { formatPostText, postText } from "./post-text.js";
 import { purgePublication } from "./publication-purge.js";
@@ -221,7 +222,8 @@ const operationDefs = {
     handler: (context) => {
       const config = context.config();
       const dataDirectories = checkDataDirectoriesWritable(requiredDataDirectories(config));
-      const { requiredChecks, checks } = doctorChecks(config, dataDirectories);
+      const mediaBackup = mediaBackupStatus(config);
+      const { requiredChecks, checks } = doctorChecks(config, dataDirectories, mediaBackup);
       const capabilities = capabilityReport(config, context.db());
       return {
         ok: Object.values(requiredChecks).every(Boolean) && capabilities.every((capability) => capability.status === "ready"),
@@ -230,6 +232,7 @@ const operationDefs = {
         publicBaseUrl: config.PUBLIC_BASE_URL,
         checks,
         dataDirectories,
+        mediaBackup,
         capabilities,
       };
     },
@@ -595,6 +598,14 @@ const operationDefs = {
     mutates: true,
     agent: false,
     handler: async (context, input) => ({ ok: true, path: await backupDatabase(context.db(), context.dbPath, input.output) }),
+  }),
+  "backup-media": operation({
+    summary: "Archive the media trees a database backup does not carry.",
+    schema: z.object({ output: example(z.string().optional(), "DIRECTORY").describe("destination directory") }),
+    mutates: true,
+    agent: false,
+    note: "Video, posters, story cards and site assets. Writes off the data volume, and refuses a destination inside it — `backup` covers the database only, and `doctor` fails until this has run within a week.",
+    handler: async (context, input) => ({ ok: true, ...(await backupMedia(context.config(), input.output)) }),
   }),
   restore: operation({
     summary: "Replace the database with a backup.",

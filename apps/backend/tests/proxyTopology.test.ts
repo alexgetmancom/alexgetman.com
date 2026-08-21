@@ -15,21 +15,18 @@ describe("host proxy topology", () => {
     // it collapses the whole internet onto one visitor identity, which turns
     // the public rate limit into a single global budget.
     const caddy = read("deploy/caddy/Caddyfile");
-    const alex = read("deploy/alex.compose.yaml");
-    const maru = read("deploy/maru.compose.yaml");
+    const studio = read("deploy/studio.compose.yaml");
 
     expect(caddy).toContain("header_up X-Real-IP {remote_host}");
-    expect(alex).toContain("TRUSTED_CLIENT_IP_HEADER: x-real-ip");
-    expect(maru).toContain("TRUSTED_CLIENT_IP_HEADER: x-real-ip");
+    expect(studio).toContain("TRUSTED_CLIENT_IP_HEADER: x-real-ip");
     // Every site block must import it, or one of them silently loses the address.
     expect(caddy.match(/import client_address/g)?.length).toBe(caddy.match(/reverse_proxy /g)?.length);
   });
 
-  it("keeps the second Studio an allowlist, not a site", () => {
-    // Maru is operated from another machine over MCP and serves no public site.
+  it("keeps a Studio without a site an allowlist, not a site", () => {
+    // A Studio operated from another machine over MCP serves no public site.
     // The default is 404, so a route that is not named does not exist.
     const caddy = read("deploy/caddy/Caddyfile");
-    const maru = read("deploy/maru.compose.yaml");
 
     expect(caddy).toContain("/api/mcp");
     expect(caddy).toContain("/api/studio/media");
@@ -37,13 +34,25 @@ describe("host proxy topology", () => {
     expect(caddy).toContain("/media/staging/*");
     expect(caddy).toContain("/oauth/*");
     expect(caddy).toContain("respond 404");
-    expect(maru).toContain('"127.0.0.1:8789:8788"');
-    // The URL this Studio hands a publishing platform must name its own domain.
-    // A default would let a lost host env file publish media under the first
+  });
+
+  it("describes every Studio with one file that names none of them", () => {
+    // Two committed descriptions of one service is how they drifted: the
+    // second one silently lost settings the first had. Every difference is a
+    // value in the host's own .env, so there is nothing left to keep in sync.
+    const studio = read("deploy/studio.compose.yaml");
+
+    expect(studio).not.toContain("alexgetman");
+    expect(studio).not.toContain("maru");
+    // The identity, address and port a deployment answers on have no defaults.
+    // A default would let a lost host env file publish media under another
     // Studio's domain, and the request that reveals it comes from Meta.
-    expect(maru).toContain("PUBLIC_BASE_URL: ${MARU_PUBLIC_BASE_URL:?");
-    expect(maru).toContain("REMOTE_MEDIA_PATH: /data/media");
-    expect(maru).toContain("MARU_MEDIA_STAGING_DIR_HOST");
+    expect(studio).toContain("${STUDIO:?");
+    expect(studio).toContain("PUBLIC_BASE_URL: ${STUDIO_PUBLIC_BASE_URL:?");
+    expect(studio).toContain("${STUDIO_PORT:?");
+    // A backup that lives on the volume it protects is not one.
+    expect(studio).toContain("${STUDIO_BACKUP_DIR_HOST:?");
+    expect(studio).toContain("BACKUP_DIR: /backups");
   });
 
   it("lets the second Studio reach every Command Center endpoint its dashboard calls", () => {
@@ -90,6 +99,7 @@ describe("host proxy topology", () => {
       // channel username is a live channel someone else would post into.
       expect(file).not.toContain("TELEGRAM_CHANNEL_USERNAME=alexgetmancom");
     }
+    expect(compose).toContain("BACKUP_DIR: /backups");
     // The domain has no default at all: Caddy would request a certificate for
     // whatever it is told, and the application would publish it in its feeds.
     expect(compose).toContain("${DOMAIN:?");
