@@ -63,9 +63,11 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
         const postDrafts = backendDb.studioQueue.posts(actorIds, rowLimit);
         const videos = backendDb.studioQueue.videos(actorIds, rowLimit);
 
-        const postIds = postDrafts.flatMap((draft) => (draft.postId == null ? [] : [draft.postId]));
-        const failedPostIds = new Set(backendDb.studioQueue.failedPostIds(postIds));
-        const failedStoryCardDraftIds = new Set(backendDb.studioQueue.failedStoryCardDraftIds(postDrafts.map((draft) => draft.id)));
+        // One definition of "needs attention" for the whole system: the Studio
+        // screen and the Command Center's red dot read the same rows.
+        const needsAttention = new Set(
+          backendDb.actionableIssues.list(actorIds).map((issue) => `${issue.kind === "video" ? "video" : "post"}:${issue.draftId}`),
+        );
         const nowMs = backendDb.clock.now().getTime();
 
         for (const draft of postDrafts) {
@@ -87,7 +89,7 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
             draftItems.push({ id: draft.id, label: `⏳ ${label}`, time: new Date(draft.updatedAt), kind: "post", targets: 0 });
           if (draft.status === "needs_review")
             draftItems.push({ id: draft.id, label, time: new Date(draft.updatedAt), kind: "post", targets: 0 });
-          if ((draft.postId != null && failedPostIds.has(draft.postId)) || failedStoryCardDraftIds.has(draft.id))
+          if (needsAttention.has(`post:${draft.id}`))
             attention.push({ id: draft.id, label, kind: "post", time: new Date(draft.updatedAt) });
         }
 
@@ -112,7 +114,7 @@ export function queueService(backendDb: BackendDb, config: BackendConfig) {
           }
           if (video.status === "draft" || video.status === "editing")
             draftItems.push({ id: video.id, label, time: new Date(video.updatedAt), kind: "video", targets: 0 });
-          if (targets.some((target) => target.status === "failed" || target.status === "verification_required"))
+          if (needsAttention.has(`video:${video.id}`))
             attention.push({ id: video.id, label, kind: "video", time: new Date(video.updatedAt) });
         }
 

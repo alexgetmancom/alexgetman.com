@@ -144,13 +144,32 @@ type StudioPostProgress = {
   siteJobs: Array<{ reason: string; status: string; lastError: string | null }>;
 };
 
+/** One thing that needs a human: a publication that failed, or one that reached
+ * the audience without a proof we could read back. */
+export type ActionableIssue = {
+  kind: "post" | "site" | "story" | "video";
+  /** Null only for a Story card on a draft that never entered Delivery. */
+  publicationKey: string | null;
+  draftId: number;
+  actorId: number;
+  /** Delivery target, site job reason, Story locale — whatever names the half
+   * of the publication that is stuck. */
+  target: string;
+  status: "failed" | "verification_required";
+  updatedAt: string;
+};
+
+/** The one definition of "needs attention", shared by Studio and Operations. */
+export type ActionableIssueStore = {
+  /** Every open issue, newest first; scoped to those actors when given. */
+  list(actorIds?: number[]): ActionableIssue[];
+};
+
 /** Queue projection used by every Studio interface. */
 export type StudioQueueStore = {
   posts(actorIds: number[], limit: number): StudioQueuePost[];
   videos(actorIds: number[], limit: number): StudioQueueVideo[];
   latestPublished(actorIds: number[]): StudioQueuePublished | null;
-  failedPostIds(postIds: number[]): number[];
-  failedStoryCardDraftIds(draftIds: number[]): number[];
   videoTargets(publicationIds: number[]): StudioQueueVideoTarget[];
 };
 
@@ -419,6 +438,7 @@ export type ApplicationPorts = {
   studioPosts: StudioPostStore;
   conversationSessions: ConversationSessionStore;
   studioQueue: StudioQueueStore;
+  actionableIssues: ActionableIssueStore;
   studioSettings: StudioSettingsStore;
   studioMediaAssets: StudioMediaAssetStore;
   studioVideos: StudioVideoStore;

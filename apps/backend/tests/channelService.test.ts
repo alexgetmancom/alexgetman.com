@@ -46,6 +46,6 @@ describe("Studio channel service", () => {
       expect(service.report()).toMatchObject([{ id: "telegram_stories", status: "missing" }]);
       service.disable("telegram_stories");
       expect(service.report()).toEqual([]);
-      expect(service.report(false)).toMatchObject([{ id: "telegram_stories", enabled: 0 }]);
+      expect(service.report(false)).toMatchObject([{ id: "telegram_stories", enabled: false, status: "disabled" }]);
     }));
 });

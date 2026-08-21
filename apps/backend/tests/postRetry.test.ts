@@ -135,7 +135,7 @@ describe("post publication retry", () => {
       ]);
       // The publication no longer holds the draft in the attention list.
       expect(backendDb.db.select({ status: drafts.status }).from(drafts).all()).toEqual([{ status: "published" }]);
-      expect(backendDb.studioQueue.failedPostIds([800])).toEqual([]);
+      expect(backendDb.actionableIssues.list().filter((issue) => issue.publicationKey === "post:800")).toEqual([]);
       expect(
         backendDb.db.select({ type: publicationEvents.eventType, target: publicationEvents.target }).from(publicationEvents).all(),
       ).toContainEqual({

@@ -79,22 +79,8 @@ export function compactOperationsStatus(config: BackendConfig, backendDb: Backen
     errors: number | null;
     lastCheckedAt: string | null;
   };
-  const actionableVideoFailures = unsafeDb(backendDb)
-    .sqlite.query(
-      `SELECT count(*) AS count
-       FROM video_targets AS target
-       INNER JOIN video_drafts AS draft ON draft.id = target.video_draft_id
-       WHERE target.status IN ('failed','verification_required')
-         AND draft.status NOT IN ('draft','editing','cancelled')`,
-    )
-    .get() as { count: number };
-  const unhealthy =
-    missingWorkers.length > 0 ||
-    workerRows.some((worker) => !worker.ok || worker.stale) ||
-    (postTargetCounts.failed ?? 0) > 0 ||
-    (postTargetCounts.verification_required ?? 0) > 0 ||
-    (siteJobCounts.failed ?? 0) > 0 ||
-    Number(actionableVideoFailures.count) > 0;
+  const actionableIssues = backendDb.actionableIssues.list();
+  const unhealthy = missingWorkers.length > 0 || workerRows.some((worker) => !worker.ok || worker.stale) || actionableIssues.length > 0;
 
   return {
     ok: !unhealthy,
@@ -107,6 +93,14 @@ export function compactOperationsStatus(config: BackendConfig, backendDb: Backen
     },
     workers: workerRows,
     missingWorkers,
+    // The same rows the Studio screen and the Command Center's red dot read.
+    attention: {
+      total: actionableIssues.length,
+      byKind: actionableIssues.reduce<Record<string, number>>((counts, issue) => {
+        counts[issue.kind] = (counts[issue.kind] ?? 0) + 1;
+        return counts;
+      }, {}),
+    },
     posts: {
       total: Number(unsafeDb(backendDb).sqlite.query("SELECT count(*) AS count FROM drafts WHERE post_id IS NOT NULL").get()?.count ?? 0),
       targets: { total: total(postTargetCounts), byStatus: postTargetCounts },
@@ -114,7 +108,11 @@ export function compactOperationsStatus(config: BackendConfig, backendDb: Backen
     },
     videos: {
       drafts: { total: total(videoDraftCounts), byStatus: videoDraftCounts },
-      targets: { total: total(videoTargetCounts), byStatus: videoTargetCounts, actionableFailures: Number(actionableVideoFailures.count) },
+      targets: {
+        total: total(videoTargetCounts),
+        byStatus: videoTargetCounts,
+        actionableFailures: actionableIssues.filter((issue) => issue.kind === "video").length,
+      },
       jobs: { total: total(videoJobCounts), byStatus: videoJobCounts },
     },
     site: {

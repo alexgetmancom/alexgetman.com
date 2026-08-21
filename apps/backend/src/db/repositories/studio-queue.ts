@@ -6,8 +6,7 @@ import type {
   StudioQueueVideo,
   StudioQueueVideoTarget,
 } from "../../application/ports.js";
-import { parsePublicationRef, publicationRef } from "../../application/publication-ref.js";
-import { draftStoryCards, drafts, postLocales, publicationTargets, publishJobs, siteJobs, videoDrafts, videoTargets } from "../schema.js";
+import { drafts, postLocales, publicationTargets, videoDrafts, videoTargets } from "../schema.js";
 import type { BackendDatabase } from "../types.js";
 
 /** SQLite adapter for the transport-neutral Studio queue projection. */
@@ -82,43 +81,6 @@ export function createStudioQueueStore(db: BackendDatabase): StudioQueueStore {
       }
       if (!video?.publishedAt) return null;
       return { id: video.id, label: video.label, kind: "video", publishedAt: video.publishedAt };
-    },
-
-    failedPostIds(postIds: number[]): number[] {
-      if (postIds.length === 0) return [];
-      const keys = postIds.map((postId) => publicationRef("post", postId));
-      const failed = db
-        .select({ publicationKey: publishJobs.publicationKey })
-        .from(publishJobs)
-        .where(and(inArray(publishJobs.publicationKey, keys), inArray(publishJobs.status, ["failed", "verification_required"])))
-        .all();
-      const failedSite = db
-        .select({ publicationKey: siteJobs.publicationKey })
-        .from(siteJobs)
-        .where(and(inArray(siteJobs.publicationKey, keys), eq(siteJobs.status, "failed")))
-        .all();
-      return [
-        ...new Set(
-          [...failed, ...failedSite].flatMap((row) => {
-            const ref = parsePublicationRef(row.publicationKey);
-            return ref?.kind === "post" ? [ref.id] : [];
-          }),
-        ),
-      ];
-    },
-
-    failedStoryCardDraftIds(draftIds: number[]): number[] {
-      if (draftIds.length === 0) return [];
-      return [
-        ...new Set(
-          db
-            .select({ draftId: draftStoryCards.draftId })
-            .from(draftStoryCards)
-            .where(and(inArray(draftStoryCards.draftId, draftIds), eq(draftStoryCards.status, "failed")))
-            .all()
-            .map((row) => row.draftId),
-        ),
-      ];
     },
 
     videoTargets(publicationIds: number[]): StudioQueueVideoTarget[] {

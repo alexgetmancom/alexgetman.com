@@ -301,7 +301,7 @@ function opsNeedsAttention(ops: OpsPayload): boolean {
 }
 
 function commandCenterAttentionState(attention: CommandCenterAttention): boolean {
-  return attention.hasFailedJob || attention.hasCredentialIssue || attention.hasMetricIssue;
+  return attention.hasActionableIssue || attention.hasCredentialIssue || attention.hasMetricIssue;
 }
 
 function dashboardTargetIds(requestedView: string | undefined): string[] | undefined {

@@ -6,6 +6,7 @@ import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import type { ApplicationPorts } from "../application/ports.js";
 import { queueDraftStoryCards, readyStoryCardMedia, setStoryPublishMode, storyCardsForDraft } from "../story-cards/store.js";
+import { createActionableIssueStore } from "./repositories/actionable-issues.js";
 import { createChannelStore } from "./repositories/channels.js";
 import { createConversationSessionStore } from "./repositories/conversation-sessions.js";
 import { createDraftStore } from "./repositories/drafts.js";
@@ -80,6 +81,7 @@ export function openBackendDb(path: string, timeout = 30_000): BackendDb {
     studioPosts: createStudioPostStore(db),
     conversationSessions: createConversationSessionStore(db),
     studioQueue: createStudioQueueStore(db),
+    actionableIssues: createActionableIssueStore(db),
     studioVideos: createStudioVideoStore(db),
     storyCards: {
       queue: (draftId) => queueDraftStoryCards(db, draftId),

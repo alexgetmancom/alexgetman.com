@@ -1,5 +1,6 @@
 import type { TargetId } from "../../botTargets.js";
 import { type ConnectPlatform, startConnect } from "../../channels/connect.js";
+import { isPublishableVideoPlatform } from "../../channels/destinations.js";
 import { type MetaOauthPlatform, metaOauthConnectPath, metaOauthConnectUrl } from "../../channels/meta-oauth.js";
 import { type ChannelInput, listChannels, registerChannel, registerTargetChannel } from "../../channels/registry.js";
 import { xOauthConnectPath, xOauthConnectUrl } from "../../channels/x-oauth.js";
@@ -12,37 +13,67 @@ import { trackUsageAsync, trackUsageSync } from "../../observability/usage.js";
 
 export type StudioZernioAccount = ZernioAccount;
 
+/** What a channel looks like to every surface that shows one. */
+export type ChannelReport = {
+  id: string;
+  platform: string;
+  locale: string;
+  provider: string;
+  providerAccountId: string | null;
+  label: string;
+  enabled: boolean;
+  source: string;
+  publishable: boolean;
+  status: "ready" | "missing" | "disabled";
+  missing: string[];
+};
+
 /** Channel administration shared by Studio interfaces.
  *
  * Telegram renders the connection wizard, but it no longer owns channel
- * persistence, credential validation or provider discovery. This keeps those
- * operations available to Web Studio and MCP without copying the wizard's DB
- * logic into another adapter.
+ * persistence, credential validation or provider discovery. Operations drives
+ * the same service: two implementations of report/connect/disable is two
+ * answers to "is this channel connected", and only one of them can be right.
  */
 export function channelService(backendDb: BackendDb, config: BackendConfig, fetchImpl: typeof fetch = fetch) {
   return {
     list(enabledOnly = true) {
       return trackUsageSync(backendDb, "studio.channel.list", () => listChannels(backendDb, enabledOnly));
     },
-    report(enabledOnly = true) {
+    /** Credentials are only ever reported by name: an operator must be able to
+     * see what a channel is missing without the report printing what it has. */
+    report(enabledOnly = true): ChannelReport[] {
       return trackUsageSync(backendDb, "studio.channel.list", () => {
         const readiness = channelReadiness(config, backendDb);
         return listChannels(backendDb, enabledOnly).map((channel) => {
           const state = readiness.get(channel.targetId ?? channel.id);
-          return { ...channel, status: channel.enabled === 0 ? "disabled" : (state?.status ?? "ready"), missing: state?.missing ?? [] };
+          return {
+            id: channel.id,
+            platform: channel.platform,
+            locale: channel.locale,
+            provider: channel.provider,
+            providerAccountId: channel.providerAccountId,
+            label: channel.label,
+            enabled: channel.enabled === 1,
+            source: channel.source,
+            // A text channel has no video target and is not expected to have one.
+            publishable: channel.targetId ? true : isPublishableVideoPlatform(channel.platform),
+            status: channel.enabled === 0 ? "disabled" : (state?.status ?? "ready"),
+            missing: state?.missing ?? [],
+          };
         });
       });
     },
-    connect(input: Omit<ChannelInput, "source">) {
-      return trackUsageSync(backendDb, "studio.channel.connect", () => registerChannel(backendDb, { ...input, source: "interface" }));
+    connect(input: Omit<ChannelInput, "source">, source = "interface") {
+      return trackUsageSync(backendDb, "studio.channel.connect", () => registerChannel(backendDb, { ...input, source }));
     },
-    connectTarget(targetId: TargetId, provider = "native", providerAccountId?: string, label?: string) {
+    connectTarget(targetId: TargetId, provider = "native", providerAccountId?: string, label?: string, source = "interface") {
       return trackUsageSync(backendDb, "studio.channel.connect", () =>
         registerTargetChannel(backendDb, targetId, {
           provider,
           ...(providerAccountId ? { providerAccountId } : {}),
           ...(label ? { label } : {}),
-          source: "interface",
+          source,
         }),
       );
     },

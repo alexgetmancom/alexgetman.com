@@ -128,7 +128,7 @@ export function commandCenterPayload(config: BackendConfig, backendDb: BackendDb
 }
 
 export type CommandCenterAttention = {
-  hasFailedJob: boolean;
+  hasActionableIssue: boolean;
   hasCredentialIssue: boolean;
   hasMetricIssue: boolean;
 };
@@ -136,7 +136,9 @@ export type CommandCenterAttention = {
 /** Small overview-only projection. Full queue and diagnostic rows stay behind their panels. */
 export function commandCenterAttention(config: BackendConfig, backendDb: BackendDb): CommandCenterAttention {
   const sqlite = unsafeDb(backendDb).sqlite;
-  const failedJob = Boolean(sqlite.prepare("SELECT 1 FROM publish_jobs WHERE status = 'failed' LIMIT 1").get());
+  // Not `publish_jobs.status = 'failed'`: that missed an unverified publication,
+  // a terminal site failure, a Story card and every video.
+  const actionableIssue = backendDb.actionableIssues.list().length > 0;
   const activeCapabilityTargets = new Set(capabilityReport(config, backendDb).map((capability) => capability.target));
   const targets = [...activeCapabilityTargets];
   const credentialIssue = targets.length
@@ -152,7 +154,7 @@ export function commandCenterAttention(config: BackendConfig, backendDb: Backend
       )
     : false;
   const metricIssue = Boolean(sqlite.prepare("SELECT 1 FROM post_metrics WHERE error IS NOT NULL AND error <> '' LIMIT 1").get());
-  return { hasFailedJob: failedJob, hasCredentialIssue: credentialIssue, hasMetricIssue: metricIssue };
+  return { hasActionableIssue: actionableIssue, hasCredentialIssue: credentialIssue, hasMetricIssue: metricIssue };
 }
 
 type CommandCenterFingerprint = {

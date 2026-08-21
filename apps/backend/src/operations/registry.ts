@@ -8,7 +8,6 @@ import { publicationRef } from "../application/publication-ref.js";
 import { targetIdsFor } from "../botTargets.js";
 import { API_KEY_TARGETS, storeApiKey } from "../channels/api-keys.js";
 import { CONNECT_PLATFORMS, type ConnectStart, startConnect } from "../channels/connect.js";
-import { registerTargetChannel } from "../channels/registry.js";
 import type { BackendDb } from "../db/client.js";
 import { recordDomainEvent } from "../domain/events.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -21,7 +20,6 @@ import { retryVideoTarget } from "../publishing/video-service.js";
 import { settleVideoTarget } from "../publishing/video-settle.js";
 import type { VideoTarget } from "../publishing/video-types.js";
 import { createStudioServices } from "../studio/services/index.js";
-import { channelReport, connectChannel, disableChannel } from "./channels.js";
 import { replacePublishedMedia } from "./commands/media-replacement.js";
 import { runOperationCommand } from "./commands.js";
 import { doctorChecks } from "./doctor.js";
@@ -312,7 +310,7 @@ const operationDefs = {
     schema: z.object({}),
     mutates: false,
     agent: true,
-    handler: (context) => channelReport(context.config(), context.db()),
+    handler: (context) => createStudioServices(context.db(), context.config()).channels.report(false),
   }),
   "format-support": operation({
     summary: "Which media formats each target is proven to carry, and what proved it.",
@@ -694,30 +692,24 @@ const operationDefs = {
       // The target is the whole identity of a text or story route. Deriving
       // both from it removes the combination that stores one platform under
       // another one's id.
+      const channels = createStudioServices(context.db(), context.config()).channels;
       if (input.target)
-        return {
-          id: registerTargetChannel(context.db(), input.target, {
-            provider: input.provider,
-            ...(input.account_id ? { providerAccountId: input.account_id } : {}),
-            ...(input.label ? { label: input.label } : {}),
-            source: context.actorType,
-          }).id,
-        };
+        return { id: channels.connectTarget(input.target, input.provider, input.account_id, input.label, context.actorType).id };
       const platform = input.platform;
       const locale = input.locale;
       if (!platform || !locale) throw new Error("channel-connect needs --target, or --platform with --locale");
-      return connectChannel(
-        context.db(),
-        {
-          platform,
-          locale,
-          provider: input.provider,
-          ...(input.target ? { targetId: input.target } : {}),
-          ...(input.account_id ? { providerAccountId: input.account_id } : {}),
-          ...(input.label ? { label: input.label } : {}),
-        },
-        context.actorType,
-      );
+      return {
+        id: channels.connect(
+          {
+            platform,
+            locale,
+            provider: input.provider,
+            ...(input.account_id ? { providerAccountId: input.account_id } : {}),
+            ...(input.label ? { label: input.label } : {}),
+          },
+          context.actorType,
+        ).id,
+      };
     },
   }),
   "connect-link": operation({
@@ -742,7 +734,10 @@ const operationDefs = {
     }),
     mutates: true,
     agent: true,
-    handler: (context, input) => disableChannel(context.db(), input.channel),
+    handler: (context, input) => ({
+      id: createStudioServices(context.db(), context.config()).channels.disable(input.channel).id,
+      disabled: true,
+    }),
   }),
   "credential-set": operation({
     summary: "Store an API key this Studio is handed rather than negotiates.",
