@@ -102,7 +102,9 @@ esac
       expect(state.current.image).toBe(oldImage);
       expect(state.lastFailure.message).toContain("invalid production config");
       expect(state.lastFailure.message).toContain("CONTROLLER_ADMIN_IDS is required");
-      expect(await Bun.file(commandLog).text()).toContain("run --rm --no-deps --entrypoint bun backend /app/entrypoint/config-check.js");
+      const commands = await Bun.file(commandLog).text();
+      expect(commands).toContain("run --rm --no-deps --entrypoint bun backend /app/entrypoint/config-check.js");
+      expect(commands).toContain("rm -f backend");
       expect(notifications.at(-1)?.text).toContain("CONTROLLER_ADMIN_IDS is required");
     } finally {
       agent.kill();
