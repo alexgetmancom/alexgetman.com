@@ -20,8 +20,12 @@ services:
     volumes:
       - ${BOT_API_DATA_DIR_HOST:-/home/deploy/bot-api/data}:/var/lib/telegram-bot-api
       - ${BOT_API_TEMP_DIR_HOST:-/home/deploy/bot-api/temp}:/tmp/telegram-bot-api
-    expose:
-      - "8081"
+    # The Studios reach it over the shared network, but the deploy agent is a
+    # host service and reaches it here: without this its Telegram notifications
+    # — including the button that promotes a release to the second Studio —
+    # fail silently against a closed port.
+    ports:
+      - "127.0.0.1:8081:8081"
     networks:
       - agent_default
 
