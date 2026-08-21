@@ -88,7 +88,13 @@ export async function deployRelease(inputs: DeployInputs, run: Runner, log: (mes
   });
   await ssh(`install -d -m 0700 ${STATE_DIR}`);
   await ssh(`umask 077; cat > ${STATE_DIR}/media-processor-release.json`, new TextEncoder().encode(`${mediaRelease}\n`));
-  await ssh(`install -d -m 0700 '${releaseFiles}'`);
+  // Scratch for this release only, removed again once the deployment is green.
+  // A run that fails after this point never reaches that removal, so the whole
+  // tree is pruned on the way in rather than only on the way out: eleven
+  // directories from failed runs had collected here before it was. Deployments
+  // are serialized by the `production-deploy` concurrency group, so no other
+  // run owns a directory under it.
+  await ssh(`rm -rf ${RUNTIME}/release-files; install -d -m 0700 '${releaseFiles}'`);
 
   const paths = [...ALWAYS_SHIPPED];
   if (inputs.deployAgentChanged) paths.push("deploy/deploy-agent.ts", "deploy/retry.ts");

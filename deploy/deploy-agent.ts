@@ -43,7 +43,9 @@ const config = {
   port: Number(Bun.env.DEPLOY_AGENT_PORT ?? "9899"),
   token: required("DEPLOY_AGENT_TOKEN"),
   repository: Bun.env.DEPLOY_IMAGE_REPOSITORY ?? "ghcr.io/alexgetmancom/solo-publisher",
-  defaultTarget: Bun.env.DEPLOY_DEFAULT_TARGET ?? "alex",
+  /** The Studio CI deploys directly; every other target is promoted from its
+   * notification, so this one carries the rollback and promotion buttons. */
+  defaultTarget: "alex",
   notificationToken: Bun.env.DEPLOY_NOTIFICATION_BOT_TOKEN ?? Bun.env.CONTROLLER_BOT_TOKEN,
   notificationChatId: Bun.env.DEPLOY_NOTIFICATION_CHAT_ID,
   notificationApiBaseUrl: Bun.env.DEPLOY_NOTIFICATION_API_BASE_URL ?? "http://127.0.0.1:8081",
@@ -86,23 +88,7 @@ function revision(value: unknown): value is string {
 }
 
 function deploymentTargets(): Map<string, DeploymentTarget> {
-  const configured = Bun.env.DEPLOY_TARGETS_JSON?.trim();
-  if (!configured) {
-    const target: DeploymentTarget = {
-      kind: "compose",
-      name: config.defaultTarget,
-      composeFile: required("DEPLOY_COMPOSE_FILE"),
-      imageEnvFile: required("DEPLOY_IMAGE_ENV_FILE"),
-      stateFile: Bun.env.DEPLOY_STATE_FILE ?? "/var/lib/alexgetman-deploy/state.json",
-      healthUrl: Bun.env.DEPLOY_HEALTH_URL ?? "http://127.0.0.1:8788/readyz",
-      container: Bun.env.DEPLOY_CONTAINER_NAME ?? "alexgetman-backend",
-      service: Bun.env.DEPLOY_SERVICE_NAME ?? "backend",
-      imageEnvKey: Bun.env.DEPLOY_IMAGE_ENV_KEY ?? "BACKEND_IMAGE",
-      allowInitialSeed: Bun.env.DEPLOY_ALLOW_INITIAL_SEED === "true",
-    };
-    return new Map([[target.name, target]]);
-  }
-  const parsed = JSON.parse(configured) as Record<string, Record<string, unknown>>;
+  const parsed = JSON.parse(required("DEPLOY_TARGETS_JSON")) as Record<string, Record<string, unknown>>;
   const targets = new Map<string, DeploymentTarget>();
   const text = (value: Record<string, unknown>, key: string): string | undefined => {
     const found = value[key];
@@ -391,7 +377,7 @@ async function deploy(deploymentTarget: DeploymentTarget, image: string, release
     // the env file. That is not a deployed rollback release.
     if (deploymentTarget.allowInitialSeed && !previousState.current) previousImage = await runningContainerImage(deploymentTarget);
     if (!previousImage && !deploymentTarget.allowInitialSeed)
-      throw new HttpError(409, "Current release is not an immutable GHCR digest; seed DEPLOY_IMAGE_ENV_FILE before deploying.");
+      throw new HttpError(409, "Current release is not an immutable GHCR digest; seed the target's imageEnvFile before deploying.");
     const previous: Release | undefined = previousImage
       ? (previousState.current ?? {
           image: previousImage,

@@ -71,7 +71,21 @@ describe("production deployment", () => {
     expect(at("compose.yaml.next")).toBeLessThan(at("/v1/deploy"));
     expect(at("/v1/deploy")).toBeLessThan(at("readyz"));
     expect(at("readyz")).toBeLessThan(at(`test "$image" = '${inputs.image}'`));
-    expect(at(`test "$image" = '${inputs.image}'`)).toBeLessThan(at("rm -rf"));
+    expect(at(`test "$image" = '${inputs.image}'`)).toBeLessThan(
+      at(`rm -rf '/home/deploy/alexgetman-runtime/release-files/${inputs.release}'`),
+    );
+  });
+
+  it("clears earlier release files before it extracts its own", async () => {
+    // The per-release directory is removed at the end of a green run, which a
+    // failed run never reaches. Pruning the tree on the way in is what keeps
+    // the host from collecting a directory per failed deployment for good.
+    const { run, scripts } = recorder();
+    await deployRelease(inputs, run, () => {});
+
+    const at = (needle: string) => scripts().findIndex((script) => script.includes(needle));
+    expect(at("rm -rf /home/deploy/alexgetman-runtime/release-files;")).toBeGreaterThanOrEqual(0);
+    expect(at("rm -rf /home/deploy/alexgetman-runtime/release-files;")).toBeLessThan(at("tar -cf -"));
   });
 
   it("leaves the proxy and the agent alone unless they changed", async () => {
