@@ -10,6 +10,7 @@ import {
   prepareInstagramReel,
   prepareYouTubeVideo,
   publishInstagramReel,
+  verifyYouTubeVideo,
 } from "../src/delivery/video-publishers.js";
 import { classifyPublishError, retryAfterSecondsFromError } from "../src/publishing/errors.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
@@ -270,6 +271,19 @@ describe("keepYouTubeUploadPrivate", () => {
       "YouTube upload was not found while cancelling its schedule.",
     );
     expect(recorded.some((call) => call.method === "PUT")).toBe(false);
+  });
+});
+
+describe("verifyYouTubeVideo", () => {
+  it("returns YouTube's privacy status instead of treating existence as publication", async () => {
+    install(() => json({ items: [{ id: "vid-1", status: { privacyStatus: "private" } }] }));
+
+    await expect(verifyYouTubeVideo(config, "vid-1")).resolves.toEqual({
+      id: "vid-1",
+      url: "https://www.youtube.com/watch?v=vid-1",
+      privacyStatus: "private",
+    });
+    expect(recorded.at(-1)?.url).toContain("part=id,status");
   });
 });
 

@@ -236,8 +236,9 @@ export async function runPublicationReconciliation(
         const verified = await verifyZernioPost(config, row.target.providerPostId, "instagram", fetchImpl);
         confirmation = { externalId: verified.externalId, url: verified.url };
       } else if (row.target.target === "youtube_shorts" && row.target.externalId) {
-        const verified = await verifyYouTubeVideo(config, row.target.externalId, locale);
-        confirmation = { externalId: verified.id, url: verified.url };
+        const verified = await verifyYouTubeVideo(config, row.target.externalId, locale, fetchImpl);
+        if (row.job.kind === "prepare" || verified.privacyStatus === "public")
+          confirmation = { externalId: verified.id, url: verified.url };
       }
     } catch (error) {
       if (classifyPublishError(error) === "auth") recordAuthFailure(backendDb, credentialTarget);
@@ -250,8 +251,9 @@ export async function runPublicationReconciliation(
     }
     recordAuthSuccess(backendDb, credentialTarget);
     const now = new Date().toISOString();
+    const prepared = row.job.kind === "prepare";
     // Same order as the social case above: win the job's fence first, and only
-    // then say the target is published.
+    // then apply the target state this job actually established.
     const confirmedVideo = unsafeDb(backendDb).db.transaction((tx) => {
       const won = tx
         .update(videoJobs)
@@ -268,13 +270,13 @@ export async function runPublicationReconciliation(
       if (!won) return false;
       tx.update(videoTargets)
         .set({
-          status: "published",
+          status: prepared ? "prepared" : "published",
           externalId: confirmation?.externalId ?? row.target.externalId,
           externalUrl: confirmation?.url ?? row.target.externalUrl,
           lastError: null,
-          publishedAt: row.target.publishedAt ?? now,
+          publishedAt: prepared ? row.target.publishedAt : (row.target.publishedAt ?? now),
           confirmationSource: "provider_verify",
-          verifiedAt: now,
+          verifiedAt: prepared ? row.target.verifiedAt : now,
           updatedAt: now,
         })
         .where(and(eq(videoTargets.id, row.target.id), eq(videoTargets.status, "verification_required")))

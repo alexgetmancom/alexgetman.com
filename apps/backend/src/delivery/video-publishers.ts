@@ -10,7 +10,7 @@ import { absentIfMissing } from "./platform-absence.js";
 import { verifyZernioPost } from "./zernio.js";
 
 type YouTubeVideo = { id: string };
-type YouTubeVideoList = { items?: Array<{ id?: string }> };
+type YouTubeVideoList = { items?: Array<{ id?: string; status?: { privacyStatus?: string } }> };
 const VIDEO_UPLOAD_TIMEOUT_MS = 30 * 60_000;
 
 /** Every mutable field of `videos.status` this project ever sets. `videos.update`
@@ -164,15 +164,17 @@ export async function verifyYouTubeVideo(
   config: BackendConfig,
   videoId: string,
   locale: VideoLocale = "ru",
-): Promise<{ id: string; url: string }> {
-  const token = await youtubeAccessToken(config, fetch, locale);
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ id: string; url: string; privacyStatus: string | null }> {
+  const token = await youtubeAccessToken(config, fetchImpl, locale);
   const response = await requestJson<YouTubeVideoList>(
-    fetch,
-    `https://www.googleapis.com/youtube/v3/videos?part=id&id=${encodeURIComponent(videoId)}`,
+    fetchImpl,
+    `https://www.googleapis.com/youtube/v3/videos?part=id,status&id=${encodeURIComponent(videoId)}`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
-  if (response.items?.[0]?.id !== videoId) throw new Error("YouTube verification did not find the expected video");
-  return { id: videoId, url: `https://www.youtube.com/watch?v=${videoId}` };
+  const video = response.items?.[0];
+  if (video?.id !== videoId) throw new Error("YouTube verification did not find the expected video");
+  return { id: videoId, url: `https://www.youtube.com/watch?v=${videoId}`, privacyStatus: video.status?.privacyStatus ?? null };
 }
 
 /** Whether the platform still has a published video, asked of the platform
@@ -191,7 +193,8 @@ export async function videoTargetIsAbsent(
     return absentIfMissing(() => verifyZernioPost(config, target.providerPostId as string, "instagram"));
   }
   if (!target.externalId) throw new Error(`cannot ask ${target.target} about a target with no external id`);
-  if (target.target === "youtube_shorts") return absentIfMissing(() => verifyYouTubeVideo(config, target.externalId as string, locale));
+  if (target.target === "youtube_shorts")
+    return absentIfMissing(() => verifyYouTubeVideo(config, target.externalId as string, locale, fetchImpl));
   const { accessToken } = instagramCredentialsForLocale(config, locale);
   if (!accessToken) throw new Error("Instagram credentials are missing");
   return absentIfMissing(() =>

@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, exists, isNull, lte, or, sql } from "drizzle-orm";
 import { publicationRef } from "../application/publication-ref.js";
 import { videoChannelIdentity } from "../channels/destinations.js";
 import { videoPublicUrl, videoSourcePath } from "../content/video-assets.js";
@@ -65,7 +65,7 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
     }
     try {
       await trackUsageAsync(backendDb, "publishing.video.job", async () => {
-        await withJobHeartbeat(
+        const settled = await withJobHeartbeat(
           VIDEO_HEARTBEAT_INTERVAL_SECONDS,
           () => {
             try {
@@ -76,7 +76,7 @@ export async function runVideoCycle(config: BackendConfig, backendDb: BackendDb)
           },
           () => executeVideoJob(config, backendDb, job),
         );
-        if (completeVideoJob(backendDb, job)) {
+        if (settled || completeVideoJob(backendDb, job)) {
           if (credentialTarget) recordAuthSuccess(backendDb, credentialTarget);
           recordVideoProgressEvent(backendDb, job, "video.job.completed");
           recordVideoCompletionIfFinal(backendDb, job.videoDraftId);
@@ -188,7 +188,14 @@ function claimVideoJobs(backendDb: BackendDb, limit: number): VideoJob[] {
           lockedAt: now,
           updatedAt: now,
         })
-        .where(and(eq(videoJobs.id, job.id), eq(videoJobs.status, "queued")))
+        .where(
+          and(
+            eq(videoJobs.id, job.id),
+            eq(videoJobs.status, "queued"),
+            lte(videoJobs.runAt, now),
+            or(isNull(videoJobs.nextAttemptAt), lte(videoJobs.nextAttemptAt, now)),
+          ),
+        )
         .returning()
         .get();
       if (updated) claimed.push(updated);
@@ -197,26 +204,29 @@ function claimVideoJobs(backendDb: BackendDb, limit: number): VideoJob[] {
   return claimed;
 }
 
-async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job: VideoJob): Promise<void> {
+async function executeVideoJob(config: BackendConfig, backendDb: BackendDb, job: VideoJob): Promise<boolean> {
   if (!job.videoTargetId) throw new Error("Video platform job has no target.");
   const target = unsafeDb(backendDb).db.select().from(videoTargets).where(eq(videoTargets.id, job.videoTargetId)).get();
   const draft = getVideoDraft(backendDb, job.videoDraftId);
-  if (!target || target.status === "cancelled" || target.status === "published") return;
+  if (!target || target.status === "cancelled" || target.status === "published") return false;
   const filePath = videoSourcePath(backendDb, draft);
   if (!filePath) throw new Error("Video source was removed before publication completed.");
   const metadata = target.metadataJson as VideoMetadata;
   const locale = draft.locale === "en" ? "en" : "ru";
   const instagramCredentials = instagramCredentialsForLocale(config, locale);
   if (job.kind === "prepare") {
-    if (target.target === "youtube_shorts") await prepareYouTube(config, backendDb, job, target, draft, filePath, locale);
-    else if (target.deliveryProvider === "zernio") prepareZernio(backendDb, target);
-    else await prepareInstagram(config, backendDb, job, target, draft, metadata, instagramCredentials);
-    return;
+    if (target.target === "youtube_shorts") return prepareYouTube(config, backendDb, job, target, draft, filePath, locale);
+    if (target.deliveryProvider === "zernio") return prepareZernio(backendDb, job, target);
+    return prepareInstagram(config, backendDb, job, target, draft, metadata, instagramCredentials);
   }
-  if (target.target === "youtube_shorts") publishYouTube(backendDb, job, target);
-  else if (target.deliveryProvider === "zernio") await publishZernio(config, backendDb, job, target, draft, metadata);
-  else await publishInstagram(config, backendDb, job, target, instagramCredentials);
-  refreshVideoDraftStatus(backendDb, draft.id, config.VIDEO_MEDIA_RETENTION_HOURS);
+  const settled =
+    target.target === "youtube_shorts"
+      ? publishYouTube(backendDb, job, target)
+      : target.deliveryProvider === "zernio"
+        ? await publishZernio(config, backendDb, job, target, draft, metadata)
+        : await publishInstagram(config, backendDb, job, target, instagramCredentials);
+  if (settled) refreshVideoDraftStatus(backendDb, draft.id, config.VIDEO_MEDIA_RETENTION_HOURS);
+  return settled;
 }
 
 type VideoTarget = typeof videoTargets.$inferSelect;
@@ -231,7 +241,7 @@ async function prepareYouTube(
   draft: VideoDraft,
   filePath: string,
   locale: "en" | "ru",
-): Promise<void> {
+): Promise<boolean> {
   const metadata = target.metadataJson as YouTubeMetadata;
   const result = await prepareYouTubeVideo(
     config,
@@ -240,7 +250,14 @@ async function prepareYouTube(
     target.scheduledAt ?? new Date().toISOString(),
     locale,
   );
-  if (!ownsVideoJob(backendDb, job)) {
+  const settled = settleVideoTargetJob(backendDb, job, target.id, {
+    status: "prepared",
+    externalId: result.id,
+    externalUrl: result.url,
+    preparedAt: new Date().toISOString(),
+    confirmationSource: "publish_response",
+  });
+  if (!settled) {
     // Cancellation can happen while the resumable upload is in flight. The
     // ID exists only in this response, so fence its future public release
     // before discarding it from local state.
@@ -256,22 +273,16 @@ async function prepareYouTube(
         details: { videoDraftId: job.videoDraftId, videoId: result.id, error: error instanceof Error ? error.message : String(error) },
       });
     }
-    return;
+    return false;
   }
-  updateVideoTarget(unsafeDb(backendDb).db, target.id, {
-    status: "prepared",
-    externalId: result.id,
-    externalUrl: result.url,
-    preparedAt: new Date().toISOString(),
-    confirmationSource: "publish_response",
-  });
+  return true;
 }
 
-function prepareZernio(backendDb: BackendDb, target: VideoTarget): void {
+function prepareZernio(backendDb: BackendDb, job: VideoJob, target: VideoTarget): boolean {
   // Zernio accepts the public video at its publish time, so prepare is a
   // local checkpoint only. Publishing early would violate the schedule.
   if (!target.providerAccountId) throw new Error("Zernio Instagram account is missing");
-  updateVideoTarget(unsafeDb(backendDb).db, target.id, { status: "prepared", preparedAt: new Date().toISOString() });
+  return settleVideoTargetJob(backendDb, job, target.id, { status: "prepared", preparedAt: new Date().toISOString() });
 }
 
 async function prepareInstagram(
@@ -282,20 +293,18 @@ async function prepareInstagram(
   draft: VideoDraft,
   metadata: VideoMetadata,
   credentials: InstagramCredentials,
-): Promise<void> {
+): Promise<boolean> {
   const result = await prepareInstagramReel(config, credentials, videoPublicUrl(backendDb, config, draft), metadata as InstagramMetadata);
-  if (!ownsVideoJob(backendDb, job)) return;
-  updateVideoTarget(unsafeDb(backendDb).db, target.id, {
+  return settleVideoTargetJob(backendDb, job, target.id, {
     status: "prepared",
     externalId: result.id,
     preparedAt: new Date().toISOString(),
   });
 }
 
-function publishYouTube(backendDb: BackendDb, job: VideoJob, target: VideoTarget): void {
+function publishYouTube(backendDb: BackendDb, job: VideoJob, target: VideoTarget): boolean {
   if (!target.externalId) throw new Error("YouTube upload has not completed yet.");
-  if (!ownsVideoJob(backendDb, job)) return;
-  updateVideoTarget(unsafeDb(backendDb).db, target.id, {
+  return settleVideoTargetJob(backendDb, job, target.id, {
     status: "published",
     publishedAt: new Date().toISOString(),
     confirmationSource: target.confirmationSource ?? "publish_response",
@@ -309,7 +318,7 @@ async function publishZernio(
   target: VideoTarget,
   draft: VideoDraft,
   metadata: VideoMetadata,
-): Promise<void> {
+): Promise<boolean> {
   const accountId = target.providerAccountId;
   if (!accountId) throw new Error("Zernio Instagram account is missing");
   const result = await publishZernioInstagramReel(config, {
@@ -318,17 +327,17 @@ async function publishZernio(
     metadata: metadata as InstagramMetadata,
     requestId: zernioPublishFence(job),
   });
-  if (!ownsVideoJob(backendDb, job)) return;
+  if (!ownsVideoJob(backendDb, job)) return false;
   // The provider takes a publication before the platform does, so a response
   // with no platform link is not a published Reel — it is one nobody has
   // confirmed. Recording it as published is how a card showed a live post the
   // account did not have, and it left the row outside the reconciliation
   // sweep, which is the only thing that could have filled the link in later.
   if (!result.externalId && !result.url) {
-    updateVideoTarget(unsafeDb(backendDb).db, target.id, { providerPostId: result.providerPostId });
+    if (!updateActiveVideoTarget(backendDb, job, target.id, { providerPostId: result.providerPostId })) return false;
     throw new AmbiguousPublicationError("zernio", new Error("the provider accepted the publication and the platform has not confirmed it"));
   }
-  updateVideoTarget(unsafeDb(backendDb).db, target.id, {
+  return settleVideoTargetJob(backendDb, job, target.id, {
     status: "published",
     providerPostId: result.providerPostId,
     externalId: result.externalId,
@@ -345,12 +354,12 @@ async function publishInstagram(
   job: VideoJob,
   target: VideoTarget,
   credentials: InstagramCredentials,
-): Promise<void> {
+): Promise<boolean> {
   if (!target.externalId) throw new Error("Instagram upload has not completed yet.");
   await instagramContainerReady(config, credentials, target.externalId);
-  if (!ownsVideoJob(backendDb, job)) return;
+  if (!ownsVideoJob(backendDb, job)) return false;
   const result = await publishInstagramReel(config, credentials, target.externalId);
-  if (!ownsVideoJob(backendDb, job)) return;
+  if (!ownsVideoJob(backendDb, job)) return false;
   let externalUrl = result.url;
   let verifiedAt: string | null = null;
   try {
@@ -360,7 +369,7 @@ async function publishInstagram(
     // The publish response already returned the media ID. Verification
     // failure is diagnostic and must not replay media_publish.
   }
-  updateVideoTarget(unsafeDb(backendDb).db, target.id, {
+  return settleVideoTargetJob(backendDb, job, target.id, {
     status: "published",
     externalId: result.id,
     externalUrl,
@@ -368,6 +377,47 @@ async function publishInstagram(
     confirmationSource: verifiedAt ? "provider_verify" : "publish_response",
     verifiedAt,
   });
+}
+
+function settleVideoTargetJob(
+  backendDb: BackendDb,
+  job: VideoJob,
+  targetId: number,
+  patch: Partial<typeof videoTargets.$inferInsert>,
+): boolean {
+  return unsafeDb(backendDb).db.transaction((tx) => {
+    const completed = tx
+      .update(videoJobs)
+      .set({
+        status: "completed",
+        lockedAt: null,
+        lockedBy: null,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(activeVideoJob(job))
+      .returning({ id: videoJobs.id })
+      .get();
+    if (!completed) return false;
+    updateVideoTarget(tx, targetId, patch);
+    return true;
+  });
+}
+
+function updateActiveVideoTarget(
+  backendDb: BackendDb,
+  job: VideoJob,
+  targetId: number,
+  patch: Partial<typeof videoTargets.$inferInsert>,
+): boolean {
+  const db = unsafeDb(backendDb).db;
+  return (
+    db
+      .update(videoTargets)
+      .set({ ...patch, updatedAt: new Date().toISOString() })
+      .where(and(eq(videoTargets.id, targetId), exists(db.select({ id: videoJobs.id }).from(videoJobs).where(activeVideoJob(job)))))
+      .returning({ id: videoTargets.id })
+      .get() != null
+  );
 }
 
 function recordVideoProgressEvent(backendDb: BackendDb, job: VideoJob, type: string): void {

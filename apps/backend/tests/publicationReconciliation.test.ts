@@ -10,12 +10,16 @@ import {
   publicationTargets,
   publishJobs,
   siteJobs,
+  videoJobs,
+  videoTargets,
 } from "../src/db/schema.js";
 import { RECONCILE_MAX_ATTEMPTS, runPublicationReconciliation } from "../src/delivery/publication-reconciliation.js";
 import { refreshPublicationStatus } from "../src/publishing/publication-status.js";
 import { enqueuePublishJobTx } from "../src/publishing/queue.js";
+import { replaceVideoTargets } from "../src/publishing/video-service.js";
 import { withDb } from "./helpers/db.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
+import { createTestVideoDraft } from "./helpers/video.js";
 
 describe("publication reconciliation", () => {
   it("emits one completion event for an earlier locale while a later locale waits", () =>
@@ -435,8 +439,103 @@ describe("publication reconciliation", () => {
           .all(),
       ).toHaveLength(1);
     }));
+
+  it("restores a recovered YouTube prepare as prepared instead of calling its private upload published", () =>
+    withDb(
+      async (backendDb) => {
+        const { draftId, targetId } = ambiguousYouTubeVideo(backendDb, "prepare");
+
+        expect(await runPublicationReconciliation(backendDb, youtubeConfig(), youtubeFetch("private"))).toMatchObject({
+          checked: 1,
+          resolved: 1,
+        });
+        expect(backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, targetId)).get()).toMatchObject({
+          status: "prepared",
+          externalId: "yt-private",
+          publishedAt: null,
+        });
+        expect(backendDb.db.select().from(videoJobs).where(eq(videoJobs.videoDraftId, draftId)).get()?.status).toBe("completed");
+      },
+      ["youtube_ru"],
+    ));
+
+  it("keeps a recovered YouTube publish unresolved while the upload is still private", () =>
+    withDb(
+      async (backendDb) => {
+        const { targetId } = ambiguousYouTubeVideo(backendDb, "publish");
+
+        expect(await runPublicationReconciliation(backendDb, youtubeConfig(), youtubeFetch("private"))).toMatchObject({
+          checked: 1,
+          resolved: 0,
+          unresolved: 1,
+        });
+        expect(backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, targetId)).get()?.status).toBe("verification_required");
+      },
+      ["youtube_ru"],
+    ));
+
+  it("confirms a recovered YouTube publish only after YouTube reports it public", () =>
+    withDb(
+      async (backendDb) => {
+        const { targetId } = ambiguousYouTubeVideo(backendDb, "publish");
+
+        expect(await runPublicationReconciliation(backendDb, youtubeConfig(), youtubeFetch("public"))).toMatchObject({
+          checked: 1,
+          resolved: 1,
+        });
+        expect(backendDb.db.select().from(videoTargets).where(eq(videoTargets.id, targetId)).get()).toMatchObject({
+          status: "published",
+          confirmationSource: "provider_verify",
+        });
+      },
+      ["youtube_ru"],
+    ));
 });
 
 function completionEvents(backendDb: Parameters<Parameters<typeof withDb>[0]>[0]) {
   return backendDb.db.select().from(publicationEvents).where(eq(publicationEvents.eventType, "delivery.post.completed")).all();
+}
+
+function ambiguousYouTubeVideo(
+  backendDb: Parameters<Parameters<typeof withDb>[0]>[0],
+  kind: "prepare" | "publish",
+): { draftId: number; targetId: number } {
+  const now = new Date().toISOString();
+  const draftId = createTestVideoDraft(backendDb, 42, "/tmp/recovered-youtube.mp4", 24);
+  replaceVideoTargets(backendDb, draftId, ["youtube_shorts"]);
+  const target = backendDb.db.select().from(videoTargets).where(eq(videoTargets.videoDraftId, draftId)).get();
+  if (!target) throw new Error("YouTube target was not created");
+  backendDb.db
+    .update(videoTargets)
+    .set({ status: "verification_required", externalId: "yt-private", externalUrl: "https://www.youtube.com/watch?v=yt-private" })
+    .where(eq(videoTargets.id, target.id))
+    .run();
+  backendDb.db
+    .insert(videoJobs)
+    .values({
+      videoDraftId: draftId,
+      videoTargetId: target.id,
+      kind,
+      status: "verification_required",
+      runAt: now,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+  return { draftId, targetId: target.id };
+}
+
+function youtubeConfig() {
+  return loadTestConfig({
+    YOUTUBE_RU_CLIENT_ID: "client",
+    YOUTUBE_RU_CLIENT_SECRET: "secret",
+    YOUTUBE_RU_REFRESH_TOKEN: "refresh",
+  });
+}
+
+function youtubeFetch(privacyStatus: "private" | "public"): typeof fetch {
+  return (async (input: string | URL | Request) =>
+    String(input).includes("oauth2.googleapis.com/token")
+      ? new Response(JSON.stringify({ access_token: "token" }), { status: 200 })
+      : new Response(JSON.stringify({ items: [{ id: "yt-private", status: { privacyStatus } }] }), { status: 200 })) as typeof fetch;
 }
