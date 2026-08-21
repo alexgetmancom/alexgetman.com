@@ -33,3 +33,9 @@ export function videoDestination(
 ): VideoDestination | null {
   return catalogue.find((entry) => entry.target === target && entry.locale === locale) ?? null;
 }
+
+/** Above this a vertical clip is almost always a bad cut, not an intent: the
+ * Shorts and Reels published here run well under it, and the ones that ran over
+ * were personal footage the trim had missed. The platforms accept longer video,
+ * so this is asked about and never refused. */
+export const VIDEO_LENGTH_WARNING_SECONDS = 90;

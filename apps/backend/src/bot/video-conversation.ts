@@ -1,4 +1,4 @@
-import type { Context } from "grammy";
+import { type Context, InlineKeyboard } from "grammy";
 import { flowStepInput } from "../application/conversation-flow.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
@@ -6,12 +6,14 @@ import { StudioError } from "../foundation/errors.js";
 import { describeError, t } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
 import { storeTelegramVideo } from "../interfaces/telegram/video-ingress.js";
-import type { VideoTarget } from "../publishing/video-types.js";
+import { VIDEO_LENGTH_WARNING_SECONDS, type VideoTarget } from "../publishing/video-types.js";
 import type { StudioServices } from "../studio/services/index.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
 import { advanceVideoMetadata, isVideoWizardStep, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
+import { appendCancelButton } from "./dialog-ui.js";
 import type { PublicationEffect, PublicationMessageResult } from "./effects.js";
+import { publicationCallback } from "./publication-callback.js";
 import { advancePublicationFlow } from "./publication-flow.js";
 import { publicationCardEffect, publicationRenderers } from "./publication-renderers.js";
 import { applyVideoScheduleDate } from "./video-scheduling.js";
@@ -19,9 +21,11 @@ import {
   clearVideoState,
   connectedVideoTargets,
   getVideoState,
+  saveVideoState,
   targetKeyboard,
   type VideoConversationState,
   videoControlEffects,
+  videoDurationLabel,
   videoPromptEffect,
   videoStepEffects,
 } from "./video-ui.js";
@@ -103,8 +107,55 @@ async function acceptVideoAsset({ ctx, backendDb, config, actorId, session, serv
 
 /** Puts a stored video behind a fresh draft and advances the wizard past the
  * upload step. The intake reaches this with a file it already stored from a
- * button press; the conversation reaches it with the message it just read. */
+ * button press; the conversation reaches it with the message it just read.
+ *
+ * A clip over the length threshold stops here instead: the file is probed
+ * before a draft exists, so answering "no" to the question leaves nothing
+ * behind and the next upload starts clean. */
 export async function attachVideoAsset(
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  session: VideoConversationState,
+  assetId: number,
+  services: StudioServices = createStudioServices(backendDb, config),
+): Promise<PublicationEffect[]> {
+  const technical = await services.videos.assetTechnicalCheck(actorId, assetId);
+  if (technical.seconds > VIDEO_LENGTH_WARNING_SECONDS)
+    return videoLengthWarningEffects(backendDb, actorId, session, assetId, technical.seconds);
+  return startVideoDraft(backendDb, config, actorId, session, assetId, services);
+}
+
+/** Asks about a clip longer than the operator's own cuts ever are, keeping the
+ * session on the upload step: nothing is created until the question is answered
+ * and a shorter file sent instead is simply attached in its place. */
+function videoLengthWarningEffects(
+  backendDb: BackendDb,
+  actorId: number,
+  session: VideoConversationState,
+  assetId: number,
+  seconds: number,
+): PublicationEffect[] {
+  const locale = settingsService(backendDb).locale(actorId);
+  const saved = saveVideoState(backendDb, actorId, {
+    ...session,
+    draftId: null,
+    step: "asset",
+    selected: [],
+    data: { ...session.data, assetId },
+  });
+  const keyboard = new InlineKeyboard().text(
+    t(locale, "video.length-warning-yes"),
+    publicationCallback("video", "length_ok", [], saved.revision),
+  );
+  keyboard.row();
+  appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), saved.revision);
+  const text = t(locale, "video.length-warning", { dur: videoDurationLabel(seconds), limit: VIDEO_LENGTH_WARNING_SECONDS });
+  return [{ type: "prompt", text, options: { parse_mode: "Markdown", reply_markup: keyboard } }];
+}
+
+/** The upload the operator has settled on, behind a fresh draft. */
+export async function startVideoDraft(
   backendDb: BackendDb,
   config: BackendConfig,
   actorId: number,

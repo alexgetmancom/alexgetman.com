@@ -21,6 +21,7 @@ import {
   saveVideoMetadata,
   scheduleVideo,
   updateVideoLabel,
+  type VideoTechnicalCheck,
   validateVideoDraft,
   validateVideoSource,
 } from "../../publishing/video-service.js";
@@ -39,8 +40,7 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     capabilities: { hasMetadataWizard: true, hasStoryCards: false, scheduleAxis: "target" as const },
     create(actorId: number, studioMediaAssetId: number, locale: VideoLocale = "ru"): number {
       return trackUsageSync(backendDb, "studio.video.create", () => {
-        const [asset] = requireStudioMediaAssets(backendDb, actorId, [studioMediaAssetId], accessibleStudioActorIds(config, actorId));
-        if (asset?.kind !== "video") throw new StudioError("err.video-needs-asset");
+        videoAssetPath(backendDb, config, actorId, studioMediaAssetId);
         return createVideoDraft(backendDb, actorId, studioMediaAssetId, config.VIDEO_MEDIA_RETENTION_HOURS, locale);
       });
     },
@@ -54,12 +54,15 @@ export function videoService(backendDb: BackendDb, config: BackendConfig) {
     async replaceSource(actorId: number, publicationId: number, studioMediaAssetId: number) {
       return trackUsageAsync(backendDb, "studio.video.edit", async () => {
         requireOwnedVideo(backendDb, config, actorId, publicationId);
-        const [asset] = requireStudioMediaAssets(backendDb, actorId, [studioMediaAssetId], accessibleStudioActorIds(config, actorId));
-        if (asset?.kind !== "video") throw new StudioError("err.video-needs-asset");
-        const technical = await validateVideoSource(asset.localPath);
+        const technical = await validateVideoSource(videoAssetPath(backendDb, config, actorId, studioMediaAssetId));
         replaceVideoSource(backendDb, publicationId, studioMediaAssetId, technical.seconds);
         return technical;
       });
+    },
+    /** The same technical check, run on an uploaded file before any draft
+     * points at it: what the file is decides whether a draft is worth creating. */
+    assetTechnicalCheck(actorId: number, studioMediaAssetId: number): Promise<VideoTechnicalCheck> {
+      return validateVideoSource(videoAssetPath(backendDb, config, actorId, studioMediaAssetId));
     },
     sourceReplaceable(actorId: number, publicationId: number): boolean {
       const draft = requireOwnedVideo(backendDb, config, actorId, publicationId);
@@ -347,4 +350,12 @@ function requireOwnedVideo(backendDb: BackendDb, config: BackendConfig, actorId:
     "Video publication was not found.",
     "err.video-not-yours",
   );
+}
+
+/** The stored file behind an accessible video asset. Every path that reads the
+ * source goes through here, so "is it mine and is it a video" is one answer. */
+function videoAssetPath(backendDb: BackendDb, config: BackendConfig, actorId: number, studioMediaAssetId: number): string {
+  const [asset] = requireStudioMediaAssets(backendDb, actorId, [studioMediaAssetId], accessibleStudioActorIds(config, actorId));
+  if (asset?.kind !== "video") throw new StudioError("err.video-needs-asset");
+  return asset.localPath;
 }

@@ -11,7 +11,13 @@ import { VIDEO_FLOW, videoScheduleDates } from "../studio/video-fsm.js";
 import type { PublicationEffect } from "./effects.js";
 import { advancePublicationFlow } from "./publication-flow.js";
 import { publicationRenderers } from "./publication-renderers.js";
-import { clearVideoState, type VideoConversationState, videoScheduleConfirmationEffects, videoStepEffects } from "./video-ui.js";
+import {
+  clearVideoState,
+  type VideoConversationState,
+  videoDurationLabel,
+  videoScheduleConfirmationEffects,
+  videoStepEffects,
+} from "./video-ui.js";
 
 /** Applies one chosen time to whichever scheduling step the session is on. The
  * schedule can be completed from either transport — slot buttons or a typed
@@ -78,12 +84,10 @@ export async function finishVideoNow(
 
 /** Formats the transport-neutral technical check into a Telegram summary line. */
 function videoCheckSummary(technical: VideoTechnicalCheck, locale: StudioLocale): string {
-  const mm = String(Math.floor(technical.seconds / 60)).padStart(2, "0");
-  const ss = String(technical.seconds % 60).padStart(2, "0");
   const audioCodec = technical.audioCodec ?? t(locale, "video.no-audio");
   return t(locale, "video.check-summary", {
     dims: `${technical.width}×${technical.height}`,
-    dur: `${mm}:${ss}`,
+    dur: videoDurationLabel(technical.seconds),
     codecs: `${technical.videoCodec.toUpperCase()}/${audioCodec.toUpperCase()}`,
     sound: technical.audioCodec ? t(locale, "video.has-audio") : t(locale, "video.no-audio"),
     fps: technical.fps ? `${technical.fps.toFixed(0)} FPS` : t(locale, "video.fps-unknown"),

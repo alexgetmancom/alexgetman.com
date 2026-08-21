@@ -5,7 +5,7 @@ import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { handlePublicationCallback } from "../src/bot/callback-router.js";
 import { publicationCallback, versionedCallback } from "../src/bot/publication-callback.js";
-import { handleVideoConversationMessage } from "../src/bot/video-conversation.js";
+import { attachVideoAsset, handleVideoConversationMessage, startVideoDraft } from "../src/bot/video-conversation.js";
 import { getVideoState, saveVideoState } from "../src/bot/video-ui.js";
 import { registerChannel } from "../src/channels/registry.js";
 import {
@@ -20,13 +20,33 @@ import {
 import { recoverVideoLocks, runVideoCycle } from "../src/delivery/video-worker.js";
 import { videoPreview } from "../src/interfaces/telegram/video-preview.js";
 import { listVideoTargets } from "../src/publishing/video-data.js";
-import { cancelVideo, replaceVideoTargets, retryVideoTarget, saveVideoMetadata, scheduleVideo } from "../src/publishing/video-service.js";
+import {
+  cancelVideo,
+  replaceVideoTargets,
+  retryVideoTarget,
+  saveVideoMetadata,
+  scheduleVideo,
+  type VideoTechnicalCheck,
+} from "../src/publishing/video-service.js";
+import { VIDEO_LENGTH_WARNING_SECONDS } from "../src/publishing/video-types.js";
+import { createStudioServices } from "../src/studio/services/index.js";
 import { videoService } from "../src/studio/services/videos.js";
 import { VIDEO_TEST_CHANNELS } from "./helpers/channels.js";
 import { useBackendDb } from "./helpers/db.js";
 import { seedTextPost } from "./helpers/post.js";
 import { loadTestConfig } from "./helpers/studio-config.js";
-import { createTestVideoDraft } from "./helpers/video.js";
+import { createTestVideoAsset, createTestVideoDraft } from "./helpers/video.js";
+
+const TECHNICAL_CHECK: VideoTechnicalCheck = {
+  width: 1080,
+  height: 1920,
+  seconds: 30,
+  videoCodec: "h264",
+  audioCodec: "aac",
+  fps: 30,
+  sizeBytes: 1_000,
+  aspectOk: true,
+};
 
 const testDb = useBackendDb(VIDEO_TEST_CHANNELS);
 
@@ -619,5 +639,47 @@ describe("video publication queue", () => {
     expect(backendDb.sqlite.prepare("SELECT count(*) AS count FROM video_jobs WHERE video_target_id=?").get(instagram.id)).toEqual({
       count: 0,
     });
+  });
+  it("asks about a clip past the length threshold before any draft exists, and creates it once confirmed", async () => {
+    const backendDb = testDb.open();
+    const config = videoConfig();
+    const assetId = createTestVideoAsset(backendDb, 42, "/tmp/long-video.mp4");
+    const services = createStudioServices(backendDb, config);
+    // The probe is the only part of the attach that needs a real file on disk.
+    const probed = (seconds: number) => ({
+      ...services,
+      videos: { ...services.videos, assetTechnicalCheck: async () => ({ ...TECHNICAL_CHECK, seconds }) },
+    });
+    const session = saveVideoState(backendDb, 42, { draftId: null, step: "asset", selected: [], data: { videoLocale: "ru" } });
+
+    const asked = await attachVideoAsset(backendDb, config, 42, session, assetId, probed(VIDEO_LENGTH_WARNING_SECONDS + 1));
+
+    expect(JSON.stringify(asked)).toContain("p:video:length_ok");
+    expect(getVideoState(backendDb, 42)).toMatchObject({ step: "asset", draftId: null });
+    // Nothing was created: answering "no" has to leave no orphan behind.
+    expect(backendDb.db.select().from(videoDrafts).all()).toHaveLength(0);
+
+    const confirmed = getVideoState(backendDb, 42);
+    if (!confirmed) throw new Error("video session missing");
+    await startVideoDraft(backendDb, config, 42, confirmed, assetId, probed(VIDEO_LENGTH_WARNING_SECONDS + 1));
+
+    expect(backendDb.db.select().from(videoDrafts).all()).toHaveLength(1);
+    expect(getVideoState(backendDb, 42)?.step).not.toBe("asset");
+  });
+
+  it("attaches a clip within the length threshold without asking", async () => {
+    const backendDb = testDb.open();
+    const config = videoConfig();
+    const assetId = createTestVideoAsset(backendDb, 42, "/tmp/short-video.mp4");
+    const services = createStudioServices(backendDb, config);
+    const session = saveVideoState(backendDb, 42, { draftId: null, step: "asset", selected: [], data: { videoLocale: "ru" } });
+
+    const effects = await attachVideoAsset(backendDb, config, 42, session, assetId, {
+      ...services,
+      videos: { ...services.videos, assetTechnicalCheck: async () => ({ ...TECHNICAL_CHECK, seconds: VIDEO_LENGTH_WARNING_SECONDS }) },
+    });
+
+    expect(JSON.stringify(effects)).not.toContain("p:video:length_ok");
+    expect(backendDb.db.select().from(videoDrafts).all()).toHaveLength(1);
   });
 });

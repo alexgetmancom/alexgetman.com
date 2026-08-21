@@ -76,6 +76,11 @@ export function clearVideoState(backendDb: BackendDb, actorId: number): void {
   clearConversationState(backendDb, actorId, "video");
 }
 
+/** `mm:ss`, the one way a clip's length is written to the operator. */
+export function videoDurationLabel(seconds: number): string {
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 export function videoPromptEffect(backendDb: BackendDb, actorId: number, text: string, plainText = false): PublicationEffect {
   const locale = settingsService(backendDb).locale(actorId);
   const revision = getVideoState(backendDb, actorId)?.revision;

@@ -22,6 +22,7 @@ import { publicationCallback } from "./publication-callback.js";
 import { advancePublicationFlow } from "./publication-flow.js";
 import { publicationCardEffect, publicationRenderers } from "./publication-renderers.js";
 import { callbackMessageId } from "./telegram-context.js";
+import { startVideoDraft } from "./video-conversation.js";
 import { applyVideoScheduleDate, finishVideoNow, finishVideoSchedule } from "./video-scheduling.js";
 import {
   clearVideoState,
@@ -59,6 +60,7 @@ function requireFlowStep(current: string | undefined, allowed: readonly string[]
 export function defineVideoActionHandlers(define: typeof action): Record<string, PublicationActionDefinition> {
   return {
     cancel_dialog: define(handleCancelDialog, { entity: "session", sessionRevision: true, args: [] }),
+    length_ok: define(handleLengthConfirm, { entity: "session", sessionRevision: true, args: [] }),
     wizard_toggle: define(handleToggle, { entity: "session", sessionRevision: true, args: ["target"] }),
     targets_done: define(handleTargetsDone, { entity: "session", sessionRevision: true, args: [] }),
     game_skip: define(handleGameSkip, { entity: "session", sessionRevision: true, args: [] }),
@@ -163,6 +165,17 @@ async function handleCancelDialog({ backendDb, config, actorId, locale, mainMenu
   // Cancelling is pure navigation, not a content change: turn this same
   // message into the control panel instead of deleting and sending a new one.
   return [{ type: "screen", mode: "edit", text: mainMenuText(backendDb, config, actorId), options: { reply_markup: mainMenu } }];
+}
+
+/** "Upload it anyway" on the length question: the file the question was asked
+ * about is the one that becomes the draft, so a second upload sent meanwhile
+ * cannot be adopted by a stale button. */
+async function handleLengthConfirm({ backendDb, config, actorId, services }: VideoActionArgs): Promise<VideoActionResult> {
+  const session = getVideoState(backendDb, actorId);
+  requireFlowStep(session?.step, ["asset"], "err.video-restart");
+  const assetId = session?.data.assetId;
+  if (!session || typeof assetId !== "number") throw new StudioError("err.video-restart");
+  return startVideoDraft(backendDb, config, actorId, session, assetId, services);
 }
 
 async function handleToggle({ backendDb, actorId, locale, args, services }: VideoActionArgs): Promise<VideoActionResult> {

@@ -209,6 +209,8 @@ const en = {
   "video.skip": "⏭ Skip",
   "video.schedule-target-prompt": "⌨ When to publish on {target}? Format: `{example}` ({timezone}).",
   "video.value-error": "I couldn't use that value",
+  "video.length-warning": "⚠️ This clip runs *{dur}* — over {limit} s. That is usually a trim that went wrong. Upload it anyway?",
+  "video.length-warning-yes": "✅ Yes, upload it",
   "video.reminder": "I will remind you {minutes} minutes beforehand.",
   "video.confirmed-card": "Confirmed. Current publication card is below.",
   // Video creation & edit UI
@@ -948,6 +950,8 @@ const ru = {
   "video.skip": "⏭ Пропустить",
   "video.schedule-target-prompt": "⌨ Когда опубликовать на {target}? Формат: `{example}` ({timezone}).",
   "video.value-error": "Не удалось обработать значение",
+  "video.length-warning": "⚠️ Ролик длится *{dur}* — больше {limit} с. Обычно это неудачная обрезка. Всё равно загружаем?",
+  "video.length-warning-yes": "✅ Да, загружаем",
   "video.reminder": "Напомню за {minutes} минут.",
   "video.confirmed-card": "Подтверждено. Актуальная карточка публикации — ниже.",
   // Video creation & edit UI
