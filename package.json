@@ -13,7 +13,7 @@
   ],
   "overrides": {
     "esbuild": "0.28.2",
-    "fast-xml-parser": "5.10.1",
+    "fast-xml-parser": "5.11.0",
     "js-yaml": "4.3.1",
     "nanoid": "3.3.18",
     "postcss": "8.5.26",
@@ -45,19 +45,19 @@
     "ops:prod": "bun scripts/ops-prod.ts"
   },
   "dependencies": {
-    "@astrojs/node": "^11.1.0",
+    "@astrojs/node": "^11.1.4",
     "@astrojs/rss": "^4.0.19",
     "@astrojs/svelte": "^9.0.1",
     "@mtcute/bun": "^0.31.0",
-    "astro": "^7.2.0",
-    "svelte": "^5.56.8"
+    "astro": "^7.2.4",
+    "svelte": "^5.56.10"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.7",
-    "happy-dom": "20.11.2",
+    "@biomejs/biome": "^2.5.10",
+    "happy-dom": "20.11.6",
     "lefthook": "^2.1.10",
     "sharp": "^0.35.3",
-    "taze": "^20.0.0",
+    "taze": "^21.1.0",
     "typescript": "7.0.2"
   }
 }
