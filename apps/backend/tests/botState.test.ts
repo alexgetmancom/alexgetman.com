@@ -103,11 +103,11 @@ describe("Telegram dialog state", () => {
     const backendDb: BackendDb = openBackendDb(":memory:");
     try {
       const first = saveVideoState(backendDb, 42, { draftId: null, step: "asset", selected: [], data: {} });
-      const second = saveVideoState(backendDb, 42, { ...first, step: "targets" });
+      const second = saveVideoState(backendDb, 42, { ...first, step: "schedule_choice" });
 
       expect(second.revision).toBe(first.revision + 1);
       expect(() => saveVideoState(backendDb, 42, first)).toThrow("action.session-stale");
-      expect(getVideoState(backendDb, 42)).toMatchObject({ step: "targets", revision: second.revision });
+      expect(getVideoState(backendDb, 42)).toMatchObject({ step: "schedule_choice", revision: second.revision });
     } finally {
       backendDb.close();
     }

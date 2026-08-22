@@ -5,13 +5,13 @@ import type { DraftMessage } from "../content/message.js";
 import { translateDraftText } from "../content/translation.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
-import { StudioError } from "../foundation/errors.js";
-import { describeError, t } from "../foundation/i18n/index.js";
+import { t } from "../foundation/i18n/index.js";
 import { createStudioServices } from "../studio/services/index.js";
 import { settingsService } from "../studio/services/settings.js";
 import { appendPendingAlbum } from "./albums.js";
 import { clearConversationState, getConversationState } from "./conversation-state.js";
 import type { PublicationEffect, PublicationMessageResult } from "./effects.js";
+import { describePublicationError } from "./error-text.js";
 import { persistentKeyboard } from "./menu-render.js";
 import { extractMessage } from "./message.js";
 import { POST_FLOW, postStateStep } from "./post-flow.js";
@@ -54,12 +54,11 @@ export async function handlePostMessage(ctx: Context, backendDb: BackendDb, conf
       return { handled: true, effects };
     } catch (error) {
       const scheduleInput = stateStep.type === "schedule_manual";
-      const errorText =
-        error instanceof StudioError && error.code === "common.schedule-parse-error"
-          ? t(locale, "common.schedule-parse-error", {
-              timezone: createStudioServices(backendDb, config).settings.timeConfig(actorId, config).TIMEZONE_LABEL,
-            })
-          : describeError(locale, error);
+      const errorText = describePublicationError(
+        locale,
+        error,
+        createStudioServices(backendDb, config).settings.timeConfig(actorId, config),
+      );
       return {
         handled: true,
         effects: [{ type: "screen", mode: "reply", text: scheduleInput ? errorText : t(locale, "post.value-error", { error: errorText }) }],

@@ -25,20 +25,6 @@ export type VideoConversationState = ConversationState & {
 export type VideoConversationInput = Omit<VideoConversationState, "kind" | "revision" | "controlMessageId"> &
   Partial<Pick<VideoConversationState, "controlMessageId" | "revision">>;
 
-export function targetKeyboard(backendDb: BackendDb, selected: VideoTarget[], locale: StudioLocale, revision?: number): InlineKeyboard {
-  const keyboard = new InlineKeyboard();
-  for (const target of connectedVideoTargets(backendDb)) {
-    keyboard
-      .text(
-        `${selected.includes(target) ? "✓" : "○"} ${videoTargetLabel(target)}`,
-        publicationCallback("video", "wizard_toggle", [target], revision),
-      )
-      .row();
-  }
-  keyboard.text(t(locale, "video.next"), publicationCallback("video", "targets_done", [], revision)).row();
-  return appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), revision);
-}
-
 export function connectedVideoTargets(backendDb: BackendDb): VideoTarget[] {
   const connected = new Set(videoDestinations(backendDb).map((destination) => destination.target));
   return VIDEO_TARGETS.filter((target) => connected.has(target));
@@ -175,14 +161,22 @@ function videoTimeEffects(session: VideoConversationState, locale: StudioLocale,
  * the transition that got here, and saving again only burns a revision the
  * keyboard below would then be built against. */
 function scheduleChoiceEffects(session: VideoConversationState, locale: StudioLocale, text: string): PublicationEffect[] {
+  return videoControlEffects(session, text, scheduleChoiceKeyboard(session, locale));
+}
+
+/** One time for every platform, or one each. Built here for both ways in: from
+ * the wizard's own step and from "📅 Schedule" on a finished draft's card. */
+export function scheduleChoiceKeyboard(
+  session: Pick<VideoConversationState, "draftId" | "revision" | "selected">,
+  locale: StudioLocale,
+): InlineKeyboard {
   const { revision, draftId } = session;
   if (draftId == null) throw new StudioError("err.video-missing");
   const keyboard = new InlineKeyboard().text(t(locale, "video.same-time"), publicationCallback("video", "common", [draftId], revision));
   if (session.selected.length > 1)
     keyboard.row().text(t(locale, "video.different-time"), publicationCallback("video", "individual", [draftId], revision));
   keyboard.row();
-  appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), revision);
-  return videoControlEffects(session, text, keyboard);
+  return appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), revision);
 }
 
 /** Moves the session to `schedule_confirm` and renders the per-target summary

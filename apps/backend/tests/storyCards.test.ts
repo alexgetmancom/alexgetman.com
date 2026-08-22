@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
+import { storyCardUse } from "../src/botTargets.js";
 import { createDraftFromMessage } from "../src/content/drafts.js";
 import type { UnsafeBackendDb } from "../src/db/client.js";
 import { draftStoryCards, drafts, postLocales, publicationEvents, publishJobs, siteJobs } from "../src/db/schema.js";
@@ -117,6 +118,38 @@ describe("text Story cards", () => {
     const emojiStats = await sharp(String(media?.ru.localPath)).extract(box).stats();
     expect(emojiStats.channels[0]?.max).toBeGreaterThan(emojiStats.channels[1]?.max ?? 255);
   }, 20_000);
+
+  it("asks about Stories only when a Story platform is on", () => {
+    // The site takes the card either way, so a site-only Studio has nothing to
+    // answer: the question exists to decide whether Stories get it too.
+    expect(storyCardUse({ telegram: true, site_ru: true })).toEqual({ stories: false, site: true });
+    expect(storyCardUse({ telegram: true, telegram_stories: true })).toEqual({ stories: true, site: false });
+    expect(storyCardUse({ telegram: true, threads_ru: true })).toEqual({ stories: false, site: false });
+  });
+
+  it("renders a card only for a Studio that has somewhere to put it", () => {
+    backendDb = openStoryDb();
+    // Story platforms publish the card; a site page uses it as its own
+    // illustration. A selection with neither -- Telegram and Threads, say, or a
+    // Studio with no site at all -- has nothing to render it for, and used to
+    // get two rendering jobs and a question about nobody.
+    const withStories = createDraftFromMessage(backendDb, 42, {
+      text: "Есть куда положить",
+      textEn: "Somewhere to put it",
+      entities: [],
+      media: [],
+    });
+    expect(storyCardsForDraft(backendDb.db, withStories)).not.toHaveLength(0);
+
+    const plainTargets = JSON.stringify({ telegram: true, threads_ru: true });
+    const withoutStories = createDraftFromMessage(
+      backendDb,
+      42,
+      { text: "Некуда", textEn: "Nowhere", entities: [], media: [] },
+      { targetsJson: plainTargets },
+    );
+    expect(storyCardsForDraft(backendDb.db, withoutStories)).toHaveLength(0);
+  });
 
   it("keeps generated cards out of ordinary targets and gates all Story targets with one decision", () => {
     const storyCards = {

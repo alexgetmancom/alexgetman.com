@@ -13,6 +13,7 @@ import { settingsService } from "../studio/services/settings.js";
 import { advanceVideoMetadata, isVideoWizardStep, VIDEO_FLOW, type VideoWizardStep } from "../studio/video-fsm.js";
 import { appendCancelButton, promptEffect } from "./dialog-ui.js";
 import type { PublicationEffect, PublicationMessageResult } from "./effects.js";
+import { describePublicationError } from "./error-text.js";
 import { publicationCallback } from "./publication-callback.js";
 import { advancePublicationFlow } from "./publication-flow.js";
 import { publicationCardEffect, videoPreviewCard } from "./publication-renderers.js";
@@ -22,9 +23,7 @@ import {
   connectedVideoTargets,
   getVideoState,
   saveVideoState,
-  targetKeyboard,
   type VideoConversationState,
-  videoControlEffects,
   videoDurationLabel,
   videoStepEffects,
 } from "./video-ui.js";
@@ -197,25 +196,12 @@ async function replaceVideoAsset({ ctx, backendDb, config, actorId, session, ser
   return videoCardEffects(backendDb, config, actorId, session.draftId, services);
 }
 
+/** Renames a finished draft. The name is asked for from the draft's own edit
+ * menu, so answering it ends on that draft's card. */
 async function acceptVideoLabel({ backendDb, config, actorId, session, text, services }: VideoMessageArgs): Promise<PublicationEffect[]> {
   if (session.draftId == null) throw new StudioError("err.video-missing");
   services.videos.rename(actorId, session.draftId, text);
-  if (session.data.is_single_edit) return videoCardEffects(backendDb, config, actorId, session.draftId, services);
-  const saved = await advancePublicationFlow(
-    backendDb,
-    actorId,
-    VIDEO_FLOW,
-    session,
-    text,
-    { ...session.data, selectedTargets: session.selected },
-    "err.video-restart",
-  );
-  const locale = settingsService(backendDb).locale(actorId);
-  return videoControlEffects(
-    saved,
-    t(locale, "video.choose-platforms-next"),
-    targetKeyboard(backendDb, saved.selected, locale, saved.revision),
-  );
+  return videoCardEffects(backendDb, config, actorId, session.draftId, services);
 }
 
 /** One case for every metadata field. A platform's collected fields are handed
@@ -263,11 +249,7 @@ async function acceptVideoScheduleDate({
     date = services.videos.manualSchedule(actorId, session.draftId, text);
   } catch (error) {
     const locale = settingsService(backendDb).locale(actorId);
-    const timeConfig = services.settings.timeConfig(actorId, config);
-    const message =
-      error instanceof StudioError && error.code === "common.schedule-parse-error"
-        ? t(locale, "common.schedule-parse-error", { timezone: timeConfig.TIMEZONE_LABEL })
-        : describeError(locale, error);
+    const message = describePublicationError(locale, error, services.settings.timeConfig(actorId, config));
     return [promptEffect(backendDb, actorId, "video", message, { plainText: true })];
   }
   return applyVideoScheduleDate(backendDb, config, actorId, session, date, services);

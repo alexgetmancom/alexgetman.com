@@ -125,6 +125,19 @@ export function isStoryTarget(target: string): boolean {
   return STORY_TARGETS.has(target);
 }
 
+/** What a generated Story card would be for, given a target selection.
+ *
+ * Two different questions key off this and used to guess at it separately: a
+ * card is only worth rendering when something consumes it, and the operator is
+ * only asked about it when a Story platform is on -- the site takes the card as
+ * its own illustration and has nothing to decide. */
+export function storyCardUse(targets: Record<string, boolean>): { stories: boolean; site: boolean } {
+  const enabled = Object.entries(targets)
+    .filter(([, on]) => on)
+    .map(([target]) => target);
+  return { stories: enabled.some(isStoryTarget), site: enabled.some(isSiteTarget) };
+}
+
 export type PresetName = keyof typeof PRESETS | "manual";
 
 /** Names the preset a target selection matches, or "manual" when it matches none. */

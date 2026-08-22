@@ -10,13 +10,14 @@ import { runCallbackAction } from "./callback-effects.js";
 import { isSupersededCard } from "./card-freshness.js";
 import { getActiveConversationState, getConversationState } from "./conversation-state.js";
 import { executePublicationEffects, type PublicationEffect, type PublicationMessageResult } from "./effects.js";
+import { describePublicationError } from "./error-text.js";
 import { handlePostMessage } from "./post-screen.js";
 import type {
   PublicationActionContext,
   PublicationActionDefinition,
   PublicationDraftActionContext,
 } from "./publication-action-contract.js";
-import { describePublicationError, isFreshPublicationAction, logPublicationActionError, publicationAction } from "./publication-actions.js";
+import { isFreshPublicationAction, logPublicationActionError, publicationAction } from "./publication-actions.js";
 import {
   type PublicationCallback,
   type PublicationKind,

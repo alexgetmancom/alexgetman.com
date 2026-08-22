@@ -2,10 +2,12 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import { and, eq } from "drizzle-orm";
 import type { StoryPublishMode } from "../application/ports.js";
+import { storyCardUse } from "../botTargets.js";
 import { draftLocaleContent } from "../content/draft-content.js";
 import { draftStoryCards, drafts, postLocales } from "../db/schema.js";
 import type { BackendDatabase } from "../db/types.js";
 import { log } from "../foundation/logger.js";
+import { parseTargets } from "../publishing/targets.js";
 import { buildStoryCardCopy } from "./copy.js";
 
 export function queueDraftStoryCards(db: BackendDatabase, draftId: number): void {
@@ -15,6 +17,14 @@ export function queueDraftStoryCards(db: BackendDatabase, draftId: number): void
   const byLocale = new Map(locales.map((row) => [row.locale, row]));
   const ru = byLocale.get("ru");
   const en = byLocale.get("en");
+  // A card nothing publishes is a rendering job and a question for nobody: no
+  // Story platform to carry it and no site page to illustrate with it.
+  const use = storyCardUse(parseTargets(draft.targetsJson));
+  if (!use.stories && !use.site) {
+    discardDraftStoryCards(db, draftId);
+    db.update(drafts).set({ storyPublishMode: null, updatedAt: new Date().toISOString() }).where(eq(drafts.id, draftId)).run();
+    return;
+  }
   if (mediaCount(ru?.mediaJson) > 0 || mediaCount(en?.mediaJson) > 0) {
     discardDraftStoryCards(db, draftId);
     db.update(drafts).set({ storyPublishMode: null, updatedAt: new Date().toISOString() }).where(eq(drafts.id, draftId)).run();

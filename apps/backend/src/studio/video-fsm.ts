@@ -69,12 +69,10 @@ const VIDEO_STEPS = defineVideoSteps({
     next: (data) => firstVideoMetadataStep(data.selectedTargets ?? []),
     accept: (input, data) => ({ ...data, assetId: input }),
   },
-  label: { name: "label" as const, input: "text", next: () => "targets" as const, accept: (input, data) => ({ ...data, label: input }) },
-  targets: {
-    name: "targets" as const,
-    next: (data) => firstVideoMetadataStep(data.selectedTargets ?? []),
-    accept: (input, data) => ({ ...data, selectedTargets: input as VideoTarget[] }),
-  },
+  // Renaming a finished draft, and nothing else: the wizard takes every
+  // connected platform and goes straight from the upload to its metadata, so
+  // this step is only ever entered from "✏️ Edit" and nothing follows it.
+  label: { name: "label" as const, input: "text", next: () => null, accept: (input, data) => ({ ...data, label: input }) },
   schedule_choice: {
     name: "schedule_choice" as const,
     next: (data) => (data.scheduleMode === "common" ? "schedule_common" : "schedule_target"),

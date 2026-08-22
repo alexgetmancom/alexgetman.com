@@ -73,7 +73,7 @@ export async function handleIntakeMessage(ctx: Context, backendDb: BackendDb, co
   const locale = settingsService(backendDb).locale(actorId);
   const message = extractMessage(ctx);
   const document = ctx.message && "document" in ctx.message ? ctx.message.document : undefined;
-  const markdown = document && isMarkdown(document) ? await downloadDocument(ctx, config, document.file_id) : null;
+  const markdown = document && isMarkdown(document) ? await downloadDocument(ctx, config, document) : null;
   const video = capturedVideo(ctx, message);
   // A voice note, a sticker, a PDF: the bot has no publication that carries it,
   // and capturing it anyway created an empty draft with an empty card. The
@@ -270,12 +270,26 @@ function capturedVideo(ctx: Context, message: DraftMessage): CapturedVideo | nul
   };
 }
 
-async function downloadDocument(ctx: Context, config: BackendConfig, fileId: string): Promise<string> {
+/** An article a person wrote and a file that would take the process down with
+ * it are told apart by size, and a Telegram file server that stops answering is
+ * told apart from a slow one by the clock. Neither had a limit. */
+const MARKDOWN_DOWNLOAD_LIMIT_BYTES = 1_000_000;
+const MARKDOWN_DOWNLOAD_TIMEOUT_MS = 10_000;
+
+async function downloadDocument(ctx: Context, config: BackendConfig, document: { file_id: string; file_size?: number }): Promise<string> {
   if (!config.controllerBotToken) throw new Error("Telegram bot token is not configured.");
-  const file = await ctx.api.getFile(fileId);
+  if ((document.file_size ?? 0) > MARKDOWN_DOWNLOAD_LIMIT_BYTES) throw new StudioError("intake.file-too-large");
+  const file = await ctx.api.getFile(document.file_id);
   if (!file.file_path) throw new Error("Telegram did not return a file path.");
   const base = config.TELEGRAM_API_BASE_URL.replace(/\/$/, "");
-  const response = await fetch(`${base}/file/bot${config.controllerBotToken}/${file.file_path}`);
+  const response = await fetch(`${base}/file/bot${config.controllerBotToken}/${file.file_path}`, {
+    signal: AbortSignal.timeout(MARKDOWN_DOWNLOAD_TIMEOUT_MS),
+  });
   if (!response.ok) throw new Error(`Telegram file download failed: ${response.status}`);
-  return response.text();
+  // Telegram may report no size at all, so the body is measured as well: a
+  // gigabyte of "markdown" must not be read into memory to find that out.
+  if (Number(response.headers.get("content-length") ?? 0) > MARKDOWN_DOWNLOAD_LIMIT_BYTES) throw new StudioError("intake.file-too-large");
+  const text = await response.text();
+  if (text.length > MARKDOWN_DOWNLOAD_LIMIT_BYTES) throw new StudioError("intake.file-too-large");
+  return text;
 }

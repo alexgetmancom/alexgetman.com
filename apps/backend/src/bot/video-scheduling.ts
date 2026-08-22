@@ -10,7 +10,7 @@ import { settingsService } from "../studio/services/settings.js";
 import { VIDEO_FLOW, videoScheduleDates } from "../studio/video-fsm.js";
 import type { PublicationEffect } from "./effects.js";
 import { advancePublicationFlow } from "./publication-flow.js";
-import { publicationRenderers } from "./publication-renderers.js";
+import { videoPreviewCard } from "./publication-renderers.js";
 import {
   clearVideoState,
   type VideoConversationState,
@@ -105,11 +105,7 @@ async function showScheduledVideo(
   services: StudioServices,
 ): Promise<PublicationEffect[]> {
   if (!session.draftId) throw new StudioError("err.video-missing");
-  const preview = publicationRenderers(backendDb, config, services).video.card({
-    actorId,
-    publicationId: session.draftId,
-    locale,
-  });
+  const preview = videoPreviewCard(backendDb, config, actorId, session.draftId, services);
   const reminderMinutes = services.settings.notifications(actorId).reminderMinutes;
   const warning = technical.aspectOk ? "" : `\n${t(locale, "video.aspect-warning")}`;
   const text = `${videoCheckSummary(technical, locale)}${warning}\n\n✅ ${t(locale, "common.scheduled")}. ${t(locale, "video.reminder", { minutes: reminderMinutes })}\n\n${preview.text}`;

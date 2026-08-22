@@ -3,8 +3,6 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
-import { handlePublicationCallback } from "../src/bot/callback-router.js";
-import { publicationCallback, versionedCallback } from "../src/bot/publication-callback.js";
 import { attachVideoAsset, handleVideoConversationMessage, startVideoDraft } from "../src/bot/video-conversation.js";
 import { getVideoState, saveVideoState } from "../src/bot/video-ui.js";
 import { registerChannel } from "../src/channels/registry.js";
@@ -327,24 +325,6 @@ describe("video publication queue", () => {
     expect(listVideoTargets(backendDb, draftId).find((row) => row.target === "instagram_reels")?.metadataJson).toMatchObject({
       caption: "Caption #tag",
     });
-  });
-
-  it("routes target selection callbacks and rejects an invalid target", async () => {
-    const backendDb = testDb.open();
-    const draftId = createTestVideoDraft(backendDb, 42, "video-source", 24);
-    const session = saveVideoState(backendDb, 42, { draftId, step: "targets", selected: ["youtube_shorts"], data: {} });
-    const selected = videoContext({ callback: versionedCallback(publicationCallback("video", "targets_done"), session.revision) });
-
-    expect(await handlePublicationCallback(selected.context, backendDb, videoConfig())).toBe(true);
-    expect(getVideoState(backendDb, 42)).toMatchObject({ draftId, step: "youtube_title" });
-    expect(listVideoTargets(backendDb, draftId).map((target) => target.target)).toEqual(["youtube_shorts"]);
-
-    const invalidSession = saveVideoState(backendDb, 42, { draftId, step: "targets", selected: ["youtube_shorts"], data: {} });
-    const invalid = videoContext({
-      callback: versionedCallback(publicationCallback("video", "wizard_toggle", ["not-a-target"]), invalidSession.revision),
-    });
-    expect(await handlePublicationCallback(invalid.context, backendDb, videoConfig())).toBe(true);
-    expect(invalid.callbackAnswers).toEqual([{ text: "Start creating the video again." }]);
   });
 
   it("keeps independent platform schedules and queues Delivery prepare and publish work", () => {

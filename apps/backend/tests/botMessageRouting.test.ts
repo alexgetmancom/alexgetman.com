@@ -14,7 +14,7 @@ describe("Telegram publication message routing", () => {
   it("does not send a text message from an active video session to the post handler", async () => {
     const backendDb = openBackendDb(":memory:");
     try {
-      saveVideoState(backendDb, 42, { draftId: null, step: "targets", selected: [], data: {} });
+      saveVideoState(backendDb, 42, { draftId: 7, step: "schedule_choice", selected: [], data: {} });
       const replies: string[] = [];
       const ctx = {
         from: { id: 42 },

@@ -1,4 +1,5 @@
 import { type Context, InlineKeyboard } from "grammy";
+import { storyCardUse } from "../botTargets.js";
 import type { BackendDb } from "../db/client.js";
 import type { BackendConfig } from "../foundation/config.js";
 import { t } from "../foundation/i18n/index.js";
@@ -20,7 +21,12 @@ export async function showStoryCardChoice(
   intent: "publish" | "schedule",
 ): Promise<PublicationEffect[] | null> {
   const posts = createStudioServices(backendDb, config).posts;
-  const cards = posts.preview(actorId, draftId).storyCards;
+  const preview = posts.preview(actorId, draftId);
+  // The choice is whether the generated card also goes to Stories. A site takes
+  // it as the page's own illustration either way, and a Studio with neither has
+  // nothing to answer -- asking there was a question about nobody.
+  if (!storyCardUse(preview.targets).stories) return null;
+  const cards = preview.storyCards;
   if (cards.length === 0) return null;
   const locale = settingsService(backendDb).locale(actorId);
   if (!cardsReady(cards)) {

@@ -1,7 +1,4 @@
-import type { BackendConfig } from "../foundation/config.js";
-import { StudioError } from "../foundation/errors.js";
-import { describeError, t } from "../foundation/i18n/index.js";
-import type { StudioLocale } from "../foundation/locale.js";
+import { t } from "../foundation/i18n/index.js";
 import { log } from "../foundation/logger.js";
 import { definePostActionHandlers } from "./post-actions.js";
 import {
@@ -36,12 +33,6 @@ export function publicationActionNames(kind: PublicationKind): string[] {
 
 export function isFreshPublicationAction(kind: PublicationKind, name: string): boolean {
   return publicationAction(kind, name)?.freshCard === true;
-}
-
-export function describePublicationError(locale: StudioLocale, error: unknown, config: Pick<BackendConfig, "TIMEZONE_LABEL">): string {
-  if (error instanceof StudioError && error.code === "common.schedule-parse-error")
-    return t(locale, "common.schedule-parse-error", { timezone: config.TIMEZONE_LABEL });
-  return describeError(locale, error);
 }
 
 async function handleView(context: PublicationDraftActionContext): Promise<PublicationActionResult> {

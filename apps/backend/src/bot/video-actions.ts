@@ -8,7 +8,7 @@ import { manualScheduleExample } from "../foundation/time.js";
 import { VIDEO_TARGETS, type VideoTarget, videoTargetLabel } from "../publishing/video-types.js";
 import type { StudioServices } from "../studio/services/index.js";
 import { VIDEO_FLOW } from "../studio/video-fsm.js";
-import { appendCancelButton, promptEffect, resultNavigationKeyboard } from "./dialog-ui.js";
+import { promptEffect, resultNavigationKeyboard } from "./dialog-ui.js";
 import type { PublicationEffect } from "./effects.js";
 import { mainMenuText } from "./menu-render.js";
 import type {
@@ -28,7 +28,7 @@ import {
   getVideoState,
   parseVideoStep,
   saveVideoState,
-  targetKeyboard,
+  scheduleChoiceKeyboard,
   type VideoConversationInput,
   type VideoConversationState,
   videoStepEffects,
@@ -59,8 +59,6 @@ export function defineVideoActionHandlers(define: typeof action): Record<string,
   return {
     cancel_dialog: define(handleCancelDialog, { entity: "session", sessionRevision: true, args: [] }),
     length_ok: define(handleLengthConfirm, { entity: "session", sessionRevision: true, args: [] }),
-    wizard_toggle: define(handleToggle, { entity: "session", sessionRevision: true, args: ["target"] }),
-    targets_done: define(handleTargetsDone, { entity: "session", sessionRevision: true, args: [] }),
     game_skip: define(handleGameSkip, { entity: "session", sessionRevision: true, args: [] }),
     meta_back: define(handleMetaBack, { entity: "session", sessionRevision: true, args: [] }),
     schedule: define(handleScheduleStart, { entity: "draft", freshCard: true, args: [] }),
@@ -165,36 +163,6 @@ async function handleLengthConfirm({ backendDb, config, actorId, services }: Vid
   return startVideoDraft(backendDb, config, actorId, session, assetId, services);
 }
 
-async function handleToggle({ backendDb, actorId, locale, args, services }: VideoActionArgs): Promise<VideoActionResult> {
-  const target = parseVideoTarget(args.target ?? "");
-  const session = getVideoState(backendDb, actorId);
-  requireFlowStep(session?.step, ["targets"], "err.video-restart");
-  if (!session?.draftId || !target) throw new StudioError("err.video-restart");
-  services.videos.toggleTarget(actorId, session.draftId, target);
-  // The draft's own targets are the answer; recomputing the toggle in the
-  // session as well is how the ticks and the stored platforms drift apart.
-  const selected = getVideoTargets(services, actorId, session.draftId);
-  const next = saveVideoState(backendDb, actorId, { ...session, selected });
-  return [{ type: "edit-reply-markup", keyboard: targetKeyboard(backendDb, selected, locale, next.revision) }];
-}
-
-async function handleTargetsDone({ backendDb, config, actorId, services }: VideoActionArgs): Promise<VideoActionResult> {
-  const session = getVideoState(backendDb, actorId);
-  requireFlowStep(session?.step, ["targets"], "err.video-pick-platform");
-  if (!session?.draftId || !session.selected.length) throw new StudioError("err.video-pick-platform");
-  services.videos.replaceTargets(actorId, session.draftId, session.selected);
-  const next = await advancePublicationFlow(
-    backendDb,
-    actorId,
-    VIDEO_FLOW,
-    session,
-    session.selected,
-    { ...session.data, selectedTargets: session.selected },
-    "err.video-pick-platform",
-  );
-  return videoStepEffects(backendDb, config, actorId, next);
-}
-
 async function handleGameSkip({ backendDb, config, actorId, locale }: VideoActionArgs): Promise<VideoActionResult> {
   const session = getVideoState(backendDb, actorId);
   requireFlowStep(session?.step, ["youtube_game_url"], "err.video-reopen-create");
@@ -244,14 +212,7 @@ async function handleScheduleStart({
     data: {},
     controlMessageId: callbackMessageId(ctx),
   });
-  const keyboard = new InlineKeyboard().text(
-    t(locale, "video.same-time"),
-    publicationCallback("video", "common", [draftId], session.revision),
-  );
-  if (targets.length > 1)
-    keyboard.row().text(t(locale, "video.different-time"), publicationCallback("video", "individual", [draftId], session.revision));
-  keyboard.row();
-  appendCancelButton(keyboard, locale, publicationCallback("video", "cancel_dialog"), session.revision);
+  const keyboard = scheduleChoiceKeyboard(session, locale);
   const timeConfig = services.settings.timeConfig(actorId, config);
   const text = t(locale, "video.schedule-time-msk", { timezone: timeConfig.TIMEZONE_LABEL });
   const options = { parse_mode: "Markdown" as const, reply_markup: keyboard };

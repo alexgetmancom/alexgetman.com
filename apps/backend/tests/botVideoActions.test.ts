@@ -201,18 +201,18 @@ describe("video callback dispatch", () => {
 
   it("rejects a callback from an older video dialog revision", async () => {
     backendDb = openVideoDb();
-    const first = saveVideoState(backendDb, 42, { draftId: 7, step: "targets", selected: [], data: {} });
-    saveVideoState(backendDb, 42, { ...first, selected: ["youtube_shorts"] });
+    const first = saveVideoState(backendDb, 42, { draftId: 7, step: "youtube_game_url", selected: ["youtube_shorts"], data: {} });
+    saveVideoState(backendDb, 42, { ...first, data: { note: "moved on" } });
     const answers: Array<{ text?: string } | undefined> = [];
     const ctx = {
-      callbackQuery: { data: versionedCallback(publicationCallback("video", "wizard_toggle", ["instagram_reels"]), first.revision) },
+      callbackQuery: { data: versionedCallback(publicationCallback("video", "game_skip"), first.revision) },
       from: { id: 42 },
       answerCallbackQuery: async (options?: { text?: string }) => void answers.push(options),
     } as unknown as Context;
 
     expect(await handlePublicationCallback(ctx, backendDb, config)).toBe(true);
     expect(answers[0]?.text).toBe("This dialog is outdated. Start again.");
-    expect(getVideoState(backendDb, 42)?.selected).toEqual(["youtube_shorts"]);
+    expect(getVideoState(backendDb, 42)?.step).toBe("youtube_game_url");
   });
 
   it("opens target scheduling after a previous video dialog was retired", async () => {
