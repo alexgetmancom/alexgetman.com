@@ -64,22 +64,7 @@ describe("Telegram controller flow", () => {
     ).toEqual([
       [`p:post:cycle_mode:${draftId}`, `p:post:view:${draftId}:platforms`],
       [`p:post:edit_ru:${draftId}`, `p:post:edit_en:${draftId}`],
-      [`p:post:view:${draftId}:publish_when`, `p:post:cancel:${draftId}:confirm_delete`],
-    ]);
-  });
-
-  it("asks when to publish before deciding how", () => {
-    backendDb = openBotDb();
-    const draftId = createDraftFromMessage(backendDb, 42, { text: "Card", textEn: "Card", entities: [], media: [] });
-
-    // Publishing and scheduling are the same intent asked one step apart, so a
-    // draft with Story cards can still reach a schedule: the cards are rendered
-    // once the intent is known, and the question comes before that.
-    const question = draftPreview(backendDb, draftId, loadTestConfig({}), "en", "publish_when");
-    expect(question.keyboard.inline_keyboard.flat().map((button) => ("callback_data" in button ? button.callback_data : ""))).toEqual([
-      `p:post:publish:${draftId}`,
-      `p:post:schedule:${draftId}`,
-      `p:post:view:${draftId}:overview`,
+      [`p:post:publish:${draftId}`, `p:post:schedule:${draftId}`, `p:post:cancel:${draftId}:confirm_delete`],
     ]);
   });
 

@@ -25,7 +25,6 @@ import { appendUnlandedControls, type UnlandedTarget } from "./unlanded-controls
 
 const DRAFT_VIEWS = [
   "overview",
-  "publish_when",
   "schedule",
   "schedule_ru",
   "schedule_ru_day",
@@ -190,17 +189,6 @@ export function draftPreview(
     };
   }
 
-  if (view === "publish_when") {
-    return {
-      text: `${draftHeader(draftId, targets, locale)}\n\n▶️ *${t(locale, "post.publish-when-q")}*`,
-      keyboard: new InlineKeyboard()
-        .text(t(locale, "post.publish-when-now"), publicationCallback("post", "publish", [draftId]))
-        .text(t(locale, "post.publish-when-later"), publicationCallback("post", "schedule", [draftId]))
-        .row()
-        .text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"])),
-    };
-  }
-
   if (view === "confirm_publish") {
     const media = mediaCounts(draft.media_ru_json, draft.media_en_json);
     const available = enabledTargetLabels(targets, media.ru, media.enEffective) || t(locale, "post.no-platforms");
@@ -260,11 +248,12 @@ export function draftPreview(
       .text(t(locale, "post.choose-platforms"), publicationCallback("post", "view", [draftId, "platforms"]))
       .row();
     appendLocaleEditButtons(keyboard, backendDb, config, draft.actor_id, draftId, locale, servesEn);
-    // Publishing asks when. A draft with Story cards has to be able to reach
-    // scheduling too, and the cards are rendered after the intent is known, so
-    // the question comes before any of that -- not as a second confirmation.
+    // Now, later, or never: the three things that can happen to a finished
+    // draft, side by side. Both publishing intents start here because each one
+    // renders the Story cards for the intent it carries.
     keyboard
-      .text(t(locale, "post.publish-btn"), publicationCallback("post", "view", [draftId, "publish_when"]))
+      .text(t(locale, "post.publish-btn"), publicationCallback("post", "publish", [draftId]))
+      .text(t(locale, "post.schedule-btn"), publicationCallback("post", "schedule", [draftId]))
       .text(t(locale, "post.delete-btn"), publicationCallback("post", "cancel", [draftId, "confirm_delete"]));
   } else {
     appendUnlandedControls(keyboard, { locale, kind: "post", draftId, origin: "card", targets: unlandedTargets(backendDb, draftId) });
