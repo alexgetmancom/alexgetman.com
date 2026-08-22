@@ -47,7 +47,6 @@ describe("Telegram dialog state", () => {
     const value = new Date("2026-08-04T12:34:56.000Z");
     const steps = [
       { type: "edit_text", locale: "ru" } as const,
-      { type: "replace_media", locale: "en" } as const,
       { type: "schedule_manual", locale: "ru" } as const,
       { type: "schedule_confirm", locale: "en", value } as const,
     ];

@@ -161,15 +161,15 @@ export async function finalizePendingAlbums(bot: Bot | null, backendDb: BackendD
       const draftId = row.draftId;
       const step = row.step as PostSessionStep | null;
       const locale = resolveLocale(row.stepDataJson.locale) ?? resolveLocale(state?.data.locale);
-      const isEdit = step === "edit_text" && locale !== null;
-      const isMediaReplacement = step === "replace_media" && locale !== null;
-      if ((isEdit || isMediaReplacement) && draftId && locale) {
+      // An album sent into an open edit is that language's new media, and its
+      // caption -- if it has one -- that language's new text. An album with no
+      // caption leaves the text alone, because empty copy is not an edit.
+      if (step === "edit_text" && locale !== null && draftId) {
         createStudioServices(backendDb, config).posts.edit(row.actorId, draftId, {
           locale,
-          text: isMediaReplacement ? "" : row.textRu,
-          entities: isMediaReplacement ? [] : parseArrayValue(row.textEntitiesJson),
+          text: row.textRu,
+          entities: parseArrayValue(row.textEntitiesJson),
           media,
-          ...(isMediaReplacement ? { replaceMediaOnly: true } : {}),
         });
         clearConversationStateIfCurrent(backendDb, { kind: "post", step, draftId }, row.actorId, row.stateRevision);
         cardDraftId = draftId;

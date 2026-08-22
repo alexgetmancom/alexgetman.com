@@ -25,6 +25,7 @@ import { appendUnlandedControls, type UnlandedTarget } from "./unlanded-controls
 
 const DRAFT_VIEWS = [
   "overview",
+  "publish_when",
   "schedule",
   "schedule_ru",
   "schedule_ru_day",
@@ -189,6 +190,17 @@ export function draftPreview(
     };
   }
 
+  if (view === "publish_when") {
+    return {
+      text: `${draftHeader(draftId, targets, locale)}\n\n▶️ *${t(locale, "post.publish-when-q")}*`,
+      keyboard: new InlineKeyboard()
+        .text(t(locale, "post.publish-when-now"), publicationCallback("post", "publish", [draftId]))
+        .text(t(locale, "post.publish-when-later"), publicationCallback("post", "schedule", [draftId]))
+        .row()
+        .text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"])),
+    };
+  }
+
   if (view === "confirm_publish") {
     const media = mediaCounts(draft.media_ru_json, draft.media_en_json);
     const available = enabledTargetLabels(targets, media.ru, media.enEffective) || t(locale, "post.no-platforms");
@@ -223,10 +235,11 @@ export function draftPreview(
   }
 
   if (draft.status === "scheduled") {
-    const canEditRu = canEditLocale(backendDb, config, draft.actor_id, draftId, "ru");
-    const canEditEn = servesEn && canEditLocale(backendDb, config, draft.actor_id, draftId, "en");
-    keyboard.text(t(locale, "post.change-time"), publicationCallback("post", "schedule", [draftId])).row();
-    if (canEditRu || canEditEn) keyboard.text(t(locale, "post.edit-button"), publicationCallback("post", "edit_menu", [draftId])).row();
+    keyboard
+      .text(t(locale, "post.change-time"), publicationCallback("post", "schedule", [draftId]))
+      .text(t(locale, "post.choose-platforms"), publicationCallback("post", "view", [draftId, "platforms"]))
+      .row();
+    appendLocaleEditButtons(keyboard, backendDb, config, draft.actor_id, draftId, locale, servesEn);
     keyboard
       .text(t(locale, "post.cancel-publication"), publicationCallback("post", "cancel", [draftId, "confirm_cancel"]))
       .row()
@@ -239,21 +252,20 @@ export function draftPreview(
 
   const modeEmoji = mode === "manual" ? "🛞" : "⚙️";
   if (mutable) {
-    // One way in to editing, for a draft and for a scheduled publication alike:
-    // the texts, their media and the platforms all live behind this button, so
-    // a media replacement is never reachable from one card and not the other.
+    // Everything a draft needs, on the draft itself: what it publishes as,
+    // where it goes, and both texts. Nothing here opens a submenu -- one screen
+    // is what the author actually works on.
     keyboard
       .text(`${modeEmoji} ${t(locale, "post.mode")}: ${modeLabel(mode, locale)}`, publicationCallback("post", "cycle_mode", [draftId]))
-      .text(t(locale, "post.edit-button"), publicationCallback("post", "edit_menu", [draftId]))
+      .text(t(locale, "post.choose-platforms"), publicationCallback("post", "view", [draftId, "platforms"]))
       .row();
+    appendLocaleEditButtons(keyboard, backendDb, config, draft.actor_id, draftId, locale, servesEn);
+    // Publishing asks when. A draft with Story cards has to be able to reach
+    // scheduling too, and the cards are rendered after the intent is known, so
+    // the question comes before any of that -- not as a second confirmation.
     keyboard
-      .text(t(locale, "post.publish-btn"), publicationCallback("post", "publish", [draftId]))
-      .text(t(locale, "post.schedule-btn"), publicationCallback("post", "schedule", [draftId]))
-      .row();
-    keyboard.text(t(locale, "post.delete-btn"), publicationCallback("post", "cancel", [draftId, "confirm_delete"])).row();
-    // A draft opened from the queue has to lead back to it. Every other card in
-    // the bot ends with this row; without it the only way out was the keyboard.
-    appendResultNavigation(keyboard, locale);
+      .text(t(locale, "post.publish-btn"), publicationCallback("post", "view", [draftId, "publish_when"]))
+      .text(t(locale, "post.delete-btn"), publicationCallback("post", "cancel", [draftId, "confirm_delete"]));
   } else {
     appendUnlandedControls(keyboard, { locale, kind: "post", draftId, origin: "card", targets: unlandedTargets(backendDb, draftId) });
     appendResultNavigation(keyboard, locale);
@@ -280,6 +292,25 @@ export function draftPreview(
   };
 }
 
+/** "Edit RU" and "Edit EN", for the languages this Studio publishes and this
+ * publication still allows to be changed. One button per language: whatever the
+ * next message carries -- text, a photo, an album -- replaces that part of it. */
+function appendLocaleEditButtons(
+  keyboard: InlineKeyboard,
+  backendDb: BackendDb,
+  config: BackendConfig,
+  actorId: number,
+  draftId: number,
+  locale: StudioLocale,
+  servesEn: boolean,
+): void {
+  const canEditRu = canEditLocale(backendDb, config, actorId, draftId, "ru");
+  const canEditEn = servesEn && canEditLocale(backendDb, config, actorId, draftId, "en");
+  if (canEditRu) keyboard.text(t(locale, "post.edit-ru"), publicationCallback("post", "edit_ru", [draftId]));
+  if (canEditEn) keyboard.text(t(locale, "post.edit-en"), publicationCallback("post", "edit_en", [draftId]));
+  if (canEditRu || canEditEn) keyboard.row();
+}
+
 /** Every target that did not land, retryable or not: each one can be skipped,
  * and only some of them can be retried. */
 function unlandedTargets(backendDb: BackendDb, draftId: number): UnlandedTarget[] {
@@ -295,7 +326,7 @@ function unlandedTargets(backendDb: BackendDb, draftId: number): UnlandedTarget[
   }
 }
 
-export function canEditLocale(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, locale: "ru" | "en"): boolean {
+function canEditLocale(backendDb: BackendDb, config: BackendConfig, actorId: number, draftId: number, locale: "ru" | "en"): boolean {
   try {
     requirePostEditAllowed(backendDb, config, actorId, draftId, backendDb.clock.now(), locale);
     return true;

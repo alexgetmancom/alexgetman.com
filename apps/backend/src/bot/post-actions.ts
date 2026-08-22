@@ -1,5 +1,4 @@
 import { InlineKeyboard } from "grammy";
-import { postLocales } from "../channels/locales.js";
 import { StudioError } from "../foundation/errors.js";
 import { plural, t } from "../foundation/i18n/index.js";
 import type { StudioLocale } from "../foundation/locale.js";
@@ -11,7 +10,7 @@ import type { PublicationEffect } from "./effects.js";
 import { mainMenuText } from "./menu-render.js";
 import { type PostWizardStep, postStateStep, postStepData } from "./post-flow.js";
 import { showStoryCardChoice } from "./post-story-cards.js";
-import { canEditLocale, type DraftView, modeLabel } from "./preview.js";
+import { type DraftView, modeLabel } from "./preview.js";
 import { renderPostProgress } from "./progress.js";
 import type {
   action,
@@ -36,11 +35,8 @@ export function definePostActionHandlers(define: typeof action): Record<string, 
     cancel_confirm: define(handleCancelConfirm, { entity: "draft", freshCard: true, args: [] }),
     cancel_dialog: define(handleCancelDialog, { entity: "session", sessionRevision: true, args: [] }),
     cycle_mode: define(handleCycleMode, { entity: "draft", freshCard: true, args: [] }),
-    edit_menu: define(handleEditMenu, { entity: "draft", freshCard: true, args: [] }),
     edit_ru: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
     edit_en: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
-    edit_media_ru: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
-    edit_media_en: define(handleEdit, { entity: "draft", freshCard: true, args: [] }),
     schedule: define(handleSchedule, { entity: "draft", freshCard: true, args: [] }),
     sched_scope: define(handleScheduleScope, { entity: "draft", freshCard: true, args: ["scope"] }),
     sched_pick: define(handleSchedulePick, { entity: "draft", freshCard: true, args: ["axis", "clock"] }),
@@ -60,8 +56,6 @@ export function definePostActionHandlers(define: typeof action): Record<string, 
 const POST_INPUT_STEPS: Record<string, PostWizardStep> = {
   edit_ru: { type: "edit_text", locale: "ru" },
   edit_en: { type: "edit_text", locale: "en" },
-  edit_media_ru: { type: "replace_media", locale: "ru" },
-  edit_media_en: { type: "replace_media", locale: "en" },
 };
 
 async function handleCycleMode(args: PostActionArgs): Promise<PublicationActionResult> {
@@ -139,44 +133,7 @@ async function handleEdit({ ctx, backendDb, actorId, locale, action, draftId }: 
   });
   return [
     { type: "toast", text: t(locale, "action.send-replacement") },
-    promptEffect(
-      backendDb,
-      actorId,
-      "post",
-      step.type === "replace_media" ? t(locale, "action.send-new-media") : t(locale, "action.send-new-text"),
-    ),
-  ];
-}
-
-async function handleEditMenu({ backendDb, config, actorId, locale, draftId }: PostActionArgs): Promise<PublicationActionResult> {
-  const keyboard = new InlineKeyboard();
-  const locales = postLocales(backendDb);
-  const addLocale = (targetLocale: "ru" | "en"): void => {
-    if (!locales.includes(targetLocale)) return;
-    if (!canEditLocale(backendDb, config, actorId, draftId, targetLocale)) return;
-    if (targetLocale === "ru")
-      keyboard
-        .text(t(locale, "post.edit-ru"), publicationCallback("post", "edit_ru", [draftId]))
-        .text(t(locale, "post.edit-media-ru"), publicationCallback("post", "edit_media_ru", [draftId]))
-        .row();
-    else
-      keyboard
-        .text(t(locale, "post.edit-en"), publicationCallback("post", "edit_en", [draftId]))
-        .text(t(locale, "post.edit-media-en"), publicationCallback("post", "edit_media_en", [draftId]))
-        .row();
-  };
-  addLocale("ru");
-  addLocale("en");
-  keyboard.text(t(locale, "post.edit-platforms"), publicationCallback("post", "view", [draftId, "platforms"])).row();
-  keyboard.text(t(locale, "common.back"), publicationCallback("post", "view", [draftId, "overview"]));
-  return [
-    {
-      type: "screen",
-      mode: "edit",
-      text: t(locale, "post.what-to-edit"),
-      options: { parse_mode: "Markdown", reply_markup: keyboard },
-      card: { kind: "post", draftId },
-    },
+    promptEffect(backendDb, actorId, "post", t(locale, "action.send-new-text")),
   ];
 }
 

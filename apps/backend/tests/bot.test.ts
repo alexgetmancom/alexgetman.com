@@ -36,7 +36,7 @@ function persistPostState(db: UnsafeBackendDb, actorId: number, step: PostWizard
     draftId,
     step: step.type,
     data:
-      step.type === "edit_text" || step.type === "replace_media" || step.type === "schedule_manual"
+      step.type === "edit_text" || step.type === "schedule_manual"
         ? { locale: step.locale }
         : step.type === "schedule_confirm"
           ? { locale: step.locale, value: step.value.toISOString() }
@@ -56,12 +56,31 @@ describe("Telegram controller flow", () => {
     const draftId = createDraftFromMessage(backendDb, 42, { text: "Card", textEn: "Card", entities: [], media: [] });
     const preview = draftPreview(backendDb, draftId, loadTestConfig({}), "en");
     expect(preview.text).toContain("Mode: *Manual*");
-    expect(JSON.stringify(preview.keyboard)).toContain(`cycle_mode:${draftId}`);
-    // Texts, their media and the platforms are all one button away, on this card
-    // and on a scheduled one alike.
-    expect(JSON.stringify(preview.keyboard)).toContain(`edit_menu:${draftId}`);
-    expect(JSON.stringify(preview.keyboard)).not.toContain(`edit_ru:${draftId}`);
-    expect(JSON.stringify(preview.keyboard)).not.toContain("use_ru_media");
+    // Three rows, and every one of them acts on the draft in place: what it
+    // publishes as, where it goes, both languages, and what happens to it. No
+    // submenu, because this is the screen the author actually works on.
+    expect(
+      preview.keyboard.inline_keyboard.map((row) => row.map((button) => ("callback_data" in button ? button.callback_data : ""))),
+    ).toEqual([
+      [`p:post:cycle_mode:${draftId}`, `p:post:view:${draftId}:platforms`],
+      [`p:post:edit_ru:${draftId}`, `p:post:edit_en:${draftId}`],
+      [`p:post:view:${draftId}:publish_when`, `p:post:cancel:${draftId}:confirm_delete`],
+    ]);
+  });
+
+  it("asks when to publish before deciding how", () => {
+    backendDb = openBotDb();
+    const draftId = createDraftFromMessage(backendDb, 42, { text: "Card", textEn: "Card", entities: [], media: [] });
+
+    // Publishing and scheduling are the same intent asked one step apart, so a
+    // draft with Story cards can still reach a schedule: the cards are rendered
+    // once the intent is known, and the question comes before that.
+    const question = draftPreview(backendDb, draftId, loadTestConfig({}), "en", "publish_when");
+    expect(question.keyboard.inline_keyboard.flat().map((button) => ("callback_data" in button ? button.callback_data : ""))).toEqual([
+      `p:post:publish:${draftId}`,
+      `p:post:schedule:${draftId}`,
+      `p:post:view:${draftId}:overview`,
+    ]);
   });
 
   it("renders post preview and confirmation controls in the selected interface language", () => {
@@ -72,7 +91,7 @@ describe("Telegram controller flow", () => {
 
     expect(preview.text).toContain("Режим: *Ручной*");
     expect(JSON.stringify(preview.keyboard)).toContain("Опубликовать");
-    expect(JSON.stringify(preview.keyboard)).toContain("Запланировать");
+    expect(JSON.stringify(preview.keyboard)).toContain("Изменить RU");
   });
 
   it("escapes draft Markdown before embedding copy in the control card", () => {
@@ -172,7 +191,7 @@ describe("Telegram controller flow", () => {
 
     const preview = draftPreview(backendDb, draftId, config, "en");
     const buttons = preview.keyboard.inline_keyboard.flat().map((button) => button.text);
-    expect(buttons).toEqual(["🕒 Change time", "✏️ Edit details", "🗑 Cancel publication", "← Work queue"]);
+    expect(buttons).toEqual(["🕒 Change time", "🌐 Choose platforms", "Edit RU", "Edit EN", "🗑 Cancel publication", "← Work queue"]);
     expect(buttons).not.toContain("▶️ Publish now");
     expect(buttons).not.toContain("🗑 Delete draft");
 

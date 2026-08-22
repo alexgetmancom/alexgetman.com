@@ -193,7 +193,7 @@ describe("Telegram card freshness", () => {
 
       await handlePublicationCallback(context(postAction("sched_pick", [draftId, "ru", "0800"]), 11), backendDb, config);
       await handlePublicationCallback(context(postAction("sched_pick", [draftId, "en", "1800"]), 11), backendDb, config);
-      expect(JSON.stringify(draftPreview(backendDb, draftId, config, "en"))).toContain(`edit_menu:${draftId}`);
+      expect(JSON.stringify(draftPreview(backendDb, draftId, config, "en"))).toContain(`edit_ru:${draftId}`);
     } finally {
       backendDb.close();
     }
